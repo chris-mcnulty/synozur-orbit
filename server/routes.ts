@@ -141,7 +141,8 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const competitors = await storage.getAllCompetitors();
+      // Return only user's own competitors for tenant isolation
+      const competitors = await storage.getCompetitorsByUserId(req.session.userId);
       res.json(competitors);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -157,6 +158,11 @@ export async function registerRoutes(
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Verify ownership for tenant isolation
+      if (competitor.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(competitor);
@@ -196,6 +202,11 @@ export async function registerRoutes(
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Verify ownership for tenant isolation
+      if (competitor.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       // Fetch website content
@@ -388,6 +399,16 @@ export async function registerRoutes(
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Verify ownership for tenant isolation
+      if (competitor.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteCompetitor(req.params.id);

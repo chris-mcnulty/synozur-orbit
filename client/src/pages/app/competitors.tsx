@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
@@ -20,11 +22,24 @@ export default function Competitors() {
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [expandedCompetitors, setExpandedCompetitors] = useState<Set<string>>(new Set());
   const [profileForm, setProfileForm] = useState({
     companyName: "",
     websiteUrl: "",
     description: "",
   });
+
+  const toggleExpanded = (id: string) => {
+    setExpandedCompetitors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
 
   const { data: competitors = [], isLoading } = useQuery({
     queryKey: ["/api/competitors"],
@@ -462,73 +477,145 @@ export default function Competitors() {
             </Card>
           ) : (
             <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
-              {competitors.map((competitor: any) => (
-                <div key={competitor.id} className="group">
-                  <Link href={`/app/competitors/${competitor.id}`}>
-                    <Card className="hover:border-primary/50 hover:shadow-md transition-all duration-300 cursor-pointer">
-                      <CardContent className="flex items-center justify-between p-6">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                            {competitor.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                              {competitor.name}
-                            </h3>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                                {competitor.url} <ExternalLink size={12} />
-                              </span>
+              {competitors.map((competitor: any) => {
+                const analysis = competitor.analysisData as any;
+                const isExpanded = expandedCompetitors.has(competitor.id);
+                
+                return (
+                  <div key={competitor.id} className="group">
+                    <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(competitor.id)}>
+                      <Card className="hover:border-primary/50 hover:shadow-md transition-all duration-300">
+                        <CardContent className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                                {competitor.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
+                                  {competitor.name}
+                                </h3>
+                                <div className="flex items-center gap-2">
+                                  <a 
+                                    href={competitor.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {competitor.url} <ExternalLink size={12} />
+                                  </a>
+                                  {analysis && (
+                                    <Badge variant="secondary" className="ml-2">
+                                      <Brain className="w-3 h-3 mr-1" /> Analyzed
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-6">
+                              <div className="text-right hidden md:block">
+                                <p className="text-sm font-medium">Last Crawl</p>
+                                <p className="text-xs text-muted-foreground">{competitor.lastCrawl || "Never"}</p>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => crawlCompetitor.mutate(competitor.id)}
+                                  disabled={crawlCompetitor.isPending}
+                                  data-testid={`button-crawl-${competitor.id}`}
+                                >
+                                  <RefreshCw className="w-4 h-4 mr-2" /> Analyze
+                                </Button>
+                                
+                                {analysis && (
+                                  <CollapsibleTrigger asChild>
+                                    <Button variant="ghost" size="icon" data-testid={`button-expand-${competitor.id}`}>
+                                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                    </Button>
+                                  </CollapsibleTrigger>
+                                )}
+                                
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => crawlCompetitor.mutate(competitor.id)}>
+                                      Re-analyze Website
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => deleteCompetitor.mutate(competitor.id)}
+                                    >
+                                      Remove Competitor
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           </div>
-                        </div>
-
-                        <div className="flex items-center gap-6">
-                          <div className="text-right hidden md:block">
-                            <p className="text-sm font-medium">Last Crawl</p>
-                            <p className="text-xs text-muted-foreground">{competitor.lastCrawl || "Never"}</p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                crawlCompetitor.mutate(competitor.id);
-                              }}
-                              disabled={crawlCompetitor.isPending}
-                            >
-                              <RefreshCw className="w-4 h-4 mr-2" /> Crawl Now
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={(e) => e.preventDefault()}>
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                                <DropdownMenuItem>View Analysis</DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    deleteCompetitor.mutate(competitor.id);
-                                  }}
-                                >
-                                  Remove Competitor
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                </div>
-              ))}
+                          
+                          <CollapsibleContent>
+                            {analysis && (
+                              <div className="mt-6 pt-6 border-t space-y-4">
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-sm font-medium">
+                                      <Brain className="w-4 h-4 text-primary" />
+                                      Summary
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">{analysis.summary}</p>
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-sm font-medium">
+                                      <Target className="w-4 h-4 text-primary" />
+                                      Target Audience
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">{analysis.targetAudience}</p>
+                                  </div>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium">
+                                    <MessageSquare className="w-4 h-4 text-primary" />
+                                    Key Messages
+                                  </div>
+                                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                                    {analysis.keyMessages?.map((msg: string, i: number) => (
+                                      <li key={i}>{msg}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-sm font-medium">
+                                    <Tags className="w-4 h-4 text-primary" />
+                                    Keywords & Tone
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {analysis.keywords?.map((keyword: string, i: number) => (
+                                      <Badge key={i} variant="outline">{keyword}</Badge>
+                                    ))}
+                                    <Badge variant="secondary">{analysis.tone}</Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </CollapsibleContent>
+                        </CardContent>
+                      </Card>
+                    </Collapsible>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
