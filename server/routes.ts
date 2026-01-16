@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -180,12 +181,143 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Competitor not found" });
       }
 
+      // Fetch website content
+      let websiteContent = "";
+      try {
+        const response = await fetch(competitor.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
+          },
+        });
+        websiteContent = await response.text();
+        
+        // Extract text content from HTML (basic extraction)
+        websiteContent = websiteContent
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      } catch (fetchError) {
+        console.error("Failed to fetch website:", fetchError);
+      }
+
       const now = new Date();
       const lastCrawl = now.toLocaleString();
       
       await storage.updateCompetitorLastCrawl(req.params.id, lastCrawl);
       
-      res.json({ success: true, lastCrawl });
+      // If we have content, analyze it with AI
+      if (websiteContent.length > 100) {
+        try {
+          const analysis = await analyzeCompetitorWebsite(
+            competitor.name,
+            competitor.url,
+            websiteContent
+          );
+          
+          // Create activity entry for the crawl
+          await storage.createActivity({
+            type: "crawl",
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            description: `${analysis.summary}`,
+            date: lastCrawl,
+            impact: "Medium",
+          });
+          
+          res.json({ success: true, lastCrawl, analysis });
+        } catch (aiError) {
+          console.error("AI analysis failed:", aiError);
+          res.json({ success: true, lastCrawl, message: "Crawled but AI analysis unavailable" });
+        }
+      } else {
+        res.json({ success: true, lastCrawl, message: "Website content could not be fetched" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Generate AI analysis for all competitors
+  app.post("/api/analysis/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const competitors = await storage.getAllCompetitors();
+      if (competitors.length === 0) {
+        return res.status(400).json({ error: "No competitors to analyze" });
+      }
+
+      // Analyze each competitor
+      const analyses = [];
+      for (const competitor of competitors.slice(0, 5)) {
+        try {
+          const response = await fetch(competitor.url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)",
+            },
+          });
+          let content = await response.text();
+          content = content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (content.length > 100) {
+            const analysis = await analyzeCompetitorWebsite(
+              competitor.name,
+              competitor.url,
+              content
+            );
+            analyses.push({ competitor: competitor.name, ...analysis });
+          }
+        } catch (e) {
+          console.error(`Failed to analyze ${competitor.name}:`, e);
+        }
+      }
+
+      // Generate gap analysis
+      const gaps = await generateGapAnalysis(
+        "Marketing intelligence platform for competitive analysis",
+        analyses
+      );
+
+      // Generate recommendations
+      const recommendations = await generateRecommendations(gaps, analyses);
+
+      // Save recommendations to database
+      for (const rec of recommendations) {
+        await storage.createRecommendation({
+          title: rec.title,
+          description: rec.description,
+          area: rec.area,
+          impact: rec.impact,
+        });
+      }
+
+      // Save analysis
+      const savedAnalysis = await storage.createAnalysis({
+        themes: analyses.map(a => ({
+          theme: a.valueProposition,
+          us: "Medium",
+          competitorA: "High",
+          competitorB: "Medium",
+        })),
+        messaging: analyses.slice(0, 3).map(a => ({
+          category: a.targetAudience,
+          us: "Our messaging",
+          competitorA: a.keyMessages[0] || "",
+          competitorB: a.keyMessages[1] || "",
+        })),
+        gaps: gaps,
+      });
+
+      res.json({ success: true, analysis: savedAnalysis, recommendations });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
