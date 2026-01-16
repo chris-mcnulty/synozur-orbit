@@ -7,6 +7,7 @@ import {
   analysis,
   groundingDocuments,
   companyProfiles,
+  assessments,
   type User, 
   type InsertUser,
   type Competitor,
@@ -22,7 +23,9 @@ import {
   type GroundingDocument,
   type InsertGroundingDocument,
   type CompanyProfile,
-  type InsertCompanyProfile
+  type InsertCompanyProfile,
+  type Assessment,
+  type InsertAssessment
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -39,6 +42,7 @@ export interface IStorage {
   // Competitor methods
   getCompetitor(id: string): Promise<Competitor | undefined>;
   getAllCompetitors(): Promise<Competitor[]>;
+  getCompetitorsByUserId(userId: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
   deleteCompetitor(id: string): Promise<void>;
@@ -73,6 +77,14 @@ export interface IStorage {
   createCompanyProfile(profile: InsertCompanyProfile): Promise<CompanyProfile>;
   updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile>;
   deleteCompanyProfile(id: string): Promise<void>;
+  
+  // Assessment methods (snapshots for comparison)
+  getAssessment(id: string): Promise<Assessment | undefined>;
+  getAssessmentsByTenant(tenantDomain: string): Promise<Assessment[]>;
+  getAssessmentsByUser(userId: string): Promise<Assessment[]>;
+  createAssessment(assessment: InsertAssessment): Promise<Assessment>;
+  updateAssessment(id: string, data: Partial<Assessment>): Promise<Assessment>;
+  deleteAssessment(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -120,6 +132,12 @@ export class DatabaseStorage implements IStorage {
 
   async getAllCompetitors(): Promise<Competitor[]> {
     return await db.select().from(competitors).orderBy(desc(competitors.createdAt));
+  }
+
+  async getCompetitorsByUserId(userId: string): Promise<Competitor[]> {
+    return await db.select().from(competitors)
+      .where(eq(competitors.userId, userId))
+      .orderBy(desc(competitors.createdAt));
   }
 
   async createCompetitor(insertCompetitor: InsertCompetitor): Promise<Competitor> {
@@ -261,6 +279,45 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompanyProfile(id: string): Promise<void> {
     await db.delete(companyProfiles).where(eq(companyProfiles.id, id));
+  }
+
+  // Assessment methods (snapshots for comparison)
+  async getAssessment(id: string): Promise<Assessment | undefined> {
+    const [assessment] = await db.select().from(assessments).where(eq(assessments.id, id));
+    return assessment || undefined;
+  }
+
+  async getAssessmentsByTenant(tenantDomain: string): Promise<Assessment[]> {
+    return await db.select().from(assessments)
+      .where(eq(assessments.tenantDomain, tenantDomain))
+      .orderBy(desc(assessments.createdAt));
+  }
+
+  async getAssessmentsByUser(userId: string): Promise<Assessment[]> {
+    return await db.select().from(assessments)
+      .where(eq(assessments.userId, userId))
+      .orderBy(desc(assessments.createdAt));
+  }
+
+  async createAssessment(insertAssessment: InsertAssessment): Promise<Assessment> {
+    const [assessment] = await db
+      .insert(assessments)
+      .values(insertAssessment)
+      .returning();
+    return assessment;
+  }
+
+  async updateAssessment(id: string, data: Partial<Assessment>): Promise<Assessment> {
+    const [assessment] = await db
+      .update(assessments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(assessments.id, id))
+      .returning();
+    return assessment;
+  }
+
+  async deleteAssessment(id: string): Promise<void> {
+    await db.delete(assessments).where(eq(assessments.id, id));
   }
 }
 

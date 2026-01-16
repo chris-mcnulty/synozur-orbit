@@ -17,6 +17,7 @@ import Reports from "@/pages/app/reports";
 import Competitors from "@/pages/app/competitors";
 import CompetitorDetail from "@/pages/app/competitor-detail";
 import Documents from "@/pages/app/documents";
+import Assessments from "@/pages/app/assessments";
 import Settings from "@/pages/app/settings";
 import UsersPage from "@/pages/app/users";
 
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/app/activity" component={Activity} />
       <Route path="/app/reports" component={Reports} />
       <Route path="/app/documents" component={Documents} />
+      <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
       <Route path="/app/users" component={UsersPage} />
       <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}

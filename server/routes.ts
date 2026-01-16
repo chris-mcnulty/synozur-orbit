@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -805,6 +805,214 @@ export async function registerRoutes(
 
       await storage.deleteCompanyProfile(profile.id);
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== ASSESSMENT ROUTES (Snapshots & Proxy) ====================
+
+  // Get all assessments for current tenant
+  app.get("/api/assessments", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const assessments = await storage.getAssessmentsByTenant(tenantDomain);
+      res.json(assessments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single assessment
+  app.get("/api/assessments/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const assessment = await storage.getAssessment(req.params.id);
+      if (!assessment) {
+        return res.status(404).json({ error: "Assessment not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (assessment.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(assessment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create new assessment (snapshot current state)
+  app.post("/api/assessments", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      // Gather current state for snapshot (tenant-scoped)
+      // Only capture user's own competitors for tenant isolation
+      const competitors = await storage.getCompetitorsByUserId(user.id);
+      // Note: Analysis and recommendations tables are not yet tenant-scoped
+      // Capturing empty objects/arrays until these are refactored for multi-tenancy
+      // to prevent cross-tenant data leakage
+      const latestAnalysis = { themes: [], messaging: [], gaps: [] };
+      const recommendations: any[] = [];
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+
+      // Validate input with proxy fields
+      const parsed = insertAssessmentSchema.safeParse({
+        name: req.body.name,
+        description: req.body.description,
+        userId: user.id,
+        tenantDomain,
+        companyProfileSnapshot: companyProfile || null,
+        competitorsSnapshot: competitors,
+        analysisSnapshot: latestAnalysis || {},
+        recommendationsSnapshot: recommendations,
+        isProxy: req.body.isProxy || false,
+        proxyName: req.body.proxyName,
+        proxyCompany: req.body.proxyCompany,
+        proxyJobTitle: req.body.proxyJobTitle,
+        proxyIndustry: req.body.proxyIndustry,
+        proxyCompanySize: req.body.proxyCompanySize,
+        proxyCountry: req.body.proxyCountry,
+      });
+
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      // Only admins can create proxy assessments
+      if (parsed.data.isProxy && user.role === "Standard User") {
+        return res.status(403).json({ error: "Only admins can create proxy assessments" });
+      }
+
+      const assessment = await storage.createAssessment(parsed.data);
+      res.json(assessment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update assessment
+  app.put("/api/assessments/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const assessment = await storage.getAssessment(req.params.id);
+      if (!assessment) {
+        return res.status(404).json({ error: "Assessment not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (assessment.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateAssessment(req.params.id, {
+        name: req.body.name,
+        description: req.body.description,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete assessment
+  app.delete("/api/assessments/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const assessment = await storage.getAssessment(req.params.id);
+      if (!assessment) {
+        return res.status(404).json({ error: "Assessment not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (assessment.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteAssessment(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Compare two assessments
+  app.get("/api/assessments/compare/:id1/:id2", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+
+      const assessment1 = await storage.getAssessment(req.params.id1);
+      const assessment2 = await storage.getAssessment(req.params.id2);
+
+      if (!assessment1 || !assessment2) {
+        return res.status(404).json({ error: "One or both assessments not found" });
+      }
+
+      if (assessment1.tenantDomain !== tenantDomain || assessment2.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json({
+        assessment1,
+        assessment2,
+        comparison: {
+          timeDiff: new Date(assessment2.createdAt).getTime() - new Date(assessment1.createdAt).getTime(),
+          competitorCountChange: (assessment2.competitorsSnapshot as any[]).length - (assessment1.competitorsSnapshot as any[]).length,
+        }
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

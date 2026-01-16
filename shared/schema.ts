@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -229,3 +229,45 @@ export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).om
 
 export type CompanyProfile = typeof companyProfiles.$inferSelect;
 export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;
+
+// Assessments table for saving analysis snapshots
+export const assessments = pgTable("assessments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  tenantDomain: text("tenant_domain").notNull(),
+  // Snapshot of analysis at time of assessment
+  companyProfileSnapshot: jsonb("company_profile_snapshot"),
+  competitorsSnapshot: jsonb("competitors_snapshot").notNull(),
+  analysisSnapshot: jsonb("analysis_snapshot").notNull(),
+  recommendationsSnapshot: jsonb("recommendations_snapshot"),
+  // Proxy assessment fields (following Orion pattern)
+  isProxy: boolean("is_proxy").notNull().default(false),
+  proxyName: text("proxy_name"),
+  proxyCompany: text("proxy_company"),
+  proxyJobTitle: text("proxy_job_title"),
+  proxyIndustry: text("proxy_industry"),
+  proxyCompanySize: text("proxy_company_size"),
+  proxyCountry: text("proxy_country"),
+  // Status and timestamps
+  status: text("status").notNull().default("completed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const assessmentsRelations = relations(assessments, ({ one }) => ({
+  user: one(users, {
+    fields: [assessments.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertAssessmentSchema = createInsertSchema(assessments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Assessment = typeof assessments.$inferSelect;
+export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
