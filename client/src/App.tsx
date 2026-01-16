@@ -13,6 +13,7 @@ import Recommendations from "@/pages/app/recommendations";
 import Activity from "@/pages/app/activity";
 import Reports from "@/pages/app/reports";
 import Competitors from "@/pages/app/competitors";
+import CompetitorDetail from "@/pages/app/competitor-detail";
 import Settings from "@/pages/app/settings";
 import UsersPage from "@/pages/app/users";
 
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/app" component={Dashboard} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />
+      <Route path="/app/competitors/:id" component={CompetitorDetail} />
       <Route path="/app/analysis" component={Analysis} />
       <Route path="/app/recommendations" component={Recommendations} />
       <Route path="/app/activity" component={Activity} />

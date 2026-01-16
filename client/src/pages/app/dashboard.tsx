@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
 export default function Dashboard() {
   return (
     <AppLayout>
-      <div className="mb-8">
+      <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Overview</h1>
         <p className="text-muted-foreground">Welcome back, John. Here's what's happening in your market.</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100 fill-mode-backwards">
+        <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Competitors Tracked</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
@@ -26,7 +26,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground">+1 from last month</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Market Gaps Identified</CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
@@ -36,7 +36,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground">2 High Priority</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Changes Detected</CardTitle>
             <Eye className="h-4 w-4 text-muted-foreground" />
@@ -46,7 +46,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground">In the last 7 days</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Orbit Score</CardTitle>
             <div className="h-4 w-4 text-muted-foreground">✨</div>
@@ -58,9 +58,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mb-8">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200 fill-mode-backwards">
         {/* Main Chart Area Placeholder */}
-        <Card className="col-span-4">
+        <Card className="col-span-4 hover:border-primary/20 transition-colors duration-300">
           <CardHeader>
             <CardTitle>Market Positioning Map</CardTitle>
             <CardDescription>Your brand vs competitors on key axes.</CardDescription>

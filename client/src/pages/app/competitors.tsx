@@ -5,62 +5,69 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Plus, MoreHorizontal, ExternalLink, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Link } from "wouter";
 
 export default function Competitors() {
   return (
     <AppLayout>
-      <div className="mb-8 flex justify-between items-center">
+      <div className="mb-8 flex justify-between items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div>
            <h1 className="text-3xl font-bold tracking-tight mb-2">Competitors</h1>
            <p className="text-muted-foreground">Manage the companies you want to track.</p>
         </div>
-        <Button>
+        <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
             <Plus className="w-4 h-4 mr-2" /> Add Competitor
         </Button>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
         {mockCompetitors.map((competitor) => (
-          <Card key={competitor.id}>
-            <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground">
-                        {competitor.name.charAt(0)}
-                    </div>
-                    <div>
-                        <h3 className="font-semibold text-lg">{competitor.name}</h3>
-                        <a href={competitor.url} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1">
-                            {competitor.url} <ExternalLink size={12} />
-                        </a>
-                    </div>
-                </div>
-                
-                <div className="flex items-center gap-6">
-                    <div className="text-right hidden md:block">
-                        <p className="text-sm font-medium">Last Crawl</p>
-                        <p className="text-xs text-muted-foreground">{competitor.lastCrawl}</p>
+          <Link key={competitor.id} href={`/app/competitors/${competitor.id}`}>
+            <a className="block group">
+              <Card className="hover:border-primary/50 hover:shadow-md transition-all duration-300">
+                <CardContent className="flex items-center justify-between p-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                            {competitor.name.charAt(0)}
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">{competitor.name}</h3>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-muted-foreground flex items-center gap-1 hover:underline" onClick={(e) => e.stopPropagation()}>
+                                    {competitor.url} <ExternalLink size={12} />
+                                </span>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm">
-                            <RefreshCw className="w-4 h-4 mr-2" /> Crawl Now
-                        </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem>Edit Settings</DropdownMenuItem>
-                                <DropdownMenuItem>View Analysis</DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive">Remove Competitor</DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                    <div className="flex items-center gap-6">
+                        <div className="text-right hidden md:block">
+                            <p className="text-sm font-medium">Last Crawl</p>
+                            <p className="text-xs text-muted-foreground">{competitor.lastCrawl}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.preventDefault()}>
+                                <RefreshCw className="w-4 h-4 mr-2" /> Crawl Now
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={(e) => e.preventDefault()}>
+                                        <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem>Edit Settings</DropdownMenuItem>
+                                    <DropdownMenuItem>View Analysis</DropdownMenuItem>
+                                    <DropdownMenuItem className="text-destructive">Remove Competitor</DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     </div>
-                </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </a>
+          </Link>
         ))}
       </div>
     </AppLayout>
