@@ -78,6 +78,7 @@ Database tables include:
 - `analysis` - Competitive analysis results
 - `groundingDocuments` - Tenant-scoped positioning documents for AI grounding
 - `companyProfiles` - Your company profile for baseline analysis (one per tenant)
+- `assessments` - Saved snapshots of competitive analysis for comparison over time (supports proxy assessments for admins)
 
 ### Authentication & Authorization
 - Session-based authentication with express-session
