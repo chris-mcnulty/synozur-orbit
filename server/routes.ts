@@ -233,6 +233,9 @@ export async function registerRoutes(
             websiteContent
           );
           
+          // Store analysis data on the competitor record
+          await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          
           // Create activity entry for the crawl
           await storage.createActivity({
             type: "crawl",
@@ -263,15 +266,49 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const competitors = await storage.getAllCompetitors();
-      if (competitors.length === 0) {
-        return res.status(400).json({ error: "No competitors to analyze" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
       }
 
-      // Analyze each competitor
+      const tenantDomain = user.email.split("@")[1];
+
+      // Get tenant-scoped competitors
+      const userCompetitors = await storage.getCompetitorsByUserId(user.id);
+      if (userCompetitors.length === 0) {
+        return res.status(400).json({ error: "No competitors to analyze. Add competitors first." });
+      }
+
+      // Get company profile for "our" positioning
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      // Get grounding documents for additional context
+      const groundingDocs = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      const groundingContext = groundingDocs
+        .filter(doc => doc.extractedText)
+        .map(doc => doc.extractedText)
+        .join("\n\n");
+
+      // Build "our positioning" from company profile and grounding docs
+      let ourPositioning = companyProfile 
+        ? `${companyProfile.companyName}: ${companyProfile.description || 'No description provided'}`
+        : "Our company positioning";
+      
+      if (groundingContext) {
+        ourPositioning += `\n\nAdditional context from positioning documents:\n${groundingContext.slice(0, 5000)}`;
+      }
+
+      // Analyze each competitor (crawl fresh or use cached analysis)
       const analyses = [];
-      for (const competitor of competitors.slice(0, 5)) {
+      for (const competitor of userCompetitors.slice(0, 5)) {
         try {
+          // Use cached analysis if available and recent
+          if (competitor.analysisData) {
+            analyses.push({ competitor: competitor.name, ...(competitor.analysisData as any) });
+            continue;
+          }
+
+          // Otherwise crawl fresh
           const response = await fetch(competitor.url, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)",
@@ -291,6 +328,9 @@ export async function registerRoutes(
               competitor.url,
               content
             );
+            // Store analysis on competitor
+            await storage.updateCompetitorAnalysis(competitor.id, analysis);
+            await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
             analyses.push({ competitor: competitor.name, ...analysis });
           }
         } catch (e) {
@@ -298,11 +338,12 @@ export async function registerRoutes(
         }
       }
 
-      // Generate gap analysis
-      const gaps = await generateGapAnalysis(
-        "Marketing intelligence platform for competitive analysis",
-        analyses
-      );
+      if (analyses.length === 0) {
+        return res.status(400).json({ error: "Could not analyze any competitors" });
+      }
+
+      // Generate gap analysis using our positioning
+      const gaps = await generateGapAnalysis(ourPositioning, analyses);
 
       // Generate recommendations
       const recommendations = await generateRecommendations(gaps, analyses);
@@ -317,25 +358,28 @@ export async function registerRoutes(
         });
       }
 
-      // Save analysis
+      // Save tenant-scoped analysis
       const savedAnalysis = await storage.createAnalysis({
+        userId: user.id,
+        tenantDomain,
         themes: analyses.map(a => ({
           theme: a.valueProposition,
-          us: "Medium",
+          us: companyProfile ? "Based on profile" : "Medium",
           competitorA: "High",
           competitorB: "Medium",
         })),
         messaging: analyses.slice(0, 3).map(a => ({
           category: a.targetAudience,
-          us: "Our messaging",
+          us: companyProfile?.description?.slice(0, 100) || "Our messaging",
           competitorA: a.keyMessages[0] || "",
           competitorB: a.keyMessages[1] || "",
         })),
         gaps: gaps,
       });
 
-      res.json({ success: true, analysis: savedAnalysis, recommendations });
+      res.json({ success: true, analysis: savedAnalysis, recommendations, analyzedCount: analyses.length });
     } catch (error: any) {
+      console.error("Analysis generation error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -460,8 +504,14 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const analysis = await storage.getLatestAnalysis();
-      res.json(analysis || null);
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenantAnalysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      res.json(tenantAnalysis || null);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

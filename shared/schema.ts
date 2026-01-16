@@ -26,6 +26,7 @@ export const competitors = pgTable("competitors", {
   lastCrawl: text("last_crawl"),
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
+  analysisData: jsonb("analysis_data"), // AI analysis results
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -62,6 +63,8 @@ export const reports = pgTable("reports", {
 
 export const analysis = pgTable("analysis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  tenantDomain: text("tenant_domain"),
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),

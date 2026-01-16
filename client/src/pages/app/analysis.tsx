@@ -1,12 +1,17 @@
-import React from "react";
+import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowRight, AlertTriangle, BarChart2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export default function Analysis() {
+  const queryClient = useQueryClient();
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analysis"],
     queryFn: async () => {
@@ -25,6 +30,32 @@ export default function Analysis() {
     },
   });
 
+  const generateAnalysisMutation = useMutation({
+    mutationFn: async () => {
+      setIsGenerating(true);
+      const response = await fetch("/api/analysis/generate", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate analysis");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setIsGenerating(false);
+      toast.success(`Analysis complete! Analyzed ${data.analyzedCount} competitors.`);
+      queryClient.invalidateQueries({ queryKey: ["/api/analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+    },
+    onError: (error: Error) => {
+      setIsGenerating(false);
+      toast.error(error.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -36,27 +67,76 @@ export default function Analysis() {
   }
 
   const hasData = analysis && (analysis.themes?.length > 0 || analysis.messaging?.length > 0 || analysis.gaps?.length > 0);
+  const hasCompetitors = competitors.length > 0;
 
   return (
     <AppLayout>
       <div className="mb-8 flex justify-between items-center">
         <div>
            <h1 className="text-3xl font-bold tracking-tight mb-2">Competitive Analysis</h1>
-           <p className="text-muted-foreground">Side-by-side comparison of messaging and positioning.</p>
+           <p className="text-muted-foreground">AI-powered analysis of your competitors' websites and positioning.</p>
         </div>
+        <Button 
+          onClick={() => generateAnalysisMutation.mutate()}
+          disabled={isGenerating || !hasCompetitors}
+          data-testid="button-run-analysis"
+          className="gap-2"
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing...
+            </>
+          ) : hasData ? (
+            <>
+              <RefreshCw className="h-4 w-4" />
+              Refresh Analysis
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              Run Analysis
+            </>
+          )}
+        </Button>
       </div>
 
-      {!hasData ? (
+      {isGenerating && (
+        <Card className="mb-6 p-6 border-primary/50 bg-primary/5">
+          <div className="flex items-center gap-4">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div>
+              <p className="font-medium">Analyzing your competitors...</p>
+              <p className="text-sm text-muted-foreground">
+                This may take a minute. We're crawling websites and using AI to extract insights.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!hasData && !isGenerating ? (
         <Card className="p-12 text-center">
           <BarChart2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground mb-2">No analysis data yet.</p>
-          <p className="text-sm text-muted-foreground">
-            {competitors.length === 0 
+          <p className="text-sm text-muted-foreground mb-4">
+            {!hasCompetitors 
               ? "Add competitors first, then run analysis to see insights."
-              : "Run an analysis on your tracked competitors to see insights here."}
+              : "Click 'Run Analysis' to crawl competitor websites and generate AI-powered insights."}
           </p>
+          {hasCompetitors && (
+            <Button 
+              onClick={() => generateAnalysisMutation.mutate()}
+              disabled={isGenerating}
+              data-testid="button-run-analysis-empty"
+              className="gap-2"
+            >
+              <Play className="h-4 w-4" />
+              Run Analysis
+            </Button>
+          )}
         </Card>
-      ) : (
+      ) : hasData && (
         <Tabs defaultValue="themes" className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg">
             <TabsTrigger value="themes" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Key Themes</TabsTrigger>

@@ -45,6 +45,7 @@ export interface IStorage {
   getCompetitorsByUserId(userId: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
+  updateCompetitorAnalysis(id: string, analysisData: any): Promise<void>;
   deleteCompetitor(id: string): Promise<void>;
   
   // Activity methods
@@ -61,6 +62,7 @@ export interface IStorage {
   
   // Analysis methods
   getLatestAnalysis(): Promise<Analysis | undefined>;
+  getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
   
   // Grounding Document methods
@@ -155,6 +157,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(competitors.id, id));
   }
 
+  async updateCompetitorAnalysis(id: string, analysisData: any): Promise<void> {
+    await db
+      .update(competitors)
+      .set({ analysisData })
+      .where(eq(competitors.id, id));
+  }
+
   async deleteCompetitor(id: string): Promise<void> {
     await db.delete(competitors).where(eq(competitors.id, id));
   }
@@ -201,6 +210,14 @@ export class DatabaseStorage implements IStorage {
   // Analysis methods
   async getLatestAnalysis(): Promise<Analysis | undefined> {
     const [latestAnalysis] = await db.select().from(analysis).orderBy(desc(analysis.createdAt)).limit(1);
+    return latestAnalysis || undefined;
+  }
+
+  async getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined> {
+    const [latestAnalysis] = await db.select().from(analysis)
+      .where(eq(analysis.tenantDomain, tenantDomain))
+      .orderBy(desc(analysis.createdAt))
+      .limit(1);
     return latestAnalysis || undefined;
   }
 
