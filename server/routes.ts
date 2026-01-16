@@ -426,7 +426,14 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const activities = await storage.getAllActivity();
+      // Get user's tenant domain for tenant scoping
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const activities = await storage.getActivityByTenant(tenantDomain);
       res.json(activities);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -439,7 +446,18 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const parsed = insertActivitySchema.safeParse(req.body);
+      // Get user's tenant domain for tenant scoping
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const parsed = insertActivitySchema.safeParse({
+        ...req.body,
+        userId: req.session.userId,
+        tenantDomain
+      });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
@@ -459,7 +477,14 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const recommendations = await storage.getAllRecommendations();
+      // Get user's tenant domain for tenant scoping
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const recommendations = await storage.getRecommendationsByTenant(tenantDomain);
       res.json(recommendations);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -472,7 +497,18 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const parsed = insertRecommendationSchema.safeParse(req.body);
+      // Get user's tenant domain for tenant scoping
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const parsed = insertRecommendationSchema.safeParse({
+        ...req.body,
+        userId: req.session.userId,
+        tenantDomain
+      });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
@@ -544,7 +580,18 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const parsed = insertAnalysisSchema.safeParse(req.body);
+      // Get user's tenant domain for tenant scoping
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const parsed = insertAnalysisSchema.safeParse({
+        ...req.body,
+        userId: req.session.userId,
+        tenantDomain
+      });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }

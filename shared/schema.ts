@@ -38,6 +38,8 @@ export const activity = pgTable("activity", {
   description: text("description").notNull(),
   date: text("date").notNull(),
   impact: text("impact").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  tenantDomain: text("tenant_domain"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -47,6 +49,8 @@ export const recommendations = pgTable("recommendations", {
   description: text("description").notNull(),
   area: text("area").notNull(),
   impact: text("impact").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  tenantDomain: text("tenant_domain"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -5,32 +5,26 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <header className="h-20 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
-        <Link href="/">
-          <a className="font-bold text-2xl tracking-tight flex items-center gap-3 hover:opacity-90 transition-opacity">
-            <img 
-              src="/brand/synozur-mark.png" 
-              alt="Synozur" 
-              className="w-10 h-10 object-contain"
-            />
-            <span>Orbit</span>
-          </a>
+        <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-3 hover:opacity-90 transition-opacity">
+          <img 
+            src="/brand/synozur-mark.png" 
+            alt="Synozur" 
+            className="w-10 h-10 object-contain"
+          />
+          <span>Orbit</span>
         </Link>
         
         <nav className="hidden md:flex items-center gap-8">
-          <Link href="/"><a className="text-sm font-medium hover:text-primary transition-colors">Product</a></Link>
-          <Link href="/pricing"><a className="text-sm font-medium hover:text-primary transition-colors">Pricing</a></Link>
-          <Link href="/auth/signin"><a className="text-sm font-medium hover:text-primary transition-colors">Sign In</a></Link>
-          <Link href="/auth/signup">
-            <a className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30">
-              Get Started
-            </a>
+          <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Product</Link>
+          <Link href="/pricing" className="text-sm font-medium hover:text-primary transition-colors">Pricing</Link>
+          <Link href="/auth/signin" className="text-sm font-medium hover:text-primary transition-colors">Sign In</Link>
+          <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30">
+            Get Started
           </Link>
         </nav>
 
         <div className="md:hidden">
-            <Link href="/auth/signin">
-             <a className="text-sm font-medium hover:text-primary transition-colors">Sign In</a>
-            </Link>
+          <Link href="/auth/signin" className="text-sm font-medium hover:text-primary transition-colors">Sign In</Link>
         </div>
       </header>
 
@@ -56,10 +50,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div>
             <h4 className="font-semibold mb-6">Product</h4>
             <ul className="space-y-3 text-sm text-muted-foreground">
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Features</a></Link></li>
-              <li><Link href="/pricing"><a className="hover:text-primary transition-colors">Pricing</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Roadmap</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Changelog</a></Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Features</Link></li>
+              <li><Link href="/pricing" className="hover:text-primary transition-colors">Pricing</Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Roadmap</Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Changelog</Link></li>
             </ul>
           </div>
           <div>
@@ -67,10 +61,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li><a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">About Synozur</a></li>
               <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Privacy Policy</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Terms of Service</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Security</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Contact Support</a></Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Privacy Policy</Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Terms of Service</Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Security</Link></li>
+              <li><Link href="#" className="hover:text-primary transition-colors">Contact Support</Link></li>
             </ul>
           </div>
         </div>
@@ -90,9 +84,9 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div className="flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground pt-6 border-t border-border/50">
             <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2025.</p>
             <div className="mt-4 md:mt-0 flex gap-6">
-               <Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link>
-               <Link href="#"><a className="hover:text-primary transition-colors">Terms</a></Link>
-               <Link href="#"><a className="hover:text-primary transition-colors">Cookies</a></Link>
+               <Link href="#" className="hover:text-primary transition-colors">Privacy</Link>
+               <Link href="#" className="hover:text-primary transition-colors">Terms</Link>
+               <Link href="#" className="hover:text-primary transition-colors">Cookies</Link>
             </div>
           </div>
         </div>

@@ -105,16 +105,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {group.items.map((item) => {
                     const isActive = location === item.href;
                     return (
-                      <Link key={item.href} href={item.href}>
-                        <a className={cn(
+                      <Link 
+                        key={item.href} 
+                        href={item.href}
+                        className={cn(
                           "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
                           isActive 
                             ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
                             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                        )}>
-                          <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
-                          {item.label}
-                        </a>
+                        )}
+                      >
+                        <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                        {item.label}
                       </Link>
                     );
                   })}
@@ -143,14 +145,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <Settings size={16} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground transition-colors" />
           </div>
-          <Link href="/auth/signin">
-            <a 
-              className="flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors w-full mt-1"
-              onClick={logout}
-            >
-              <LogOut size={14} />
-              Sign Out
-            </a>
+          <Link 
+            href="/auth/signin"
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors w-full mt-1"
+            onClick={logout}
+          >
+            <LogOut size={14} />
+            Sign Out
           </Link>
         </div>
       </aside>
@@ -185,9 +186,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
               <div className="flex gap-4">
                 <a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GTM Services</a>
-                <Link href="#"><a className="hover:text-foreground transition-colors">Privacy Policy</a></Link>
-                <Link href="#"><a className="hover:text-foreground transition-colors">Terms of Service</a></Link>
-                <Link href="#"><a className="hover:text-foreground transition-colors">Support</a></Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Terms of Service</Link>
+                <Link href="#" className="hover:text-foreground transition-colors">Support</Link>
               </div>
             </div>
           </footer>

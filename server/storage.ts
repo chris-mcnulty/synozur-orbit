@@ -50,10 +50,12 @@ export interface IStorage {
   
   // Activity methods
   getAllActivity(): Promise<Activity[]>;
+  getActivityByTenant(tenantDomain: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   
   // Recommendation methods
   getAllRecommendations(): Promise<Recommendation[]>;
+  getRecommendationsByTenant(tenantDomain: string): Promise<Recommendation[]>;
   createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
   
   // Report methods
@@ -173,6 +175,12 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(activity).orderBy(desc(activity.createdAt));
   }
 
+  async getActivityByTenant(tenantDomain: string): Promise<Activity[]> {
+    return await db.select().from(activity)
+      .where(eq(activity.tenantDomain, tenantDomain))
+      .orderBy(desc(activity.createdAt));
+  }
+
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const [newActivity] = await db
       .insert(activity)
@@ -184,6 +192,12 @@ export class DatabaseStorage implements IStorage {
   // Recommendation methods
   async getAllRecommendations(): Promise<Recommendation[]> {
     return await db.select().from(recommendations).orderBy(desc(recommendations.createdAt));
+  }
+
+  async getRecommendationsByTenant(tenantDomain: string): Promise<Recommendation[]> {
+    return await db.select().from(recommendations)
+      .where(eq(recommendations.tenantDomain, tenantDomain))
+      .orderBy(desc(recommendations.createdAt));
   }
 
   async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {
