@@ -66,6 +66,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <h4 className="font-semibold mb-6">Legal & Company</h4>
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li><Link href="#"><a className="hover:text-primary transition-colors">About Synozur</a></Link></li>
+              <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
               <li><Link href="#"><a className="hover:text-primary transition-colors">Privacy Policy</a></Link></li>
               <li><Link href="#"><a className="hover:text-primary transition-colors">Terms of Service</a></Link></li>
               <li><Link href="#"><a className="hover:text-primary transition-colors">Security</a></Link></li>

@@ -169,6 +169,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="container max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
               <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
               <div className="flex gap-4">
+                <a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GTM Services</a>
                 <Link href="#"><a className="hover:text-foreground transition-colors">Privacy Policy</a></Link>
                 <Link href="#"><a className="hover:text-foreground transition-colors">Terms of Service</a></Link>
                 <Link href="#"><a className="hover:text-foreground transition-colors">Support</a></Link>
