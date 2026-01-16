@@ -1,10 +1,26 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { mockCompetitors, mockActivity, mockAnalysis } from "@/lib/mockData";
-import { ArrowUpRight, ArrowDownRight, Users, Eye, Target } from "lucide-react";
-import { Link } from "wouter";
-import { cn } from "@/lib/utils";
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell } from 'recharts';
+
+const positioningData = [
+  { x: 85, y: 75, name: 'Orbit (Us)', type: 'us' },
+  { x: 60, y: 80, name: 'Competitor A', type: 'competitor' },
+  { x: 90, y: 40, name: 'Competitor B', type: 'competitor' },
+  { x: 30, y: 60, name: 'Competitor C', type: 'competitor' },
+];
+
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-card border border-border p-2 rounded shadow-sm text-xs">
+        <p className="font-semibold">{payload[0].payload.name}</p>
+        <p>Innovation: {payload[0].value}</p>
+        <p>Market Presence: {payload[1].value}</p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function Dashboard() {
   return (
@@ -59,17 +75,27 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200 fill-mode-backwards">
-        {/* Main Chart Area Placeholder */}
+        {/* Main Chart Area */}
         <Card className="col-span-4 hover:border-primary/20 transition-colors duration-300">
           <CardHeader>
             <CardTitle>Market Positioning Map</CardTitle>
             <CardDescription>Your brand vs competitors on key axes.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center bg-muted/20 rounded-md border border-dashed border-border m-4">
-             <div className="text-center text-muted-foreground">
-               <p>Interactive Vega Chart Placeholder</p>
-               <p className="text-xs mt-2">X: Innovation | Y: Market Presence</p>
-             </div>
+          <CardContent className="h-[300px] w-full pt-4">
+             <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis type="number" dataKey="x" name="Innovation" unit="%" domain={[0, 100]} label={{ value: 'Innovation Score', position: 'insideBottom', offset: -10, fontSize: 12, fill: 'currentColor', opacity: 0.5 }} tick={{fontSize: 12, opacity: 0.5}} />
+                  <YAxis type="number" dataKey="y" name="Market Presence" unit="%" domain={[0, 100]} label={{ value: 'Market Presence', angle: -90, position: 'insideLeft', offset: 0, fontSize: 12, fill: 'currentColor', opacity: 0.5 }} tick={{fontSize: 12, opacity: 0.5}} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Scatter name="Competitors" data={positioningData}>
+                    {positioningData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.type === 'us' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'} />
+                    ))}
+                    <LabelList dataKey="name" position="top" style={{ fill: 'currentColor', fontSize: '10px', opacity: 0.8 }} />
+                  </Scatter>
+                </ScatterChart>
+             </ResponsiveContainer>
           </CardContent>
         </Card>
 

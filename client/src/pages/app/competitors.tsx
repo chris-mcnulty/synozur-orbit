@@ -6,8 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Plus, MoreHorizontal, ExternalLink, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Competitors() {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const handleAddCompetitor = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsDialogOpen(false);
+    toast({
+      title: "Competitor Added",
+      description: "We've started crawling this competitor's data.",
+    });
+  };
+
   return (
     <AppLayout>
       <div className="mb-8 flex justify-between items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -15,9 +32,40 @@ export default function Competitors() {
            <h1 className="text-3xl font-bold tracking-tight mb-2">Competitors</h1>
            <p className="text-muted-foreground">Manage the companies you want to track.</p>
         </div>
-        <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
-            <Plus className="w-4 h-4 mr-2" /> Add Competitor
-        </Button>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
+                <Plus className="w-4 h-4 mr-2" /> Add Competitor
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Competitor</DialogTitle>
+              <DialogDescription>
+                Enter the details of the competitor you want to track. We'll start gathering intelligence immediately.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleAddCompetitor}>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="name" className="text-right">
+                    Name
+                  </Label>
+                  <Input id="name" placeholder="Acme Inc." className="col-span-3" required />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="url" className="text-right">
+                    Website
+                  </Label>
+                  <Input id="url" placeholder="https://acme.com" className="col-span-3" required />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit">Start Tracking</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
