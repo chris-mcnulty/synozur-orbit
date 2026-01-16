@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 
 import Landing from "@/pages/landing";
 import SignIn from "@/pages/auth/signin";
+import SignUp from "@/pages/auth/signup";
 import Dashboard from "@/pages/app/dashboard";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
@@ -24,7 +25,7 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/pricing" component={Landing} /> {/* Placeholder */}
       <Route path="/auth/signin" component={SignIn} />
-      <Route path="/auth/signup" component={SignIn} /> {/* Reuse for prototype */}
+      <Route path="/auth/signup" component={SignUp} />
       
       {/* App Routes */}
       <Route path="/app" component={Dashboard} />
