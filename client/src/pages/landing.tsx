@@ -7,8 +7,17 @@ export default function Landing() {
   return (
     <PublicLayout>
       {/* Hero Section */}
-      <section className="relative overflow-hidden py-20 md:py-32 px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/20 via-background to-background pointer-events-none" />
+      <section className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
+        {/* Background Image */}
+        <div className="absolute inset-0 z-0 select-none">
+          <img 
+            src="/images/hero-background.png" 
+            alt="Background" 
+            className="w-full h-full object-cover opacity-50"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/80 to-background" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/10 via-background/40 to-background/80" />
+        </div>
         
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6 animate-fade-in-up">
@@ -97,7 +106,14 @@ export default function Landing() {
       
       {/* CTA */}
       <section className="py-24 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-primary/5" />
+        <div className="absolute inset-0 z-0">
+           <img 
+            src="/images/brand-stargazers.jpg" 
+            alt="Ready to launch" 
+            className="w-full h-full object-cover opacity-20 mix-blend-overlay"
+          />
+           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-transparent" />
+        </div>
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h2 className="text-4xl font-bold mb-6">Ready to launch?</h2>
           <p className="text-xl text-muted-foreground mb-10">
