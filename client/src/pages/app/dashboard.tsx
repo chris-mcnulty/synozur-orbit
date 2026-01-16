@@ -3,16 +3,10 @@ import AppLayout from "@/components/layout/AppLayout";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Target, Eye, ArrowUpRight } from "lucide-react";
-import { mockCompetitors, mockAnalysis, mockActivity } from "@/lib/mockData";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
-
-const positioningData = [
-  { x: 85, y: 75, name: 'Orbit (Us)', type: 'us' },
-  { x: 60, y: 80, name: 'Competitor A', type: 'competitor' },
-  { x: 90, y: 40, name: 'Competitor B', type: 'competitor' },
-  { x: 30, y: 60, name: 'Competitor C', type: 'competitor' },
-];
+import { useQuery } from "@tanstack/react-query";
+import { useUser } from "@/lib/userContext";
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -28,14 +22,52 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export default function Dashboard() {
+  const { user } = useUser();
+
+  const { data: competitors = [] } = useQuery({
+    queryKey: ["/api/competitors"],
+    queryFn: async () => {
+      const response = await fetch("/api/competitors", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const { data: activity = [] } = useQuery({
+    queryKey: ["/api/activity"],
+    queryFn: async () => {
+      const response = await fetch("/api/activity", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const { data: recommendations = [] } = useQuery({
+    queryKey: ["/api/recommendations"],
+    queryFn: async () => {
+      const response = await fetch("/api/recommendations", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const positioningData = [
+    { x: 85, y: 75, name: 'Orbit (Us)', type: 'us' },
+    ...competitors.slice(0, 4).map((c: any, i: number) => ({
+      x: 30 + (i * 20),
+      y: 40 + (i * 15),
+      name: c.name,
+      type: 'competitor'
+    }))
+  ];
+
   return (
     <AppLayout>
       <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Overview</h1>
-        <p className="text-muted-foreground">Welcome back, John. Here's what's happening in your market.</p>
+        <p className="text-muted-foreground">Welcome back, {user?.name || "there"}. Here's what's happening in your market.</p>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100 fill-mode-backwards">
         <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -43,18 +75,18 @@ export default function Dashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockCompetitors.length}</div>
-            <p className="text-xs text-muted-foreground">+1 from last month</p>
+            <div className="text-2xl font-bold">{competitors.length}</div>
+            <p className="text-xs text-muted-foreground">Active tracking</p>
           </CardContent>
         </Card>
         <Card className="hover:border-primary/50 transition-colors duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Market Gaps Identified</CardTitle>
+            <CardTitle className="text-sm font-medium">Recommendations</CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{mockAnalysis.gaps.length}</div>
-            <p className="text-xs text-muted-foreground">2 High Priority</p>
+            <div className="text-2xl font-bold text-primary">{recommendations.length}</div>
+            <p className="text-xs text-muted-foreground">AI-generated insights</p>
           </CardContent>
         </Card>
         <Card className="hover:border-primary/50 transition-colors duration-300">
@@ -63,8 +95,8 @@ export default function Dashboard() {
             <Eye className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockActivity.length}</div>
-            <p className="text-xs text-muted-foreground">In the last 7 days</p>
+            <div className="text-2xl font-bold">{activity.length}</div>
+            <p className="text-xs text-muted-foreground">Recent activity</p>
           </CardContent>
         </Card>
         <Card className="hover:border-primary/50 transition-colors duration-300">
@@ -80,7 +112,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200 fill-mode-backwards">
-        {/* Main Chart Area */}
         <Card className="col-span-4 hover:border-primary/20 transition-colors duration-300">
           <CardHeader>
             <CardTitle>Market Positioning Map</CardTitle>
@@ -104,31 +135,34 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>Latest changes from competitors.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {mockActivity.map((activity) => (
-                <div key={activity.id} className="flex items-start gap-4 pb-4 border-b border-border last:border-0 last:pb-0">
-                  <div className={cn(
-                    "w-2 h-2 mt-2 rounded-full",
-                    activity.impact === "High" ? "bg-destructive" : "bg-primary"
-                  )} />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium leading-none">{activity.competitor}</p>
-                    <p className="text-sm text-muted-foreground">{activity.description}</p>
-                    <p className="text-xs text-muted-foreground pt-1">{activity.date}</p>
+            {activity.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No activity yet. Add competitors to start tracking changes.</p>
+            ) : (
+              <div className="space-y-4">
+                {activity.slice(0, 5).map((item: any) => (
+                  <div key={item.id} className="flex items-start gap-4 pb-4 border-b border-border last:border-0 last:pb-0">
+                    <div className={cn(
+                      "w-2 h-2 mt-2 rounded-full",
+                      item.impact === "High" ? "bg-destructive" : "bg-primary"
+                    )} />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium leading-none">{item.competitor}</p>
+                      <p className="text-sm text-muted-foreground">{item.description}</p>
+                      <p className="text-xs text-muted-foreground pt-1">{item.date}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <div className="mt-4 pt-4 border-t border-border">
-                <Link href="/app/activity">
-                    <a className="text-sm text-primary hover:underline flex items-center">View full feed <ArrowUpRight className="ml-1 h-3 w-3" /></a>
+                <Link href="/app/activity" className="text-sm text-primary hover:underline flex items-center">
+                  View full feed <ArrowUpRight className="ml-1 h-3 w-3" />
                 </Link>
             </div>
           </CardContent>
