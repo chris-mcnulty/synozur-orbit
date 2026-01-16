@@ -1,0 +1,220 @@
+Below is a copy/paste specification prompt you can hand to Replit (or Replit Ghostwriter/Agent) to build Orbit’s MVP as a multi-tenant SaaS web app, with a clean foundation for the year-one roadmap. It’s written to be implementation-oriented (routes, data models, background jobs, RBAC, SSO stubs, PDF export, and a Vega-like UI).
+	•	Goal: Build a working MVP that delivers competitive website + positioning-doc analysis, AI-guided recommendations, basic competitor change monitoring, and branded PDF reporting.
+	•	Constraints: Multi-tenant, RBAC from day one, secure-by-default, API-first, Vega-inspired UX, and a future-proof structure for alerts/integrations/metrics.
+
+⸻
+
+Replit Build Prompt: “Orbit” (MVP + Year-One Ready Foundation)
+
+0) Context
+
+You are building Orbit, an AI-driven marketing intelligence platform for The Synozur Alliance LLC. Orbit is a multi-tenant SaaS that analyzes a customer’s website + positioning document against competitor websites, generates messaging insights and recommendations (human-centric, outcome-driven tone), monitors competitor changes, and exports a Synozur-branded PDF report.
+
+Orbit should feel like Vega (vega.synozur.com) in layout/UX patterns. Use the open reference repo for style and structure: https://github.com/chris-mcnulty/synozur-vega.
+
+1) MVP Outcomes (what must work end-to-end)
+
+Build an MVP that supports:
+	1.	Auth + Multi-tenant onboarding
+	2.	Tenant Admin vs Standard User RBAC
+	3.	Inputs
+	•	Home website URL
+	•	Competitor URLs list
+	•	One uploaded positioning doc (PDF/DOCX) per tenant (replaceable)
+	4.	Competitive messaging analysis
+	5.	AI-guided recommendations (RAG-style foundation; safe stubs if keys missing)
+	6.	Basic competitor change monitoring (diff + summarized update feed + optional weekly email digest stub)
+	7.	PDF report export with Synozur branding
+	8.	Light/Dark mode (default dark) + Synozur accent colors
+	9.	Feature gating plumbing: Trial → Free → Paid flags (no payment integration required for MVP)
+
+2) Non-negotiable UI / Brand Requirements
+	•	Default theme: Dark mode; light mode optional toggle.
+	•	Primary accents: #810FFB (purple) and #E60CB3 (pink).
+	•	Font: Avenir Next LT Pro (strict). If not available at runtime, implement a fallback stack while keeping a single font token in code (e.g., --font-family), and document how to swap in the licensed font.
+	•	Footer text: “Published by The Synozur Alliance LLC. All Rights Reserved © 2026.”
+	•	Logos: pull from www.synozur.com (if direct hotlinking is blocked, include placeholders and a single config file where assets can be dropped in /public/brand/ without code changes).
+	•	Use Vega-like layout: left nav + main content area + cards + clear sections.
+
+3) Suggested Tech Stack (use this unless impossible in Replit)
+	•	Frontend: Next.js (App Router) + TypeScript
+	•	UI: Tailwind (or CSS modules) + CSS variables for theme tokens
+	•	Backend: Next.js API routes (server actions acceptable)
+	•	DB: Postgres (Replit Postgres) via Prisma ORM
+	•	Jobs: simple cron-like scheduler (in-app interval in dev; documented hook for real cron in prod)
+	•	Auth: NextAuth.js (Credentials + Google OAuth; add Microsoft Entra ID as a stub provider config)
+	•	Storage: local for dev + abstraction layer (so can swap to S3/Azure Blob later)
+	•	PDF generation: server-side renderer (e.g., Puppeteer/Playwright or PDFKit/React-PDF). Prefer HTML-to-PDF for branding consistency.
+	•	AI: Provider abstraction with:
+	•	“MockAIProvider” (works without keys)
+	•	“OpenAI/AzureOpenAIProvider” (enabled via env vars)
+	•	Embeddings/vector: keep lightweight for MVP (store extracted chunks + embeddings optional; if embeddings not configured, fall back to keyword retrieval)
+
+4) App Sections / Routes
+
+Implement these pages with Vega-like navigation:
+
+Public (marketing)
+	•	/ = Orbit marketing page (Synozur tone, clear CTA “Start Free Trial”)
+	•	/pricing = simple tier explanation (Trial/Free/Paid placeholders)
+	•	/auth/signin = sign-in options (email/password + Google; Entra stub)
+	•	/auth/signup = signup flow (creates tenant + first admin)
+
+App (requires auth)
+	•	/app (Overview dashboard)
+	•	/app/onboarding (guided steps: add home site, add competitors, upload doc, run first analysis)
+	•	/app/competitors (manage competitor list; run crawl; view last-seen changes)
+	•	/app/analysis (side-by-side themes, key messages, gaps)
+	•	/app/recommendations (AI suggestions with rationale + feedback controls)
+	•	/app/activity (monitoring feed: detected changes + AI summary)
+	•	/app/reports (generate/download report; report history)
+	•	/app/settings (tenant settings; roles/users; integrations stubs; plan gating)
+
+5) Roles, Tenancy, and Security Model (must be real)
+
+Tenancy
+	•	Every record is scoped to a tenantId.
+	•	Tenant isolation enforced in all queries (server-side).
+	•	No cross-tenant data in logs.
+
+Roles
+	•	TENANT_ADMIN: invite/manage users, competitor list, integrations, plan settings
+	•	STANDARD_USER: run analyses, view outputs, download reports; cannot change tenant-wide settings
+
+Auth
+	•	JWT session or NextAuth session.
+	•	Route guards for /app/*.
+	•	RBAC guard utilities (server-side).
+
+Security basics
+	•	Encrypt sensitive stored fields where practical (doc text at rest can be stored as “extractedText” but isolate and restrict access).
+	•	HTTPS assumption; sanitize uploaded filenames; validate URLs; rate limit analysis runs (simple per-tenant quotas).
+	•	Add audit log table for key events (login, analysis run, competitor change detected, report generated).
+
+6) Data Model (Prisma) — implement these tables
+
+Minimum schema (expand as needed):
+	•	Tenant { id, name, slug, planTier (TRIAL|FREE|PAID), trialEndsAt, createdAt }
+	•	User { id, tenantId, name, email, role (TENANT_ADMIN|STANDARD_USER), authProvider, createdAt }
+	•	Competitor { id, tenantId, name, url, isPrimary (false), createdAt, updatedAt }
+	•	WebsiteSnapshot { id, tenantId, competitorId?, url, capturedAt, rawText, hash, metaJson }
+	•	PositioningDoc { id, tenantId, filename, mimeType, uploadedAt, extractedText, storagePath }
+	•	AnalysisRun { id, tenantId, createdByUserId, startedAt, completedAt, status, inputsJson, outputsJson }
+	•	Recommendation { id, tenantId, analysisRunId, title, suggestion, rationale, tagsJson, userFeedback (UP|DOWN|HIDE|NONE) }
+	•	ActivityEvent { id, tenantId, competitorId?, type, summary, detailsJson, createdAt }
+	•	Report { id, tenantId, analysisRunId, generatedAt, pdfPath, title }
+	•	AuditLog { id, tenantId, userId?, action, targetType, targetId?, createdAt, metaJson }
+
+7) MVP Feature Details (implement behavior)
+
+A) Website crawling + extraction
+	•	Accept URLs for home site and competitors.
+	•	Crawl a limited set of pages per site:
+	•	homepage
+	•	about
+	•	product/services pages (discover up to N internal links)
+	•	Extract readable text (strip nav/footer noise where possible).
+	•	Store a WebsiteSnapshot with hash for change detection.
+
+B) Competitive messaging analysis (UI + stored results)
+	•	Compare:
+	•	Key themes (top 5–10)
+	•	Value props / differentiators (detected statements)
+	•	Tone markers (confident/empathetic/technical etc. — heuristic OK)
+	•	Present as cards/tables in /app/analysis.
+	•	Store results in AnalysisRun.outputsJson.
+
+C) AI-guided recommendations (human-centric, outcome-driven)
+	•	Generate 8–15 recommendations max per run.
+	•	Each recommendation MUST include:
+	•	Title
+	•	Suggestion (actionable)
+	•	Rationale (reference competitor + doc/website evidence)
+	•	Optional “Where to apply” (homepage/about/product page)
+	•	Add feedback controls:
+	•	👍 helpful / 👎 not helpful / hide
+	•	If AI keys missing, use MockAIProvider that returns deterministic, plausible recommendations from heuristics (so MVP demo always works).
+
+D) Monitoring (basic)
+	•	Background job runs daily (or manual “Run Monitoring Now” button in settings for MVP).
+	•	Re-crawl competitor pages and compute diffs vs last snapshot.
+	•	If diff exceeds threshold, create ActivityEvent with:
+	•	“What changed” (short summary)
+	•	“Why it matters” (optional AI summary; fallback to heuristic)
+	•	Show in /app/activity.
+	•	Email digest: implement a stub “send digest” function that logs output + can be wired to a provider later.
+
+E) PDF report export
+	•	On /app/reports, user selects an AnalysisRun and generates PDF:
+	•	Cover: Orbit + Synozur branding + tenant name + date
+	•	Sections: Executive Summary, Competitive Themes, Gaps, Recommendations, Monitoring Highlights (if any)
+	•	Store PDF and list report history.
+
+F) Trial / Free / Paid feature gating plumbing
+	•	Implement plan gates (no billing):
+	•	TRIAL: full access
+	•	FREE: limit competitors to 1 and disable AI recommendations (or cap)
+	•	PAID: full access (same as trial for now)
+	•	Build gates centrally (e.g., canUse(feature, tenant)).
+
+8) UX Writing / Tone Rules (must follow)
+	•	12th-grade reading level, clear, confident, no hype.
+	•	“Co-pilot” framing, not “autopilot.”
+	•	Never shame the user; phrase as opportunities:
+	•	“We noticed an opportunity to clarify…”
+	•	“Consider strengthening…”
+	•	Add “Why this suggestion?” expandable rationale for AI outputs.
+
+9) Theming Implementation (use CSS variables)
+
+Create a theme token file (e.g., theme.css) with:
+	•	dark default, light optional
+	•	accent tokens include #810FFB and #E60CB3
+	•	use card backgrounds, borders, shadows similar to Vega
+	•	keep all colors in variables; no hard-coded colors in components (except in the theme file)
+
+10) Integration Stubs (year-one foundation)
+
+Create “Integrations” settings UI with toggles and placeholders:
+	•	Microsoft Entra ID SSO (config UI only; provider stub ok)
+	•	Google OAuth (working)
+	•	HubSpot (stub: connect button + placeholder screen + stored token field)
+	•	LinkedIn/company feed (stub only; no scraping required)
+
+11) Deliverables Required in the Repo
+	•	Clean project structure with README.md including:
+	•	Local run instructions
+	•	Env var list
+	•	How to add brand assets
+	•	How to switch AI providers
+	•	How monitoring job works + how to trigger manually
+	•	Seed data script:
+	•	Creates a demo tenant, admin user, sample competitors, and example analysis run for first-load demo.
+	•	Basic test coverage:
+	•	At least unit tests for RBAC + tenant scoping utilities.
+
+12) Environment Variables (define + document)
+
+At minimum:
+	•	DATABASE_URL
+	•	NEXTAUTH_SECRET
+	•	GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+	•	AZURE_OPENAI_ENDPOINT / OPENAI_API_KEY (either/or)
+	•	AI_PROVIDER=mock|openai|azure
+	•	STORAGE_DRIVER=local (future: s3/azure)
+	•	APP_BASE_URL
+
+13) Acceptance Criteria (MVP is done when…)
+	•	A new user can sign up, create a tenant, add competitors, upload a positioning doc, run analysis, see recommendations, and download a PDF.
+	•	Tenant Admin can invite another user and assign role; Standard User cannot access admin settings.
+	•	Competitor monitoring can be triggered and produces feed items based on changes.
+	•	App defaults to dark mode with Synozur accents and Vega-like layout.
+	•	Works without AI keys (MockAIProvider) and still produces credible outputs.
+
+14) Nice-to-have (only if time remains)
+	•	Simple “Orbit Score” placeholder in dashboard computed from heuristic scoring.
+	•	“Promote to Vega” export stub (download JSON of recommendations that Vega could ingest later).
+
+⸻
+
+If you want, I can also produce a Replit-friendly “task checklist” version (smaller chunks for an agent to execute step-by-step) and a starter set of Synozur-toned UI copy for the marketing homepage + onboarding screens.
