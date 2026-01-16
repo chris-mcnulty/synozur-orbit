@@ -74,12 +74,26 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             </ul>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground">
-          <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
-          <div className="mt-4 md:mt-0 flex gap-6">
-             <Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link>
-             <Link href="#"><a className="hover:text-primary transition-colors">Terms</a></Link>
-             <Link href="#"><a className="hover:text-primary transition-colors">Cookies</a></Link>
+        <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-border">
+          <div className="mb-8">
+            <h4 className="font-semibold mb-4">Legal</h4>
+            <div className="text-sm text-muted-foreground space-y-3">
+              <p>© 2025 The Synozur Alliance, LLC. All rights reserved.</p>
+              <p>"Synozur" and "The Synozur Alliance" are trademarks of The Synozur Alliance, LLC.</p>
+              <p className="leading-relaxed">
+                Disclaimer: Information provided on this site is presented "as is" without any express or implied warranties. 
+                This is a preliminary release, and access or availability is not guaranteed. By using this site, you signify 
+                your consent to these terms and acknowledge that your usage is subject to Synozur's Data Gathering and Privacy Policy.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground pt-6 border-t border-border/50">
+            <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2025.</p>
+            <div className="mt-4 md:mt-0 flex gap-6">
+               <Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link>
+               <Link href="#"><a className="hover:text-primary transition-colors">Terms</a></Link>
+               <Link href="#"><a className="hover:text-primary transition-colors">Cookies</a></Link>
+            </div>
           </div>
         </div>
       </footer>
