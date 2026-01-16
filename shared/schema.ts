@@ -197,3 +197,35 @@ export const insertGroundingDocumentSchema = createInsertSchema(groundingDocumen
 
 export type GroundingDocument = typeof groundingDocuments.$inferSelect;
 export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSchema>;
+
+// Company profiles table for baselining own website
+export const companyProfiles = pgTable("company_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  tenantDomain: text("tenant_domain").notNull().unique(),
+  companyName: text("company_name").notNull(),
+  websiteUrl: text("website_url").notNull(),
+  description: text("description"),
+  lastAnalysis: timestamp("last_analysis"),
+  analysisData: jsonb("analysis_data"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const companyProfilesRelations = relations(companyProfiles, ({ one }) => ({
+  user: one(users, {
+    fields: [companyProfiles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertCompanyProfileSchema = createInsertSchema(companyProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastAnalysis: true,
+  analysisData: true,
+});
+
+export type CompanyProfile = typeof companyProfiles.$inferSelect;
+export type InsertCompanyProfile = z.infer<typeof insertCompanyProfileSchema>;

@@ -6,6 +6,7 @@ import {
   reports, 
   analysis,
   groundingDocuments,
+  companyProfiles,
   type User, 
   type InsertUser,
   type Competitor,
@@ -19,7 +20,9 @@ import {
   type Analysis,
   type InsertAnalysis,
   type GroundingDocument,
-  type InsertGroundingDocument
+  type InsertGroundingDocument,
+  type CompanyProfile,
+  type InsertCompanyProfile
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -63,6 +66,13 @@ export interface IStorage {
   createGroundingDocument(document: InsertGroundingDocument): Promise<GroundingDocument>;
   updateGroundingDocumentText(id: string, extractedText: string): Promise<void>;
   deleteGroundingDocument(id: string): Promise<void>;
+  
+  // Company Profile methods (baseline own website)
+  getCompanyProfile(id: string): Promise<CompanyProfile | undefined>;
+  getCompanyProfileByTenant(tenantDomain: string): Promise<CompanyProfile | undefined>;
+  createCompanyProfile(profile: InsertCompanyProfile): Promise<CompanyProfile>;
+  updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile>;
+  deleteCompanyProfile(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -219,6 +229,38 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGroundingDocument(id: string): Promise<void> {
     await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
+  }
+
+  // Company Profile methods (baseline own website)
+  async getCompanyProfile(id: string): Promise<CompanyProfile | undefined> {
+    const [profile] = await db.select().from(companyProfiles).where(eq(companyProfiles.id, id));
+    return profile || undefined;
+  }
+
+  async getCompanyProfileByTenant(tenantDomain: string): Promise<CompanyProfile | undefined> {
+    const [profile] = await db.select().from(companyProfiles).where(eq(companyProfiles.tenantDomain, tenantDomain));
+    return profile || undefined;
+  }
+
+  async createCompanyProfile(insertProfile: InsertCompanyProfile): Promise<CompanyProfile> {
+    const [profile] = await db
+      .insert(companyProfiles)
+      .values(insertProfile)
+      .returning();
+    return profile;
+  }
+
+  async updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile> {
+    const [profile] = await db
+      .update(companyProfiles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(companyProfiles.id, id))
+      .returning();
+    return profile;
+  }
+
+  async deleteCompanyProfile(id: string): Promise<void> {
+    await db.delete(companyProfiles).where(eq(companyProfiles.id, id));
   }
 }
 

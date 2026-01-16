@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -649,6 +649,162 @@ export async function registerRoutes(
       );
 
       res.json({ context });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== COMPANY PROFILE ROUTES (Baseline Own Website) ====================
+
+  // Get company profile for current tenant
+  app.get("/api/company-profile", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const profile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      res.json(profile || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create or update company profile
+  app.post("/api/company-profile", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      // Validate input
+      const parsed = insertCompanyProfileSchema.safeParse({
+        ...req.body,
+        userId: user.id,
+        tenantDomain,
+      });
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const { companyName, websiteUrl, description } = parsed.data;
+
+      const existingProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+
+      if (existingProfile) {
+        const updated = await storage.updateCompanyProfile(existingProfile.id, {
+          companyName,
+          websiteUrl,
+          description,
+        });
+        res.json(updated);
+      } else {
+        const profile = await storage.createCompanyProfile({
+          userId: user.id,
+          tenantDomain,
+          companyName,
+          websiteUrl,
+          description,
+        });
+        res.json(profile);
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Analyze company website (baseline)
+  app.post("/api/company-profile/analyze", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const profile = await storage.getCompanyProfileByTenant(tenantDomain);
+
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found. Please set up your company profile first." });
+      }
+
+      // Fetch website content
+      let websiteContent = "";
+      try {
+        const response = await fetch(profile.websiteUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
+          },
+        });
+        websiteContent = await response.text();
+        
+        // Extract text content from HTML (basic extraction)
+        websiteContent = websiteContent
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      } catch (fetchError) {
+        console.error("Failed to fetch website:", fetchError);
+        return res.status(400).json({ error: "Could not fetch website content. Please check the URL." });
+      }
+
+      // Use the same AI analysis service as competitors
+      const analysisResult = await analyzeCompetitorWebsite(profile.companyName, profile.websiteUrl, websiteContent);
+
+      // Update profile with analysis data
+      const updated = await storage.updateCompanyProfile(profile.id, {
+        lastAnalysis: new Date(),
+        analysisData: analysisResult,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete company profile
+  app.delete("/api/company-profile", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const profile = await storage.getCompanyProfileByTenant(tenantDomain);
+
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      await storage.deleteCompanyProfile(profile.id);
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
