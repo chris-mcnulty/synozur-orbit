@@ -118,3 +118,26 @@ Database tables include:
 - `DATABASE_URL`: PostgreSQL connection string
 - `SESSION_SECRET`: Secret key for session encryption (defaults to development value)
 - AI provider keys (optional): For production AI features
+
+## Feature Backlog
+
+### Competitive Battlecards (Priority: High)
+Generate competitive battlecards for sales enablement with the following components:
+
+1. **Critical Capabilities Matrix**
+   - Side-by-side comparison of "Us" vs each competitor
+   - Harvey Ball scoring (●○◐◑) for visual capability ratings
+   - Categories: Features, Integration, Support, Pricing, Innovation, etc.
+
+2. **Qualitative Comparison Narrative**
+   - AI-generated summary of competitive positioning
+   - Strengths and weaknesses analysis
+   - Market differentiation insights
+
+3. **Sales Approach: Challenge Questions**
+   - Three key concepts to challenge prospects on
+   - Three suggested responses per concept for sales reps
+   - Objection handling guidance based on competitor weaknesses
+
+**Data Sources**: Company profile, grounding documents, competitor analysis data
+**Output Format**: Exportable PDF battlecard, in-app interactive view
