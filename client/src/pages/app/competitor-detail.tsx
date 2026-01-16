@@ -1,28 +1,67 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { mockCompetitors } from "@/lib/mockData";
-import { useRoute } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useRoute, Link } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Activity } from "lucide-react";
-import { Link } from "wouter";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
-  const id = params?.id ? parseInt(params.id) : null;
-  const competitor = mockCompetitors.find((c) => c.id === id);
+  const id = params?.id;
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  if (!competitor) {
+  const { data: competitor, isLoading, error } = useQuery({
+    queryKey: ["/api/competitors", id],
+    queryFn: async () => {
+      const response = await fetch(`/api/competitors/${id}`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch competitor");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  const crawlMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/crawl`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to crawl");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      toast({
+        title: "Crawl Started",
+        description: "Competitor data is being updated.",
+      });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-[50vh]">
+          <p className="text-muted-foreground">Loading competitor...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error || !competitor) {
     return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center h-[50vh]">
           <h2 className="text-2xl font-bold mb-2">Competitor Not Found</h2>
-          <Link href="/app/competitors">
-            <a className="text-primary hover:underline flex items-center">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors
-            </a>
+          <Link href="/app/competitors" className="text-primary hover:underline flex items-center">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors
           </Link>
         </div>
       </AppLayout>
@@ -33,10 +72,8 @@ export default function CompetitorDetail() {
     <AppLayout>
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-8">
-          <Link href="/app/competitors">
-            <a className="text-sm text-muted-foreground hover:text-foreground flex items-center mb-4 transition-colors">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors
-            </a>
+          <Link href="/app/competitors" className="text-sm text-muted-foreground hover:text-foreground flex items-center mb-4 transition-colors">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors
           </Link>
           
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -52,15 +89,20 @@ export default function CompetitorDetail() {
                   </a>
                   <span className="text-border">|</span>
                   <span className="flex items-center">
-                    <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl}
+                    <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl || "Never"}
                   </span>
                 </div>
               </div>
             </div>
             
             <div className="flex items-center gap-3">
-              <Button variant="outline" className="gap-2">
-                <RefreshCw className="h-4 w-4" /> Re-crawl
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={() => crawlMutation.mutate()}
+                disabled={crawlMutation.isPending}
+              >
+                <RefreshCw className="h-4 w-4" /> {crawlMutation.isPending ? "Crawling..." : "Re-crawl"}
               </Button>
               <Button className="gap-2">
                 <FileText className="h-4 w-4" /> Generate Report
