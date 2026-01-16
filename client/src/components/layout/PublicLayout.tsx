@@ -3,13 +3,15 @@ import { Link } from "wouter";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <header className="h-16 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+      <header className="h-20 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
         <Link href="/">
-          <a className="font-bold text-2xl tracking-tight flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold">
-              O
-            </div>
+          <a className="font-bold text-2xl tracking-tight flex items-center gap-3 hover:opacity-90 transition-opacity">
+            <img 
+              src="/brand/synozur-mark.png" 
+              alt="Synozur" 
+              className="w-10 h-10 object-contain"
+            />
             <span>Orbit</span>
           </a>
         </Link>
@@ -19,7 +21,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <Link href="/pricing"><a className="text-sm font-medium hover:text-primary transition-colors">Pricing</a></Link>
           <Link href="/auth/signin"><a className="text-sm font-medium hover:text-primary transition-colors">Sign In</a></Link>
           <Link href="/auth/signup">
-            <a className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-lg shadow-primary/20">
+            <a className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30">
               Get Started
             </a>
           </Link>
@@ -36,38 +38,43 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
 
-      <footer className="bg-card py-12 px-6 md:px-12 border-t border-border">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-8">
+      <footer className="bg-card py-16 px-6 md:px-12 border-t border-border">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
           <div className="md:col-span-2">
-            <div className="font-bold text-xl mb-4 flex items-center gap-2">
-               <div className="w-6 h-6 rounded bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-bold">
-                O
-              </div>
+            <div className="font-bold text-2xl mb-6 flex items-center gap-3">
+               <img 
+                  src="/brand/synozur-mark.png" 
+                  alt="Synozur" 
+                  className="w-8 h-8 object-contain"
+                />
               Orbit
             </div>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              The AI-driven marketing intelligence platform for The Synozur Alliance.
+            <p className="text-muted-foreground text-sm max-w-sm leading-relaxed">
+              The AI-driven marketing intelligence platform for The Synozur Alliance. Empowering teams to win with data-backed positioning.
             </p>
           </div>
           <div>
-            <h4 className="font-semibold mb-4">Product</h4>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link href="#"><a className="hover:text-foreground">Features</a></Link></li>
-              <li><Link href="/pricing"><a className="hover:text-foreground">Pricing</a></Link></li>
-              <li><Link href="#"><a className="hover:text-foreground">Roadmap</a></Link></li>
+            <h4 className="font-semibold mb-6">Product</h4>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Features</a></Link></li>
+              <li><Link href="/pricing"><a className="hover:text-primary transition-colors">Pricing</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Roadmap</a></Link></li>
             </ul>
           </div>
           <div>
-            <h4 className="font-semibold mb-4">Company</h4>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><Link href="#"><a className="hover:text-foreground">About</a></Link></li>
-              <li><Link href="#"><a className="hover:text-foreground">Contact</a></Link></li>
-              <li><Link href="#"><a className="hover:text-foreground">Privacy</a></Link></li>
+            <h4 className="font-semibold mb-6">Company</h4>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li><Link href="#"><a className="hover:text-primary transition-colors">About</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Contact</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link></li>
             </ul>
           </div>
         </div>
-        <div className="max-w-6xl mx-auto mt-12 pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          Published by The Synozur Alliance LLC. All Rights Reserved © 2026.
+        <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground">
+          <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
+          <div className="mt-4 md:mt-0 flex gap-6">
+             {/* Social placeholders could go here */}
+          </div>
         </div>
       </footer>
     </div>

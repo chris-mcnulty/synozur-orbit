@@ -11,27 +11,43 @@ import {
   LogOut,
   Menu,
   X,
-  Plus
+  Plus,
+  Users,
+  LineChart,
+  Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const navItems = [
-    { label: "Overview", icon: LayoutDashboard, href: "/app" },
-    { label: "Competitors", icon: Target, href: "/app/competitors" },
-    { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
-    { label: "Recommendations", icon: Lightbulb, href: "/app/recommendations" },
-    { label: "Activity Feed", icon: Activity, href: "/app/activity" },
-    { label: "Reports", icon: FileText, href: "/app/reports" },
-    { label: "Settings", icon: Settings, href: "/app/settings" },
+  const navigation = [
+    {
+      group: "Intelligence",
+      items: [
+        { label: "Overview", icon: LayoutDashboard, href: "/app" },
+        { label: "Competitors", icon: Target, href: "/app/competitors" },
+        { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
+        { label: "Recommendations", icon: Lightbulb, href: "/app/recommendations" },
+        { label: "Activity", icon: Activity, href: "/app/activity" },
+        { label: "Reports", icon: FileText, href: "/app/reports" },
+      ]
+    },
+    {
+      group: "System",
+      items: [
+        { label: "User Management", icon: Users, href: "/app/users" },
+        { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
+        { label: "Settings", icon: Settings, href: "/app/settings" },
+      ]
+    }
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground flex overflow-hidden font-sans">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
@@ -42,62 +58,82 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card border-r border-border transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
+        "fixed lg:static inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-sidebar-border transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="h-16 flex items-center px-6 border-b border-border">
-          <div className="font-bold text-xl tracking-tight flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold">
-              O
-            </div>
-            <span>Orbit</span>
+        {/* Sidebar Header - Vega Style */}
+        <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/brand/synozur-mark.png" 
+              alt="Synozur Mark" 
+              className="w-8 h-8 object-contain"
+            />
+            <span className="font-bold text-xl tracking-tight text-sidebar-foreground">Orbit</span>
           </div>
           <button 
-            className="ml-auto lg:hidden text-muted-foreground hover:text-foreground"
+            className="ml-auto lg:hidden text-sidebar-foreground/50 hover:text-sidebar-foreground"
             onClick={() => setSidebarOpen(false)}
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-4">
-           <Button className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" size="sm">
+        {/* Quick Action */}
+        <div className="p-6 pb-2">
+           <Button className="w-full bg-primary hover:bg-primary/90 text-white shadow-md shadow-primary/20 transition-all font-medium" size="default">
              <Plus className="w-4 h-4 mr-2" /> New Analysis
            </Button>
         </div>
 
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = location === item.href;
-            return (
-              <Link key={item.href} href={item.href}>
-                <a className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}>
-                  <item.icon size={18} />
-                  {item.label}
-                </a>
-              </Link>
-            );
-          })}
-        </nav>
+        {/* Navigation */}
+        <ScrollArea className="flex-1 px-4 py-2">
+          <div className="space-y-6">
+            {navigation.map((group, i) => (
+              <div key={i}>
+                <h3 className="px-2 mb-2 text-xs font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+                  {group.group}
+                </h3>
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const isActive = location === item.href;
+                    return (
+                      <Link key={item.href} href={item.href}>
+                        <a className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
+                          isActive 
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        )}>
+                          <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                          {item.label}
+                        </a>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
 
-        <div className="p-4 border-t border-border">
-          <div className="flex items-center gap-3 px-3 py-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-              JD
+        {/* Sidebar Footer - User Profile */}
+        <div className="p-4 border-t border-sidebar-border bg-sidebar/50">
+          <div className="flex items-center gap-3 px-2 py-2 mb-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer group">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-secondary p-[2px]">
+              <div className="w-full h-full rounded-full bg-sidebar flex items-center justify-center">
+                 <span className="text-xs font-bold text-primary">JD</span>
+              </div>
             </div>
             <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium truncate">John Doe</p>
-              <p className="text-xs text-muted-foreground truncate">Acme Corp</p>
+              <p className="text-sm font-medium text-sidebar-foreground group-hover:text-primary transition-colors">John Doe</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">Acme Corp</p>
             </div>
+            <Settings size={16} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground transition-colors" />
           </div>
           <Link href="/auth/signin">
-            <a className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground w-full">
-              <LogOut size={18} />
+            <a className="flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors w-full mt-1">
+              <LogOut size={14} />
               Sign Out
             </a>
           </Link>
@@ -105,23 +141,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen bg-background">
         {/* Mobile Header */}
-        <header className="h-16 lg:hidden flex items-center px-4 border-b border-border bg-card">
+        <header className="h-16 lg:hidden flex items-center px-4 border-b border-border bg-sidebar">
           <button 
-            className="text-muted-foreground hover:text-foreground mr-4"
+            className="text-sidebar-foreground/70 hover:text-sidebar-foreground mr-4"
             onClick={() => setSidebarOpen(true)}
           >
             <Menu size={24} />
           </button>
-          <div className="font-bold text-lg">Orbit</div>
+          <div className="flex items-center gap-2">
+            <img 
+              src="/brand/synozur-mark.png" 
+              alt="Synozur Mark" 
+              className="w-6 h-6 object-contain"
+            />
+            <span className="font-bold text-lg text-sidebar-foreground">Orbit</span>
+          </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-background">
-          {children}
+        <div className="flex-1 overflow-y-auto">
+          <div className="container max-w-7xl mx-auto p-4 md:p-8 lg:p-10 space-y-8">
+            {children}
+          </div>
           
-          <footer className="mt-12 py-6 border-t border-border text-center text-xs text-muted-foreground">
-            Published by The Synozur Alliance LLC. All Rights Reserved © 2026.
+          <footer className="py-8 border-t border-border mt-auto">
+            <div className="container max-w-7xl mx-auto px-4 text-center text-xs text-muted-foreground">
+              <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
+            </div>
           </footer>
         </div>
       </main>
