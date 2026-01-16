@@ -32,3 +32,9 @@ export const mockReports = [
   { id: 1, name: "Q1 Competitive Landscape", date: "Jan 15, 2026", type: "PDF" },
   { id: 2, name: "Competitor A Deep Dive", date: "Dec 20, 2025", type: "PDF" },
 ];
+
+export const mockUsers = [
+  { id: 1, name: "John Doe", email: "john@acme.com", role: "Tenant Admin", status: "Active", lastActive: "Just now", avatar: "JD" },
+  { id: 2, name: "Sarah Smith", email: "sarah@acme.com", role: "Standard User", status: "Active", lastActive: "2 hours ago", avatar: "SS" },
+  { id: 3, name: "Mike Johnson", email: "mike@acme.com", role: "Standard User", status: "Invited", lastActive: "-", avatar: "MJ" },
+];

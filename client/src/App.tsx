@@ -14,6 +14,7 @@ import Activity from "@/pages/app/activity";
 import Reports from "@/pages/app/reports";
 import Competitors from "@/pages/app/competitors";
 import Settings from "@/pages/app/settings";
+import UsersPage from "@/pages/app/users";
 
 function Router() {
   return (
@@ -32,6 +33,8 @@ function Router() {
       <Route path="/app/activity" component={Activity} />
       <Route path="/app/reports" component={Reports} />
       <Route path="/app/settings" component={Settings} />
+      <Route path="/app/users" component={UsersPage} />
+      <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />
