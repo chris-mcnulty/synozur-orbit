@@ -34,7 +34,7 @@ export default function Landing() {
                 Start Free Trial <ArrowRight size={20} />
               </a>
             </Link>
-            <Link href="/demo">
+            <Link href="/app">
               <a className="bg-muted hover:bg-muted/80 text-foreground px-8 py-4 rounded-lg text-lg font-medium transition-all">
                 View Demo
               </a>
