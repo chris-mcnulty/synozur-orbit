@@ -4,31 +4,65 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUser } from "@/lib/userContext";
+import { COMPANY_SIZES, JOB_ROLES, INDUSTRIES, COUNTRIES } from "@/lib/constants";
+import { Loader2 } from "lucide-react";
 
 export default function SignUp() {
   const [, setLocation] = useLocation();
   const { register } = useUser();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    name: "",
+    company: "",
+    companySize: "",
+    jobTitle: "",
+    industry: "",
+    country: "",
+  });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const requiredFields = [
+      { field: 'name', label: 'Full Name' },
+      { field: 'email', label: 'Email' },
+      { field: 'password', label: 'Password' },
+      { field: 'company', label: 'Company' },
+      { field: 'jobTitle', label: 'Job Title' },
+      { field: 'industry', label: 'Industry' },
+      { field: 'companySize', label: 'Company Size' },
+      { field: 'country', label: 'Country' },
+    ];
+
+    for (const { field, label } of requiredFields) {
+      if (!formData[field as keyof typeof formData]?.trim()) {
+        setError(`Please fill in: ${label}`);
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
-      // Extract company name from email domain
-      const domain = email.split("@")[1];
-      const company = domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+      const avatar = formData.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
       
-      // Generate avatar initials
-      const avatar = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-      
-      await register(email, password, name, company, avatar);
+      await register(
+        formData.email,
+        formData.password,
+        formData.name,
+        formData.company,
+        avatar,
+        formData.companySize,
+        formData.jobTitle,
+        formData.industry,
+        formData.country
+      );
       setLocation("/app");
     } catch (err: any) {
       setError(err.message || "Registration failed");
@@ -37,19 +71,27 @@ export default function SignUp() {
     }
   };
 
+  const updateField = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       <div className="hidden lg:flex flex-col justify-center p-12 bg-muted relative overflow-hidden">
-         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20" />
-         <div className="relative z-10">
-           <h2 className="text-4xl font-bold mb-4">Join Orbit today.</h2>
-           <p className="text-xl text-muted-foreground max-w-md">
-             Start tracking your competitors and winning with data-backed insights.
-           </p>
-         </div>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20" />
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-6">
+            <img src="/brand/synozur-mark.png" alt="Synozur" className="h-16 w-16 object-contain" />
+            <h1 className="text-3xl font-bold">Orbit</h1>
+          </div>
+          <h2 className="text-4xl font-bold mb-4">Join Orbit today.</h2>
+          <p className="text-xl text-muted-foreground max-w-md">
+            Start tracking your competitors and winning with data-backed insights.
+          </p>
+        </div>
       </div>
       
-      <div className="flex items-center justify-center p-6">
+      <div className="flex items-center justify-center p-6 overflow-y-auto">
         <Card className="w-full max-w-md border-none shadow-none bg-transparent">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
@@ -60,51 +102,164 @@ export default function SignUp() {
           <CardContent>
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="name">Full Name <span className="text-destructive">*</span></Label>
                 <Input 
                   id="name" 
                   type="text" 
                   placeholder="John Doe" 
-                  required 
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={formData.name}
+                  onChange={(e) => updateField('name', e.target.value)}
+                  data-testid="input-name"
                 />
               </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email <span className="text-destructive">*</span></Label>
                 <Input 
                   id="email" 
                   type="email" 
                   placeholder="name@example.com" 
-                  required 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={formData.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                  data-testid="input-email"
                 />
               </div>
+              
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password <span className="text-destructive">*</span></Label>
                 <Input 
                   id="password" 
                   type="password" 
-                  required 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={formData.password}
+                  onChange={(e) => updateField('password', e.target.value)}
                   minLength={6}
+                  data-testid="input-password"
                 />
                 <p className="text-xs text-muted-foreground">At least 6 characters</p>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="company">Company <span className="text-destructive">*</span></Label>
+                <Input 
+                  id="company" 
+                  type="text" 
+                  placeholder="Your company name"
+                  value={formData.company}
+                  onChange={(e) => updateField('company', e.target.value)}
+                  data-testid="input-company"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="jobTitle">Job Title <span className="text-destructive">*</span></Label>
+                <Select
+                  value={formData.jobTitle}
+                  onValueChange={(value) => updateField('jobTitle', value)}
+                >
+                  <SelectTrigger data-testid="select-job-title">
+                    <SelectValue placeholder="Select job title" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JOB_ROLES.map((role) => (
+                      <SelectItem key={role} value={role}>{role}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="industry">Industry <span className="text-destructive">*</span></Label>
+                <Select
+                  value={formData.industry}
+                  onValueChange={(value) => updateField('industry', value)}
+                >
+                  <SelectTrigger data-testid="select-industry">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map((industry) => (
+                      <SelectItem key={industry} value={industry}>{industry}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="companySize">Company Size <span className="text-destructive">*</span></Label>
+                <Select
+                  value={formData.companySize}
+                  onValueChange={(value) => updateField('companySize', value)}
+                >
+                  <SelectTrigger data-testid="select-company-size">
+                    <SelectValue placeholder="Select company size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMPANY_SIZES.map((size) => (
+                      <SelectItem key={size.value} value={size.value}>{size.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="country">Country <span className="text-destructive">*</span></Label>
+                <Select
+                  value={formData.country}
+                  onValueChange={(value) => updateField('country', value)}
+                >
+                  <SelectTrigger data-testid="select-country">
+                    <SelectValue placeholder="Select country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((country) => (
+                      <SelectItem key={country} value={country}>{country}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {error && (
                 <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
                   {error}
                 </div>
               )}
+              
               <Button 
                 type="submit" 
                 className="w-full bg-primary hover:bg-primary/90" 
                 disabled={isLoading}
+                data-testid="button-register"
               >
-                {isLoading ? "Creating account..." : "Create Account"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  "Create Account"
+                )}
               </Button>
+
+              <p className="text-xs text-center text-muted-foreground">
+                By signing up, you agree to our{" "}
+                <a
+                  href="https://www.synozur.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Privacy Policy
+                </a>
+                {" "}and{" "}
+                <a
+                  href="https://www.synozur.com/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Terms of Service
+                </a>
+              </p>
             </form>
           </CardContent>
           <CardFooter className="flex justify-center">

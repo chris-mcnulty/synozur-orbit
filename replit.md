@@ -11,6 +11,26 @@ Key features include:
 - Branded PDF report generation
 - Multi-tenant architecture with Global Admin, Domain Admin, and Standard User roles
 - Dark mode default with Synozur brand colors (#810FFB purple, #E60CB3 pink)
+- Grounding documents module for tenant-specific positioning documents
+
+## Synozur Ecosystem - Sibling Applications
+
+Reference these codebases for patterns and features:
+
+### Vega (Company Operating System)
+- **URL**: https://github.com/chris-mcnulty/synozur-vega (private)
+- **Purpose**: Strategy/OKR platform, serves as identity provider for Synozur ecosystem
+- **Key Patterns**: Login page structure, OAuth 2.1 provider
+
+### Orion (Maturity Model Platform)
+- **URL**: https://github.com/chris-mcnulty/synozur-maturitymodeler
+- **Purpose**: Multi-model maturity assessments with AI recommendations
+- **Key Patterns to Borrow**:
+  - **Tenant Demographics**: Users have company, companySize, jobTitle, industry, country fields with standardized dropdowns
+  - **Proxy Assessments**: Admins can create assessments on behalf of prospects (isProxy, proxyName, proxyCompany, proxyJobTitle, proxyIndustry, proxyCompanySize, proxyCountry)
+  - **Auth Page Structure**: Tabbed login/register with Synozur logo, comprehensive registration fields
+  - **Knowledge Base**: User-uploadable documents (PDF, DOCX, TXT, MD) for AI grounding
+  - **Company Size Values**: sole_proprietor, very_small, small, lower_mid, upper_mid, mid_enterprise, large_enterprise
 
 ## User Preferences
 

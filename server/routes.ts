@@ -25,7 +25,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { email, password, name, company, avatar } = parsed.data;
+      const { email, password, name, company, companySize, jobTitle, industry, country, avatar } = parsed.data;
+      
+      // Validate required demographic fields
+      const requiredDemographics = { company, companySize, jobTitle, industry, country };
+      for (const [field, value] of Object.entries(requiredDemographics)) {
+        if (!value || !value.trim()) {
+          return res.status(400).json({ error: `${field} is required` });
+        }
+      }
       
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
@@ -56,6 +64,10 @@ export async function registerRoutes(
         password: hashedPassword,
         name,
         company,
+        companySize,
+        jobTitle,
+        industry,
+        country,
         avatar,
         role
       });

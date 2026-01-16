@@ -9,12 +9,26 @@ interface User {
   role: UserRole;
   avatar: string;
   company: string;
+  companySize?: string;
+  jobTitle?: string;
+  industry?: string;
+  country?: string;
 }
 
 interface UserContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, company: string, avatar: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    company: string,
+    avatar: string,
+    companySize?: string,
+    jobTitle?: string,
+    industry?: string,
+    country?: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -64,11 +78,31 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setUser(userData);
   };
 
-  const register = async (email: string, password: string, name: string, company: string, avatar: string) => {
+  const register = async (
+    email: string,
+    password: string,
+    name: string,
+    company: string,
+    avatar: string,
+    companySize?: string,
+    jobTitle?: string,
+    industry?: string,
+    country?: string
+  ) => {
     const response = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name, company, avatar }),
+      body: JSON.stringify({
+        email,
+        password,
+        name,
+        company,
+        avatar,
+        companySize,
+        jobTitle,
+        industry,
+        country
+      }),
       credentials: "include",
     });
 
