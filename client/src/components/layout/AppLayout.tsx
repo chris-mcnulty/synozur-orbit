@@ -19,10 +19,13 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useUser } from "@/lib/userContext";
+import { Badge } from "@/components/ui/badge";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useUser();
 
   const navigation = [
     {
@@ -122,17 +125,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3 px-2 py-2 mb-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer group">
             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-secondary p-[2px]">
               <div className="w-full h-full rounded-full bg-sidebar flex items-center justify-center">
-                 <span className="text-xs font-bold text-primary">JD</span>
+                 <span className="text-xs font-bold text-primary">{user?.avatar || "JD"}</span>
               </div>
             </div>
             <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium text-sidebar-foreground group-hover:text-primary transition-colors">John Doe</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">Acme Corp</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-sidebar-foreground group-hover:text-primary transition-colors truncate">{user?.name || "John Doe"}</p>
+                {user?.role === "Global Admin" && (
+                  <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-primary/20 text-primary bg-primary/5">GA</Badge>
+                )}
+              </div>
+              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.company || "Acme Corp"}</p>
             </div>
             <Settings size={16} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground transition-colors" />
           </div>
           <Link href="/auth/signin">
-            <a className="flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors w-full mt-1">
+            <a 
+              className="flex items-center gap-3 px-3 py-2 rounded-md text-xs font-medium text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors w-full mt-1"
+              onClick={logout}
+            >
               <LogOut size={14} />
               Sign Out
             </a>
