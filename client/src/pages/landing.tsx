@@ -38,15 +38,11 @@ export default function Landing() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in-up delay-300">
-            <Link href="/auth/signup">
-              <a className="bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 flex items-center gap-2">
-                Start Free Trial <ArrowRight size={20} />
-              </a>
+            <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 flex items-center gap-2">
+              Start Free Trial <ArrowRight size={20} />
             </Link>
-            <Link href="/app">
-              <a className="bg-muted hover:bg-muted/80 text-foreground px-8 py-4 rounded-lg text-lg font-medium transition-all">
-                View Demo
-              </a>
+            <Link href="/app" className="bg-muted hover:bg-muted/80 text-foreground px-8 py-4 rounded-lg text-lg font-medium transition-all">
+              View Demo
             </Link>
           </div>
         </div>
@@ -119,10 +115,8 @@ export default function Landing() {
           <p className="text-xl text-muted-foreground mb-10">
             Join the Orbit beta today and start outsmarting your competition.
           </p>
-           <Link href="/auth/signup">
-              <a className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
-                Get Started for Free <ArrowRight size={20} />
-              </a>
+           <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
+              Get Started for Free <ArrowRight size={20} />
             </Link>
         </div>
       </section>

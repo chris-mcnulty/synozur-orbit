@@ -1,6 +1,11 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell } from 'recharts';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, Target, Eye, ArrowUpRight } from "lucide-react";
+import { mockCompetitors, mockAnalysis, mockActivity } from "@/lib/mockData";
+import { Link } from "wouter";
+import { cn } from "@/lib/utils";
 
 const positioningData = [
   { x: 85, y: 75, name: 'Orbit (Us)', type: 'us' },

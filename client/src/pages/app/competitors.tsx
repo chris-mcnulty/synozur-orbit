@@ -179,9 +179,9 @@ export default function Competitors() {
       ) : (
         <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
           {competitors.map((competitor: any) => (
-            <Link key={competitor.id} href={`/app/competitors/${competitor.id}`}>
-              <a className="block group">
-                <Card className="hover:border-primary/50 hover:shadow-md transition-all duration-300">
+            <div key={competitor.id} className="group">
+              <Link href={`/app/competitors/${competitor.id}`}>
+                <Card className="hover:border-primary/50 hover:shadow-md transition-all duration-300 cursor-pointer">
                   <CardContent className="flex items-center justify-between p-6">
                       <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
@@ -190,15 +190,9 @@ export default function Competitors() {
                           <div>
                               <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">{competitor.name}</h3>
                               <div className="flex items-center gap-2">
-                                  <a 
-                                    href={competitor.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-muted-foreground flex items-center gap-1 hover:underline" 
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
+                                  <span className="text-sm text-muted-foreground flex items-center gap-1">
                                       {competitor.url} <ExternalLink size={12} />
-                                  </a>
+                                  </span>
                               </div>
                           </div>
                       </div>
@@ -246,8 +240,8 @@ export default function Competitors() {
                       </div>
                   </CardContent>
                 </Card>
-              </a>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
