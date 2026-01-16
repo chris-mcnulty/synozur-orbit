@@ -14,7 +14,8 @@ import {
   Plus,
   Users,
   LineChart,
-  Shield
+  Shield,
+  BookOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Recommendations", icon: Lightbulb, href: "/app/recommendations" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
         { label: "Reports", icon: FileText, href: "/app/reports" },
+        { label: "Documents", icon: BookOpen, href: "/app/documents" },
       ]
     },
     {

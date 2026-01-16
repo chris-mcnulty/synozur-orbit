@@ -5,6 +5,7 @@ import {
   recommendations, 
   reports, 
   analysis,
+  groundingDocuments,
   type User, 
   type InsertUser,
   type Competitor,
@@ -16,10 +17,12 @@ import {
   type Report,
   type InsertReport,
   type Analysis,
-  type InsertAnalysis
+  type InsertAnalysis,
+  type GroundingDocument,
+  type InsertGroundingDocument
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -52,6 +55,14 @@ export interface IStorage {
   // Analysis methods
   getLatestAnalysis(): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
+  
+  // Grounding Document methods
+  getGroundingDocument(id: string): Promise<GroundingDocument | undefined>;
+  getGroundingDocumentsByTenant(tenantDomain: string): Promise<GroundingDocument[]>;
+  getGroundingDocumentsByCompetitor(competitorId: string): Promise<GroundingDocument[]>;
+  createGroundingDocument(document: InsertGroundingDocument): Promise<GroundingDocument>;
+  updateGroundingDocumentText(id: string, extractedText: string): Promise<void>;
+  deleteGroundingDocument(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -171,6 +182,43 @@ export class DatabaseStorage implements IStorage {
       .values(insertAnalysis)
       .returning();
     return newAnalysis;
+  }
+
+  // Grounding Document methods
+  async getGroundingDocument(id: string): Promise<GroundingDocument | undefined> {
+    const [doc] = await db.select().from(groundingDocuments).where(eq(groundingDocuments.id, id));
+    return doc || undefined;
+  }
+
+  async getGroundingDocumentsByTenant(tenantDomain: string): Promise<GroundingDocument[]> {
+    return await db.select().from(groundingDocuments)
+      .where(eq(groundingDocuments.tenantDomain, tenantDomain))
+      .orderBy(desc(groundingDocuments.createdAt));
+  }
+
+  async getGroundingDocumentsByCompetitor(competitorId: string): Promise<GroundingDocument[]> {
+    return await db.select().from(groundingDocuments)
+      .where(eq(groundingDocuments.competitorId, competitorId))
+      .orderBy(desc(groundingDocuments.createdAt));
+  }
+
+  async createGroundingDocument(insertDoc: InsertGroundingDocument): Promise<GroundingDocument> {
+    const [doc] = await db
+      .insert(groundingDocuments)
+      .values(insertDoc)
+      .returning();
+    return doc;
+  }
+
+  async updateGroundingDocumentText(id: string, extractedText: string): Promise<void> {
+    await db
+      .update(groundingDocuments)
+      .set({ extractedText, updatedAt: new Date() })
+      .where(eq(groundingDocuments.id, id));
+  }
+
+  async deleteGroundingDocument(id: string): Promise<void> {
+    await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
   }
 }
 

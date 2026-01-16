@@ -156,3 +156,40 @@ export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
+// Grounding documents table for AI context
+export const groundingDocuments = pgTable("grounding_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  fileType: text("file_type").notNull(), // pdf, docx, txt, md
+  fileUrl: text("file_url").notNull(), // Object storage path
+  fileSize: integer("file_size").notNull(), // Size in bytes
+  extractedText: text("extracted_text"), // Extracted text content for AI context
+  scope: text("scope").notNull().default("tenant"), // tenant-wide or competitor-specific
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  tenantDomain: text("tenant_domain").notNull(), // Email domain for tenant scoping
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const groundingDocumentsRelations = relations(groundingDocuments, ({ one }) => ({
+  user: one(users, {
+    fields: [groundingDocuments.userId],
+    references: [users.id],
+  }),
+  competitor: one(competitors, {
+    fields: [groundingDocuments.competitorId],
+    references: [competitors.id],
+  }),
+}));
+
+export const insertGroundingDocumentSchema = createInsertSchema(groundingDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type GroundingDocument = typeof groundingDocuments.$inferSelect;
+export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSchema>;

@@ -2,14 +2,19 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import { documentExtractionService } from "./services/document-extraction";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  
+  // Register object storage routes
+  registerObjectStorageRoutes(app);
   
   // ==================== AUTH ROUTES ====================
   
@@ -484,6 +489,154 @@ export async function registerRoutes(
       const users = await storage.getAllUsers();
       const usersWithoutPasswords = users.map(({ password, ...user }) => user);
       res.json(usersWithoutPasswords);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== GROUNDING DOCUMENTS ROUTES ====================
+
+  app.get("/api/documents", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const documents = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/documents/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const document = await storage.getGroundingDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (document.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(document);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/documents", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      const parsed = insertGroundingDocumentSchema.safeParse({
+        ...req.body,
+        userId: req.session.userId,
+        tenantDomain,
+      });
+
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const document = await storage.createGroundingDocument(parsed.data);
+
+      // Extract text asynchronously
+      if (document.fileUrl && document.fileType) {
+        documentExtractionService
+          .extractTextFromDocument(document.fileUrl, document.fileType)
+          .then(async (extractedText) => {
+            await storage.updateGroundingDocumentText(document.id, extractedText);
+          })
+          .catch((err) => {
+            console.error(`Failed to extract text from document ${document.id}:`, err);
+          });
+      }
+
+      res.json(document);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/documents/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const document = await storage.getGroundingDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (document.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteGroundingDocument(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get grounding context for AI prompts
+  app.get("/api/documents/context/ai", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const documents = await storage.getGroundingDocumentsByTenant(tenantDomain);
+
+      const context = documentExtractionService.prepareGroundingContext(
+        documents.map((d) => ({
+          name: d.name,
+          extractedText: d.extractedText,
+          scope: d.scope,
+        }))
+      );
+
+      res.json({ context });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
