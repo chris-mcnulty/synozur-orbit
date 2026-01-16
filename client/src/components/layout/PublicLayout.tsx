@@ -59,21 +59,26 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               <li><Link href="#"><a className="hover:text-primary transition-colors">Features</a></Link></li>
               <li><Link href="/pricing"><a className="hover:text-primary transition-colors">Pricing</a></Link></li>
               <li><Link href="#"><a className="hover:text-primary transition-colors">Roadmap</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Changelog</a></Link></li>
             </ul>
           </div>
           <div>
-            <h4 className="font-semibold mb-6">Company</h4>
+            <h4 className="font-semibold mb-6">Legal & Company</h4>
             <ul className="space-y-3 text-sm text-muted-foreground">
-              <li><Link href="#"><a className="hover:text-primary transition-colors">About</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Contact</a></Link></li>
-              <li><Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">About Synozur</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Privacy Policy</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Terms of Service</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Security</a></Link></li>
+              <li><Link href="#"><a className="hover:text-primary transition-colors">Contact Support</a></Link></li>
             </ul>
           </div>
         </div>
         <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground">
           <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
           <div className="mt-4 md:mt-0 flex gap-6">
-             {/* Social placeholders could go here */}
+             <Link href="#"><a className="hover:text-primary transition-colors">Privacy</a></Link>
+             <Link href="#"><a className="hover:text-primary transition-colors">Terms</a></Link>
+             <Link href="#"><a className="hover:text-primary transition-colors">Cookies</a></Link>
           </div>
         </div>
       </footer>

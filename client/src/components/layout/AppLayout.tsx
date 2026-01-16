@@ -166,8 +166,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           
           <footer className="py-8 border-t border-border mt-auto">
-            <div className="container max-w-7xl mx-auto px-4 text-center text-xs text-muted-foreground">
+            <div className="container max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
               <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
+              <div className="flex gap-4">
+                <Link href="#"><a className="hover:text-foreground transition-colors">Privacy Policy</a></Link>
+                <Link href="#"><a className="hover:text-foreground transition-colors">Terms of Service</a></Link>
+                <Link href="#"><a className="hover:text-foreground transition-colors">Support</a></Link>
+              </div>
             </div>
           </footer>
         </div>
