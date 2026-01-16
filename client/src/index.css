@@ -6,7 +6,7 @@
 /* Thin (100) - Missing, mapping to Light */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Light.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Light.ttf?v=2') format('truetype');
   font-weight: 100;
   font-style: normal;
   font-display: swap;
@@ -15,7 +15,7 @@
 /* Light (300) */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Light.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Light.ttf?v=2') format('truetype');
   font-weight: 300;
   font-style: normal;
   font-display: swap;
@@ -24,7 +24,7 @@
 /* Regular (400) */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Regular.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Regular.ttf?v=2') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -33,7 +33,7 @@
 /* Medium (500) - Using Demi */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Medium.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Medium.ttf?v=2') format('truetype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -42,7 +42,7 @@
 /* SemiBold (600) - Using Demi */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Medium.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Medium.ttf?v=2') format('truetype');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -51,7 +51,7 @@
 /* Bold (700) */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Bold.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Bold.ttf?v=2') format('truetype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -60,7 +60,7 @@
 /* ExtraBold (800) - Missing, mapping to Bold */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Bold.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Bold.ttf?v=2') format('truetype');
   font-weight: 800;
   font-style: normal;
   font-display: swap;
@@ -69,7 +69,7 @@
 /* Black (900) - Missing, mapping to Bold */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Bold.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Bold.ttf?v=2') format('truetype');
   font-weight: 900;
   font-style: normal;
   font-display: swap;
@@ -78,7 +78,7 @@
 /* Italics */
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-Italic.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-Italic.ttf?v=2') format('truetype');
   font-weight: 400;
   font-style: italic;
   font-display: swap;
@@ -86,7 +86,7 @@
 
 @font-face {
   font-family: 'Avenir Next LT Pro';
-  src: url('/fonts/AvenirNextLTPro-BoldItalic.ttf') format('truetype');
+  src: url('/fonts/AvenirNextLTPro-BoldItalic.ttf?v=2') format('truetype');
   font-weight: 700;
   font-style: italic;
   font-display: swap;
