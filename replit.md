@@ -12,6 +12,8 @@ Key features include:
 - Multi-tenant architecture with Global Admin, Domain Admin, and Standard User roles
 - Dark mode default with Synozur brand colors (#810FFB purple, #E60CB3 pink)
 - Grounding documents module for tenant-specific positioning documents
+- Tenant demographics collection during signup (company, jobTitle, industry, companySize, country)
+- Company profile baselining - analyze your own website against competitors
 
 ## Synozur Ecosystem - Sibling Applications
 
@@ -68,12 +70,14 @@ The server uses a storage abstraction layer (`server/storage.ts`) that interface
 - **Schema Validation**: Zod schemas generated from Drizzle schemas using drizzle-zod
 
 Database tables include:
-- `users` - User accounts with role-based access (Global Admin, Domain Admin, Standard User)
+- `users` - User accounts with role-based access (Global Admin, Domain Admin, Standard User), includes tenant demographics (company, companySize, jobTitle, industry, country)
 - `competitors` - Tracked competitor websites
 - `activity` - Competitor change events and updates
 - `recommendations` - AI-generated recommendations
 - `reports` - Generated PDF reports
 - `analysis` - Competitive analysis results
+- `groundingDocuments` - Tenant-scoped positioning documents for AI grounding
+- `companyProfiles` - Your company profile for baseline analysis (one per tenant)
 
 ### Authentication & Authorization
 - Session-based authentication with express-session
