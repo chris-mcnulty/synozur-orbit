@@ -16,7 +16,7 @@ export default function Landing() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            Orbit v1.0 is live
+            Orbit v0.1 (beta)
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/70 animate-fade-in-up delay-100">
