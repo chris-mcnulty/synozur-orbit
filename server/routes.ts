@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
+import Anthropic from "@anthropic-ai/sdk";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
@@ -1992,6 +1993,350 @@ export async function registerRoutes(
       // Unlink competitor from project
       await storage.updateCompetitor(req.params.competitorId, { projectId: null });
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PRODUCT MANAGEMENT ====================
+
+  // Get all products for tenant
+  app.get("/api/products", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const products = await storage.getProductsByTenant(tenantDomain);
+      res.json(products);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single product
+  app.get("/api/products/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(product);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create product
+  app.post("/api/products", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const { name, description, url, companyName, competitorId } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ error: "Product name is required" });
+      }
+
+      const product = await storage.createProduct({
+        name,
+        description,
+        url,
+        companyName,
+        competitorId,
+        tenantDomain,
+        createdBy: req.session.userId,
+      });
+
+      res.json(product);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update product
+  app.patch("/api/products/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateProduct(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete product
+  app.delete("/api/products/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteProduct(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get products for a project
+  app.get("/api/projects/:projectId/products", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const products = await storage.getProjectProducts(req.params.projectId);
+      res.json(products);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add product to project
+  app.post("/api/projects/:projectId/products", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { productId, role, source } = req.body;
+      if (!productId) {
+        return res.status(400).json({ error: "Product ID is required" });
+      }
+
+      const result = await storage.addProductToProject({
+        projectId: req.params.projectId,
+        productId,
+        role: role || "competitor",
+        source: source || "manual",
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update product role in project
+  app.patch("/api/projects/:projectId/products/:productId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { role } = req.body;
+      if (!role) {
+        return res.status(400).json({ error: "Role is required" });
+      }
+
+      await storage.updateProjectProductRole(req.params.projectId, req.params.productId, role);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove product from project
+  app.delete("/api/projects/:projectId/products/:productId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.removeProductFromProject(req.params.projectId, req.params.productId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // AI-suggest competitor products for a baseline product
+  app.post("/api/products/:productId/suggest-competitors", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Use AI service to suggest competitor products
+      const prompt = `Analyze this product and suggest 5 competing products in the market:
+
+Product: ${product.name}
+Company: ${product.companyName || "Unknown"}
+Description: ${product.description || "No description provided"}
+URL: ${product.url || "No URL"}
+
+Return a JSON array of suggested competitor products with this structure:
+[
+  {
+    "name": "Competitor Product Name",
+    "companyName": "Company that makes it",
+    "description": "Brief description of the product",
+    "url": "Product page URL if known",
+    "rationale": "Why this is a competitor"
+  }
+]
+
+Only return the JSON array, no other text.`;
+
+      const anthropic = new Anthropic();
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      let suggestions: any[] = [];
+      try {
+        // Try to parse the AI response as JSON
+        const responseText = message.content[0].type === "text" ? message.content[0].text : "";
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          suggestions = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        // If parsing fails, return empty suggestions
+        console.error("Failed to parse AI suggestions:", e);
+      }
+
+      res.json(suggestions);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
