@@ -1424,7 +1424,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "globalAdmin") {
+      if (!user || user.role !== "Global Admin") {
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
@@ -1443,7 +1443,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "globalAdmin") {
+      if (!user || user.role !== "Global Admin") {
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
@@ -1506,7 +1506,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "globalAdmin") {
+      if (!user || user.role !== "Global Admin") {
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
@@ -1546,7 +1546,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "globalAdmin") {
+      if (!user || user.role !== "Global Admin") {
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
