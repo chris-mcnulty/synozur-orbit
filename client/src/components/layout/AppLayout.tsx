@@ -18,7 +18,8 @@ import {
   BookOpen,
   ClipboardList,
   Crown,
-  Loader2
+  Loader2,
+  FolderKanban
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Reports", icon: FileText, href: "/app/reports" },
         { label: "Documents", icon: BookOpen, href: "/app/documents" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
+        { label: "Projects", icon: FolderKanban, href: "/app/projects" },
       ]
     },
     {
