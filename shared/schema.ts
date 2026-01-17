@@ -82,6 +82,7 @@ export const clientProjects = pgTable("client_projects", {
   clientDomain: text("client_domain"), // optional: rightpoint.com
   description: text("description"),
   status: text("status").notNull().default("active"), // active, completed, archived
+  notifyOnUpdates: boolean("notify_on_updates").default(false), // Notify when competitor site/social updates detected
   tenantDomain: text("tenant_domain").notNull(), // owner tenant (e.g., synozur.com)
   ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

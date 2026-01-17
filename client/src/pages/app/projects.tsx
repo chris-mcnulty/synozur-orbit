@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle } from "lucide-react";
+import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle, Bell, BellOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -21,6 +22,7 @@ interface ClientProject {
   clientDomain: string | null;
   description: string | null;
   status: string;
+  notifyOnUpdates: boolean;
   tenantDomain: string;
   ownerUserId: string;
   createdAt: string;
@@ -39,6 +41,7 @@ export default function Projects() {
     clientName: "",
     clientDomain: "",
     description: "",
+    notifyOnUpdates: false,
   });
 
   const { data: projects = [], isLoading, error } = useQuery<ClientProject[]>({
@@ -76,7 +79,7 @@ export default function Projects() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", clientName: "", clientDomain: "", description: "" });
+      setFormData({ name: "", clientName: "", clientDomain: "", description: "", notifyOnUpdates: false });
       toast({
         title: "Project Created",
         description: "Your client project has been created.",
@@ -166,6 +169,7 @@ export default function Projects() {
           clientName: formData.clientName,
           clientDomain: formData.clientDomain || null,
           description: formData.description || null,
+          notifyOnUpdates: formData.notifyOnUpdates,
         },
       });
     }
@@ -178,6 +182,7 @@ export default function Projects() {
       clientName: project.clientName,
       clientDomain: project.clientDomain || "",
       description: project.description || "",
+      notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
   };
@@ -299,6 +304,22 @@ export default function Projects() {
                         rows={3}
                       />
                     </div>
+                    <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm font-medium flex items-center gap-2">
+                          {formData.notifyOnUpdates ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4 text-muted-foreground" />}
+                          Update Notifications
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Get notified when competitor sites or social media are updated
+                        </p>
+                      </div>
+                      <Switch
+                        data-testid="switch-notifications"
+                        checked={formData.notifyOnUpdates}
+                        onCheckedChange={(checked) => setFormData({ ...formData, notifyOnUpdates: checked })}
+                      />
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button type="submit" data-testid="button-create-project" disabled={createProject.isPending}>
@@ -410,8 +431,14 @@ export default function Projects() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {getStatusBadge(project.status)}
+                      {project.notifyOnUpdates && (
+                        <Badge className="bg-primary/20 text-primary border-primary/50 text-xs">
+                          <Bell className="h-3 w-3 mr-1" />
+                          Alerts On
+                        </Badge>
+                      )}
                       {project.clientDomain && (
                         <a 
                           href={`https://${project.clientDomain}`} 
@@ -494,6 +521,22 @@ export default function Projects() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    {formData.notifyOnUpdates ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4 text-muted-foreground" />}
+                    Update Notifications
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Get notified when competitor sites or social media are updated
+                  </p>
+                </div>
+                <Switch
+                  data-testid="switch-edit-notifications"
+                  checked={formData.notifyOnUpdates}
+                  onCheckedChange={(checked) => setFormData({ ...formData, notifyOnUpdates: checked })}
                 />
               </div>
             </div>
