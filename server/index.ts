@@ -1,9 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startScheduledJobs } from "./services/scheduled-jobs";
+import pg from "pg";
 
 const app = express();
 const httpServer = createServer(app);
@@ -30,8 +32,18 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+const PgSession = connectPgSimple(session);
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
 app.use(
   session({
+    store: new PgSession({
+      pool: pgPool,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+    }),
     secret: process.env.SESSION_SECRET || "orbit-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
@@ -39,6 +51,7 @@ app.use(
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+      sameSite: "lax",
     },
   })
 );

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -17,7 +17,8 @@ import {
   Shield,
   BookOpen,
   ClipboardList,
-  Crown
+  Crown,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,9 +28,27 @@ import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout } = useUser();
+  const { user, logout, loading } = useUser();
+  
+  useEffect(() => {
+    if (!loading && !user) {
+      setLocation("/auth/signin");
+    }
+  }, [user, loading, setLocation]);
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return null;
+  }
 
   const navigation = [
     {
