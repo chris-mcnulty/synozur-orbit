@@ -32,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas from Drizzle.
-- **Key Tables**: `users` (RBAC, tenant demographics), `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`.
+- **Key Tables**: `users` (RBAC, tenant demographics), `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
@@ -47,6 +47,8 @@ Preferred communication style: Simple, everyday language.
 - **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
 - **Assessments**: Snapshots of competitive analysis with proxy assessment capabilities.
+- **Client Projects**: Proxy analysis for consulting firms with company vs company and product vs product analysis types.
+- **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
 
 ## External Dependencies
 

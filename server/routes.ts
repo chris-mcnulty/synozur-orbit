@@ -2210,7 +2210,7 @@ export async function registerRoutes(
     }
   });
 
-  // Update product role in project
+  // Update product role in project (with single baseline enforcement)
   app.patch("/api/projects/:projectId/products/:productId", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -2235,6 +2235,16 @@ export async function registerRoutes(
       const { role } = req.body;
       if (!role) {
         return res.status(400).json({ error: "Role is required" });
+      }
+
+      // If setting as baseline, clear any existing baselines first (server-side enforcement)
+      if (role === "baseline") {
+        const existingProducts = await storage.getProjectProducts(req.params.projectId);
+        for (const pp of existingProducts) {
+          if (pp.role === "baseline" && pp.productId !== req.params.productId) {
+            await storage.updateProjectProductRole(req.params.projectId, pp.productId, "competitor");
+          }
+        }
       }
 
       await storage.updateProjectProductRole(req.params.projectId, req.params.productId, role);

@@ -26,6 +26,7 @@ import Settings from "@/pages/app/settings";
 import UsersPage from "@/pages/app/users";
 import AdminPage from "@/pages/app/admin";
 import ProjectsPage from "@/pages/app/projects";
+import ProjectDetail from "@/pages/app/project-detail";
 
 function Router() {
   return (
@@ -55,7 +56,7 @@ function Router() {
       <Route path="/app/users" component={UsersPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/projects" component={ProjectsPage} />
-      <Route path="/app/projects/:id" component={ProjectsPage} />
+      <Route path="/app/projects/:id" component={ProjectDetail} />
       <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}
       
       {/* Fallback to 404 */}
