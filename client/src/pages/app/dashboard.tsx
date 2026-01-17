@@ -293,28 +293,31 @@ export default function Dashboard() {
                 <Scatter 
                   name="Competitors" 
                   data={positioningData} 
-                  className="cursor-pointer"
-                  onClick={(e: any) => {
-                    const payload = e?.payload || e;
-                    if (payload && payload.id) {
-                      if (payload.type === 'us') {
-                        setLocation('/app/company-profile');
-                      } else {
-                        setLocation(`/app/competitors/${payload.id}`);
-                      }
-                    }
+                  shape={(props: any) => {
+                    const { cx, cy, payload } = props;
+                    const isUs = payload?.type === 'us';
+                    return (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={isUs ? 12 : 8}
+                        fill={isUs ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'}
+                        opacity={isUs ? 1 : 0.7}
+                        style={{ cursor: 'pointer' }}
+                        data-testid={`chart-point-${payload?.id}`}
+                        onClick={() => {
+                          if (payload?.id) {
+                            if (isUs) {
+                              setLocation('/app/company-profile');
+                            } else {
+                              setLocation(`/app/competitors/${payload.id}`);
+                            }
+                          }
+                        }}
+                      />
+                    );
                   }}
-                >
-                  {positioningData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={entry.type === 'us' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'} 
-                      r={entry.type === 'us' ? 12 : 8}
-                      opacity={entry.type === 'us' ? 1 : 0.7}
-                      data-testid={`chart-point-${entry.id}`}
-                    />
-                  ))}
-                </Scatter>
+                />
               </ScatterChart>
             </ResponsiveContainer>
           </CardContent>
