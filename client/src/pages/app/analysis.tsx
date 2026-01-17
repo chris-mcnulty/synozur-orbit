@@ -215,11 +215,11 @@ export default function Analysis() {
                                             <div className="font-medium text-lg">"{item.us}"</div>
                                         </div>
                                         <div className="p-4 rounded-lg bg-muted/50 border border-border">
-                                            <div className="text-xs font-semibold text-muted-foreground mb-1">Competitor A</div>
+                                            <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
                                             <div className="text-base">"{item.competitorA}"</div>
                                         </div>
                                         <div className="p-4 rounded-lg bg-muted/50 border border-border">
-                                            <div className="text-xs font-semibold text-muted-foreground mb-1">Competitor B</div>
+                                            <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
                                             <div className="text-base">"{item.competitorB}"</div>
                                         </div>
                                     </div>
