@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -26,6 +26,8 @@ export default function Competitors() {
   const [profileForm, setProfileForm] = useState({
     companyName: "",
     websiteUrl: "",
+    linkedInUrl: "",
+    instagramUrl: "",
     description: "",
   });
 
@@ -222,6 +224,8 @@ export default function Competitors() {
       setProfileForm({
         companyName: companyProfile.companyName || "",
         websiteUrl: companyProfile.websiteUrl || "",
+        linkedInUrl: companyProfile.linkedInUrl || "",
+        instagramUrl: companyProfile.instagramUrl || "",
         description: companyProfile.description || "",
       });
     }
@@ -348,6 +352,30 @@ export default function Competitors() {
                         />
                       </div>
                       <div className="grid gap-2">
+                        <Label htmlFor="linkedInUrl" className="flex items-center gap-2">
+                          <Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn URL
+                        </Label>
+                        <Input
+                          id="linkedInUrl"
+                          placeholder="https://linkedin.com/company/..."
+                          value={profileForm.linkedInUrl}
+                          onChange={(e) => setProfileForm({ ...profileForm, linkedInUrl: e.target.value })}
+                          data-testid="input-company-linkedin"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="instagramUrl" className="flex items-center gap-2">
+                          <Instagram className="h-4 w-4 text-[#E4405F]" /> Instagram URL
+                        </Label>
+                        <Input
+                          id="instagramUrl"
+                          placeholder="https://instagram.com/..."
+                          value={profileForm.instagramUrl}
+                          onChange={(e) => setProfileForm({ ...profileForm, instagramUrl: e.target.value })}
+                          data-testid="input-company-instagram"
+                        />
+                      </div>
+                      <div className="grid gap-2">
                         <Label htmlFor="description">Description (optional)</Label>
                         <Textarea
                           id="description"
@@ -409,6 +437,38 @@ export default function Competitors() {
                     >
                       {companyProfile.websiteUrl} <ExternalLink size={12} />
                     </a>
+                    <div className="flex items-center gap-3 mt-2">
+                      {companyProfile.linkedInUrl ? (
+                        <a 
+                          href={companyProfile.linkedInUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-1 text-sm text-[#0A66C2] hover:underline"
+                          data-testid="link-company-linkedin"
+                        >
+                          <Linkedin className="h-4 w-4" /> LinkedIn
+                        </a>
+                      ) : (
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                          <Linkedin className="h-4 w-4" /> No LinkedIn
+                        </span>
+                      )}
+                      {companyProfile.instagramUrl ? (
+                        <a 
+                          href={companyProfile.instagramUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-1 text-sm text-[#E4405F] hover:underline"
+                          data-testid="link-company-instagram"
+                        >
+                          <Instagram className="h-4 w-4" /> Instagram
+                        </a>
+                      ) : (
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                          <Instagram className="h-4 w-4" /> No Instagram
+                        </span>
+                      )}
+                    </div>
                     {companyProfile.description && (
                       <p className="text-sm text-muted-foreground mt-2">{companyProfile.description}</p>
                     )}

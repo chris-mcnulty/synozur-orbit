@@ -193,6 +193,36 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/competitors/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (competitor.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { linkedInUrl, instagramUrl, name, url } = req.body;
+      const updateData: any = {};
+      
+      if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
+      if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
+      if (name) updateData.name = name;
+      if (url) updateData.url = url;
+
+      const updated = await storage.updateCompetitor(req.params.id, updateData);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/competitors", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -233,16 +263,36 @@ export async function registerRoutes(
 
       // Fetch website content
       let websiteContent = "";
+      let rawHtml = "";
       try {
         const response = await fetch(competitor.url, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
           },
         });
-        websiteContent = await response.text();
+        rawHtml = await response.text();
+        
+        // Extract social media links from raw HTML before cleaning
+        const linkedInMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?linkedin\.com\/company\/[^"']+)["']/i);
+        const instagramMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?instagram\.com\/[^"']+)["']/i);
+        
+        const discoveredLinkedIn = linkedInMatch ? linkedInMatch[1] : null;
+        const discoveredInstagram = instagramMatch ? instagramMatch[1] : null;
+        
+        // Update social links only if not already set
+        if ((discoveredLinkedIn && !competitor.linkedInUrl) || (discoveredInstagram && !competitor.instagramUrl)) {
+          const socialUpdates: any = {};
+          if (discoveredLinkedIn && !competitor.linkedInUrl) {
+            socialUpdates.linkedInUrl = discoveredLinkedIn;
+          }
+          if (discoveredInstagram && !competitor.instagramUrl) {
+            socialUpdates.instagramUrl = discoveredInstagram;
+          }
+          await storage.updateCompetitor(competitor.id, socialUpdates);
+        }
         
         // Extract text content from HTML (basic extraction)
-        websiteContent = websiteContent
+        websiteContent = rawHtml
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
           .replace(/<[^>]+>/g, " ")
@@ -842,7 +892,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { companyName, websiteUrl, description } = parsed.data;
+      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl } = parsed.data;
 
       const existingProfile = await storage.getCompanyProfileByTenant(tenantDomain);
 
@@ -850,6 +900,8 @@ export async function registerRoutes(
         const updated = await storage.updateCompanyProfile(existingProfile.id, {
           companyName,
           websiteUrl,
+          linkedInUrl: linkedInUrl || null,
+          instagramUrl: instagramUrl || null,
           description,
         });
         res.json(updated);
@@ -859,6 +911,8 @@ export async function registerRoutes(
           tenantDomain,
           companyName,
           websiteUrl,
+          linkedInUrl: linkedInUrl || null,
+          instagramUrl: instagramUrl || null,
           description,
         });
         res.json(profile);
@@ -889,16 +943,36 @@ export async function registerRoutes(
 
       // Fetch website content
       let websiteContent = "";
+      let rawHtml = "";
       try {
         const response = await fetch(profile.websiteUrl, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
           },
         });
-        websiteContent = await response.text();
+        rawHtml = await response.text();
+        
+        // Extract social media links from raw HTML before cleaning
+        const linkedInMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?linkedin\.com\/company\/[^"']+)["']/i);
+        const instagramMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?instagram\.com\/[^"']+)["']/i);
+        
+        const discoveredLinkedIn = linkedInMatch ? linkedInMatch[1] : null;
+        const discoveredInstagram = instagramMatch ? instagramMatch[1] : null;
+        
+        // Update social links only if not already set
+        if ((discoveredLinkedIn && !profile.linkedInUrl) || (discoveredInstagram && !profile.instagramUrl)) {
+          const socialUpdates: any = {};
+          if (discoveredLinkedIn && !profile.linkedInUrl) {
+            socialUpdates.linkedInUrl = discoveredLinkedIn;
+          }
+          if (discoveredInstagram && !profile.instagramUrl) {
+            socialUpdates.instagramUrl = discoveredInstagram;
+          }
+          await storage.updateCompanyProfile(profile.id, socialUpdates);
+        }
         
         // Extract text content from HTML (basic extraction)
-        websiteContent = websiteContent
+        websiteContent = rawHtml
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
           .replace(/<[^>]+>/g, " ")

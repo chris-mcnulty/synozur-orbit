@@ -1,11 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -14,6 +17,9 @@ export default function CompetitorDetail() {
   const id = params?.id;
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLinkedIn, setEditLinkedIn] = useState("");
+  const [editInstagram, setEditInstagram] = useState("");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -44,6 +50,47 @@ export default function CompetitorDetail() {
       });
     },
   });
+
+  const updateSocialMutation = useMutation({
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string }) => {
+      const response = await fetch(`/api/competitors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      setEditOpen(false);
+      toast({
+        title: "Social Links Updated",
+        description: "Competitor social media links have been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Update Failed",
+        description: "Could not save social media links.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditOpen = () => {
+    setEditLinkedIn(competitor?.linkedInUrl || "");
+    setEditInstagram(competitor?.instagramUrl || "");
+    setEditOpen(true);
+  };
+
+  const handleSaveSocial = () => {
+    updateSocialMutation.mutate({
+      linkedInUrl: editLinkedIn || undefined,
+      instagramUrl: editInstagram || undefined,
+    });
+  };
 
   if (isLoading) {
     return (
@@ -83,14 +130,93 @@ export default function CompetitorDetail() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">{competitor.name}</h1>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1 flex-wrap">
                   <a href={competitor.url} target="_blank" rel="noreferrer" className="flex items-center hover:text-primary transition-colors">
                     <Globe className="mr-1 h-3 w-3" /> {competitor.url} <ExternalLink className="ml-1 h-3 w-3" />
                   </a>
-                  <span className="text-border">|</span>
+                  <span className="text-border hidden sm:inline">|</span>
                   <span className="flex items-center">
                     <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl || "Never"}
                   </span>
+                </div>
+                <div className="flex items-center gap-3 mt-2">
+                  {competitor.linkedInUrl ? (
+                    <a 
+                      href={competitor.linkedInUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-1 text-sm text-[#0A66C2] hover:underline"
+                      data-testid="link-linkedin"
+                    >
+                      <Linkedin className="h-4 w-4" /> LinkedIn
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                      <Linkedin className="h-4 w-4" /> No LinkedIn
+                    </span>
+                  )}
+                  {competitor.instagramUrl ? (
+                    <a 
+                      href={competitor.instagramUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-1 text-sm text-[#E4405F] hover:underline"
+                      data-testid="link-instagram"
+                    >
+                      <Instagram className="h-4 w-4" /> Instagram
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                      <Instagram className="h-4 w-4" /> No Instagram
+                    </span>
+                  )}
+                  <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={handleEditOpen} data-testid="button-edit-social">
+                        <Pencil className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Edit Social Media Links</DialogTitle>
+                        <DialogDescription>
+                          Add or update social media profile URLs for {competitor.name}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="linkedin" className="flex items-center gap-2">
+                            <Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn URL
+                          </Label>
+                          <Input
+                            id="linkedin"
+                            placeholder="https://linkedin.com/company/..."
+                            value={editLinkedIn}
+                            onChange={(e) => setEditLinkedIn(e.target.value)}
+                            data-testid="input-linkedin"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="instagram" className="flex items-center gap-2">
+                            <Instagram className="h-4 w-4 text-[#E4405F]" /> Instagram URL
+                          </Label>
+                          <Input
+                            id="instagram"
+                            placeholder="https://instagram.com/..."
+                            value={editInstagram}
+                            onChange={(e) => setEditInstagram(e.target.value)}
+                            data-testid="input-instagram"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                        <Button onClick={handleSaveSocial} disabled={updateSocialMutation.isPending} data-testid="button-save-social">
+                          {updateSocialMutation.isPending ? "Saving..." : "Save"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
             </div>

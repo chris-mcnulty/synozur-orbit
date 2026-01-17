@@ -61,6 +61,7 @@ export interface IStorage {
   getAllCompetitors(): Promise<Competitor[]>;
   getCompetitorsByUserId(userId: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
+  updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor>;
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
   updateCompetitorAnalysis(id: string, analysisData: any): Promise<void>;
   deleteCompetitor(id: string): Promise<void>;
@@ -227,6 +228,15 @@ export class DatabaseStorage implements IStorage {
     const [competitor] = await db
       .insert(competitors)
       .values(insertCompetitor)
+      .returning();
+    return competitor;
+  }
+
+  async updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor> {
+    const [competitor] = await db
+      .update(competitors)
+      .set(data)
+      .where(eq(competitors.id, id))
       .returning();
     return competitor;
   }
