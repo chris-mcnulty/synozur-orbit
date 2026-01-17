@@ -162,15 +162,9 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/auth/signin?error=domain_blocked");
       }
 
-      const globalAdmin = await storage.getGlobalAdmin();
-      const domainAdmin = await storage.getDomainAdmin(domain);
-      
-      let role: "Global Admin" | "Domain Admin" | "Standard User" = "Standard User";
-      if (!globalAdmin) {
-        role = "Global Admin";
-      } else if (!domainAdmin) {
-        role = "Domain Admin";
-      }
+      // SECURITY: Self-service SSO NEVER grants admin roles
+      // Only Standard User or Consultant (for Synozur platform staff) are allowed
+      const role = domain === "synozur.com" ? "Consultant" : "Standard User";
 
       const randomPassword = await bcrypt.hash(Math.random().toString(36), 10);
       
@@ -268,15 +262,9 @@ export function registerEntraRoutes(app: Express) {
           authProvider: entraId ? "entra" : user.authProvider,
         });
       } else {
-        const globalAdmin = await storage.getGlobalAdmin();
-        const domainAdmin = await storage.getDomainAdmin(domain);
-        
-        let role: "Global Admin" | "Domain Admin" | "Standard User" = "Standard User";
-        if (!globalAdmin) {
-          role = "Global Admin";
-        } else if (!domainAdmin) {
-          role = "Domain Admin";
-        }
+        // SECURITY: Self-service SSO NEVER grants admin roles
+        // Only Standard User or Consultant (for Synozur platform staff) are allowed
+        const role = domain === "synozur.com" ? "Consultant" : "Standard User";
 
         const randomPassword = await bcrypt.hash(Math.random().toString(36), 10);
         

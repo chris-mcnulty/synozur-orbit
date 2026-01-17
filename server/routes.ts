@@ -14,6 +14,20 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawl
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
 
+// Helper: Check if user has cross-tenant READ access
+// Global Admin and Consultant roles can read across tenants
+// Only Global Admin can WRITE across tenants
+function hasCrossTenantReadAccess(role: string): boolean {
+  return role === "Global Admin" || role === "Consultant";
+}
+
+// Helper: Check if user has admin privileges
+// Global Admin and Domain Admin can perform admin operations
+// Consultant does NOT have admin privileges
+function hasAdminAccess(role: string): boolean {
+  return role === "Global Admin" || role === "Domain Admin";
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -51,8 +65,10 @@ export async function registerRoutes(
       }
 
       // Determine role based on business logic
-      let role = "Standard User";
+      // SECURITY: Self-service signup NEVER grants admin roles
+      // Only Standard User or Consultant (for Synozur platform staff) are allowed
       const domain = email.split("@")[1].toLowerCase();
+      let role = domain === "synozur.com" ? "Consultant" : "Standard User";
       
       // Check if domain is blocked from auto-provisioning
       const existingTenantForBlock = await storage.getTenantByDomain(domain);
@@ -62,16 +78,6 @@ export async function registerRoutes(
           return res.status(403).json({ 
             error: "This email domain is not allowed for self-registration. Please contact your administrator to set up your organization." 
           });
-        }
-      }
-      
-      const globalAdmin = await storage.getGlobalAdmin();
-      if (!globalAdmin) {
-        role = "Global Admin";
-      } else {
-        const domainAdmin = await storage.getDomainAdmin(domain);
-        if (!domainAdmin) {
-          role = "Domain Admin";
         }
       }
 
@@ -1374,20 +1380,21 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const currentUser = await storage.getUser(req.session.userId);
-      if (!currentUser || (currentUser.role !== "Global Admin" && currentUser.role !== "Domain Admin")) {
-        return res.status(403).json({ error: "Forbidden: Admin access required" });
+      // Allow Admins to manage users, Consultants to view users (read-only cross-tenant)
+      if (!currentUser || (!hasAdminAccess(currentUser.role) && currentUser.role !== "Consultant")) {
+        return res.status(403).json({ error: "Forbidden: Admin or Consultant access required" });
       }
 
       const tenantDomain = currentUser.email.split("@")[1];
       
       // Security: Domain Admins can only see users in their own tenant
-      // Global Admins can see all users only if they're from Synozur (the platform owner)
+      // Global Admins and Consultants from Synozur can see all users across all tenants (read-only for Consultants)
       let users;
-      if (currentUser.role === "Global Admin" && tenantDomain === "synozur.com") {
-        // Platform super-admin: can see all users across all tenants
+      if ((currentUser.role === "Global Admin" || currentUser.role === "Consultant") && tenantDomain === "synozur.com") {
+        // Platform super-admin or consultant: can see all users across all tenants
         users = await storage.getAllUsers();
       } else {
-        // Domain Admin or regular Global Admin: only see users in their tenant
+        // Domain Admin: only see users in their tenant
         users = await storage.getUsersByDomain(tenantDomain);
       }
       
