@@ -888,7 +888,10 @@ export async function registerRoutes(
       } : null;
 
       // Use Claude to generate battlecard content
-      const anthropic = new Anthropic();
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
       const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
 
 ${ourContext ? `Our Company: ${ourContext.name} (${ourContext.url})
@@ -2924,7 +2927,10 @@ Return a JSON array of suggested competitor products with this structure:
 
 Only return the JSON array, no other text.`;
 
-      const anthropic = new Anthropic();
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
@@ -3022,7 +3028,10 @@ ${websiteContent}
 
 Return only the description text, no quotes or formatting.`;
 
-      const anthropic = new Anthropic();
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 256,
