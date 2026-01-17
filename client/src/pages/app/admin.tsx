@@ -29,7 +29,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2 } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import type { Tenant } from "@shared/schema";
@@ -42,6 +43,26 @@ type BlockedDomain = {
   createdBy: string | null;
   createdAt: string;
 };
+type GlobalDocument = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  fileType: string;
+  originalFileName: string;
+  wordCount: number;
+  isActive: boolean;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const GLOBAL_DOC_CATEGORIES = [
+  { value: "brand_voice", label: "Brand Voice" },
+  { value: "marketing_guidelines", label: "Marketing Guidelines" },
+  { value: "digital_assets", label: "Digital Assets" },
+  { value: "methodology", label: "Methodology" },
+] as const;
 
 export default function AdminPage() {
   const { user: currentUser } = useUser();
@@ -50,6 +71,13 @@ export default function AdminPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [newBlockedDomain, setNewBlockedDomain] = useState("");
   const [newBlockedReason, setNewBlockedReason] = useState("");
+  const [globalDocDialogOpen, setGlobalDocDialogOpen] = useState(false);
+  const [newGlobalDoc, setNewGlobalDoc] = useState({
+    name: "",
+    description: "",
+    category: "brand_voice" as string,
+    file: null as File | null,
+  });
   const [editForm, setEditForm] = useState({
     name: "",
     plan: "",
@@ -141,6 +169,87 @@ export default function AdminPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/domain-blocklist"] });
+    },
+  });
+
+  const { data: globalDocuments = [] } = useQuery<GlobalDocument[]>({
+    queryKey: ["/api/admin/global-documents"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/global-documents", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch global documents");
+      return response.json();
+    },
+  });
+
+  const uploadGlobalDocMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; category: string; file: File }) => {
+      const fileContent = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          resolve(base64);
+        };
+        reader.readAsDataURL(data.file);
+      });
+
+      const extension = data.file.name.split(".").pop()?.toLowerCase() || "";
+      const fileType = extension === "pdf" ? "pdf" : extension === "docx" ? "docx" : "txt";
+
+      const response = await fetch("/api/admin/global-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description || null,
+          category: data.category,
+          fileType,
+          originalFileName: data.file.name,
+          fileContent,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to upload document");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
+      setGlobalDocDialogOpen(false);
+      setNewGlobalDoc({ name: "", description: "", category: "brand_voice", file: null });
+    },
+  });
+
+  const toggleGlobalDocMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const response = await fetch(`/api/admin/global-documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isActive }),
+      });
+      if (!response.ok) throw new Error("Failed to update document");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
+    },
+  });
+
+  const deleteGlobalDocMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/admin/global-documents/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete document");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
     },
   });
 
@@ -478,6 +587,185 @@ export default function AdminPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Global AI Documents
+                </CardTitle>
+                <CardDescription>
+                  Platform-wide documents used to ground all AI analysis across tenants
+                </CardDescription>
+              </div>
+              <Button onClick={() => setGlobalDocDialogOpen(true)} data-testid="btn-add-global-doc">
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Document
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {globalDocuments.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No global documents yet.</p>
+                <p className="text-sm">Upload documents to provide AI grounding context across all tenants.</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Document</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-center">Words</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Uploaded</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {globalDocuments.map((doc) => (
+                    <TableRow key={doc.id} data-testid={`global-doc-${doc.id}`}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{doc.name}</div>
+                          <div className="text-sm text-muted-foreground">{doc.originalFileName}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {GLOBAL_DOC_CATEGORIES.find(c => c.value === doc.category)?.label || doc.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-muted-foreground">
+                        {doc.wordCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleGlobalDocMutation.mutate({ id: doc.id, isActive: !doc.isActive })}
+                          data-testid={`toggle-doc-${doc.id}`}
+                        >
+                          {doc.isActive ? (
+                            <ToggleRight className="h-5 w-5 text-green-500" />
+                          ) : (
+                            <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(doc.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteGlobalDocMutation.mutate(doc.id)}
+                          disabled={deleteGlobalDocMutation.isPending}
+                          data-testid={`delete-global-doc-${doc.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={globalDocDialogOpen} onOpenChange={setGlobalDocDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Global Document</DialogTitle>
+              <DialogDescription>
+                This document will be used to ground AI analysis across all tenants.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Document Name</Label>
+                <Input
+                  placeholder="e.g., Brand Voice Guidelines"
+                  value={newGlobalDoc.name}
+                  onChange={(e) => setNewGlobalDoc({ ...newGlobalDoc, name: e.target.value })}
+                  data-testid="input-global-doc-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select
+                  value={newGlobalDoc.category}
+                  onValueChange={(value) => setNewGlobalDoc({ ...newGlobalDoc, category: value })}
+                >
+                  <SelectTrigger data-testid="select-global-doc-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GLOBAL_DOC_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Description (Optional)</Label>
+                <Textarea
+                  placeholder="Brief description of this document's purpose..."
+                  value={newGlobalDoc.description}
+                  onChange={(e) => setNewGlobalDoc({ ...newGlobalDoc, description: e.target.value })}
+                  data-testid="input-global-doc-description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>File (PDF, DOCX, or TXT)</Label>
+                <Input
+                  type="file"
+                  accept=".pdf,.docx,.txt"
+                  onChange={(e) => setNewGlobalDoc({ ...newGlobalDoc, file: e.target.files?.[0] || null })}
+                  data-testid="input-global-doc-file"
+                />
+                {newGlobalDoc.file && (
+                  <p className="text-sm text-muted-foreground">
+                    Selected: {newGlobalDoc.file.name}
+                  </p>
+                )}
+              </div>
+              {uploadGlobalDocMutation.isError && (
+                <p className="text-sm text-destructive">
+                  {(uploadGlobalDocMutation.error as Error).message}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGlobalDocDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (newGlobalDoc.name && newGlobalDoc.file) {
+                    uploadGlobalDocMutation.mutate({
+                      name: newGlobalDoc.name,
+                      description: newGlobalDoc.description,
+                      category: newGlobalDoc.category,
+                      file: newGlobalDoc.file,
+                    });
+                  }
+                }}
+                disabled={!newGlobalDoc.name || !newGlobalDoc.file || uploadGlobalDocMutation.isPending}
+                data-testid="btn-submit-global-doc"
+              >
+                {uploadGlobalDocMutation.isPending ? "Uploading..." : "Upload Document"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent className="max-w-2xl">

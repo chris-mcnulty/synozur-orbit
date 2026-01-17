@@ -36,7 +36,7 @@ export class DocumentExtractionService {
     }
   }
 
-  private async extractPdfText(buffer: Buffer): Promise<string> {
+  async extractFromPdf(buffer: Buffer): Promise<string> {
     try {
       // pdf-parse is a CommonJS module, use require for compatibility
       const pdfParse = require('pdf-parse');
@@ -48,7 +48,7 @@ export class DocumentExtractionService {
     }
   }
 
-  private async extractDocxText(buffer: Buffer): Promise<string> {
+  async extractFromDocx(buffer: Buffer): Promise<string> {
     try {
       const result = await mammoth.extractRawText({ buffer });
       return result.value;
@@ -56,6 +56,14 @@ export class DocumentExtractionService {
       console.error('DOCX parsing error:', error);
       return '[Error: Could not extract text from DOCX]';
     }
+  }
+
+  private async extractPdfText(buffer: Buffer): Promise<string> {
+    return this.extractFromPdf(buffer);
+  }
+
+  private async extractDocxText(buffer: Buffer): Promise<string> {
+    return this.extractFromDocx(buffer);
   }
 
   private async downloadFileAsBuffer(objectFile: any): Promise<Buffer> {
