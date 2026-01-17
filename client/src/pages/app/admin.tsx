@@ -185,11 +185,18 @@ export default function AdminPage() {
 
   const uploadGlobalDocMutation = useMutation({
     mutationFn: async (data: { name: string; description: string; category: string; file: File }) => {
-      const fileContent = await new Promise<string>((resolve) => {
+      console.log("Starting upload for:", data.file.name);
+      
+      const fileContent = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
+          console.log("File read complete, base64 length:", base64?.length);
           resolve(base64);
+        };
+        reader.onerror = () => {
+          console.error("FileReader error:", reader.error);
+          reject(new Error("Failed to read file"));
         };
         reader.readAsDataURL(data.file);
       });
@@ -197,6 +204,7 @@ export default function AdminPage() {
       const extension = data.file.name.split(".").pop()?.toLowerCase() || "";
       const fileType = extension === "pdf" ? "pdf" : extension === "docx" ? "docx" : "txt";
 
+      console.log("Sending POST request...");
       const response = await fetch("/api/admin/global-documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,8 +218,10 @@ export default function AdminPage() {
           fileContent,
         }),
       });
+      console.log("Response status:", response.status);
       if (!response.ok) {
         const error = await response.json();
+        console.error("Upload error response:", error);
         throw new Error(error.error || "Failed to upload document");
       }
       return response.json();
