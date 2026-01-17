@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -83,6 +84,7 @@ export default function AdminPage() {
   const [isExtractingText, setIsExtractingText] = useState(false);
   const pendingGlobalDocPathRef = useRef<string | null>(null);
   const [editForm, setEditForm] = useState({
+    domain: "",
     name: "",
     plan: "",
     status: "",
@@ -305,6 +307,7 @@ export default function AdminPage() {
   const handleEditClick = (tenant: TenantWithCounts) => {
     setSelectedTenant(tenant);
     setEditForm({
+      domain: tenant.domain,
       name: tenant.name,
       plan: tenant.plan,
       status: tenant.status,
@@ -325,6 +328,9 @@ export default function AdminPage() {
     if (!selectedTenant) return;
     
     const changedFields: Partial<Tenant> = {};
+    if (editForm.domain !== selectedTenant.domain && editForm.domain.trim()) {
+      changedFields.domain = editForm.domain.trim().toLowerCase();
+    }
     if (editForm.name !== selectedTenant.name && editForm.name.trim()) {
       changedFields.name = editForm.name.trim();
     }
@@ -971,6 +977,18 @@ export default function AdminPage() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="settings" className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Domain</Label>
+                  <Input
+                    value={editForm.domain}
+                    onChange={(e) => setEditForm({ ...editForm, domain: e.target.value })}
+                    placeholder="company.com"
+                    data-testid="edit-tenant-domain"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Users with this email domain will belong to this tenant
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <Label>Organization Name</Label>
                   <Input

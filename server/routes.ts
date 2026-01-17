@@ -2151,13 +2151,21 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(403).json({ error: "Access denied - Global Admin only" });
       }
 
-      const validPlans = ["free", "pro", "enterprise"];
-      const validStatuses = ["active", "suspended"];
+      const validPlans = ["free", "pro", "enterprise", "trial"];
+      const validStatuses = ["active", "suspended", "inactive"];
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       
-      const { plan, status, competitorLimit, analysisLimit, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
-      const updateData: { plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
+      const { domain, plan, status, competitorLimit, analysisLimit, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
+      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
       
+      if (domain && typeof domain === "string" && domain.includes(".")) {
+        // Check if domain is already taken by another tenant
+        const existingTenant = await storage.getTenantByDomain(domain.toLowerCase());
+        if (existingTenant && existingTenant.id !== req.params.id) {
+          return res.status(400).json({ error: "Domain is already used by another tenant" });
+        }
+        updateData.domain = domain.toLowerCase();
+      }
       if (plan && validPlans.includes(plan)) updateData.plan = plan;
       if (status && validStatuses.includes(status)) updateData.status = status;
       if (typeof competitorLimit === "number" && competitorLimit >= 0) updateData.competitorLimit = competitorLimit;
