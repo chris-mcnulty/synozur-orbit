@@ -387,6 +387,31 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
+      // Get analysis type from request body (default to 'full' for backward compatibility)
+      const analysisType = req.body?.analysisType || "full";
+      
+      // Validate analysis type
+      if (!["quick", "full", "full_with_change"].includes(analysisType)) {
+        return res.status(400).json({ error: "Invalid analysis type. Must be 'quick', 'full', or 'full_with_change'" });
+      }
+
+      // Check plan for full_with_change analysis
+      if (analysisType === "full_with_change") {
+        const user = await storage.getUser(req.session.userId);
+        if (!user) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        const tenantDomain = user.email.split("@")[1];
+        const tenant = await storage.getTenantByDomain(tenantDomain);
+        
+        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+          return res.status(403).json({ 
+            error: "Full Analysis with Change Monitoring requires a Pro or Enterprise plan",
+            upgradeRequired: true
+          });
+        }
+      }
+
       // Use the robust web crawler service
       const crawlResult = await crawlCompetitorWebsite(competitor.url);
       
@@ -459,7 +484,28 @@ export async function registerRoutes(
       
       await storage.updateCompetitorLastCrawl(req.params.id, lastCrawl);
       
-      // Get combined content for AI analysis
+      // Quick analysis: just refresh webpage data, no AI analysis
+      if (analysisType === "quick") {
+        await storage.createActivity({
+          type: "crawl",
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          description: `Quick refresh: crawled ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words)`,
+          date: lastCrawl,
+          impact: "Low",
+        });
+        
+        return res.json({ 
+          success: true, 
+          lastCrawl, 
+          analysisType: "quick",
+          message: "Quick refresh completed - webpage data updated",
+          pagesCrawled: crawlResult.pages.length,
+          totalWordCount: crawlResult.totalWordCount,
+        });
+      }
+      
+      // Full and full_with_change: perform AI analysis
       const websiteContent = getCombinedContent(crawlResult);
       
       if (websiteContent.length > 100) {
@@ -483,25 +529,45 @@ export async function registerRoutes(
             impact: "Medium",
           });
           
+          // For full_with_change, also trigger social media monitoring
+          let socialMonitoringResult = null;
+          if (analysisType === "full_with_change") {
+            if (competitor.linkedInUrl || competitor.instagramUrl) {
+              try {
+                const user = await storage.getUser(req.session.userId);
+                if (user) {
+                  const tenantDomain = user.email.split("@")[1];
+                  socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, user.id, tenantDomain);
+                }
+              } catch (socialError) {
+                console.error("Social monitoring failed:", socialError);
+                socialMonitoringResult = { error: "Social monitoring unavailable" };
+              }
+            }
+          }
+          
           res.json({ 
             success: true, 
             lastCrawl, 
+            analysisType,
             analysis,
             pagesCrawled: crawlResult.pages.length,
             totalWordCount: crawlResult.totalWordCount,
+            socialMonitoring: socialMonitoringResult,
           });
         } catch (aiError) {
           console.error("AI analysis failed:", aiError);
           res.json({ 
             success: true, 
             lastCrawl, 
+            analysisType,
             message: "Crawled but AI analysis unavailable",
             pagesCrawled: crawlResult.pages.length,
             totalWordCount: crawlResult.totalWordCount,
           });
         }
       } else {
-        res.json({ success: true, lastCrawl, message: "Website content could not be extracted" });
+        res.json({ success: true, lastCrawl, analysisType, message: "Website content could not be extracted" });
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
