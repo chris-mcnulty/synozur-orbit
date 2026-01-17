@@ -1378,7 +1378,19 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(403).json({ error: "Forbidden: Admin access required" });
       }
 
-      const users = await storage.getAllUsers();
+      const tenantDomain = currentUser.email.split("@")[1];
+      
+      // Security: Domain Admins can only see users in their own tenant
+      // Global Admins can see all users only if they're from Synozur (the platform owner)
+      let users;
+      if (currentUser.role === "Global Admin" && tenantDomain === "synozur.com") {
+        // Platform super-admin: can see all users across all tenants
+        users = await storage.getAllUsers();
+      } else {
+        // Domain Admin or regular Global Admin: only see users in their tenant
+        users = await storage.getUsersByDomain(tenantDomain);
+      }
+      
       const usersWithoutPasswords = users.map(({ password, ...user }) => user);
       res.json(usersWithoutPasswords);
     } catch (error: any) {
@@ -4052,10 +4064,11 @@ Return only the description text, no quotes or formatting.`;
         return res.status(404).json({ error: "Target user not found" });
       }
 
-      // Verify same domain (unless Global Admin)
+      // Verify same domain (only Synozur Global Admins can modify cross-tenant)
       const currentDomain = currentUser.email.split("@")[1];
       const targetDomain = targetUser.email.split("@")[1];
-      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+      const isSynozurAdmin = currentUser.role === "Global Admin" && currentDomain === "synozur.com";
+      if (!isSynozurAdmin && currentDomain !== targetDomain) {
         return res.status(403).json({ error: "Cannot modify users from another tenant" });
       }
 
@@ -4104,10 +4117,11 @@ Return only the description text, no quotes or formatting.`;
         return res.status(404).json({ error: "Target user not found" });
       }
 
-      // Verify same domain (unless Global Admin)
+      // Verify same domain (only Synozur Global Admins can modify cross-tenant)
       const currentDomain = currentUser.email.split("@")[1];
       const targetDomain = targetUser.email.split("@")[1];
-      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+      const isSynozurAdmin = currentUser.role === "Global Admin" && currentDomain === "synozur.com";
+      if (!isSynozurAdmin && currentDomain !== targetDomain) {
         return res.status(403).json({ error: "Cannot modify users from another tenant" });
       }
 
@@ -4155,10 +4169,11 @@ Return only the description text, no quotes or formatting.`;
         return res.status(400).json({ error: "Cannot remove yourself" });
       }
 
-      // Verify same domain (unless Global Admin)
+      // Verify same domain (only Synozur Global Admins can modify cross-tenant)
       const currentDomain = currentUser.email.split("@")[1];
       const targetDomain = targetUser.email.split("@")[1];
-      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+      const isSynozurAdmin = currentUser.role === "Global Admin" && currentDomain === "synozur.com";
+      if (!isSynozurAdmin && currentDomain !== targetDomain) {
         return res.status(403).json({ error: "Cannot remove users from another tenant" });
       }
 
