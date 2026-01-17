@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil, Activity, Lock } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -133,6 +134,67 @@ export default function CompetitorDetail() {
         title: "Monitoring Failed",
         description: error.message,
         variant: "destructive",
+      });
+    },
+  });
+
+  // Battlecard query and mutations
+  const { data: battlecard, isLoading: battlecardLoading } = useQuery({
+    queryKey: ["/api/competitors", id, "battlecard"],
+    queryFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/battlecard`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch battlecard");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  const generateBattlecardMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/battlecard/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to generate battlecard");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id, "battlecard"] });
+      toast({
+        title: "Battlecard Generated",
+        description: "AI-powered battlecard has been created for this competitor.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateBattlecardMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await fetch(`/api/battlecards/${battlecard?.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update battlecard");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id, "battlecard"] });
+      toast({
+        title: "Battlecard Updated",
+        description: "Your changes have been saved.",
       });
     },
   });
@@ -346,6 +408,9 @@ export default function CompetitorDetail() {
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="battlecard" data-testid="tab-battlecard">
+              <Swords className="h-4 w-4 mr-1" /> Battlecard
+            </TabsTrigger>
             <TabsTrigger value="messaging">Messaging</TabsTrigger>
             <TabsTrigger value="pages">Pages Tracked</TabsTrigger>
             <TabsTrigger value="history">Crawl History</TabsTrigger>
@@ -393,6 +458,236 @@ export default function CompetitorDetail() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="battlecard" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {battlecardLoading ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                  <p className="text-muted-foreground mt-2">Loading battlecard...</p>
+                </CardContent>
+              </Card>
+            ) : !battlecard ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Swords className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No Battlecard Yet</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Generate an AI-powered battlecard to get sales-ready talking points, objection handlers, and competitive insights.
+                  </p>
+                  <Button 
+                    onClick={() => generateBattlecardMutation.mutate()}
+                    disabled={generateBattlecardMutation.isPending}
+                    className="gap-2"
+                    data-testid="button-generate-battlecard"
+                  >
+                    {generateBattlecardMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+                    ) : (
+                      <><Sparkles className="h-4 w-4" /> Generate Battlecard</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Swords className="h-5 w-5 text-primary" />
+                      Sales Battlecard: {competitor.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Last generated: {battlecard.lastGeneratedAt ? new Date(battlecard.lastGeneratedAt).toLocaleDateString() : "Never"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={battlecard.status === "published" ? "default" : "secondary"}>
+                      {battlecard.status === "published" ? "Published" : "Draft"}
+                    </Badge>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => generateBattlecardMutation.mutate()}
+                      disabled={generateBattlecardMutation.isPending}
+                      data-testid="button-regenerate-battlecard"
+                    >
+                      {generateBattlecardMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <><RefreshCw className="h-4 w-4 mr-1" /> Regenerate</>
+                      )}
+                    </Button>
+                    <Button 
+                      size="sm"
+                      onClick={() => updateBattlecardMutation.mutate({ 
+                        status: battlecard.status === "published" ? "draft" : "published" 
+                      })}
+                      data-testid="button-publish-battlecard"
+                    >
+                      {battlecard.status === "published" ? "Unpublish" : "Publish"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 md:grid-cols-2">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-green-500" />
+                        Competitor Strengths
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {(battlecard.strengths as string[] || []).map((strength: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                            <span>{strength}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <X className="h-4 w-4 text-red-500" />
+                        Competitor Weaknesses
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {(battlecard.weaknesses as string[] || []).map((weakness: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <X className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                            <span>{weakness}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="md:col-span-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-primary" />
+                        Our Advantages
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {(battlecard.ourAdvantages as string[] || []).map((adv: string, i: number) => (
+                          <div key={i} className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                            <span className="text-sm">{adv}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="md:col-span-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-orange-500" />
+                        Common Objections & Responses
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {(battlecard.objections as any[] || []).map((obj: any, i: number) => (
+                          <div key={i} className="p-4 rounded-lg bg-muted/30 border">
+                            <p className="font-medium text-sm mb-2 flex items-center gap-2">
+                              <Badge variant="outline" className="text-orange-500 border-orange-500/30">Objection</Badge>
+                              {obj.objection}
+                            </p>
+                            <p className="text-sm text-muted-foreground pl-4 border-l-2 border-primary/30">
+                              <span className="font-medium text-foreground">Response:</span> {obj.response}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="md:col-span-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Target className="h-4 w-4 text-blue-500" />
+                        Talk Tracks
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {(battlecard.talkTracks as any[] || []).map((track: any, i: number) => (
+                          <div key={i} className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                            <p className="font-medium text-sm mb-2">{track.scenario}</p>
+                            <p className="text-sm text-muted-foreground italic">"{track.script}"</p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="md:col-span-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <BarChart2 className="h-4 w-4 text-purple-500" />
+                        Quick Stats
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {battlecard.quickStats && typeof battlecard.quickStats === 'object' && (
+                          <>
+                            <div className="p-3 rounded-lg bg-muted/30">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Pricing</p>
+                              <p className="text-sm font-medium">{(battlecard.quickStats as any).pricing || "Unknown"}</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/30">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Market Position</p>
+                              <p className="text-sm font-medium">{(battlecard.quickStats as any).marketPosition || "Unknown"}</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/30">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Target Audience</p>
+                              <p className="text-sm font-medium">{(battlecard.quickStats as any).targetAudience || "Unknown"}</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/30">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Key Products</p>
+                              <p className="text-sm font-medium">{(battlecard.quickStats as any).keyProducts || "Unknown"}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="md:col-span-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Pencil className="h-4 w-4" />
+                        Custom Notes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Textarea 
+                        placeholder="Add your own notes, insights, or additional information..."
+                        defaultValue={battlecard.customNotes || ""}
+                        className="min-h-[100px]"
+                        onBlur={(e) => {
+                          if (e.target.value !== (battlecard.customNotes || "")) {
+                            updateBattlecardMutation.mutate({ customNotes: e.target.value });
+                          }
+                        }}
+                        data-testid="textarea-custom-notes"
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
+            )}
           </TabsContent>
           
           <TabsContent value="messaging">

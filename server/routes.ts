@@ -767,6 +767,249 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== BATTLECARD ROUTES ====================
+
+  app.get("/api/competitors/:competitorId/battlecard", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      // Verify user has access (tenant isolation)
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const competitor = await storage.getCompetitor(req.params.competitorId);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Verify competitor belongs to user's tenant
+      const competitorUser = await storage.getUser(competitor.userId);
+      if (!competitorUser || competitorUser.email.split("@")[1] !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const battlecard = await storage.getBattlecardByCompetitor(req.params.competitorId);
+      res.json(battlecard || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/competitors/:competitorId/battlecard/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+
+      const competitor = await storage.getCompetitor(req.params.competitorId);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Verify competitor belongs to user's tenant
+      const competitorUser = await storage.getUser(competitor.userId);
+      if (!competitorUser || competitorUser.email.split("@")[1] !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Get company profile for comparison
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      // Get existing analysis data
+      const analysisData = competitor.analysisData as any;
+      const crawlData = competitor.crawlData as any;
+
+      // Build context for AI
+      const competitorContext = {
+        name: competitor.name,
+        url: competitor.url,
+        analysis: analysisData,
+        crawlData: crawlData,
+      };
+
+      const ourContext = companyProfile ? {
+        name: companyProfile.companyName,
+        url: companyProfile.websiteUrl,
+        analysis: companyProfile.analysisData,
+      } : null;
+
+      // Use Claude to generate battlecard content
+      const anthropic = new Anthropic();
+      const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
+
+${ourContext ? `Our Company: ${ourContext.name} (${ourContext.url})
+Our Analysis: ${JSON.stringify(ourContext.analysis, null, 2)}` : ""}
+
+Competitor: ${competitor.name} (${competitor.url})
+Competitor Analysis: ${JSON.stringify(competitorContext.analysis, null, 2)}
+Competitor Website Content: ${JSON.stringify(competitorContext.crawlData?.pages?.slice(0, 3), null, 2) || "Not crawled yet"}
+
+Generate a battlecard with the following sections in valid JSON format:
+{
+  "strengths": ["strength1", "strength2", ...], // 3-5 competitor strengths
+  "weaknesses": ["weakness1", "weakness2", ...], // 3-5 competitor weaknesses  
+  "ourAdvantages": ["advantage1", "advantage2", ...], // 3-5 ways we beat this competitor
+  "objections": [
+    {"objection": "Common customer objection", "response": "How to respond"},
+    ...
+  ], // 3-4 common objections and responses
+  "talkTracks": [
+    {"scenario": "When customer mentions X", "script": "Say this..."},
+    ...
+  ], // 2-3 sales talk tracks
+  "quickStats": {
+    "pricing": "Their pricing model/range if known",
+    "marketPosition": "Leader/Challenger/Niche",
+    "targetAudience": "Who they target",
+    "keyProducts": "Main products/services"
+  }
+}
+
+Return ONLY valid JSON, no markdown or explanation.`;
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = response.content[0];
+      if (content.type !== "text") {
+        throw new Error("Unexpected response type");
+      }
+
+      let battlecardContent;
+      try {
+        battlecardContent = JSON.parse(content.text);
+      } catch {
+        // Try to extract JSON from response
+        const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          battlecardContent = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("Failed to parse AI response as JSON");
+        }
+      }
+
+      // Check if battlecard already exists
+      const existingBattlecard = await storage.getBattlecardByCompetitor(req.params.competitorId);
+      
+      let battlecard;
+      if (existingBattlecard) {
+        // Update existing
+        battlecard = await storage.updateBattlecard(existingBattlecard.id, {
+          strengths: battlecardContent.strengths,
+          weaknesses: battlecardContent.weaknesses,
+          ourAdvantages: battlecardContent.ourAdvantages,
+          objections: battlecardContent.objections,
+          talkTracks: battlecardContent.talkTracks,
+          quickStats: battlecardContent.quickStats,
+          lastGeneratedAt: new Date(),
+        });
+      } else {
+        // Create new
+        battlecard = await storage.createBattlecard({
+          competitorId: req.params.competitorId,
+          tenantDomain,
+          strengths: battlecardContent.strengths,
+          weaknesses: battlecardContent.weaknesses,
+          ourAdvantages: battlecardContent.ourAdvantages,
+          objections: battlecardContent.objections,
+          talkTracks: battlecardContent.talkTracks,
+          quickStats: battlecardContent.quickStats,
+          status: "draft",
+          createdBy: req.session.userId,
+        });
+      }
+
+      res.json(battlecard);
+    } catch (error: any) {
+      console.error("Battlecard generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/battlecards/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const battlecard = await storage.getBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      // Verify user has access (belongs to their tenant)
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+      
+      if (battlecard.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { strengths, weaknesses, ourAdvantages, objections, talkTracks, quickStats, customNotes, status } = req.body;
+      
+      const updatedBattlecard = await storage.updateBattlecard(req.params.id, {
+        ...(strengths !== undefined && { strengths }),
+        ...(weaknesses !== undefined && { weaknesses }),
+        ...(ourAdvantages !== undefined && { ourAdvantages }),
+        ...(objections !== undefined && { objections }),
+        ...(talkTracks !== undefined && { talkTracks }),
+        ...(quickStats !== undefined && { quickStats }),
+        ...(customNotes !== undefined && { customNotes }),
+        ...(status !== undefined && { status }),
+      });
+
+      res.json(updatedBattlecard);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/battlecards/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const battlecard = await storage.getBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      // Verify user has access
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const tenantDomain = user.email.split("@")[1];
+      
+      if (battlecard.tenantDomain !== tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteBattlecard(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== ACTIVITY ROUTES ====================
 
   app.get("/api/activity", async (req, res) => {
