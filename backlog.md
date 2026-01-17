@@ -20,16 +20,17 @@
 - [ ] Download endpoint for generated reports
 **Effort**: Medium
 
-### 1.4 Web Crawling Service
-**Status**: Basic URL fetch exists, no robust crawling
+### 1.3 Web Crawling Service ✅
+**Status**: Implemented
 **Spec Requirement**: "Crawl and scrape competitor websites...homepage, about page, product/service pages"
-- [ ] Background job for website content extraction
-- [ ] Target key pages: homepage, about, services/products
-- [ ] Extract text content for AI analysis
-- [ ] Store crawled content with timestamps
-**Effort**: Medium
+- [x] Multi-page crawling (homepage, about, services, products, blog)
+- [x] Social media link auto-discovery
+- [x] Blog post detection and counting
+- [x] Scheduled background jobs (hourly with tenant frequency settings)
+- [x] Admin API endpoints for job status and manual triggering
+**Effort**: Medium - COMPLETED
 
-### 1.5 Competitor Change Monitoring
+### 1.4 Competitor Change Monitoring
 **Status**: Social media monitoring implemented (LinkedIn/Instagram), website monitoring pending
 **Spec Requirement**: "Daily or weekly schedule...detect significant updates"
 - [x] Social media monitoring (LinkedIn, Instagram) with AI summarization
@@ -38,9 +39,9 @@
 - [x] Store changes in activity log
 - [x] Premium feature gating (free tier blocked)
 - [x] On-demand monitoring via UI button
-- [ ] Scheduled job (cron) for periodic crawling
+- [x] Scheduled job for periodic crawling (via web crawler service)
 - [ ] Website content change monitoring
-**Effort**: Medium (remaining: scheduled jobs)
+**Effort**: Medium (remaining: website change detection)
 
 ---
 
