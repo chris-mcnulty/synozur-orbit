@@ -2846,6 +2846,39 @@ Only return the JSON array, no other text.`;
       const validRoles = ["Standard User", "Domain Admin"];
       const invitedRole = validRoles.includes(role) ? role : "Standard User";
 
+      // Check user role limits
+      const tenant = await storage.getTenantByDomain(domain);
+      if (tenant) {
+        const tenantUsers = await storage.getUsersByDomain(domain);
+        const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
+        const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+        const readOnlyUserLimit = (tenant as any).readOnlyUserLimit ?? 5;
+        
+        // Count existing users by role
+        const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
+        const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
+        
+        // Also count pending invites
+        const pendingInvites = existingInvites.filter(i => i.status === "pending");
+        const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
+        const pendingStandard = pendingInvites.filter(i => i.invitedRole === "Standard User").length;
+        
+        if (invitedRole === "Domain Admin") {
+          if (adminCount + pendingAdmins >= adminUserLimit) {
+            return res.status(400).json({ 
+              error: `Admin user limit (${adminUserLimit}) reached for this tenant. Upgrade your plan to add more admin users.` 
+            });
+          }
+        } else {
+          // Standard User - check read-write limit (Standard Users are read-write by default)
+          if (standardCount + pendingStandard >= readWriteUserLimit) {
+            return res.status(400).json({ 
+              error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.` 
+            });
+          }
+        }
+      }
+
       // Generate token
       const token = crypto.randomUUID();
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -2940,6 +2973,28 @@ Only return the JSON array, no other text.`;
       const tenant = await storage.getTenantByDomain(invite.tenantDomain);
       if (!tenant) {
         return res.status(400).json({ error: "Tenant not found" });
+      }
+
+      // Re-check user role limits at acceptance time (limits may have changed since invite)
+      const tenantUsers = await storage.getUsersByDomain(invite.tenantDomain);
+      const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
+      const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+      
+      const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
+      const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
+      
+      if (invite.invitedRole === "Domain Admin") {
+        if (adminCount >= adminUserLimit) {
+          return res.status(400).json({ 
+            error: `Admin user limit (${adminUserLimit}) reached. Contact your administrator.` 
+          });
+        }
+      } else {
+        if (standardCount >= readWriteUserLimit) {
+          return res.status(400).json({ 
+            error: `User limit (${readWriteUserLimit}) reached. Contact your administrator.` 
+          });
+        }
       }
 
       // Hash password and create user
