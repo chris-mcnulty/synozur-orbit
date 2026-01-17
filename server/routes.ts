@@ -3526,7 +3526,7 @@ Return only the description text, no quotes or formatting.`;
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       const validFrequencies = ["daily", "weekly", "disabled"];
       
-      const { name, logoUrl, faviconUrl, primaryColor, secondaryColor, monitoringFrequency } = req.body;
+      const { name, logoUrl, faviconUrl, primaryColor, secondaryColor, monitoringFrequency, entraClientId, entraTenantId, entraClientSecret, entraEnabled } = req.body;
       const updateData: Record<string, any> = {};
       
       if (name && typeof name === "string" && name.trim()) {
@@ -3546,6 +3546,19 @@ Return only the description text, no quotes or formatting.`;
       }
       if (monitoringFrequency && validFrequencies.includes(monitoringFrequency)) {
         updateData.monitoringFrequency = monitoringFrequency;
+      }
+      // Tenant-level Entra ID configuration (Domain Admin editable)
+      if (entraClientId !== undefined) {
+        updateData.entraClientId = entraClientId?.trim() || null;
+      }
+      if (entraTenantId !== undefined) {
+        updateData.entraTenantId = entraTenantId?.trim() || null;
+      }
+      if (entraClientSecret !== undefined) {
+        updateData.entraClientSecret = entraClientSecret?.trim() || null;
+      }
+      if (typeof entraEnabled === "boolean") {
+        updateData.entraEnabled = entraEnabled;
       }
 
       if (Object.keys(updateData).length === 0) {

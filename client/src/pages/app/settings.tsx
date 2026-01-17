@@ -46,6 +46,9 @@ interface TenantSettings {
   competitorLimit: number;
   analysisLimit: number;
   userCount: number;
+  entraClientId: string | null;
+  entraTenantId: string | null;
+  entraEnabled: boolean;
 }
 
 export default function Settings() {
@@ -65,6 +68,12 @@ export default function Settings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
+  // Entra ID configuration state
+  const [entraClientId, setEntraClientId] = useState("");
+  const [entraTenantId, setEntraTenantId] = useState("");
+  const [entraClientSecret, setEntraClientSecret] = useState("");
+  const [entraEnabled, setEntraEnabled] = useState(false);
 
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
@@ -87,6 +96,9 @@ export default function Settings() {
       setBrandingPrimary(tenant.primaryColor || "#810FFB");
       setBrandingSecondary(tenant.secondaryColor || "#E60CB3");
       setMonitoringFreq(tenant.monitoringFrequency || "weekly");
+      setEntraClientId(tenant.entraClientId || "");
+      setEntraTenantId(tenant.entraTenantId || "");
+      setEntraEnabled(tenant.entraEnabled || false);
     }
   }, [tenant]);
 
@@ -570,22 +582,110 @@ export default function Settings() {
           </CardFooter>
         </Card>
 
+        {isAdmin && (
+          <Card data-testid="card-entra-config">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Microsoft Entra ID (SSO)
+              </CardTitle>
+              <CardDescription>Configure enterprise Single Sign-On for your organization.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="p-4 bg-muted/50 rounded-lg border border-border">
+                <Label className="text-sm font-medium">Redirect URI (copy to Azure Portal)</Label>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 p-2 bg-background rounded text-sm font-mono break-all">
+                    {window.location.origin}/api/auth/entra/callback
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/auth/entra/callback`);
+                      toast.success("Redirect URI copied to clipboard");
+                    }}
+                    data-testid="button-copy-redirect-uri"
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Add this as a "Web" platform redirect URI in your Azure App Registration. No trailing slash.
+                </p>
+              </div>
+              
+              <div className="grid gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="entra-enabled">Enable Tenant SSO</Label>
+                    <p className="text-xs text-muted-foreground">Allow users to sign in with Microsoft</p>
+                  </div>
+                  <Switch
+                    id="entra-enabled"
+                    checked={entraEnabled}
+                    onCheckedChange={setEntraEnabled}
+                    data-testid="switch-entra-enabled"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="entra-client-id">Application (Client) ID</Label>
+                  <Input
+                    id="entra-client-id"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={entraClientId}
+                    onChange={(e) => setEntraClientId(e.target.value)}
+                    data-testid="input-entra-client-id"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="entra-tenant-id">Directory (Tenant) ID</Label>
+                  <Input
+                    id="entra-tenant-id"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={entraTenantId}
+                    onChange={(e) => setEntraTenantId(e.target.value)}
+                    data-testid="input-entra-tenant-id"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="entra-client-secret">Client Secret</Label>
+                  <Input
+                    id="entra-client-secret"
+                    type="password"
+                    placeholder="Enter client secret value"
+                    value={entraClientSecret}
+                    onChange={(e) => setEntraClientSecret(e.target.value)}
+                    data-testid="input-entra-client-secret"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Create a new client secret in Azure Portal under Certificates & secrets
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="border-t border-border px-6 py-4">
+              <Button
+                onClick={() => updateEntraMutation.mutate()}
+                disabled={updateEntraMutation.isPending}
+                data-testid="button-save-entra"
+              >
+                {updateEntraMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save SSO Settings
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Integrations</CardTitle>
             <CardDescription>Connect Orbit to your existing stack.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">Microsoft Entra ID (SSO)</Label>
-                <p className="text-sm text-muted-foreground">Enterprise Single Sign-On - Configured</p>
-              </div>
-              <Badge variant="outline" className="text-green-600 border-green-600">Active</Badge>
-            </div>
-            
-            <Separator />
-            
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">HubSpot</Label>
