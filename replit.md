@@ -82,8 +82,14 @@ Database tables include:
 
 ### Authentication & Authorization
 - Session-based authentication with express-session
+- **Microsoft Entra ID SSO**: OAuth 2.0 integration using @azure/msal-node
+  - Routes: `/api/auth/entra` (initiate), `/api/auth/entra/callback` (handle token)
+  - Configuration: `server/auth/msal-config.ts`
+  - SSO users have `authProvider: "entra"` and cannot use password login
+  - Requires: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID` env vars
+- Password fallback: Traditional email/password login for non-SSO users
 - Role hierarchy: Global Admin > Domain Admin > Standard User
-- First registered user becomes Global Admin
+- First registered user becomes Global Admin (both password and SSO)
 - First user per email domain becomes Domain Admin for that domain
 - User context provided via React Context on the frontend
 
@@ -118,6 +124,10 @@ Database tables include:
 - `DATABASE_URL`: PostgreSQL connection string
 - `SESSION_SECRET`: Secret key for session encryption (defaults to development value)
 - AI provider keys (optional): For production AI features
+- **Entra SSO (optional)**:
+  - `ENTRA_CLIENT_ID`: Azure app registration client ID
+  - `ENTRA_CLIENT_SECRET`: Azure app registration client secret
+  - `ENTRA_TENANT_ID`: Azure tenant ID (use "common" for multi-tenant)
 
 ## MVP Feature Backlog
 
@@ -153,12 +163,13 @@ Based on the Orbit MVP Specification, the following features are required for la
 #### Priority 1: Critical (Must Have for Launch)
 
 ##### 1.1 SSO Authentication (Microsoft Entra ID + Google)
-**Status**: Not implemented (only email/password)
+**Status**: Microsoft Entra ID implemented ✅, Google pending
 **Spec Requirement**: "SSO integration with Microsoft Entra ID (Azure AD) and Google"
-- Add OAuth 2.0 flows for Microsoft and Google
-- JWT-based session tokens
-- Keep password login as fallback
-**Effort**: Medium-High
+- ✅ Microsoft Entra ID OAuth 2.0 flow with @azure/msal-node
+- ✅ SSO users linked via `entraId` field, `authProvider: "entra"`
+- ✅ Password login blocked for SSO users
+- ⏳ Google SSO (optional, not critical for enterprise)
+**Effort**: Remaining: Low (Google SSO only)
 
 ##### 1.2 Trial & Feature Gating System
 **Status**: Schema exists, no enforcement
