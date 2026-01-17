@@ -8,12 +8,13 @@ import { Progress } from "@/components/ui/progress";
 import { 
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
-  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3
+  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
+import { useState } from "react";
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -36,6 +37,9 @@ const CustomTooltip = ({ active, payload }: any) => {
 export default function Dashboard() {
   const { user } = useUser();
   const [, setLocation] = useLocation();
+  const [checklistDismissed, setChecklistDismissed] = useState(() => {
+    return localStorage.getItem("orbit_onboarding_dismissed") === "true";
+  });
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -105,6 +109,51 @@ export default function Dashboard() {
   const activeProjects = projects.filter((p: any) => p.status === "active");
   const highImpactActivity = activity.filter((a: any) => a.impact === "High");
 
+  // Onboarding checklist items
+  const onboardingSteps = [
+    {
+      id: "company",
+      label: "Set up company profile",
+      description: "Add your website and company details",
+      complete: !!baselineComplete,
+      href: "/app/company-profile",
+      icon: Building2,
+    },
+    {
+      id: "competitors",
+      label: "Add competitors",
+      description: "Track at least one competitor",
+      complete: competitors.length > 0,
+      href: "/app/competitors",
+      icon: Users,
+    },
+    {
+      id: "analysis",
+      label: "Run an analysis",
+      description: "Generate competitive insights",
+      complete: !!hasAnalysis,
+      href: "/app/analysis",
+      icon: Sparkles,
+    },
+    {
+      id: "reports",
+      label: "Generate a report",
+      description: "Create your first competitive report",
+      complete: reports.length > 0,
+      href: "/app/reports",
+      icon: FileText,
+    },
+  ];
+
+  const completedSteps = onboardingSteps.filter(s => s.complete).length;
+  const onboardingProgress = Math.round((completedSteps / onboardingSteps.length) * 100);
+  const showOnboarding = !checklistDismissed && completedSteps < onboardingSteps.length;
+
+  const handleDismissChecklist = () => {
+    localStorage.setItem("orbit_onboarding_dismissed", "true");
+    setChecklistDismissed(true);
+  };
+
   const positioningData = [
     { x: 85, y: 75, name: companyProfile?.name || 'Your Company', type: 'us', id: 'baseline' },
     ...competitors.slice(0, 6).map((c: any, i: number) => ({
@@ -156,6 +205,103 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {showOnboarding && (
+        <Card className="mb-6 border-primary/30 bg-gradient-to-r from-primary/5 to-secondary/5 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75 fill-mode-backwards" data-testid="card-onboarding-checklist">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Rocket className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Getting Started</CardTitle>
+                  <CardDescription>Complete these steps to unlock Orbit's full potential</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right mr-2">
+                  <span className="text-sm font-semibold text-primary">{completedSteps}/{onboardingSteps.length}</span>
+                  <span className="text-xs text-muted-foreground ml-1">complete</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={handleDismissChecklist}
+                  data-testid="button-dismiss-checklist"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <Progress value={onboardingProgress} className="h-1.5 mt-3" />
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {onboardingSteps.map((step, index) => {
+                const Icon = step.icon;
+                const isNext = !step.complete && onboardingSteps.slice(0, index).every(s => s.complete);
+                return (
+                  <Link key={step.id} href={step.href}>
+                    <div
+                      className={cn(
+                        "group relative p-3 rounded-lg border transition-all duration-200 cursor-pointer",
+                        step.complete
+                          ? "bg-green-500/5 border-green-500/30"
+                          : isNext
+                          ? "bg-primary/5 border-primary/50 ring-1 ring-primary/20"
+                          : "bg-muted/30 border-border hover:border-primary/30"
+                      )}
+                      data-testid={`checklist-step-${step.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            "p-1.5 rounded-md transition-colors",
+                            step.complete
+                              ? "bg-green-500/20 text-green-500"
+                              : isNext
+                              ? "bg-primary/20 text-primary"
+                              : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                          )}
+                        >
+                          {step.complete ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                          ) : (
+                            <Icon className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={cn(
+                              "text-sm font-medium leading-tight",
+                              step.complete ? "text-green-500" : isNext ? "text-primary" : "text-foreground"
+                            )}
+                          >
+                            {step.label}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            {step.complete ? "Completed" : step.description}
+                          </p>
+                        </div>
+                      </div>
+                      {isNext && (
+                        <div className="absolute -top-1 -right-1">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100 fill-mode-backwards">
         <Link href="/app/company-profile">

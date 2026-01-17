@@ -200,6 +200,7 @@ export function registerEntraRoutes(app: Express) {
         name,
         company: domain,
         entraId,
+        azureTenantId,
         expiresAt,
       });
 
@@ -242,7 +243,7 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/auth/signin?error=token_expired");
       }
 
-      const { email, name, company, entraId } = verificationToken;
+      const { email, name, company, entraId, azureTenantId } = verificationToken;
       const domain = email.split("@")[1].toLowerCase();
 
       // Check if domain is blocked from auto-provisioning BEFORE marking token used
@@ -307,6 +308,8 @@ export function registerEntraRoutes(app: Express) {
           userCount: 1,
           competitorLimit: 3,
           analysisLimit: 5,
+          entraTenantId: azureTenantId || undefined,
+          entraEnabled: !!azureTenantId,
         });
       }
 

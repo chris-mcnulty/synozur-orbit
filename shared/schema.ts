@@ -30,6 +30,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
   name: text("name").notNull(),
   company: text("company").notNull(),
   entraId: text("entra_id"),
+  azureTenantId: text("azure_tenant_id"),
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
