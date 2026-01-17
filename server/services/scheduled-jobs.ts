@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
+import { monitorCompetitorWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
 
 interface JobStatus {
@@ -13,6 +14,7 @@ interface JobStatus {
 const jobStatus: Record<string, JobStatus> = {
   websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
+  websiteMonitor: { lastRun: null, isRunning: false, nextRun: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -222,14 +224,75 @@ async function runSocialMonitorJob(): Promise<void> {
   }
 }
 
+async function runWebsiteMonitorJob(): Promise<void> {
+  if (jobStatus.websiteMonitor.isRunning) {
+    console.log("[Scheduled Job] Website monitor already running, skipping...");
+    return;
+  }
+
+  jobStatus.websiteMonitor.isRunning = true;
+  console.log("[Scheduled Job] Starting website change monitor job...");
+
+  try {
+    const tenants = await storage.getAllTenants();
+
+    for (const tenant of tenants) {
+      if (tenant.status !== "active") continue;
+      if (tenant.plan === "free") continue;
+
+      const frequency = tenant.monitoringFrequency || "weekly";
+      if (frequency === "disabled") continue;
+
+      const intervalMs = getIntervalMs(frequency);
+      if (intervalMs === 0) continue;
+
+      const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
+      const users = await storage.getUsersByDomain(tenant.domain);
+      const primaryUser = users[0];
+
+      for (const competitor of competitors) {
+        const lastWebsiteMonitor = competitor.lastWebsiteMonitor
+          ? new Date(competitor.lastWebsiteMonitor).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastWebsiteMonitor < intervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Monitoring website changes for ${competitor.name}...`);
+
+        try {
+          await monitorCompetitorWebsite(
+            competitor.id, 
+            primaryUser?.id, 
+            tenant.domain
+          );
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          console.error(`[Scheduled Job] Failed website monitoring for ${competitor.name}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[Scheduled Job] Website monitor job failed:", error);
+  } finally {
+    jobStatus.websiteMonitor.isRunning = false;
+    jobStatus.websiteMonitor.lastRun = new Date();
+    console.log("[Scheduled Job] Website change monitor job completed");
+  }
+}
+
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
+let websiteMonitorInterval: NodeJS.Timeout | null = null;
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
 
   if (websiteCrawlInterval) clearInterval(websiteCrawlInterval);
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
+  if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
 
   websiteCrawlInterval = setInterval(() => {
     runWebsiteCrawlJob();
@@ -237,6 +300,10 @@ export function startScheduledJobs(): void {
 
   socialMonitorInterval = setInterval(() => {
     runSocialMonitorJob();
+  }, 60 * 60 * 1000);
+
+  websiteMonitorInterval = setInterval(() => {
+    runWebsiteMonitorJob();
   }, 60 * 60 * 1000);
 
   setTimeout(() => {
@@ -247,7 +314,11 @@ export function startScheduledJobs(): void {
     runSocialMonitorJob();
   }, 60 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl and social monitor will run hourly");
+  setTimeout(() => {
+    runWebsiteMonitorJob();
+  }, 90 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, and website change monitor will run hourly");
 }
 
 export function stopScheduledJobs(): void {
@@ -258,6 +329,10 @@ export function stopScheduledJobs(): void {
   if (socialMonitorInterval) {
     clearInterval(socialMonitorInterval);
     socialMonitorInterval = null;
+  }
+  if (websiteMonitorInterval) {
+    clearInterval(websiteMonitorInterval);
+    websiteMonitorInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }
@@ -272,4 +347,8 @@ export async function triggerWebsiteCrawlNow(): Promise<void> {
 
 export async function triggerSocialMonitorNow(): Promise<void> {
   runSocialMonitorJob();
+}
+
+export async function triggerWebsiteMonitorNow(): Promise<void> {
+  runWebsiteMonitorJob();
 }

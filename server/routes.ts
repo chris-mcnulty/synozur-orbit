@@ -10,6 +10,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
+import { monitorCompetitorWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
@@ -723,6 +724,74 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== WEBSITE CHANGE MONITORING (PREMIUM) ====================
+
+  // Monitor website for a single competitor (on-demand)
+  app.post("/api/competitors/:id/monitor-website", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant || tenant.plan === "free") {
+        return res.status(403).json({ 
+          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
+          upgradeRequired: true 
+        });
+      }
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (competitor.userId !== req.session.userId && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const result = await monitorCompetitorWebsite(req.params.id, user.id, tenantDomain);
+      res.json({ success: true, result });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Monitor all competitors' websites for tenant (scheduled/bulk)
+  app.post("/api/website-monitoring/run", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      const results = await monitorAllWebsitesForTenant(tenantDomain);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error.message.includes("premium feature")) {
+        return res.status(403).json({ error: error.message, upgradeRequired: true });
+      }
       res.status(500).json({ error: error.message });
     }
   });
