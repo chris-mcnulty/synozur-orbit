@@ -1206,15 +1206,20 @@ export async function registerRoutes(
 
       const validPlans = ["free", "pro", "enterprise"];
       const validStatuses = ["active", "suspended"];
+      const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       
-      const { plan, status, competitorLimit, analysisLimit, name } = req.body;
-      const updateData: { plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string } = {};
+      const { plan, status, competitorLimit, analysisLimit, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
+      const updateData: { plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
       
       if (plan && validPlans.includes(plan)) updateData.plan = plan;
       if (status && validStatuses.includes(status)) updateData.status = status;
       if (typeof competitorLimit === "number" && competitorLimit >= 0) updateData.competitorLimit = competitorLimit;
       if (typeof analysisLimit === "number" && analysisLimit >= 0) updateData.analysisLimit = analysisLimit;
       if (name && typeof name === "string" && name.trim()) updateData.name = name.trim();
+      if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null;
+      if (faviconUrl !== undefined) updateData.faviconUrl = faviconUrl || null;
+      if (primaryColor && hexColorRegex.test(primaryColor)) updateData.primaryColor = primaryColor;
+      if (secondaryColor && hexColorRegex.test(secondaryColor)) updateData.secondaryColor = secondaryColor;
 
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ error: "No valid fields to update" });

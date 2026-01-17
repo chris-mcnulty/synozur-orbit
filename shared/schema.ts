@@ -28,6 +28,10 @@ export const tenants = pgTable("tenants", {
   userCount: integer("user_count").notNull().default(0),
   competitorLimit: integer("competitor_limit").notNull().default(3),
   analysisLimit: integer("analysis_limit").notNull().default(5),
+  logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
+  primaryColor: text("primary_color").default("#810FFB"),
+  secondaryColor: text("secondary_color").default("#E60CB3"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
