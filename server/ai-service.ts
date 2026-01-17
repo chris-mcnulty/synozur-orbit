@@ -68,8 +68,19 @@ Return ONLY valid JSON, no additional text.`,
   }
 
   try {
-    return JSON.parse(content.text);
-  } catch {
+    // Handle markdown-wrapped JSON responses
+    let text = content.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse AI response:", content.text, e);
     return {
       summary: "Analysis could not be completed",
       keyMessages: [],
@@ -118,8 +129,18 @@ Return ONLY valid JSON array, no additional text.`,
   }
 
   try {
-    return JSON.parse(content.text);
-  } catch {
+    let text = content.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse gap analysis response:", content.text, e);
     return [];
   }
 }
@@ -164,8 +185,18 @@ Return ONLY valid JSON array, no additional text.`,
   }
 
   try {
-    return JSON.parse(content.text);
-  } catch {
+    let text = content.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse recommendations response:", content.text, e);
     return [];
   }
 }
@@ -210,8 +241,18 @@ Return ONLY valid JSON, no additional text.`,
   }
 
   try {
-    return JSON.parse(content.text);
-  } catch {
+    let text = content.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse change detection response:", content.text, e);
     return { hasChanges: false, description: "", impact: "Low" };
   }
 }
