@@ -9,6 +9,7 @@ import {
   reports, 
   analysis,
   groundingDocuments,
+  globalGroundingDocuments,
   companyProfiles,
   assessments,
   emailVerificationTokens,
@@ -36,6 +37,8 @@ import {
   type InsertAnalysis,
   type GroundingDocument,
   type InsertGroundingDocument,
+  type GlobalGroundingDocument,
+  type InsertGlobalGroundingDocument,
   type CompanyProfile,
   type InsertCompanyProfile,
   type Assessment,
@@ -113,6 +116,15 @@ export interface IStorage {
   createGroundingDocument(document: InsertGroundingDocument): Promise<GroundingDocument>;
   updateGroundingDocumentText(id: string, extractedText: string): Promise<void>;
   deleteGroundingDocument(id: string): Promise<void>;
+  
+  // Global Grounding Document methods (application-wide AI context)
+  getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
+  getActiveGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
+  getGlobalGroundingDocumentsByCategory(category: string): Promise<GlobalGroundingDocument[]>;
+  getGlobalGroundingDocument(id: string): Promise<GlobalGroundingDocument | undefined>;
+  createGlobalGroundingDocument(document: InsertGlobalGroundingDocument): Promise<GlobalGroundingDocument>;
+  updateGlobalGroundingDocument(id: string, data: Partial<GlobalGroundingDocument>): Promise<GlobalGroundingDocument>;
+  deleteGlobalGroundingDocument(id: string): Promise<void>;
   
   // Company Profile methods (baseline own website)
   getCompanyProfile(id: string): Promise<CompanyProfile | undefined>;
@@ -454,6 +466,54 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGroundingDocument(id: string): Promise<void> {
     await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
+  }
+
+  // Global Grounding Document methods (application-wide AI context)
+  async getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]> {
+    return await db.select().from(globalGroundingDocuments)
+      .orderBy(desc(globalGroundingDocuments.createdAt));
+  }
+
+  async getActiveGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]> {
+    return await db.select().from(globalGroundingDocuments)
+      .where(eq(globalGroundingDocuments.isActive, true))
+      .orderBy(desc(globalGroundingDocuments.createdAt));
+  }
+
+  async getGlobalGroundingDocumentsByCategory(category: string): Promise<GlobalGroundingDocument[]> {
+    return await db.select().from(globalGroundingDocuments)
+      .where(and(
+        eq(globalGroundingDocuments.category, category),
+        eq(globalGroundingDocuments.isActive, true)
+      ))
+      .orderBy(desc(globalGroundingDocuments.createdAt));
+  }
+
+  async getGlobalGroundingDocument(id: string): Promise<GlobalGroundingDocument | undefined> {
+    const [doc] = await db.select().from(globalGroundingDocuments)
+      .where(eq(globalGroundingDocuments.id, id));
+    return doc || undefined;
+  }
+
+  async createGlobalGroundingDocument(insertDoc: InsertGlobalGroundingDocument): Promise<GlobalGroundingDocument> {
+    const [doc] = await db
+      .insert(globalGroundingDocuments)
+      .values(insertDoc)
+      .returning();
+    return doc;
+  }
+
+  async updateGlobalGroundingDocument(id: string, data: Partial<GlobalGroundingDocument>): Promise<GlobalGroundingDocument> {
+    const [doc] = await db
+      .update(globalGroundingDocuments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(globalGroundingDocuments.id, id))
+      .returning();
+    return doc;
+  }
+
+  async deleteGlobalGroundingDocument(id: string): Promise<void> {
+    await db.delete(globalGroundingDocuments).where(eq(globalGroundingDocuments.id, id));
   }
 
   // Company Profile methods (baseline own website)
