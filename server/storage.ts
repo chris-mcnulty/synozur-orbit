@@ -9,6 +9,7 @@ import {
   groundingDocuments,
   companyProfiles,
   assessments,
+  emailVerificationTokens,
   type User, 
   type InsertUser,
   type Tenant,
@@ -28,7 +29,9 @@ import {
   type CompanyProfile,
   type InsertCompanyProfile,
   type Assessment,
-  type InsertAssessment
+  type InsertAssessment,
+  type EmailVerificationToken,
+  type InsertEmailVerificationToken
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -103,6 +106,11 @@ export interface IStorage {
   createAssessment(assessment: InsertAssessment): Promise<Assessment>;
   updateAssessment(id: string, data: Partial<Assessment>): Promise<Assessment>;
   deleteAssessment(id: string): Promise<void>;
+  
+  // Email Verification Token methods
+  createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
+  getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
+  markEmailVerificationTokenUsed(token: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -420,6 +428,26 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAssessment(id: string): Promise<void> {
     await db.delete(assessments).where(eq(assessments.id, id));
+  }
+
+  // Email Verification Token methods
+  async createEmailVerificationToken(insertToken: InsertEmailVerificationToken): Promise<EmailVerificationToken> {
+    const [token] = await db
+      .insert(emailVerificationTokens)
+      .values(insertToken)
+      .returning();
+    return token;
+  }
+
+  async getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined> {
+    const [result] = await db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.token, token));
+    return result || undefined;
+  }
+
+  async markEmailVerificationTokenUsed(token: string): Promise<void> {
+    await db.update(emailVerificationTokens)
+      .set({ used: true })
+      .where(eq(emailVerificationTokens.token, token));
   }
 }
 

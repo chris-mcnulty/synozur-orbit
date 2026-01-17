@@ -18,6 +18,20 @@ export const users = pgTable("users", {
   avatar: text("avatar").notNull(),
   entraId: text("entra_id"),
   authProvider: text("auth_provider").default("local"),
+  emailVerified: boolean("email_verified").default(false),
+  status: text("status").default("active"), // active, pending_verification, suspended
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  token: text("token").notNull().unique(),
+  email: text("email").notNull(),
+  name: text("name").notNull(),
+  company: text("company").notNull(),
+  entraId: text("entra_id"),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -150,10 +164,18 @@ export const insertAnalysisSchema = createInsertSchema(analysis).omit({
   createdAt: true,
 });
 
+export const insertEmailVerificationTokenSchema = createInsertSchema(emailVerificationTokens).omit({
+  id: true,
+  createdAt: true,
+  used: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
 export type Tenant = typeof tenants.$inferSelect;
+export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificationTokenSchema>;
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
