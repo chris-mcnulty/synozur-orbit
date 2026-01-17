@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -75,6 +75,30 @@ interface ProductBattlecard {
   createdAt: string;
 }
 
+interface LongFormRecommendation {
+  id?: string;
+  type: string;
+  projectId: string;
+  companyProfileId?: string | null;
+  tenantDomain?: string;
+  content: string | null;
+  savedPrompts: {
+    targetRoles?: string;
+    distributionChannels?: string;
+    customGuidance?: string;
+    budget?: string;
+    timeline?: string;
+    targetAudience?: string;
+    toneOfVoice?: string;
+    keyMessages?: string;
+  } | null;
+  status: string;
+  lastGeneratedAt: string | null;
+  generatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
@@ -140,6 +164,128 @@ export default function ProjectDetail() {
 
   const [generatingBattlecardFor, setGeneratingBattlecardFor] = useState<string | null>(null);
   const [selectedBattlecard, setSelectedBattlecard] = useState<ProductBattlecard | null>(null);
+  
+  // Long-form recommendations state
+  const [activeTab, setActiveTab] = useState("overview");
+  const [gtmPrompts, setGtmPrompts] = useState({
+    targetRoles: "",
+    distributionChannels: "",
+    customGuidance: "",
+    budget: "",
+    timeline: "",
+  });
+  const [messagingPrompts, setMessagingPrompts] = useState({
+    targetAudience: "",
+    toneOfVoice: "",
+    keyMessages: "",
+    customGuidance: "",
+  });
+
+  // Fetch GTM Plan recommendation
+  const { data: gtmPlan, isLoading: gtmLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "gtm_plan"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/gtm_plan`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch GTM plan");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  // Fetch Messaging Framework recommendation
+  const { data: messagingFramework, isLoading: messagingLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "messaging_framework"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/messaging_framework`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch messaging framework");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  // Initialize prompts from saved data when loaded
+  React.useEffect(() => {
+    if (gtmPlan?.savedPrompts) {
+      setGtmPrompts({
+        targetRoles: gtmPlan.savedPrompts.targetRoles || "",
+        distributionChannels: gtmPlan.savedPrompts.distributionChannels || "",
+        customGuidance: gtmPlan.savedPrompts.customGuidance || "",
+        budget: gtmPlan.savedPrompts.budget || "",
+        timeline: gtmPlan.savedPrompts.timeline || "",
+      });
+    }
+  }, [gtmPlan]);
+
+  React.useEffect(() => {
+    if (messagingFramework?.savedPrompts) {
+      setMessagingPrompts({
+        targetAudience: messagingFramework.savedPrompts.targetAudience || "",
+        toneOfVoice: messagingFramework.savedPrompts.toneOfVoice || "",
+        keyMessages: messagingFramework.savedPrompts.keyMessages || "",
+        customGuidance: messagingFramework.savedPrompts.customGuidance || "",
+      });
+    }
+  }, [messagingFramework]);
+
+  const generateGtmPlan = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/gtm_plan/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(gtmPrompts),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate GTM plan");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "gtm_plan"] });
+      toast({
+        title: "GTM Plan Generated",
+        description: "Your Go-To-Market plan has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateMessagingFramework = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/messaging_framework/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(messagingPrompts),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate messaging framework");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "messaging_framework"] });
+      toast({
+        title: "Messaging Framework Generated",
+        description: "Your messaging and positioning framework has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const generateBattlecard = useMutation({
     mutationFn: async (competitorProductId: string) => {
@@ -545,6 +691,36 @@ export default function ProjectDetail() {
               </div>
             </div>
           </div>
+
+          {/* Main Tabs for Project Sections */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+            <TabsList className="grid w-full grid-cols-3 max-w-md">
+              <TabsTrigger value="overview" className="flex items-center gap-1">
+                <Package className="h-4 w-4" />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="gtm_plan" className="flex items-center gap-1">
+                <Rocket className="h-4 w-4" />
+                GTM Plan
+                {gtmPlan?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="messaging" className="flex items-center gap-1">
+                <MessageCircle className="h-4 w-4" />
+                Messaging
+                {messagingFramework?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Overview Tab Content */}
+            <TabsContent value="overview" className="mt-6">
 
           {project.analysisType === "product" && (
             <>
@@ -1161,6 +1337,330 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
           )}
+            </TabsContent>
+
+            {/* GTM Plan Tab Content */}
+            <TabsContent value="gtm_plan" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Rocket className="h-5 w-5 text-primary" />
+                        Go-To-Market Plan
+                      </CardTitle>
+                      <CardDescription>
+                        AI-generated strategic plan for market entry and growth
+                      </CardDescription>
+                    </div>
+                    {gtmPlan?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(gtmPlan.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* GTM Prompts Form */}
+                  <div className="border rounded-lg p-4 bg-muted/30">
+                    <h4 className="font-medium mb-4">Guidance for AI Generation</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="gtm-target-roles">Target Roles/Personas</Label>
+                        <Input
+                          id="gtm-target-roles"
+                          placeholder="e.g., CTO, VP Engineering, DevOps Lead"
+                          value={gtmPrompts.targetRoles}
+                          onChange={(e) => setGtmPrompts({ ...gtmPrompts, targetRoles: e.target.value })}
+                          data-testid="input-gtm-target-roles"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="gtm-distribution">Distribution Channels</Label>
+                        <Input
+                          id="gtm-distribution"
+                          placeholder="e.g., Direct sales, Channel partners, Digital"
+                          value={gtmPrompts.distributionChannels}
+                          onChange={(e) => setGtmPrompts({ ...gtmPrompts, distributionChannels: e.target.value })}
+                          data-testid="input-gtm-distribution"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="gtm-budget">Budget Considerations</Label>
+                        <Input
+                          id="gtm-budget"
+                          placeholder="e.g., $50K-100K, Bootstrapped, Series A"
+                          value={gtmPrompts.budget}
+                          onChange={(e) => setGtmPrompts({ ...gtmPrompts, budget: e.target.value })}
+                          data-testid="input-gtm-budget"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="gtm-timeline">Timeline</Label>
+                        <Input
+                          id="gtm-timeline"
+                          placeholder="e.g., Q1 2026, 6 months, Immediate"
+                          value={gtmPrompts.timeline}
+                          onChange={(e) => setGtmPrompts({ ...gtmPrompts, timeline: e.target.value })}
+                          data-testid="input-gtm-timeline"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="gtm-guidance">Additional Guidance</Label>
+                        <Textarea
+                          id="gtm-guidance"
+                          placeholder="Any specific requirements, constraints, or focus areas..."
+                          value={gtmPrompts.customGuidance}
+                          onChange={(e) => setGtmPrompts({ ...gtmPrompts, customGuidance: e.target.value })}
+                          data-testid="input-gtm-guidance"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button 
+                        onClick={() => generateGtmPlan.mutate()} 
+                        disabled={generateGtmPlan.isPending}
+                        data-testid="button-generate-gtm"
+                      >
+                        {generateGtmPlan.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : gtmPlan?.status === "generated" ? (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Regenerate GTM Plan
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Generate GTM Plan
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* GTM Content Display */}
+                  {gtmLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : gtmPlan?.status === "generated" && gtmPlan.content ? (
+                    <div className="space-y-4">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const blob = new Blob([gtmPlan.content || ""], { type: "text/markdown" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `gtm_plan_${new Date().toISOString().split('T')[0]}.md`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          data-testid="button-download-gtm-md"
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Download Markdown
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/recommendations/${gtmPlan.id}/download/docx`, "_blank")}
+                          data-testid="button-download-gtm-docx"
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Download Word
+                        </Button>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
+                        <div dangerouslySetInnerHTML={{ 
+                          __html: gtmPlan.content
+                            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                            .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                            .replace(/^- (.*$)/gim, '<li>$1</li>')
+                            .replace(/\n\n/gim, '</p><p>')
+                            .replace(/\n/gim, '<br/>')
+                        }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Rocket className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No GTM Plan Generated Yet</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Fill in the guidance above and click generate to create your Go-To-Market plan.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Messaging Framework Tab Content */}
+            <TabsContent value="messaging" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <MessageCircle className="h-5 w-5 text-primary" />
+                        Messaging & Positioning Framework
+                      </CardTitle>
+                      <CardDescription>
+                        AI-generated brand messaging and positioning strategy
+                      </CardDescription>
+                    </div>
+                    {messagingFramework?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(messagingFramework.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Messaging Prompts Form */}
+                  <div className="border rounded-lg p-4 bg-muted/30">
+                    <h4 className="font-medium mb-4">Guidance for AI Generation</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="msg-audience">Target Audience</Label>
+                        <Input
+                          id="msg-audience"
+                          placeholder="e.g., Enterprise IT teams, SMB owners"
+                          value={messagingPrompts.targetAudience}
+                          onChange={(e) => setMessagingPrompts({ ...messagingPrompts, targetAudience: e.target.value })}
+                          data-testid="input-msg-audience"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="msg-tone">Tone of Voice</Label>
+                        <Input
+                          id="msg-tone"
+                          placeholder="e.g., Professional, Friendly, Bold"
+                          value={messagingPrompts.toneOfVoice}
+                          onChange={(e) => setMessagingPrompts({ ...messagingPrompts, toneOfVoice: e.target.value })}
+                          data-testid="input-msg-tone"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="msg-key-messages">Key Messages to Emphasize</Label>
+                        <Input
+                          id="msg-key-messages"
+                          placeholder="e.g., Security-first, Cost savings, Ease of use"
+                          value={messagingPrompts.keyMessages}
+                          onChange={(e) => setMessagingPrompts({ ...messagingPrompts, keyMessages: e.target.value })}
+                          data-testid="input-msg-key-messages"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="msg-guidance">Additional Guidance</Label>
+                        <Textarea
+                          id="msg-guidance"
+                          placeholder="Any specific requirements, brand guidelines, or focus areas..."
+                          value={messagingPrompts.customGuidance}
+                          onChange={(e) => setMessagingPrompts({ ...messagingPrompts, customGuidance: e.target.value })}
+                          data-testid="input-msg-guidance"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button 
+                        onClick={() => generateMessagingFramework.mutate()} 
+                        disabled={generateMessagingFramework.isPending}
+                        data-testid="button-generate-messaging"
+                      >
+                        {generateMessagingFramework.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : messagingFramework?.status === "generated" ? (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Regenerate Framework
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Generate Framework
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Messaging Content Display */}
+                  {messagingLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : messagingFramework?.status === "generated" && messagingFramework.content ? (
+                    <div className="space-y-4">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const blob = new Blob([messagingFramework.content || ""], { type: "text/markdown" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `messaging_framework_${new Date().toISOString().split('T')[0]}.md`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          data-testid="button-download-msg-md"
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Download Markdown
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/recommendations/${messagingFramework.id}/download/docx`, "_blank")}
+                          data-testid="button-download-msg-docx"
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Download Word
+                        </Button>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
+                        <div dangerouslySetInnerHTML={{ 
+                          __html: messagingFramework.content
+                            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                            .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                            .replace(/^- (.*$)/gim, '<li>$1</li>')
+                            .replace(/\n\n/gim, '</p><p>')
+                            .replace(/\n/gim, '<br/>')
+                        }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Messaging Framework Generated Yet</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Fill in the guidance above and click generate to create your messaging framework.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
