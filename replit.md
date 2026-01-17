@@ -43,6 +43,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, role hierarchy, tenant-specific plan/usage limits.
+- **Service Plans**: Trial (default for new accounts: 3 competitors, 5 analyses), Free (1 competitor, 1 analysis), Pro, Enterprise. Plans configurable per-tenant with user role limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit).
 - **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining.
 - **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
