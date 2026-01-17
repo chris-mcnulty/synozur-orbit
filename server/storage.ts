@@ -60,6 +60,7 @@ export interface IStorage {
   getCompetitor(id: string): Promise<Competitor | undefined>;
   getAllCompetitors(): Promise<Competitor[]>;
   getCompetitorsByUserId(userId: string): Promise<Competitor[]>;
+  getCompetitorsByTenantDomain(tenantDomain: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
   updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor>;
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
@@ -222,6 +223,15 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(competitors)
       .where(eq(competitors.userId, userId))
       .orderBy(desc(competitors.createdAt));
+  }
+
+  async getCompetitorsByTenantDomain(tenantDomain: string): Promise<Competitor[]> {
+    const domainUsers = await this.getUsersByDomain(tenantDomain);
+    const userIds = domainUsers.map(u => u.id);
+    if (userIds.length === 0) return [];
+    
+    const allCompetitors = await this.getAllCompetitors();
+    return allCompetitors.filter(c => userIds.includes(c.userId));
   }
 
   async createCompetitor(insertCompetitor: InsertCompetitor): Promise<Competitor> {

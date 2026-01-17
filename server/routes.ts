@@ -9,6 +9,8 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
+import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -262,99 +264,71 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Fetch website content
-      let websiteContent = "";
-      let rawHtml = "";
-      try {
-        const response = await fetch(competitor.url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
-          },
-        });
-        rawHtml = await response.text();
-        
-        // Extract social media links from raw HTML before cleaning
-        const linkedInMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?linkedin\.com\/company\/[^"']+)["']/i);
-        const instagramMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?instagram\.com\/[^"']+)["']/i);
-        
-        const discoveredLinkedIn = linkedInMatch ? linkedInMatch[1] : null;
-        const discoveredInstagram = instagramMatch ? instagramMatch[1] : null;
-        
-        // Update social links only if not already set
-        if ((discoveredLinkedIn && !competitor.linkedInUrl) || (discoveredInstagram && !competitor.instagramUrl)) {
-          const socialUpdates: any = {};
-          if (discoveredLinkedIn && !competitor.linkedInUrl) {
-            socialUpdates.linkedInUrl = discoveredLinkedIn;
-          }
-          if (discoveredInstagram && !competitor.instagramUrl) {
-            socialUpdates.instagramUrl = discoveredInstagram;
-          }
-          await storage.updateCompetitor(competitor.id, socialUpdates);
-        }
-        
-        // Extract blog post titles and count (digest, not full content)
-        const blogTitles: string[] = [];
-        // Common blog post patterns: article titles, h2/h3 in blog sections
-        const articleRegex = /<article[^>]*>[\s\S]*?<h[1-3][^>]*>([^<]+)<\/h[1-3]>/gi;
-        let articleMatch;
-        while ((articleMatch = articleRegex.exec(rawHtml)) !== null) {
-          if (articleMatch[1] && articleMatch[1].trim().length > 10) {
-            blogTitles.push(articleMatch[1].trim().substring(0, 100));
-          }
-        }
-        // Also look for blog links
-        const blogLinkRegex = /href=["'][^"']*\/blog\/[^"']*["'][^>]*>([^<]+)</gi;
-        let blogMatch;
-        while ((blogMatch = blogLinkRegex.exec(rawHtml)) !== null) {
-          if (blogMatch[1] && blogMatch[1].trim().length > 10 && !blogTitles.includes(blogMatch[1].trim())) {
-            blogTitles.push(blogMatch[1].trim().substring(0, 100));
-          }
-        }
-        
-        // Extract text content from HTML (basic extraction)
-        websiteContent = rawHtml
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-          
-        // Store blog snapshot
-        if (blogTitles.length > 0) {
-          const previousSnapshot = competitor.blogSnapshot as any;
-          const previousCount = previousSnapshot?.postCount || 0;
-          const newPosts = blogTitles.length - previousCount;
-          
-          await storage.updateCompetitor(competitor.id, {
-            blogSnapshot: {
-              postCount: blogTitles.length,
-              latestTitles: blogTitles.slice(0, 5), // Keep only latest 5 titles
-              capturedAt: new Date().toISOString(),
-            }
-          });
-          
-          // Create activity if new posts detected
-          if (previousCount > 0 && newPosts > 0) {
-            await storage.createActivity({
-              type: "blog_update",
-              competitorId: competitor.id,
-              competitorName: competitor.name,
-              description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${blogTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
-              date: new Date().toISOString(),
-              impact: newPosts >= 3 ? "High" : "Medium",
-            });
-          }
-        }
-      } catch (fetchError) {
-        console.error("Failed to fetch website:", fetchError);
+      // Use the robust web crawler service
+      const crawlResult = await crawlCompetitorWebsite(competitor.url);
+      
+      if (crawlResult.pages.length === 0) {
+        return res.json({ success: false, message: "Website could not be crawled" });
       }
 
       const now = new Date();
       const lastCrawl = now.toLocaleString();
       
+      // Update social links only if not already set
+      const socialUpdates: any = {};
+      if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) {
+        socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+      }
+      if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
+        socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+      }
+      
+      // Update blog snapshot if detected
+      if (crawlResult.blogSnapshot) {
+        const previousSnapshot = competitor.blogSnapshot as any;
+        const previousCount = previousSnapshot?.postCount || 0;
+        const newPosts = crawlResult.blogSnapshot.postCount - previousCount;
+        
+        socialUpdates.blogSnapshot = {
+          ...crawlResult.blogSnapshot,
+          capturedAt: now.toISOString(),
+        };
+        
+        // Create activity if new posts detected
+        if (previousCount > 0 && newPosts > 0) {
+          await storage.createActivity({
+            type: "blog_update",
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${crawlResult.blogSnapshot.latestTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
+            date: now.toISOString(),
+            impact: newPosts >= 3 ? "High" : "Medium",
+          });
+        }
+      }
+      
+      // Store crawl data (pages summary, not full content for storage efficiency)
+      socialUpdates.crawlData = {
+        pagesCrawled: crawlResult.pages.map(p => ({ 
+          url: p.url, 
+          pageType: p.pageType, 
+          title: p.title,
+          wordCount: p.wordCount 
+        })),
+        totalWordCount: crawlResult.totalWordCount,
+        crawledAt: crawlResult.crawledAt,
+      };
+      socialUpdates.lastFullCrawl = now;
+      
+      if (Object.keys(socialUpdates).length > 0) {
+        await storage.updateCompetitor(competitor.id, socialUpdates);
+      }
+      
       await storage.updateCompetitorLastCrawl(req.params.id, lastCrawl);
       
-      // If we have content, analyze it with AI
+      // Get combined content for AI analysis
+      const websiteContent = getCombinedContent(crawlResult);
+      
       if (websiteContent.length > 100) {
         try {
           const analysis = await analyzeCompetitorWebsite(
@@ -371,18 +345,30 @@ export async function registerRoutes(
             type: "crawl",
             competitorId: competitor.id,
             competitorName: competitor.name,
-            description: `${analysis.summary}`,
+            description: `Analyzed ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words): ${analysis.summary}`,
             date: lastCrawl,
             impact: "Medium",
           });
           
-          res.json({ success: true, lastCrawl, analysis });
+          res.json({ 
+            success: true, 
+            lastCrawl, 
+            analysis,
+            pagesCrawled: crawlResult.pages.length,
+            totalWordCount: crawlResult.totalWordCount,
+          });
         } catch (aiError) {
           console.error("AI analysis failed:", aiError);
-          res.json({ success: true, lastCrawl, message: "Crawled but AI analysis unavailable" });
+          res.json({ 
+            success: true, 
+            lastCrawl, 
+            message: "Crawled but AI analysis unavailable",
+            pagesCrawled: crawlResult.pages.length,
+            totalWordCount: crawlResult.totalWordCount,
+          });
         }
       } else {
-        res.json({ success: true, lastCrawl, message: "Website content could not be fetched" });
+        res.json({ success: true, lastCrawl, message: "Website content could not be extracted" });
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1529,6 +1515,62 @@ export async function registerRoutes(
         const { password: _, ...userWithoutPassword } = u;
         return userWithoutPassword;
       }));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== SCHEDULED JOBS (GLOBAL ADMIN) ====================
+
+  app.get("/api/admin/jobs/status", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const status = getJobStatus();
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/trigger-crawl", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      triggerWebsiteCrawlNow();
+      res.json({ success: true, message: "Website crawl job triggered" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/trigger-social", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      triggerSocialMonitorNow();
+      res.json({ success: true, message: "Social monitor job triggered" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

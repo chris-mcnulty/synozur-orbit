@@ -3,6 +3,7 @@ import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { startScheduledJobs } from "./services/scheduled-jobs";
 
 const app = express();
 const httpServer = createServer(app);
@@ -113,6 +114,12 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      // Start scheduled background jobs for website crawling and social monitoring
+      if (process.env.NODE_ENV === "production") {
+        startScheduledJobs();
+        log("Scheduled jobs started");
+      }
     },
   );
 })();

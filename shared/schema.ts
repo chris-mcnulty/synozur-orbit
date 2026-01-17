@@ -67,6 +67,8 @@ export const competitors = pgTable("competitors", {
   linkedInEngagement: jsonb("linkedin_engagement"), // Snapshot: {followers, posts, reactions, comments}
   instagramEngagement: jsonb("instagram_engagement"), // Snapshot: {followers, posts, likes, comments}
   blogSnapshot: jsonb("blog_snapshot"), // Snapshot: {postCount, latestTitles, capturedAt}
+  crawlData: jsonb("crawl_data"), // Multi-page crawl results: {pages[], totalWordCount, crawledAt}
+  lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
   analysisData: jsonb("analysis_data"), // AI analysis results
