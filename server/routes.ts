@@ -2074,6 +2074,49 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // Create a new tenant (Global Admin only)
+  app.post("/api/tenants", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { domain, name, plan, status, competitorLimit, analysisLimit, adminUserLimit, readWriteUserLimit, readOnlyUserLimit } = req.body;
+
+      if (!domain || !domain.includes(".")) {
+        return res.status(400).json({ error: "Valid domain is required (e.g., company.com)" });
+      }
+
+      // Check if tenant already exists
+      const existingTenant = await storage.getTenantByDomain(domain.toLowerCase());
+      if (existingTenant) {
+        return res.status(400).json({ error: "Tenant with this domain already exists" });
+      }
+
+      const newTenant = await storage.createTenant({
+        domain: domain.toLowerCase(),
+        name: name || domain,
+        plan: plan || "trial",
+        status: status || "active",
+        userCount: 0,
+        competitorLimit: competitorLimit ?? 3,
+        analysisLimit: analysisLimit ?? 5,
+        adminUserLimit: adminUserLimit ?? 1,
+        readWriteUserLimit: readWriteUserLimit ?? 2,
+        readOnlyUserLimit: readOnlyUserLimit ?? 5,
+      });
+
+      res.status(201).json(newTenant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/tenants/:id", async (req, res) => {
     try {
       if (!req.session.userId) {

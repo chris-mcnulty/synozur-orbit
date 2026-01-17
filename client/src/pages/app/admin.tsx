@@ -96,6 +96,13 @@ export default function AdminPage() {
     primaryColor: "#810FFB",
     secondaryColor: "#E60CB3",
   });
+  const [addTenantOpen, setAddTenantOpen] = useState(false);
+  const [newTenant, setNewTenant] = useState({
+    domain: "",
+    name: "",
+    plan: "trial",
+    status: "active",
+  });
 
   const { data: tenants = [], isLoading, error } = useQuery<TenantWithCounts[]>({
     queryKey: ["/api/tenants"],
@@ -127,6 +134,27 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
       setEditDialogOpen(false);
+    },
+  });
+
+  const createTenantMutation = useMutation({
+    mutationFn: async (data: { domain: string; name: string; plan: string; status: string }) => {
+      const response = await fetch("/api/tenants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create tenant");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
+      setAddTenantOpen(false);
+      setNewTenant({ domain: "", name: "", plan: "trial", status: "active" });
     },
   });
 
@@ -436,11 +464,106 @@ export default function AdminPage() {
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle>All Tenants</CardTitle>
-            <CardDescription>
-              View and manage organizations using Orbit
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>All Tenants</CardTitle>
+              <CardDescription>
+                View and manage organizations using Orbit
+              </CardDescription>
+            </div>
+            <Dialog open={addTenantOpen} onOpenChange={setAddTenantOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-tenant">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Tenant
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Tenant</DialogTitle>
+                  <DialogDescription>
+                    Create a new organization. Users will be able to register with the specified domain.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tenant-domain">Domain *</Label>
+                    <Input
+                      id="tenant-domain"
+                      placeholder="company.com"
+                      value={newTenant.domain}
+                      onChange={(e) => setNewTenant({ ...newTenant, domain: e.target.value })}
+                      data-testid="input-tenant-domain"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Users with this email domain will belong to this tenant
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tenant-name">Organization Name</Label>
+                    <Input
+                      id="tenant-name"
+                      placeholder="Company Inc."
+                      value={newTenant.name}
+                      onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })}
+                      data-testid="input-tenant-name"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="tenant-plan">Plan</Label>
+                      <Select
+                        value={newTenant.plan}
+                        onValueChange={(value) => setNewTenant({ ...newTenant, plan: value })}
+                      >
+                        <SelectTrigger data-testid="select-tenant-plan">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="trial">Trial</SelectItem>
+                          <SelectItem value="free">Free</SelectItem>
+                          <SelectItem value="pro">Pro</SelectItem>
+                          <SelectItem value="enterprise">Enterprise</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tenant-status">Status</Label>
+                      <Select
+                        value={newTenant.status}
+                        onValueChange={(value) => setNewTenant({ ...newTenant, status: value })}
+                      >
+                        <SelectTrigger data-testid="select-tenant-status">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="suspended">Suspended</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setAddTenantOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => createTenantMutation.mutate(newTenant)}
+                    disabled={!newTenant.domain || createTenantMutation.isPending}
+                    data-testid="button-create-tenant"
+                  >
+                    {createTenantMutation.isPending ? "Creating..." : "Create Tenant"}
+                  </Button>
+                </DialogFooter>
+                {createTenantMutation.isError && (
+                  <p className="text-sm text-destructive mt-2">
+                    {createTenantMutation.error.message}
+                  </p>
+                )}
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent>
             {tenants.length === 0 ? (
