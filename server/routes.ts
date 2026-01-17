@@ -14,6 +14,7 @@ import { monitorCompetitorWebsite, monitorAllCompetitorsForTenant as monitorAllW
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
+import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 
 // Helper: Check if user has cross-tenant READ access
 // Global Admin and Consultant roles can read across tenants
@@ -112,6 +113,23 @@ export async function registerRoutes(
           analysisLimit: 5,
         });
       }
+
+      // Sync to HubSpot CRM (async, don't block signup)
+      const nameParts = name.split(' ');
+      const firstName = nameParts[0] || name;
+      const lastName = nameParts.slice(1).join(' ') || '';
+      syncNewAccountToHubSpot({
+        email,
+        firstName,
+        lastName,
+        companyName: company,
+        companyDomain: domain,
+        jobTitle: jobTitle || undefined,
+        industry: industry || undefined,
+        companySize: companySize || undefined,
+        country: country || undefined,
+        plan: 'trial',
+      }).catch(err => console.error('[HubSpot] Background sync failed:', err));
 
       // Set session
       req.session.userId = user.id;

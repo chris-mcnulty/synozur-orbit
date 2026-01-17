@@ -49,13 +49,18 @@
 ## Priority 2: Important (Required for Launch)
 
 ### 2.1 Email Notification Service
-**Status**: Not implemented
+**Status**: Partially implemented
 **Spec Requirement**: "Notification service for email alerts (trial onboarding, competitor updates)"
-- [ ] Email service integration (SendGrid/Resend)
-- [ ] Trial welcome and expiration emails
+- [x] Email service integration (SendGrid via Replit integration)
+- [x] Email verification emails
+- [x] Welcome emails for new accounts
+- [x] Team invitation emails
+- [x] Password reset emails
+- [x] Vega-inspired email styling (purple gradients, dark mode, Synozur branding)
+- [ ] Trial nudge cadence emails (welcome, mid-trial, end warning, expiration) - BACKLOGGED pending copy/links
 - [ ] Weekly competitor update digest
 - [ ] Alert emails for significant changes
-**Effort**: Medium
+**Effort**: Medium (remaining: trial cadence emails, digests)
 
 ### 2.2 Dark/Light Mode Toggle
 **Status**: Dark mode default, no toggle
