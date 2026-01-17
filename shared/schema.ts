@@ -188,6 +188,24 @@ export const analysis = pgTable("analysis", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const battlecards = pgTable("battlecards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  strengths: jsonb("strengths"), // Array of competitor strengths
+  weaknesses: jsonb("weaknesses"), // Array of competitor weaknesses
+  ourAdvantages: jsonb("our_advantages"), // How we beat this competitor
+  objections: jsonb("objections"), // Common objections and responses: [{objection, response}]
+  talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
+  quickStats: jsonb("quick_stats"), // {pricing, marketPosition, targetAudience, keyProducts}
+  customNotes: text("custom_notes"), // Free-form notes
+  status: text("status").notNull().default("draft"), // draft, published
+  lastGeneratedAt: timestamp("last_generated_at"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   competitors: many(competitors),
 }));
@@ -278,6 +296,13 @@ export const insertProjectProductSchema = createInsertSchema(projectProducts).om
   createdAt: true,
 });
 
+export const insertBattlecardSchema = createInsertSchema(battlecards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastGeneratedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -304,6 +329,8 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Report = typeof reports.$inferSelect;
 export type InsertAnalysis = z.infer<typeof insertAnalysisSchema>;
 export type Analysis = typeof analysis.$inferSelect;
+export type InsertBattlecard = z.infer<typeof insertBattlecardSchema>;
+export type Battlecard = typeof battlecards.$inferSelect;
 
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {
