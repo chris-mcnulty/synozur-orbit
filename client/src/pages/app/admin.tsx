@@ -205,24 +205,36 @@ export default function AdminPage() {
       const fileType = extension === "pdf" ? "pdf" : extension === "docx" ? "docx" : "txt";
 
       console.log("Sending POST request...");
-      const response = await fetch("/api/admin/global-documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description || null,
-          category: data.category,
-          fileType,
-          originalFileName: data.file.name,
-          fileContent,
-        }),
-      });
+      let response;
+      try {
+        response = await fetch("/api/admin/global-documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            name: data.name,
+            description: data.description || null,
+            category: data.category,
+            fileType,
+            originalFileName: data.file.name,
+            fileContent,
+          }),
+        });
+      } catch (networkError) {
+        console.error("Network error:", networkError);
+        throw new Error("Network error - please check your connection and try again");
+      }
       console.log("Response status:", response.status);
       if (!response.ok) {
-        const error = await response.json();
-        console.error("Upload error response:", error);
-        throw new Error(error.error || "Failed to upload document");
+        let errorMessage = "Failed to upload document";
+        try {
+          const error = await response.json();
+          console.error("Upload error response:", error);
+          errorMessage = error.error || errorMessage;
+        } catch (e) {
+          console.error("Could not parse error response");
+        }
+        throw new Error(errorMessage);
       }
       return response.json();
     },
