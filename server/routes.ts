@@ -622,13 +622,15 @@ export async function registerRoutes(
       // Generate recommendations
       const recommendations = await generateRecommendations(gaps, analyses);
 
-      // Save recommendations to database
+      // Save recommendations to database with tenant scoping
       for (const rec of recommendations) {
         await storage.createRecommendation({
           title: rec.title,
           description: rec.description,
           area: rec.area,
           impact: rec.impact,
+          userId: user.id,
+          tenantDomain,
         });
       }
 
