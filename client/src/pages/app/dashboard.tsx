@@ -1,9 +1,16 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell } from 'recharts';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Target, Eye, ArrowUpRight } from "lucide-react";
-import { Link } from "wouter";
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { 
+  Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
+  AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
+  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3
+} from "lucide-react";
+import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
@@ -11,10 +18,15 @@ import { useUser } from "@/lib/userContext";
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-card border border-border p-2 rounded shadow-sm text-xs">
-        <p className="font-semibold">{payload[0].payload.name}</p>
-        <p>Innovation: {payload[0].value}</p>
-        <p>Market Presence: {payload[1].value}</p>
+      <div className="bg-card border border-border p-3 rounded-lg shadow-lg text-xs">
+        <p className="font-semibold text-sm mb-1">{payload[0].payload.name}</p>
+        <div className="space-y-1 text-muted-foreground">
+          <p>Innovation: {payload[0].value}%</p>
+          <p>Market Presence: {payload[1].value}%</p>
+        </div>
+        <p className="text-primary text-xs mt-2 flex items-center">
+          Click to view details <ChevronRight className="w-3 h-3 ml-1" />
+        </p>
       </div>
     );
   }
@@ -23,6 +35,7 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 export default function Dashboard() {
   const { user } = useUser();
+  const [, setLocation] = useLocation();
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -51,121 +64,549 @@ export default function Dashboard() {
     },
   });
 
+  const { data: companyProfile } = useQuery({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const response = await fetch("/api/company-profile", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ["/api/projects"],
+    queryFn: async () => {
+      const response = await fetch("/api/projects", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const { data: analysis } = useQuery({
+    queryKey: ["/api/analysis"],
+    queryFn: async () => {
+      const response = await fetch("/api/analysis", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const { data: reports = [] } = useQuery({
+    queryKey: ["/api/reports"],
+    queryFn: async () => {
+      const response = await fetch("/api/reports", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const baselineComplete = companyProfile && companyProfile.url;
+  const hasAnalysis = analysis && analysis.themes;
+  const activeProjects = projects.filter((p: any) => p.status === "active");
+  const highImpactActivity = activity.filter((a: any) => a.impact === "High");
+
   const positioningData = [
-    { x: 85, y: 75, name: 'Orbit (Us)', type: 'us' },
-    ...competitors.slice(0, 4).map((c: any, i: number) => ({
-      x: 30 + (i * 20),
-      y: 40 + (i * 15),
+    { x: 85, y: 75, name: companyProfile?.name || 'Your Company', type: 'us', id: 'baseline' },
+    ...competitors.slice(0, 6).map((c: any, i: number) => ({
+      x: Math.max(15, Math.min(85, 30 + (i * 12) + Math.random() * 15)),
+      y: Math.max(15, Math.min(85, 35 + (i * 10) + Math.random() * 15)),
       name: c.name,
-      type: 'competitor'
+      type: 'competitor',
+      id: c.id
     }))
   ];
 
+  const trendData = [
+    { name: 'Week 1', score: 72 },
+    { name: 'Week 2', score: 75 },
+    { name: 'Week 3', score: 78 },
+    { name: 'Week 4', score: 82 },
+    { name: 'Week 5', score: 85 },
+  ];
+
+  const getImpactColor = (impact: string) => {
+    switch (impact) {
+      case "High": return "text-destructive bg-destructive/10";
+      case "Medium": return "text-yellow-500 bg-yellow-500/10";
+      default: return "text-green-500 bg-green-500/10";
+    }
+  };
+
   return (
     <AppLayout>
-      <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Overview</h1>
-        <p className="text-muted-foreground">Welcome back, {user?.name || "there"}. Here's what's happening in your market.</p>
+      <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">Command Center</h1>
+            <p className="text-muted-foreground">
+              Welcome back, {user?.name?.split(" ")[0] || "there"}. Here's your competitive intelligence overview.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/app/reports">
+              <Button variant="outline" size="sm" data-testid="button-view-reports">
+                <FileText className="w-4 h-4 mr-2" /> Reports
+              </Button>
+            </Link>
+            <Link href="/app/analysis">
+              <Button size="sm" data-testid="button-run-analysis">
+                <Sparkles className="w-4 h-4 mr-2" /> Run Analysis
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-100 fill-mode-backwards">
-        <Card className="hover:border-primary/50 transition-colors duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Competitors Tracked</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100 fill-mode-backwards">
+        <Link href="/app/company-profile">
+          <Card className={cn(
+            "cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full",
+            !baselineComplete && "border-yellow-500/50"
+          )} data-testid="card-baseline-status">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Baseline Status</CardTitle>
+              {baselineComplete ? (
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-yellow-500" />
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-bold group-hover:text-primary transition-colors">
+                {baselineComplete ? "Complete" : "Needs Setup"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {companyProfile?.name || "Set up your company profile"}
+              </p>
+              {!baselineComplete && (
+                <div className="mt-2">
+                  <Progress value={30} className="h-1" />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/app/competitors">
+          <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid="card-competitors">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Competitors</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold group-hover:text-primary transition-colors">{competitors.length}</div>
+              <p className="text-xs text-muted-foreground">Being tracked</p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/app/activity">
+          <Card className={cn(
+            "cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full",
+            highImpactActivity.length > 0 && "border-destructive/30"
+          )} data-testid="card-signals">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Live Signals</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold group-hover:text-primary transition-colors">{activity.length}</span>
+                {highImpactActivity.length > 0 && (
+                  <Badge variant="destructive" className="text-xs">{highImpactActivity.length} High</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Recent changes detected</p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/app/projects">
+          <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid="card-projects">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+              <Briefcase className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold group-hover:text-primary transition-colors">{activeProjects.length}</div>
+              <p className="text-xs text-muted-foreground">Client analyses</p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/app/analysis">
+          <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid="card-orbit-score">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Orbit Score</CardTitle>
+              <TrendingUp className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-primary">85</span>
+                <span className="text-xs text-green-500">+5%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">vs market average</p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200 fill-mode-backwards">
+        <Card className="lg:col-span-2 hover:border-primary/20 transition-colors duration-300">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                Market Positioning
+              </CardTitle>
+              <CardDescription>Your brand vs competitors on key axes. Click any point for details.</CardDescription>
+            </div>
+            <Link href="/app/analysis">
+              <Button variant="ghost" size="sm" className="text-xs" data-testid="link-full-analysis">
+                Full Analysis <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{competitors.length}</div>
-            <p className="text-xs text-muted-foreground">Active tracking</p>
+          <CardContent className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 30, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                <XAxis 
+                  type="number" 
+                  dataKey="x" 
+                  name="Innovation" 
+                  unit="%" 
+                  domain={[0, 100]} 
+                  label={{ value: 'Innovation Score', position: 'insideBottom', offset: -15, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} 
+                  tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} 
+                />
+                <YAxis 
+                  type="number" 
+                  dataKey="y" 
+                  name="Market Presence" 
+                  unit="%" 
+                  domain={[0, 100]} 
+                  label={{ value: 'Market Presence', angle: -90, position: 'insideLeft', offset: 5, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} 
+                  tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} 
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                <Scatter 
+                  name="Competitors" 
+                  data={positioningData} 
+                  className="cursor-pointer"
+                  onClick={(e: any) => {
+                    const payload = e?.payload || e;
+                    if (payload && payload.id) {
+                      if (payload.type === 'us') {
+                        setLocation('/app/company-profile');
+                      } else {
+                        setLocation(`/app/competitors/${payload.id}`);
+                      }
+                    }
+                  }}
+                >
+                  {positioningData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.type === 'us' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'} 
+                      r={entry.type === 'us' ? 12 : 8}
+                      opacity={entry.type === 'us' ? 1 : 0.7}
+                      data-testid={`chart-point-${entry.id}`}
+                    />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
-        <Card className="hover:border-primary/50 transition-colors duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Recommendations</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              Score Trend
+            </CardTitle>
+            <CardDescription>Your Orbit Score over time</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-primary">{recommendations.length}</div>
-            <p className="text-xs text-muted-foreground">AI-generated insights</p>
+          <CardContent className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} />
+                <YAxis domain={[60, 100]} tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--card))', 
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '8px',
+                    fontSize: '12px'
+                  }} 
+                />
+                <Area type="monotone" dataKey="score" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorScore)" />
+              </AreaChart>
+            </ResponsiveContainer>
           </CardContent>
-        </Card>
-        <Card className="hover:border-primary/50 transition-colors duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Changes Detected</CardTitle>
-            <Eye className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activity.length}</div>
-            <p className="text-xs text-muted-foreground">Recent activity</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:border-primary/50 transition-colors duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Orbit Score</CardTitle>
-            <div className="h-4 w-4 text-muted-foreground">✨</div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">85/100</div>
-            <p className="text-xs text-muted-foreground">+5% vs competitors</p>
-          </CardContent>
+          <CardFooter className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              <span className="text-green-500 font-medium">+18%</span> improvement this month
+            </p>
+          </CardFooter>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200 fill-mode-backwards">
-        <Card className="col-span-4 hover:border-primary/20 transition-colors duration-300">
-          <CardHeader>
-            <CardTitle>Market Positioning Map</CardTitle>
-            <CardDescription>Your brand vs competitors on key axes.</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] w-full pt-4">
-             <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis type="number" dataKey="x" name="Innovation" unit="%" domain={[0, 100]} label={{ value: 'Innovation Score', position: 'insideBottom', offset: -10, fontSize: 12, fill: 'currentColor', opacity: 0.5 }} tick={{fontSize: 12, opacity: 0.5}} />
-                  <YAxis type="number" dataKey="y" name="Market Presence" unit="%" domain={[0, 100]} label={{ value: 'Market Presence', angle: -90, position: 'insideLeft', offset: 0, fontSize: 12, fill: 'currentColor', opacity: 0.5 }} tick={{fontSize: 12, opacity: 0.5}} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Scatter name="Competitors" data={positioningData}>
-                    {positioningData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.type === 'us' ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'} />
-                    ))}
-                    <LabelList dataKey="name" position="top" style={{ fill: 'currentColor', fontSize: '10px', opacity: 0.8 }} />
-                  </Scatter>
-                </ScatterChart>
-             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest changes from competitors.</CardDescription>
+      <div className="grid gap-4 lg:grid-cols-2 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300 fill-mode-backwards">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-500" />
+                Live Signals
+              </CardTitle>
+              <CardDescription>Latest competitor movements</CardDescription>
+            </div>
+            <Link href="/app/activity">
+              <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-signals">
+                View All <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
             {activity.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No activity yet. Add competitors to start tracking changes.</p>
+              <div className="text-center py-8">
+                <Activity className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+                <p className="text-sm text-muted-foreground">No signals yet</p>
+                <p className="text-xs text-muted-foreground">Add competitors to start tracking</p>
+              </div>
             ) : (
-              <div className="space-y-4">
-                {activity.slice(0, 5).map((item: any) => (
-                  <div key={item.id} className="flex items-start gap-4 pb-4 border-b border-border last:border-0 last:pb-0">
-                    <div className={cn(
-                      "w-2 h-2 mt-2 rounded-full",
-                      item.impact === "High" ? "bg-destructive" : "bg-primary"
-                    )} />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">{item.competitor}</p>
-                      <p className="text-sm text-muted-foreground">{item.description}</p>
-                      <p className="text-xs text-muted-foreground pt-1">{item.date}</p>
+              <div className="space-y-3">
+                {activity.slice(0, 4).map((item: any) => (
+                  <Link key={item.id} href={`/app/competitors/${item.competitorId}`} data-testid={`link-signal-${item.id}`}>
+                    <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group" data-testid={`signal-${item.id}`}>
+                      <div className={cn("p-1.5 rounded-full shrink-0", getImpactColor(item.impact))}>
+                        {item.impact === "High" ? (
+                          <AlertCircle className="w-3 h-3" />
+                        ) : (
+                          <Eye className="w-3 h-3" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+                            {item.competitorName}
+                          </span>
+                          <Badge variant="outline" className="text-xs shrink-0">{item.type}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
+                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {item.date}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-primary" />
+                AI Insights
+              </CardTitle>
+              <CardDescription>Recommended actions based on analysis</CardDescription>
+            </div>
+            <Link href="/app/recommendations">
+              <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-insights">
+                View All <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {recommendations.length === 0 ? (
+              <div className="text-center py-8">
+                <Sparkles className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+                <p className="text-sm text-muted-foreground">No insights yet</p>
+                <p className="text-xs text-muted-foreground mb-4">Run an analysis to get AI recommendations</p>
+                <Link href="/app/analysis">
+                  <Button size="sm" variant="outline">
+                    <Sparkles className="w-4 h-4 mr-2" /> Run Analysis
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recommendations.slice(0, 3).map((rec: any) => (
+                  <div key={rec.id} className="p-3 rounded-lg border border-border hover:border-primary/30 transition-colors" data-testid={`insight-${rec.id}`}>
+                    <div className="flex items-start gap-3">
+                      <div className="p-1.5 rounded-full bg-primary/10 text-primary shrink-0">
+                        <Target className="w-3 h-3" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm mb-1">{rec.title}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{rec.description}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="secondary" className="text-xs">{rec.area}</Badge>
+                          <Badge variant={rec.impact === "High" ? "destructive" : "outline"} className="text-xs">
+                            {rec.impact} Impact
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <div className="mt-4 pt-4 border-t border-border">
-                <Link href="/app/activity" className="text-sm text-primary hover:underline flex items-center">
-                  View full feed <ArrowUpRight className="ml-1 h-3 w-3" />
-                </Link>
+          </CardContent>
+        </Card>
+      </div>
+
+      {activeProjects.length > 0 && (
+        <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400 fill-mode-backwards">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-primary" />
+              Active Projects
+            </h2>
+            <Link href="/app/projects">
+              <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-projects">
+                View All <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {activeProjects.slice(0, 3).map((project: any) => (
+              <Link key={project.id} href={`/app/projects/${project.id}`}>
+                <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid={`project-card-${project.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <Badge variant="outline" className="text-xs">
+                        {project.analysisType === "product" ? "Product Analysis" : "Company Analysis"}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs">{project.status}</Badge>
+                    </div>
+                    <CardTitle className="text-base group-hover:text-primary transition-colors">{project.clientName}</CardTitle>
+                    <CardDescription className="text-xs line-clamp-1">{project.name}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pb-3">
+                    {project.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{project.description}</p>
+                    )}
+                  </CardContent>
+                  <CardFooter className="pt-0 border-t">
+                    <div className="flex items-center justify-between w-full text-xs text-muted-foreground pt-3">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Updated {new Date(project.updatedAt).toLocaleDateString()}
+                      </span>
+                      <ChevronRight className="w-4 h-4 group-hover:text-primary transition-colors" />
+                    </div>
+                  </CardFooter>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500 fill-mode-backwards">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-primary" />
+              Quick Actions
+            </CardTitle>
+            <CardDescription>Common tasks to keep your intelligence fresh</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Link href="/app/competitors">
+                <Button variant="outline" className="w-full justify-start h-auto py-3" data-testid="action-add-competitor">
+                  <Plus className="w-4 h-4 mr-3 text-primary" />
+                  <div className="text-left">
+                    <div className="font-medium">Add Competitor</div>
+                    <div className="text-xs text-muted-foreground">Track a new company</div>
+                  </div>
+                </Button>
+              </Link>
+              <Link href="/app/analysis">
+                <Button variant="outline" className="w-full justify-start h-auto py-3" data-testid="action-run-analysis">
+                  <Sparkles className="w-4 h-4 mr-3 text-primary" />
+                  <div className="text-left">
+                    <div className="font-medium">Run Analysis</div>
+                    <div className="text-xs text-muted-foreground">Get AI-powered insights</div>
+                  </div>
+                </Button>
+              </Link>
+              <Link href="/app/reports">
+                <Button variant="outline" className="w-full justify-start h-auto py-3" data-testid="action-generate-report">
+                  <FileText className="w-4 h-4 mr-3 text-primary" />
+                  <div className="text-left">
+                    <div className="font-medium">Generate Report</div>
+                    <div className="text-xs text-muted-foreground">Create branded PDF</div>
+                  </div>
+                </Button>
+              </Link>
+              <Link href="/app/projects">
+                <Button variant="outline" className="w-full justify-start h-auto py-3" data-testid="action-new-project">
+                  <Briefcase className="w-4 h-4 mr-3 text-primary" />
+                  <div className="text-left">
+                    <div className="font-medium">New Project</div>
+                    <div className="text-xs text-muted-foreground">Start client analysis</div>
+                  </div>
+                </Button>
+              </Link>
             </div>
           </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Recent Reports
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {reports.length === 0 ? (
+              <div className="text-center py-6">
+                <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+                <p className="text-sm text-muted-foreground">No reports yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {reports.slice(0, 3).map((report: any) => (
+                  <div key={report.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors" data-testid={`recent-report-${report.id}`}>
+                    <div className="p-2 rounded bg-primary/10 text-primary">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{report.name}</p>
+                      <p className="text-xs text-muted-foreground">{report.date}</p>
+                    </div>
+                    <Badge variant={report.status === "Ready" ? "default" : "secondary"} className="text-xs shrink-0">
+                      {report.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="pt-0">
+            <Link href="/app/reports" className="w-full">
+              <Button variant="ghost" size="sm" className="w-full text-xs" data-testid="link-all-reports">
+                View All Reports <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </CardFooter>
         </Card>
       </div>
     </AppLayout>
