@@ -1414,6 +1414,182 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // ==================== GLOBAL GROUNDING DOCUMENTS ROUTES (Global Admin Only) ====================
+
+  // Get all global grounding documents (Global Admin only)
+  app.get("/api/admin/global-documents", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "globalAdmin") {
+        return res.status(403).json({ error: "Only Global Admins can manage global documents" });
+      }
+
+      const documents = await storage.getAllGlobalGroundingDocuments();
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create global grounding document with text extraction (Global Admin only)
+  app.post("/api/admin/global-documents", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "globalAdmin") {
+        return res.status(403).json({ error: "Only Global Admins can manage global documents" });
+      }
+
+      const { name, description, category, fileType, originalFileName, fileContent } = req.body;
+
+      // Validate required fields
+      if (!name || !category || !fileType || !originalFileName || !fileContent) {
+        return res.status(400).json({ error: "Missing required fields: name, category, fileType, originalFileName, fileContent" });
+      }
+
+      // Validate category
+      const validCategories = ["brand_voice", "marketing_guidelines", "digital_assets", "methodology"];
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(", ")}` });
+      }
+
+      // Extract text from file content
+      let extractedText = "";
+      try {
+        if (fileType === "pdf") {
+          const buffer = Buffer.from(fileContent, "base64");
+          extractedText = await documentExtractionService.extractFromPdf(buffer);
+        } else if (fileType === "docx") {
+          const buffer = Buffer.from(fileContent, "base64");
+          extractedText = await documentExtractionService.extractFromDocx(buffer);
+        } else if (fileType === "txt") {
+          extractedText = Buffer.from(fileContent, "base64").toString("utf-8");
+        } else {
+          return res.status(400).json({ error: "Unsupported file type. Supported: pdf, docx, txt" });
+        }
+      } catch (extractError: any) {
+        return res.status(400).json({ error: `Failed to extract text: ${extractError.message}` });
+      }
+
+      const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+
+      const document = await storage.createGlobalGroundingDocument({
+        name,
+        description: description || null,
+        category,
+        fileType,
+        originalFileName,
+        extractedText,
+        wordCount,
+        uploadedBy: user.id,
+        isActive: true,
+      });
+
+      res.status(201).json(document);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update global grounding document (Global Admin only)
+  app.patch("/api/admin/global-documents/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "globalAdmin") {
+        return res.status(403).json({ error: "Only Global Admins can manage global documents" });
+      }
+
+      const document = await storage.getGlobalGroundingDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      const { name, description, category, isActive } = req.body;
+
+      // Validate category if provided
+      if (category) {
+        const validCategories = ["brand_voice", "marketing_guidelines", "digital_assets", "methodology"];
+        if (!validCategories.includes(category)) {
+          return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(", ")}` });
+        }
+      }
+
+      const updatedDocument = await storage.updateGlobalGroundingDocument(req.params.id, {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(category !== undefined && { category }),
+        ...(isActive !== undefined && { isActive }),
+      });
+
+      res.json(updatedDocument);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete global grounding document (Global Admin only)
+  app.delete("/api/admin/global-documents/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "globalAdmin") {
+        return res.status(403).json({ error: "Only Global Admins can manage global documents" });
+      }
+
+      const document = await storage.getGlobalGroundingDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      await storage.deleteGlobalGroundingDocument(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get active global documents for AI context (internal use, any authenticated user)
+  app.get("/api/global-documents/context", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const documents = await storage.getActiveGlobalGroundingDocuments();
+      
+      // Group by category for organized context
+      const contextByCategory: Record<string, string[]> = {};
+      for (const doc of documents) {
+        if (!contextByCategory[doc.category]) {
+          contextByCategory[doc.category] = [];
+        }
+        contextByCategory[doc.category].push(`[${doc.name}]\n${doc.extractedText}`);
+      }
+
+      res.json({
+        totalDocuments: documents.length,
+        categories: Object.keys(contextByCategory),
+        context: contextByCategory,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== COMPANY PROFILE ROUTES (Baseline Own Website) ====================
 
   // Get company profile for current tenant
