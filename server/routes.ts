@@ -51,7 +51,7 @@ export async function registerRoutes(
 
       // Determine role based on business logic
       let role = "Standard User";
-      const domain = email.split("@")[1];
+      const domain = email.split("@")[1].toLowerCase();
       
       // Check if domain is blocked from auto-provisioning
       const existingTenantForBlock = await storage.getTenantByDomain(domain);

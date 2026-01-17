@@ -89,7 +89,7 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/auth/signin?error=no_email_in_token");
       }
 
-      const domain = email.split("@")[1];
+      const domain = email.split("@")[1].toLowerCase();
 
       let user = await storage.getUserByEntraId(entraId);
 
@@ -231,12 +231,10 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/auth/signin?error=token_expired");
       }
 
-      await storage.markEmailVerificationTokenUsed(token);
-
       const { email, name, company, entraId } = verificationToken;
-      const domain = email.split("@")[1];
+      const domain = email.split("@")[1].toLowerCase();
 
-      // Check if domain is blocked from auto-provisioning (only for new tenants)
+      // Check if domain is blocked from auto-provisioning BEFORE marking token used
       const existingTenantForBlock = await storage.getTenantByDomain(domain);
       if (!existingTenantForBlock) {
         const isBlocked = await storage.isdomainBlocked(domain);
@@ -244,6 +242,9 @@ export function registerEntraRoutes(app: Express) {
           return res.redirect("/auth/signin?error=domain_blocked");
         }
       }
+
+      // Mark token as used only after blocklist check passes
+      await storage.markEmailVerificationTokenUsed(token);
 
       let user = await storage.getUserByEmail(email);
 
