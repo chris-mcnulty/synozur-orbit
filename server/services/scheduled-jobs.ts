@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
 
@@ -114,6 +115,18 @@ async function runWebsiteCrawlJob(): Promise<void> {
 
           await storage.updateCompetitor(competitor.id, updates);
           await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
+
+          // Capture visual assets if not already captured
+          if (!competitor.faviconUrl || !competitor.screenshotUrl) {
+            captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+              if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+                await storage.updateCompetitor(competitor.id, {
+                  faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
+                  screenshotUrl: visualAssets.screenshotUrl || competitor.screenshotUrl,
+                });
+              }
+            }).catch(err => console.error(`Visual capture failed for ${competitor.name}:`, err));
+          }
 
           const websiteContent = getCombinedContent(crawlResult);
           if (websiteContent.length > 100) {

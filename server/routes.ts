@@ -10,6 +10,7 @@ import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
+import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
 
 export async function registerRoutes(
@@ -270,6 +271,16 @@ export async function registerRoutes(
       if (crawlResult.pages.length === 0) {
         return res.json({ success: false, message: "Website could not be crawled" });
       }
+
+      // Capture visual assets (favicon and screenshot) in background
+      captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+        if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+          await storage.updateCompetitor(competitor.id, {
+            faviconUrl: visualAssets.faviconUrl,
+            screenshotUrl: visualAssets.screenshotUrl,
+          });
+        }
+      }).catch(err => console.error("Visual capture failed:", err));
 
       const now = new Date();
       const lastCrawl = now.toLocaleString();
