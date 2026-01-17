@@ -1447,11 +1447,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
-      const { name, description, category, fileType, originalFileName, fileContent } = req.body;
+      const { name, description, category, fileType, originalFileName, fileUrl, fileSize } = req.body;
 
       // Validate required fields
-      if (!name || !category || !fileType || !originalFileName || !fileContent) {
-        return res.status(400).json({ error: "Missing required fields: name, category, fileType, originalFileName, fileContent" });
+      if (!name || !category || !fileType || !originalFileName || !fileUrl) {
+        return res.status(400).json({ error: "Missing required fields: name, category, fileType, originalFileName, fileUrl" });
       }
 
       // Validate category
@@ -1460,20 +1460,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(", ")}` });
       }
 
-      // Extract text from file content
+      // Extract text from Object Storage file (same pattern as grounding documents)
       let extractedText = "";
       try {
-        if (fileType === "pdf") {
-          const buffer = Buffer.from(fileContent, "base64");
-          extractedText = await documentExtractionService.extractFromPdf(buffer);
-        } else if (fileType === "docx") {
-          const buffer = Buffer.from(fileContent, "base64");
-          extractedText = await documentExtractionService.extractFromDocx(buffer);
-        } else if (fileType === "txt") {
-          extractedText = Buffer.from(fileContent, "base64").toString("utf-8");
-        } else {
-          return res.status(400).json({ error: "Unsupported file type. Supported: pdf, docx, txt" });
-        }
+        extractedText = await documentExtractionService.extractTextFromDocument(fileUrl, fileType);
       } catch (extractError: any) {
         return res.status(400).json({ error: `Failed to extract text: ${extractError.message}` });
       }

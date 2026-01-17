@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Table,
   TableBody,
@@ -76,8 +77,9 @@ export default function AdminPage() {
     name: "",
     description: "",
     category: "brand_voice" as string,
-    file: null as File | null,
   });
+  const [uploadedGlobalDocFile, setUploadedGlobalDocFile] = useState<{ name: string; url: string; size: number } | null>(null);
+  const pendingGlobalDocPathRef = useRef<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
     plan: "",
@@ -184,64 +186,36 @@ export default function AdminPage() {
   });
 
   const uploadGlobalDocMutation = useMutation({
-    mutationFn: async (data: { name: string; description: string; category: string; file: File }) => {
-      console.log("Starting upload for:", data.file.name);
-      
-      const fileContent = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(",")[1];
-          console.log("File read complete, base64 length:", base64?.length);
-          resolve(base64);
-        };
-        reader.onerror = () => {
-          console.error("FileReader error:", reader.error);
-          reject(new Error("Failed to read file"));
-        };
-        reader.readAsDataURL(data.file);
-      });
-
-      const extension = data.file.name.split(".").pop()?.toLowerCase() || "";
+    mutationFn: async (data: { name: string; description: string; category: string; fileUrl: string; originalFileName: string; fileSize: number }) => {
+      const extension = data.originalFileName.split(".").pop()?.toLowerCase() || "";
       const fileType = extension === "pdf" ? "pdf" : extension === "docx" ? "docx" : "txt";
 
-      console.log("Sending POST request...");
-      let response;
-      try {
-        response = await fetch("/api/admin/global-documents", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            name: data.name,
-            description: data.description || null,
-            category: data.category,
-            fileType,
-            originalFileName: data.file.name,
-            fileContent,
-          }),
-        });
-      } catch (networkError) {
-        console.error("Network error:", networkError);
-        throw new Error("Network error - please check your connection and try again");
-      }
-      console.log("Response status:", response.status);
+      const response = await fetch("/api/admin/global-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description || null,
+          category: data.category,
+          fileType,
+          originalFileName: data.originalFileName,
+          fileUrl: data.fileUrl,
+          fileSize: data.fileSize,
+        }),
+      });
       if (!response.ok) {
-        let errorMessage = "Failed to upload document";
-        try {
-          const error = await response.json();
-          console.error("Upload error response:", error);
-          errorMessage = error.error || errorMessage;
-        } catch (e) {
-          console.error("Could not parse error response");
-        }
-        throw new Error(errorMessage);
+        const error = await response.json();
+        throw new Error(error.error || "Failed to upload document");
       }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
       setGlobalDocDialogOpen(false);
-      setNewGlobalDoc({ name: "", description: "", category: "brand_voice", file: null });
+      setNewGlobalDoc({ name: "", description: "", category: "brand_voice" });
+      setUploadedGlobalDocFile(null);
+      pendingGlobalDocPathRef.current = null;
     },
   });
 
@@ -747,16 +721,64 @@ export default function AdminPage() {
               </div>
               <div className="space-y-2">
                 <Label>File (PDF, DOCX, or TXT)</Label>
-                <Input
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  onChange={(e) => setNewGlobalDoc({ ...newGlobalDoc, file: e.target.files?.[0] || null })}
-                  data-testid="input-global-doc-file"
-                />
-                {newGlobalDoc.file && (
-                  <p className="text-sm text-muted-foreground">
-                    Selected: {newGlobalDoc.file.name}
-                  </p>
+                {uploadedGlobalDocFile ? (
+                  <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                    <FileText className="w-5 h-5 text-primary" />
+                    <span className="flex-1 truncate">{uploadedGlobalDocFile.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {uploadedGlobalDocFile.size < 1024 * 1024 
+                        ? `${(uploadedGlobalDocFile.size / 1024).toFixed(1)} KB`
+                        : `${(uploadedGlobalDocFile.size / (1024 * 1024)).toFixed(1)} MB`}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setUploadedGlobalDocFile(null);
+                        pendingGlobalDocPathRef.current = null;
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <ObjectUploader
+                    maxNumberOfFiles={1}
+                    maxFileSize={20 * 1024 * 1024}
+                    onGetUploadParameters={async (file) => {
+                      const res = await fetch("/api/uploads/request-url", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          name: file.name,
+                          size: file.size,
+                          contentType: file.type,
+                        }),
+                        credentials: "include",
+                      });
+                      const { uploadURL, objectPath } = await res.json();
+                      pendingGlobalDocPathRef.current = objectPath;
+                      return {
+                        method: "PUT" as const,
+                        url: uploadURL,
+                        headers: { "Content-Type": file.type || "application/octet-stream" },
+                      };
+                    }}
+                    onComplete={(result) => {
+                      const file = result.successful?.[0];
+                      if (file && pendingGlobalDocPathRef.current) {
+                        setUploadedGlobalDocFile({
+                          name: file.name ?? "unknown",
+                          url: pendingGlobalDocPathRef.current,
+                          size: file.size ?? 0,
+                        });
+                      }
+                    }}
+                    buttonClassName="w-full"
+                  >
+                    <Upload className="w-4 h-4 mr-2" /> Choose File
+                  </ObjectUploader>
                 )}
               </div>
               {uploadGlobalDocMutation.isError && (
@@ -766,24 +788,30 @@ export default function AdminPage() {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setGlobalDocDialogOpen(false)}>
+              <Button variant="outline" onClick={() => {
+                setGlobalDocDialogOpen(false);
+                setUploadedGlobalDocFile(null);
+                pendingGlobalDocPathRef.current = null;
+              }}>
                 Cancel
               </Button>
               <Button
                 onClick={() => {
-                  if (newGlobalDoc.name && newGlobalDoc.file) {
+                  if (newGlobalDoc.name && uploadedGlobalDocFile) {
                     uploadGlobalDocMutation.mutate({
                       name: newGlobalDoc.name,
                       description: newGlobalDoc.description,
                       category: newGlobalDoc.category,
-                      file: newGlobalDoc.file,
+                      fileUrl: uploadedGlobalDocFile.url,
+                      originalFileName: uploadedGlobalDocFile.name,
+                      fileSize: uploadedGlobalDocFile.size,
                     });
                   }
                 }}
-                disabled={!newGlobalDoc.name || !newGlobalDoc.file || uploadGlobalDocMutation.isPending}
+                disabled={!newGlobalDoc.name || !uploadedGlobalDocFile || uploadGlobalDocMutation.isPending}
                 data-testid="btn-submit-global-doc"
               >
-                {uploadGlobalDocMutation.isPending ? "Uploading..." : "Upload Document"}
+                {uploadGlobalDocMutation.isPending ? "Saving..." : "Upload Document"}
               </Button>
             </DialogFooter>
           </DialogContent>
