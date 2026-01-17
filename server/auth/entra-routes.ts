@@ -291,7 +291,7 @@ export function registerEntraRoutes(app: Express) {
         await storage.createTenant({
           domain,
           name: company || domain,
-          plan: "free",
+          plan: "trial",
           status: "active",
           userCount: 1,
           competitorLimit: 3,

@@ -56,6 +56,9 @@ export default function AdminPage() {
     status: "",
     competitorLimit: 0,
     analysisLimit: 0,
+    adminUserLimit: 1,
+    readWriteUserLimit: 2,
+    readOnlyUserLimit: 5,
     logoUrl: "",
     faviconUrl: "",
     primaryColor: "#810FFB",
@@ -147,8 +150,12 @@ export default function AdminPage() {
         return <Badge className="bg-gradient-to-r from-purple-500 to-pink-500">Enterprise</Badge>;
       case "pro":
         return <Badge className="bg-primary">Pro</Badge>;
-      default:
+      case "trial":
+        return <Badge className="bg-amber-500">Trial</Badge>;
+      case "free":
         return <Badge variant="outline">Free</Badge>;
+      default:
+        return <Badge variant="outline">{plan}</Badge>;
     }
   };
 
@@ -171,6 +178,9 @@ export default function AdminPage() {
       status: tenant.status,
       competitorLimit: tenant.competitorLimit,
       analysisLimit: tenant.analysisLimit,
+      adminUserLimit: (tenant as any).adminUserLimit ?? 1,
+      readWriteUserLimit: (tenant as any).readWriteUserLimit ?? 2,
+      readOnlyUserLimit: (tenant as any).readOnlyUserLimit ?? 5,
       logoUrl: tenant.logoUrl || "",
       faviconUrl: tenant.faviconUrl || "",
       primaryColor: tenant.primaryColor || "#810FFB",
@@ -197,6 +207,15 @@ export default function AdminPage() {
     }
     if (editForm.analysisLimit !== selectedTenant.analysisLimit) {
       changedFields.analysisLimit = editForm.analysisLimit;
+    }
+    if (editForm.adminUserLimit !== ((selectedTenant as any).adminUserLimit ?? 1)) {
+      (changedFields as any).adminUserLimit = editForm.adminUserLimit;
+    }
+    if (editForm.readWriteUserLimit !== ((selectedTenant as any).readWriteUserLimit ?? 2)) {
+      (changedFields as any).readWriteUserLimit = editForm.readWriteUserLimit;
+    }
+    if (editForm.readOnlyUserLimit !== ((selectedTenant as any).readOnlyUserLimit ?? 5)) {
+      (changedFields as any).readOnlyUserLimit = editForm.readOnlyUserLimit;
     }
     if (editForm.logoUrl !== (selectedTenant.logoUrl || "")) {
       changedFields.logoUrl = editForm.logoUrl || null;
@@ -496,6 +515,7 @@ export default function AdminPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="trial">Trial</SelectItem>
                         <SelectItem value="free">Free</SelectItem>
                         <SelectItem value="pro">Pro</SelectItem>
                         <SelectItem value="enterprise">Enterprise</SelectItem>
@@ -536,6 +556,42 @@ export default function AdminPage() {
                       onChange={(e) => setEditForm({ ...editForm, analysisLimit: parseInt(e.target.value) || 0 })}
                       data-testid="edit-tenant-analysis-limit"
                     />
+                  </div>
+                </div>
+                <div className="space-y-2 pt-2">
+                  <Label className="text-sm font-medium">User Role Limits</Label>
+                  <p className="text-xs text-muted-foreground mb-2">Maximum number of users per role for this tenant</p>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Admin Users</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editForm.adminUserLimit}
+                        onChange={(e) => setEditForm({ ...editForm, adminUserLimit: parseInt(e.target.value) || 1 })}
+                        data-testid="edit-tenant-admin-limit"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Read-Write Users</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editForm.readWriteUserLimit}
+                        onChange={(e) => setEditForm({ ...editForm, readWriteUserLimit: parseInt(e.target.value) || 0 })}
+                        data-testid="edit-tenant-rw-limit"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Read-Only Users</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editForm.readOnlyUserLimit}
+                        onChange={(e) => setEditForm({ ...editForm, readOnlyUserLimit: parseInt(e.target.value) || 0 })}
+                        data-testid="edit-tenant-ro-limit"
+                      />
+                    </div>
                   </div>
                 </div>
               </TabsContent>

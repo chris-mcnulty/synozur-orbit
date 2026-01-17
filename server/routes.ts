@@ -98,7 +98,7 @@ export async function registerRoutes(
         await storage.createTenant({
           domain,
           name: company,
-          plan: "free",
+          plan: "trial",
           status: "active",
           userCount: 0,
           competitorLimit: 3,
@@ -1943,7 +1943,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const tenant = await storage.createTenant({
         domain: normalizedDomain,
         name: name.trim(),
-        plan: plan || "free",
+        plan: plan || "trial",
         status: "active",
         userCount: 0,
         competitorLimit: competitorLimit || 3,
@@ -2124,7 +2124,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
         });
       }
 
-      const { name, clientName, clientDomain, description } = req.body;
+      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates } = req.body;
       
       if (!name || !clientName) {
         return res.status(400).json({ error: "Project name and client name are required" });
@@ -2135,6 +2135,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
         clientName: clientName.trim(),
         clientDomain: clientDomain?.trim().toLowerCase() || null,
         description: description?.trim() || null,
+        analysisType: analysisType === "product" ? "product" : "company",
+        notifyOnUpdates: notifyOnUpdates === true,
         status: "active",
         tenantDomain,
         ownerUserId: user.id,
