@@ -136,6 +136,19 @@
 - [x] Show homepage screenshot in competitor detail view (collapsible)
 **Effort**: Medium - COMPLETED
 
+### 3.7 Interactive Data Visualization Dashboard
+**Status**: Not implemented
+**Spec Requirement**: Rich visual analytics for competitive intelligence
+**Prerequisites**: Requires expanded social media data collection (sentiment, likes, posts, engagement metrics, follower counts, update frequency) to generate meaningful visualizations
+- [ ] Expand social monitoring to capture quantitative metrics (likes, shares, comments, follower counts)
+- [ ] Implement sentiment analysis on social posts and website content
+- [ ] Track competitor posting frequency and engagement trends over time
+- [ ] Build interactive charts (Recharts): competitor comparison, trend lines, sentiment gauges
+- [ ] Dashboard widgets: competitive positioning map, share of voice, activity timeline
+- [ ] Filterable date ranges and competitor selection
+- [ ] Export chart data as CSV
+**Effort**: High (data collection expansion required first)
+
 ---
 
 ## Post-MVP Roadmap (Year One)
