@@ -1,6 +1,7 @@
 import { 
   users, 
   tenants,
+  domainBlocklist,
   competitors, 
   activity, 
   recommendations, 
@@ -15,6 +16,8 @@ import {
   type InsertUser,
   type Tenant,
   type InsertTenant,
+  type DomainBlocklist,
+  type InsertDomainBlocklist,
   type Competitor,
   type InsertCompetitor,
   type Activity,
@@ -125,6 +128,12 @@ export interface IStorage {
   updateTenantInvite(id: string, data: Partial<TenantInvite>): Promise<TenantInvite>;
   deleteTenantInvite(id: string): Promise<void>;
   deleteUser(id: string): Promise<void>;
+  
+  // Domain Blocklist methods
+  getDomainBlocklist(): Promise<DomainBlocklist[]>;
+  isdomainBlocked(domain: string): Promise<boolean>;
+  addBlockedDomain(entry: InsertDomainBlocklist): Promise<DomainBlocklist>;
+  removeBlockedDomain(domain: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -522,6 +531,28 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUser(id: string): Promise<void> {
     await db.delete(users).where(eq(users.id, id));
+  }
+
+  // Domain Blocklist methods
+  async getDomainBlocklist(): Promise<DomainBlocklist[]> {
+    return await db.select().from(domainBlocklist).orderBy(desc(domainBlocklist.createdAt));
+  }
+
+  async isdomainBlocked(domain: string): Promise<boolean> {
+    const [entry] = await db.select().from(domainBlocklist).where(eq(domainBlocklist.domain, domain.toLowerCase()));
+    return !!entry;
+  }
+
+  async addBlockedDomain(entry: InsertDomainBlocklist): Promise<DomainBlocklist> {
+    const [result] = await db
+      .insert(domainBlocklist)
+      .values({ ...entry, domain: entry.domain.toLowerCase() })
+      .returning();
+    return result;
+  }
+
+  async removeBlockedDomain(domain: string): Promise<void> {
+    await db.delete(domainBlocklist).where(eq(domainBlocklist.domain, domain.toLowerCase()));
   }
 }
 
