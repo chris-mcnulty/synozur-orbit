@@ -114,6 +114,10 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
+      if (user.authProvider === "entra") {
+        return res.status(401).json({ error: "Please use Microsoft SSO to sign in" });
+      }
+
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
         return res.status(401).json({ error: "Invalid credentials" });

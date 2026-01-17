@@ -57,9 +57,15 @@ export function registerEntraRoutes(app: Express) {
 
       const response = await msalInstance.acquireTokenByCode(tokenRequest);
 
-      const entraId = response.account?.homeAccountId || response.uniqueId;
-      const email = response.account?.username || "";
-      const name = response.account?.name || email.split("@")[0];
+      const claims = response.idTokenClaims as Record<string, any> | undefined;
+      const entraId = claims?.oid || response.account?.homeAccountId;
+      const email = claims?.preferred_username || claims?.email || response.account?.username || "";
+      const name = claims?.name || response.account?.name || email.split("@")[0];
+
+      if (!entraId) {
+        console.error("[Entra] No oid or homeAccountId in token response");
+        return res.redirect("/auth/signin?error=invalid_token");
+      }
 
       if (!email) {
         return res.redirect("/auth/signin?error=no_email_in_token");
