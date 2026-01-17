@@ -145,6 +145,12 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/app");
       }
 
+      // Check if domain is blocked from auto-provisioning before creating pending user
+      const isBlocked = await storage.isdomainBlocked(domain);
+      if (isBlocked) {
+        return res.redirect("/auth/signin?error=domain_blocked");
+      }
+
       const globalAdmin = await storage.getGlobalAdmin();
       const domainAdmin = await storage.getDomainAdmin(domain);
       
@@ -229,6 +235,15 @@ export function registerEntraRoutes(app: Express) {
 
       const { email, name, company, entraId } = verificationToken;
       const domain = email.split("@")[1];
+
+      // Check if domain is blocked from auto-provisioning (only for new tenants)
+      const existingTenantForBlock = await storage.getTenantByDomain(domain);
+      if (!existingTenantForBlock) {
+        const isBlocked = await storage.isdomainBlocked(domain);
+        if (isBlocked) {
+          return res.redirect("/auth/signin?error=domain_blocked");
+        }
+      }
 
       let user = await storage.getUserByEmail(email);
 

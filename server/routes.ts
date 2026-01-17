@@ -53,6 +53,17 @@ export async function registerRoutes(
       let role = "Standard User";
       const domain = email.split("@")[1];
       
+      // Check if domain is blocked from auto-provisioning
+      const existingTenantForBlock = await storage.getTenantByDomain(domain);
+      if (!existingTenantForBlock) {
+        const isBlocked = await storage.isdomainBlocked(domain);
+        if (isBlocked) {
+          return res.status(403).json({ 
+            error: "This email domain is not allowed for self-registration. Please contact your administrator to set up your organization." 
+          });
+        }
+      }
+      
       const globalAdmin = await storage.getGlobalAdmin();
       if (!globalAdmin) {
         role = "Global Admin";
