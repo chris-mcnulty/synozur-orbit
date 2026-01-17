@@ -79,6 +79,7 @@ export function registerEntraRoutes(app: Express) {
       const entraId = claims?.oid || response.account?.homeAccountId;
       const email = claims?.preferred_username || claims?.email || response.account?.username || "";
       const name = claims?.name || response.account?.name || email.split("@")[0];
+      const azureTenantId = claims?.tid; // Azure tenant ID from token
 
       if (!entraId) {
         console.error("[Entra] No oid or homeAccountId in token response");
@@ -90,6 +91,16 @@ export function registerEntraRoutes(app: Express) {
       }
 
       const domain = email.split("@")[1].toLowerCase();
+      
+      // Auto-populate tenant's Azure Tenant ID if not set
+      const existingTenantForUpdate = await storage.getTenantByDomain(domain);
+      if (existingTenantForUpdate && azureTenantId && !existingTenantForUpdate.entraTenantId) {
+        await storage.updateTenant(existingTenantForUpdate.id, { 
+          entraTenantId: azureTenantId,
+          entraEnabled: true // Auto-enable SSO when first user logs in via Entra
+        });
+        console.log(`[Entra] Auto-populated tenant ID ${azureTenantId} for domain ${domain}`);
+      }
 
       let user = await storage.getUserByEntraId(entraId);
 

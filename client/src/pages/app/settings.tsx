@@ -46,7 +46,6 @@ interface TenantSettings {
   competitorLimit: number;
   analysisLimit: number;
   userCount: number;
-  entraClientId: string | null;
   entraTenantId: string | null;
   entraEnabled: boolean;
 }
@@ -69,10 +68,7 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   
-  // Entra ID configuration state
-  const [entraClientId, setEntraClientId] = useState("");
-  const [entraTenantId, setEntraTenantId] = useState("");
-  const [entraClientSecret, setEntraClientSecret] = useState("");
+  // Entra ID configuration state (simplified - only enable toggle, tenant ID is auto-populated)
   const [entraEnabled, setEntraEnabled] = useState(false);
 
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
@@ -96,8 +92,6 @@ export default function Settings() {
       setBrandingPrimary(tenant.primaryColor || "#810FFB");
       setBrandingSecondary(tenant.secondaryColor || "#E60CB3");
       setMonitoringFreq(tenant.monitoringFrequency || "weekly");
-      setEntraClientId(tenant.entraClientId || "");
-      setEntraTenantId(tenant.entraTenantId || "");
       setEntraEnabled(tenant.entraEnabled || false);
     }
   }, [tenant]);
@@ -250,9 +244,6 @@ export default function Settings() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          entraClientId,
-          entraTenantId,
-          entraClientSecret: entraClientSecret || undefined,
           entraEnabled,
         }),
       });
@@ -264,7 +255,6 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
-      setEntraClientSecret("");
       toast.success("SSO settings saved");
     },
     onError: (error: Error) => {
@@ -647,8 +637,8 @@ export default function Settings() {
               <div className="grid gap-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label htmlFor="entra-enabled">Enable Tenant SSO</Label>
-                    <p className="text-xs text-muted-foreground">Allow users to sign in with Microsoft</p>
+                    <Label htmlFor="entra-enabled">Enable Microsoft SSO</Label>
+                    <p className="text-xs text-muted-foreground">Allow users to sign in with their Microsoft work accounts</p>
                   </div>
                   <Switch
                     id="entra-enabled"
@@ -658,42 +648,27 @@ export default function Settings() {
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="entra-client-id">Application (Client) ID</Label>
-                  <Input
-                    id="entra-client-id"
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    value={entraClientId}
-                    onChange={(e) => setEntraClientId(e.target.value)}
-                    data-testid="input-entra-client-id"
-                  />
-                </div>
+                {tenant?.entraTenantId && (
+                  <div className="space-y-2">
+                    <Label>Azure Tenant ID</Label>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-background rounded text-sm font-mono text-muted-foreground">
+                        {tenant.entraTenantId}
+                      </code>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Auto-detected from your first Microsoft sign-in
+                    </p>
+                  </div>
+                )}
                 
-                <div className="space-y-2">
-                  <Label htmlFor="entra-tenant-id">Directory (Tenant) ID</Label>
-                  <Input
-                    id="entra-tenant-id"
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    value={entraTenantId}
-                    onChange={(e) => setEntraTenantId(e.target.value)}
-                    data-testid="input-entra-tenant-id"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="entra-client-secret">Client Secret</Label>
-                  <Input
-                    id="entra-client-secret"
-                    type="password"
-                    placeholder="Enter client secret value"
-                    value={entraClientSecret}
-                    onChange={(e) => setEntraClientSecret(e.target.value)}
-                    data-testid="input-entra-client-secret"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Create a new client secret in Azure Portal under Certificates & secrets
-                  </p>
-                </div>
+                {!tenant?.entraTenantId && entraEnabled && (
+                  <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3">
+                    <p className="text-sm text-yellow-500">
+                      Tenant ID will be auto-detected when a user signs in with Microsoft for the first time.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
             <CardFooter className="border-t border-border px-6 py-4">
