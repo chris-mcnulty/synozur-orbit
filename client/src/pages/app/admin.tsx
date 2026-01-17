@@ -28,7 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Building2, Users, Crown, Edit, AlertCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import type { Tenant } from "@shared/schema";
@@ -46,6 +47,10 @@ export default function AdminPage() {
     status: "",
     competitorLimit: 0,
     analysisLimit: 0,
+    logoUrl: "",
+    faviconUrl: "",
+    primaryColor: "#810FFB",
+    secondaryColor: "#E60CB3",
   });
 
   const { data: tenants = [], isLoading, error } = useQuery<TenantWithCounts[]>({
@@ -111,6 +116,10 @@ export default function AdminPage() {
       status: tenant.status,
       competitorLimit: tenant.competitorLimit,
       analysisLimit: tenant.analysisLimit,
+      logoUrl: tenant.logoUrl || "",
+      faviconUrl: tenant.faviconUrl || "",
+      primaryColor: tenant.primaryColor || "#810FFB",
+      secondaryColor: tenant.secondaryColor || "#E60CB3",
     });
     setEditDialogOpen(true);
   };
@@ -133,6 +142,18 @@ export default function AdminPage() {
     }
     if (editForm.analysisLimit !== selectedTenant.analysisLimit) {
       changedFields.analysisLimit = editForm.analysisLimit;
+    }
+    if (editForm.logoUrl !== (selectedTenant.logoUrl || "")) {
+      changedFields.logoUrl = editForm.logoUrl || null;
+    }
+    if (editForm.faviconUrl !== (selectedTenant.faviconUrl || "")) {
+      changedFields.faviconUrl = editForm.faviconUrl || null;
+    }
+    if (editForm.primaryColor !== (selectedTenant.primaryColor || "#810FFB")) {
+      changedFields.primaryColor = editForm.primaryColor;
+    }
+    if (editForm.secondaryColor !== (selectedTenant.secondaryColor || "#E60CB3")) {
+      changedFields.secondaryColor = editForm.secondaryColor;
     }
 
     if (Object.keys(changedFields).length === 0) {
@@ -293,74 +314,186 @@ export default function AdminPage() {
         </Card>
 
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Edit Tenant</DialogTitle>
               <DialogDescription>
-                Update tenant settings for {selectedTenant?.domain}
+                Update settings and branding for {selectedTenant?.domain}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Organization Name</Label>
-                <Input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  data-testid="edit-tenant-name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Plan</Label>
-                <Select
-                  value={editForm.plan}
-                  onValueChange={(value) => setEditForm({ ...editForm, plan: value })}
-                >
-                  <SelectTrigger data-testid="edit-tenant-plan">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="free">Free</SelectItem>
-                    <SelectItem value="pro">Pro</SelectItem>
-                    <SelectItem value="enterprise">Enterprise</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select
-                  value={editForm.status}
-                  onValueChange={(value) => setEditForm({ ...editForm, status: value })}
-                >
-                  <SelectTrigger data-testid="edit-tenant-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="suspended">Suspended</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <Tabs defaultValue="settings" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
+                <TabsTrigger value="branding" data-testid="tab-branding">
+                  <Palette className="h-4 w-4 mr-2" />
+                  Branding
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="settings" className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Competitor Limit</Label>
+                  <Label>Organization Name</Label>
                   <Input
-                    type="number"
-                    value={editForm.competitorLimit}
-                    onChange={(e) => setEditForm({ ...editForm, competitorLimit: parseInt(e.target.value) || 0 })}
-                    data-testid="edit-tenant-competitor-limit"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    data-testid="edit-tenant-name"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Analysis Limit</Label>
-                  <Input
-                    type="number"
-                    value={editForm.analysisLimit}
-                    onChange={(e) => setEditForm({ ...editForm, analysisLimit: parseInt(e.target.value) || 0 })}
-                    data-testid="edit-tenant-analysis-limit"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Plan</Label>
+                    <Select
+                      value={editForm.plan}
+                      onValueChange={(value) => setEditForm({ ...editForm, plan: value })}
+                    >
+                      <SelectTrigger data-testid="edit-tenant-plan">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="free">Free</SelectItem>
+                        <SelectItem value="pro">Pro</SelectItem>
+                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select
+                      value={editForm.status}
+                      onValueChange={(value) => setEditForm({ ...editForm, status: value })}
+                    >
+                      <SelectTrigger data-testid="edit-tenant-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="suspended">Suspended</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Competitor Limit</Label>
+                    <Input
+                      type="number"
+                      value={editForm.competitorLimit}
+                      onChange={(e) => setEditForm({ ...editForm, competitorLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="edit-tenant-competitor-limit"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Analysis Limit</Label>
+                    <Input
+                      type="number"
+                      value={editForm.analysisLimit}
+                      onChange={(e) => setEditForm({ ...editForm, analysisLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="edit-tenant-analysis-limit"
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="branding" className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Logo URL</Label>
+                  <Input
+                    placeholder="https://example.com/logo.png"
+                    value={editForm.logoUrl}
+                    onChange={(e) => setEditForm({ ...editForm, logoUrl: e.target.value })}
+                    data-testid="edit-tenant-logo"
+                  />
+                  <p className="text-xs text-muted-foreground">Used in reports and app header</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Favicon URL</Label>
+                  <Input
+                    placeholder="https://example.com/favicon.ico"
+                    value={editForm.faviconUrl}
+                    onChange={(e) => setEditForm({ ...editForm, faviconUrl: e.target.value })}
+                    data-testid="edit-tenant-favicon"
+                  />
+                  <p className="text-xs text-muted-foreground">Browser tab icon</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Primary Color</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={editForm.primaryColor}
+                        onChange={(e) => setEditForm({ ...editForm, primaryColor: e.target.value })}
+                        className="w-12 h-10 p-1 cursor-pointer"
+                        data-testid="edit-tenant-primary-color"
+                      />
+                      <Input
+                        value={editForm.primaryColor}
+                        onChange={(e) => setEditForm({ ...editForm, primaryColor: e.target.value })}
+                        placeholder="#810FFB"
+                        className="flex-1"
+                        data-testid="edit-tenant-primary-color-text"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Secondary Color</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={editForm.secondaryColor}
+                        onChange={(e) => setEditForm({ ...editForm, secondaryColor: e.target.value })}
+                        className="w-12 h-10 p-1 cursor-pointer"
+                        data-testid="edit-tenant-secondary-color"
+                      />
+                      <Input
+                        value={editForm.secondaryColor}
+                        onChange={(e) => setEditForm({ ...editForm, secondaryColor: e.target.value })}
+                        placeholder="#E60CB3"
+                        className="flex-1"
+                        data-testid="edit-tenant-secondary-color-text"
+                      />
+                    </div>
+                  </div>
+                </div>
+                {editForm.logoUrl && (
+                  <div className="space-y-2">
+                    <Label>Logo Preview</Label>
+                    <div className="border rounded-md p-4 bg-muted/50">
+                      <img 
+                        src={editForm.logoUrl} 
+                        alt="Logo preview" 
+                        className="max-h-16 object-contain"
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Color Preview</Label>
+                  <div className="flex gap-4 p-4 border rounded-md bg-muted/50">
+                    <div className="flex flex-col items-center gap-1">
+                      <div 
+                        className="w-12 h-12 rounded-md shadow-sm" 
+                        style={{ backgroundColor: editForm.primaryColor }}
+                      />
+                      <span className="text-xs text-muted-foreground">Primary</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <div 
+                        className="w-12 h-12 rounded-md shadow-sm" 
+                        style={{ backgroundColor: editForm.secondaryColor }}
+                      />
+                      <span className="text-xs text-muted-foreground">Secondary</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <div 
+                        className="w-12 h-12 rounded-md shadow-sm" 
+                        style={{ background: `linear-gradient(135deg, ${editForm.primaryColor}, ${editForm.secondaryColor})` }}
+                      />
+                      <span className="text-xs text-muted-foreground">Gradient</span>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancel
