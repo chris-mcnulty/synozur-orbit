@@ -126,15 +126,15 @@
 - [ ] Deduplicate entries by domain/company name
 **Effort**: Medium
 
-### 3.6 Visual Competitor Assets
-**Status**: Not implemented
+### 3.6 Visual Competitor Assets ✅
+**Status**: Implemented
 **Spec Requirement**: Capture visual assets for richer competitor profiles
-- [ ] Fetch favicon/logo from competitor website as thumbnail
-- [ ] Capture above-the-fold homepage screenshot during crawl
-- [ ] Store images in object storage
-- [ ] Display logo in competitor cards and lists
-- [ ] Show homepage screenshot in competitor detail view
-**Effort**: Medium (requires headless browser for screenshots)
+- [x] Fetch favicon/logo from competitor website as thumbnail
+- [x] Capture above-the-fold homepage screenshot during crawl (Puppeteer)
+- [x] Store images in object storage
+- [x] Display logo/favicon in competitor cards and lists
+- [x] Show homepage screenshot in competitor detail view (collapsible)
+**Effort**: Medium - COMPLETED
 
 ---
 
