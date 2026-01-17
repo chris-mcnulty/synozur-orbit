@@ -2982,6 +2982,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(400).json({ error: "Competitor product not found in this project" });
       }
 
+      // Ensure the product is actually a competitor, not the baseline
+      if (competitorPP.role === "baseline") {
+        return res.status(400).json({ error: "Cannot generate battlecard for the baseline product" });
+      }
+
       // Get full product details
       const baseline = await storage.getProduct(baselineProduct.productId);
       const competitor = await storage.getProduct(competitorProductId);

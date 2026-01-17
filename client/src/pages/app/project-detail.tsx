@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,25 @@ interface SuggestedProduct {
   description: string;
   url: string;
   rationale: string;
+}
+
+interface ProductBattlecard {
+  id: string;
+  baselineProductId: string;
+  competitorProductId: string;
+  projectId: string;
+  tenantDomain: string;
+  strengths: string[] | null;
+  weaknesses: string[] | null;
+  ourAdvantages: string[] | null;
+  keyDifferentiators: { feature: string; ours: string; theirs: string }[] | null;
+  objections: { objection: string; response: string }[] | null;
+  talkTracks: { scenario: string; script: string }[] | null;
+  featureComparison: Record<string, { ours: string; theirs: string }> | null;
+  customNotes: string | null;
+  status: string;
+  lastGeneratedAt: string | null;
+  createdAt: string;
 }
 
 export default function ProjectDetail() {
@@ -105,6 +125,52 @@ export default function ProjectDetail() {
       const response = await fetch("/api/products", { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch products");
       return response.json();
+    },
+  });
+
+  const { data: battlecards = [], isLoading: battlecardsLoading } = useQuery<ProductBattlecard[]>({
+    queryKey: ["/api/projects", id, "battlecards"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/battlecards`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch battlecards");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  const [generatingBattlecardFor, setGeneratingBattlecardFor] = useState<string | null>(null);
+  const [selectedBattlecard, setSelectedBattlecard] = useState<ProductBattlecard | null>(null);
+
+  const generateBattlecard = useMutation({
+    mutationFn: async (competitorProductId: string) => {
+      setGeneratingBattlecardFor(competitorProductId);
+      const response = await fetch(`/api/projects/${id}/battlecards/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ competitorProductId }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate battlecard");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setGeneratingBattlecardFor(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "battlecards"] });
+      toast({
+        title: "Battlecard Generated",
+        description: "AI-powered product battlecard has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      setGeneratingBattlecardFor(null);
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -859,6 +925,218 @@ export default function ProjectDetail() {
                       <p className="text-muted-foreground mb-4">
                         Add competitor products manually or use AI suggestions
                       </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Product Battlecards Section */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Swords className="h-5 w-5 text-primary" />
+                        Product Battlecards
+                      </CardTitle>
+                      <CardDescription>
+                        AI-generated competitive intelligence for each competitor product
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {battlecardsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !baselineProduct ? (
+                    <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                      <Swords className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">Set a baseline product first to generate battlecards</p>
+                    </div>
+                  ) : competitorProducts.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                      <Swords className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">Add competitor products to generate battlecards</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {competitorProducts.map((pp) => {
+                        const existingBattlecard = battlecards.find(
+                          bc => bc.competitorProductId === pp.productId
+                        );
+                        const isGenerating = generatingBattlecardFor === pp.productId;
+                        
+                        return (
+                          <div key={pp.id} className="border rounded-lg overflow-hidden">
+                            <div className="flex items-center justify-between p-4 bg-muted/30">
+                              <div>
+                                <h4 className="font-medium">{pp.product.name}</h4>
+                                {pp.product.companyName && (
+                                  <p className="text-sm text-muted-foreground">{pp.product.companyName}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {existingBattlecard ? (
+                                  <>
+                                    <Badge variant="secondary">
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Generated
+                                    </Badge>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setSelectedBattlecard(
+                                        selectedBattlecard?.id === existingBattlecard.id ? null : existingBattlecard
+                                      )}
+                                      data-testid={`button-view-battlecard-${pp.productId}`}
+                                    >
+                                      {selectedBattlecard?.id === existingBattlecard.id ? "Hide" : "View"}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => generateBattlecard.mutate(pp.productId)}
+                                      disabled={isGenerating}
+                                      data-testid={`button-regenerate-battlecard-${pp.productId}`}
+                                    >
+                                      {isGenerating ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    onClick={() => generateBattlecard.mutate(pp.productId)}
+                                    disabled={isGenerating}
+                                    data-testid={`button-generate-battlecard-${pp.productId}`}
+                                  >
+                                    {isGenerating ? (
+                                      <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Generating...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Swords className="mr-2 h-4 w-4" />
+                                        Generate Battlecard
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {selectedBattlecard?.id === existingBattlecard?.id && existingBattlecard && (
+                              <div className="p-4 border-t space-y-4">
+                                <div className="grid gap-4 md:grid-cols-3">
+                                  {/* Strengths */}
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm flex items-center gap-1">
+                                      <Check className="h-4 w-4 text-green-500" />
+                                      Their Strengths
+                                    </h5>
+                                    <ul className="space-y-1">
+                                      {existingBattlecard.strengths?.map((s, i) => (
+                                        <li key={i} className="text-sm text-muted-foreground">• {s}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  
+                                  {/* Weaknesses */}
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm flex items-center gap-1">
+                                      <X className="h-4 w-4 text-red-500" />
+                                      Their Weaknesses
+                                    </h5>
+                                    <ul className="space-y-1">
+                                      {existingBattlecard.weaknesses?.map((w, i) => (
+                                        <li key={i} className="text-sm text-muted-foreground">• {w}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  
+                                  {/* Our Advantages */}
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm flex items-center gap-1">
+                                      <Star className="h-4 w-4 text-yellow-500" />
+                                      Our Advantages
+                                    </h5>
+                                    <ul className="space-y-1">
+                                      {existingBattlecard.ourAdvantages?.map((a, i) => (
+                                        <li key={i} className="text-sm text-muted-foreground">• {a}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </div>
+                                
+                                {/* Key Differentiators */}
+                                {existingBattlecard.keyDifferentiators && existingBattlecard.keyDifferentiators.length > 0 && (
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm">Key Differentiators</h5>
+                                    <div className="border rounded-lg overflow-hidden">
+                                      <table className="w-full text-sm">
+                                        <thead className="bg-muted/50">
+                                          <tr>
+                                            <th className="px-3 py-2 text-left font-medium">Feature</th>
+                                            <th className="px-3 py-2 text-left font-medium">Us</th>
+                                            <th className="px-3 py-2 text-left font-medium">Them</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {existingBattlecard.keyDifferentiators.map((d, i) => (
+                                            <tr key={i} className="border-t">
+                                              <td className="px-3 py-2 font-medium">{d.feature}</td>
+                                              <td className="px-3 py-2 text-muted-foreground">{d.ours}</td>
+                                              <td className="px-3 py-2 text-muted-foreground">{d.theirs}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Objection Handling */}
+                                {existingBattlecard.objections && existingBattlecard.objections.length > 0 && (
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm flex items-center gap-1">
+                                      <MessageSquare className="h-4 w-4" />
+                                      Objection Handling
+                                    </h5>
+                                    <div className="space-y-2">
+                                      {existingBattlecard.objections.map((o, i) => (
+                                        <div key={i} className="bg-muted/30 rounded-lg p-3">
+                                          <p className="text-sm font-medium text-red-600 dark:text-red-400">"{o.objection}"</p>
+                                          <p className="text-sm text-muted-foreground mt-1">→ {o.response}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Talk Tracks */}
+                                {existingBattlecard.talkTracks && existingBattlecard.talkTracks.length > 0 && (
+                                  <div className="space-y-2">
+                                    <h5 className="font-medium text-sm">Sales Talk Tracks</h5>
+                                    <div className="space-y-2">
+                                      {existingBattlecard.talkTracks.map((t, i) => (
+                                        <div key={i} className="bg-primary/5 rounded-lg p-3 border border-primary/20">
+                                          <p className="text-sm font-medium">{t.scenario}</p>
+                                          <p className="text-sm text-muted-foreground mt-1 italic">"{t.script}"</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
