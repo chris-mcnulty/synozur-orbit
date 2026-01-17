@@ -1676,6 +1676,260 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== CLIENT PROJECTS (Pro/Enterprise only) ====================
+  
+  // Get all client projects for current tenant
+  app.get("/api/projects", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      
+      // Plan-gating: only Pro and Enterprise tenants can use client projects
+      if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+        return res.status(403).json({ 
+          error: "Client Projects require a Professional or Enterprise plan",
+          upgradeRequired: true
+        });
+      }
+
+      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+      res.json(projects);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single client project with its competitors
+  app.get("/api/projects/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify tenant ownership
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Get associated competitors
+      const projectCompetitors = await storage.getCompetitorsByProject(project.id);
+
+      res.json({ ...project, competitors: projectCompetitors });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create client project
+  app.post("/api/projects", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      
+      // Plan-gating
+      if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+        return res.status(403).json({ 
+          error: "Client Projects require a Professional or Enterprise plan",
+          upgradeRequired: true
+        });
+      }
+
+      const { name, clientName, clientDomain, description } = req.body;
+      
+      if (!name || !clientName) {
+        return res.status(400).json({ error: "Project name and client name are required" });
+      }
+
+      const project = await storage.createClientProject({
+        name: name.trim(),
+        clientName: clientName.trim(),
+        clientDomain: clientDomain?.trim().toLowerCase() || null,
+        description: description?.trim() || null,
+        status: "active",
+        tenantDomain,
+        ownerUserId: user.id,
+      });
+
+      res.status(201).json(project);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update client project
+  app.patch("/api/projects/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify tenant ownership
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { name, clientName, clientDomain, description, status } = req.body;
+      
+      const updates: any = {};
+      if (name !== undefined) updates.name = name.trim();
+      if (clientName !== undefined) updates.clientName = clientName.trim();
+      if (clientDomain !== undefined) updates.clientDomain = clientDomain?.trim().toLowerCase() || null;
+      if (description !== undefined) updates.description = description?.trim() || null;
+      if (status !== undefined && ["active", "completed", "archived"].includes(status)) {
+        updates.status = status;
+      }
+
+      const updated = await storage.updateClientProject(req.params.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete client project (cascades to unlink competitors)
+  app.delete("/api/projects/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify tenant ownership or admin
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Only owner or admin can delete
+      if (project.ownerUserId !== user.id && user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Only project owner or admin can delete" });
+      }
+
+      await storage.deleteClientProject(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Assign competitor to project
+  app.post("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify tenant ownership
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const competitor = await storage.getCompetitor(req.params.competitorId);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Update competitor with project ID
+      const updated = await storage.updateCompetitor(req.params.competitorId, {
+        projectId: req.params.projectId,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove competitor from project
+  app.delete("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Unlink competitor from project
+      await storage.updateCompetitor(req.params.competitorId, { projectId: null });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
 
   // Get team members for current tenant (Domain Admin or Global Admin)
