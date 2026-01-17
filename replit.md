@@ -49,6 +49,7 @@ Preferred communication style: Simple, everyday language.
 - **Assessments**: Snapshots of competitive analysis with proxy assessment capabilities.
 - **Client Projects**: Proxy analysis for consulting firms with company vs company and product vs product analysis types.
 - **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
+- **Report Generation**: Branded PDF reports that can be scoped to baseline (company profile + all competitors) or specific projects. Project-scoped reports require project owner or Global Admin permissions.
 
 ## External Dependencies
 
