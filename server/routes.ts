@@ -909,7 +909,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid scope. Must be 'baseline' or 'project'" });
       }
 
-      // If project scope, validate project access
+      // If project scope, validate project access (owner or Global Admin only)
       if (scope === "project") {
         if (!projectId) {
           return res.status(400).json({ error: "Project ID is required for project scope" });
@@ -918,8 +918,12 @@ export async function registerRoutes(
         if (!project) {
           return res.status(404).json({ error: "Project not found" });
         }
-        if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
-          return res.status(403).json({ error: "Access denied to this project" });
+        // Require project owner or Global Admin for project-scoped reports
+        const isOwner = project.ownerUserId === req.session.userId;
+        const isGlobalAdmin = user.role === "Global Admin";
+        const isTenantMember = project.tenantDomain === tenantDomain;
+        if (!isTenantMember || (!isOwner && !isGlobalAdmin)) {
+          return res.status(403).json({ error: "Access denied. Only project owners can generate project reports." });
         }
       }
 
