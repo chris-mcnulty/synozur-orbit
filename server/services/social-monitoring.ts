@@ -11,6 +11,16 @@ interface SocialMonitoringResult {
   summary?: string;
   status: "success" | "blocked" | "error" | "no_url";
   message?: string;
+  engagement?: EngagementSnapshot;
+}
+
+interface EngagementSnapshot {
+  followers?: number;
+  posts?: number;
+  reactions?: number;
+  comments?: number;
+  likes?: number;
+  capturedAt: string;
 }
 
 const MIN_CHANGE_THRESHOLD = 50;
@@ -28,12 +38,63 @@ function extractKeySignals(html: string, platform: string): string {
     .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "")
     .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "");
   
+  // Remove numeric engagement counts to avoid false positives in content comparison
+  content = content.replace(/\b\d{1,3}(,\d{3})*\s*(followers?|likes?|comments?|reactions?|posts?|connections?)\b/gi, "");
+  content = content.replace(/\b\d+[KMB]?\s*(followers?|likes?|comments?|reactions?|posts?)\b/gi, "");
+  
   content = content
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   
   return content.substring(0, 5000);
+}
+
+function extractEngagementMetrics(html: string, platform: string): EngagementSnapshot {
+  const engagement: EngagementSnapshot = {
+    capturedAt: new Date().toISOString(),
+  };
+  
+  // Extract numbers from common patterns
+  const parseNumber = (str: string): number | undefined => {
+    if (!str) return undefined;
+    str = str.trim().toLowerCase();
+    let num = parseFloat(str.replace(/,/g, ""));
+    if (str.includes("k")) num *= 1000;
+    if (str.includes("m")) num *= 1000000;
+    if (str.includes("b")) num *= 1000000000;
+    return isNaN(num) ? undefined : Math.round(num);
+  };
+  
+  if (platform === "linkedin") {
+    // LinkedIn patterns: "1,234 followers", "12K followers"
+    const followersMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*followers?/i);
+    if (followersMatch) engagement.followers = parseNumber(followersMatch[1]);
+    
+    // Reactions/likes pattern
+    const reactionsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*(?:reactions?|likes?)/i);
+    if (reactionsMatch) engagement.reactions = parseNumber(reactionsMatch[1]);
+    
+    // Comments pattern
+    const commentsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*comments?/i);
+    if (commentsMatch) engagement.comments = parseNumber(commentsMatch[1]);
+    
+    // Posts pattern
+    const postsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*posts?/i);
+    if (postsMatch) engagement.posts = parseNumber(postsMatch[1]);
+  } else if (platform === "instagram") {
+    // Instagram patterns
+    const followersMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*followers?/i);
+    if (followersMatch) engagement.followers = parseNumber(followersMatch[1]);
+    
+    const postsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*posts?/i);
+    if (postsMatch) engagement.posts = parseNumber(postsMatch[1]);
+    
+    const likesMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*likes?/i);
+    if (likesMatch) engagement.likes = parseNumber(likesMatch[1]);
+  }
+  
+  return engagement;
 }
 
 function calculateChangeScore(prev: string, next: string): number {
@@ -53,7 +114,7 @@ function calculateChangeScore(prev: string, next: string): number {
   return Math.round((1 - similarity) * 100);
 }
 
-async function fetchSocialPageContent(url: string): Promise<{ content: string | null; blocked: boolean }> {
+async function fetchSocialPageContent(url: string): Promise<{ content: string | null; rawHtml: string | null; blocked: boolean }> {
   try {
     await delay(REQUEST_DELAY_MS + Math.random() * 1000);
     
@@ -69,28 +130,28 @@ async function fetchSocialPageContent(url: string): Promise<{ content: string | 
     
     if (response.status === 429 || response.status === 403 || response.status === 401) {
       console.warn(`Social page blocked (${response.status}): ${url}`);
-      return { content: null, blocked: true };
+      return { content: null, rawHtml: null, blocked: true };
     }
     
     if (!response.ok) {
       console.error(`Failed to fetch ${url}: ${response.status}`);
-      return { content: null, blocked: false };
+      return { content: null, rawHtml: null, blocked: false };
     }
     
     const html = await response.text();
     
     if (html.includes("authwall") || html.includes("login-required") || html.includes("sign-in")) {
       console.warn(`Login wall detected: ${url}`);
-      return { content: null, blocked: true };
+      return { content: null, rawHtml: null, blocked: true };
     }
     
     const platform = url.includes("linkedin") ? "linkedin" : "instagram";
     const content = extractKeySignals(html, platform);
     
-    return { content, blocked: false };
+    return { content, rawHtml: html, blocked: false };
   } catch (error) {
     console.error(`Error fetching social page ${url}:`, error);
-    return { content: null, blocked: false };
+    return { content: null, rawHtml: null, blocked: false };
   }
 }
 
@@ -154,7 +215,7 @@ export async function monitorCompetitorSocialMedia(
   const updates: any = { lastSocialCrawl: now };
   
   if (competitor.linkedInUrl) {
-    const { content: newContent, blocked } = await fetchSocialPageContent(competitor.linkedInUrl);
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.linkedInUrl);
     
     if (blocked) {
       results.push({
@@ -165,10 +226,14 @@ export async function monitorCompetitorSocialMedia(
         status: "blocked",
         message: "LinkedIn requires authentication. Consider using official LinkedIn API for reliable monitoring.",
       });
-    } else if (newContent) {
+    } else if (newContent && rawHtml) {
       const previousContent = competitor.linkedInContent || "";
       const changeScore = calculateChangeScore(previousContent, newContent);
       const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      // Extract and store engagement metrics (snapshot only, no change alerts)
+      const engagement = extractEngagementMetrics(rawHtml, "linkedin");
+      updates.linkedInEngagement = engagement;
       
       let summary: string | undefined;
       if (hasSignificantChanges) {
@@ -203,6 +268,7 @@ export async function monitorCompetitorSocialMedia(
         hasChanges: hasSignificantChanges,
         summary,
         status: "success",
+        engagement,
       });
     } else {
       results.push({
@@ -217,7 +283,7 @@ export async function monitorCompetitorSocialMedia(
   }
   
   if (competitor.instagramUrl) {
-    const { content: newContent, blocked } = await fetchSocialPageContent(competitor.instagramUrl);
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.instagramUrl);
     
     if (blocked) {
       results.push({
@@ -228,10 +294,14 @@ export async function monitorCompetitorSocialMedia(
         status: "blocked",
         message: "Instagram requires authentication. Consider using official Instagram API for reliable monitoring.",
       });
-    } else if (newContent) {
+    } else if (newContent && rawHtml) {
       const previousContent = competitor.instagramContent || "";
       const changeScore = calculateChangeScore(previousContent, newContent);
       const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      // Extract and store engagement metrics (snapshot only, no change alerts)
+      const engagement = extractEngagementMetrics(rawHtml, "instagram");
+      updates.instagramEngagement = engagement;
       
       let summary: string | undefined;
       if (hasSignificantChanges) {
@@ -266,6 +336,7 @@ export async function monitorCompetitorSocialMedia(
         hasChanges: hasSignificantChanges,
         summary,
         status: "success",
+        engagement,
       });
     } else {
       results.push({

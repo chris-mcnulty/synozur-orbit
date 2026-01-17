@@ -62,8 +62,10 @@ export const competitors = pgTable("competitors", {
   instagramUrl: text("instagram_url"),
   lastCrawl: text("last_crawl"),
   lastSocialCrawl: timestamp("last_social_crawl"),
-  linkedInContent: text("linkedin_content"), // Last crawled LinkedIn page content for diff
-  instagramContent: text("instagram_content"), // Last crawled Instagram page content for diff
+  linkedInContent: text("linkedin_content"), // Last crawled LinkedIn page content for diff (messaging only)
+  instagramContent: text("instagram_content"), // Last crawled Instagram page content for diff (messaging only)
+  linkedInEngagement: jsonb("linkedin_engagement"), // Snapshot: {followers, posts, reactions, comments}
+  instagramEngagement: jsonb("instagram_engagement"), // Snapshot: {followers, posts, likes, comments}
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
   analysisData: jsonb("analysis_data"), // AI analysis results
