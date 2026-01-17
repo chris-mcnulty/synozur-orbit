@@ -571,6 +571,11 @@ export default function Competitors() {
                                     </Badge>
                                   )}
                                 </div>
+                                {analysis?.summary && (
+                                  <p className="text-sm text-muted-foreground mt-1 line-clamp-1" data-testid={`text-summary-${competitor.id}`}>
+                                    {analysis.summary}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
