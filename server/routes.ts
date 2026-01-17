@@ -877,7 +877,13 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const reports = await storage.getAllReports();
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const reports = await storage.getReportsByTenant(tenantDomain);
       res.json(reports);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -890,7 +896,47 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const parsed = insertReportSchema.safeParse(req.body);
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const { scope, projectId, name } = req.body;
+
+      // Validate scope
+      if (scope && !["baseline", "project"].includes(scope)) {
+        return res.status(400).json({ error: "Invalid scope. Must be 'baseline' or 'project'" });
+      }
+
+      // If project scope, validate project access
+      if (scope === "project") {
+        if (!projectId) {
+          return res.status(400).json({ error: "Project ID is required for project scope" });
+        }
+        const project = await storage.getClientProject(projectId);
+        if (!project) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+        if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+          return res.status(403).json({ error: "Access denied to this project" });
+        }
+      }
+
+      const reportData = {
+        name: name || `Report - ${new Date().toLocaleDateString()}`,
+        date: new Date().toLocaleDateString(),
+        type: "PDF",
+        size: "Generating...",
+        author: user.name || user.email,
+        status: "Generating",
+        scope: scope || "baseline",
+        projectId: scope === "project" ? projectId : null,
+        tenantDomain,
+        createdBy: req.session.userId,
+      };
+
+      const parsed = insertReportSchema.safeParse(reportData);
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
