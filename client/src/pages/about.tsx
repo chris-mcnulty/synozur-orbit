@@ -1,7 +1,7 @@
 import React from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
-import { ArrowRight, Target, Users, Lightbulb, Shield, Award, Globe } from "lucide-react";
+import { ArrowRight, Target, Users, Lightbulb, Shield, Award, Globe, FileText, Map } from "lucide-react";
 
 export default function About() {
   return (
@@ -169,6 +169,52 @@ export default function About() {
                 Evaluate organizational capabilities and identify improvement opportunities.
               </p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Changelog & Roadmap Section */}
+      <section className="py-16 px-6">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold mb-6 text-center">Stay Updated</h2>
+          <p className="text-muted-foreground mb-12 text-center max-w-2xl mx-auto">
+            Track our progress and see what's coming next for Orbit.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <Link href="/changelog" className="block group">
+              <div className="bg-card p-8 rounded-xl border border-border hover:border-primary/50 transition-colors h-full">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-bold text-lg">Changelog</h3>
+                </div>
+                <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+                  A detailed history of all updates, improvements, and new features we've shipped.
+                </p>
+                <span className="text-primary text-sm font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  View changelog <ArrowRight size={14} />
+                </span>
+              </div>
+            </Link>
+
+            <Link href="/roadmap" className="block group">
+              <div className="bg-card p-8 rounded-xl border border-border hover:border-primary/50 transition-colors h-full">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <Map className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-bold text-lg">Product Roadmap</h3>
+                </div>
+                <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+                  See what we're working on and what's coming next for Orbit.
+                </p>
+                <span className="text-primary text-sm font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  View roadmap <ArrowRight size={14} />
+                </span>
+              </div>
+            </Link>
           </div>
         </div>
       </section>
