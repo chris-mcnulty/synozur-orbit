@@ -50,9 +50,21 @@ export default function Reports() {
     },
   });
 
-  const generateReport = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/reports", {
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGenerateAndDownload = async () => {
+    if (scope === "project" && !selectedProjectId) {
+      toast({
+        title: "Select a Project",
+        description: "Please select a project to generate a report for.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch("/api/reports/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -62,49 +74,51 @@ export default function Reports() {
           projectId: scope === "project" ? selectedProjectId : undefined,
         }),
       });
+
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.error || "Failed to generate report");
       }
-      return response.json();
-    },
-    onSuccess: () => {
+
+      const blob = await response.blob();
+      const fileName = reportName 
+        ? `${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`
+        : `Competitive_Analysis_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`;
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       toast({
-        title: "Report Generation Started",
-        description: "Your report is being generated. This may take a few moments.",
+        title: "Report Generated",
+        description: "Your report has been downloaded successfully.",
       });
       setIsDialogOpen(false);
       setReportName("");
       setScope("baseline");
       setSelectedProjectId("");
-    },
-    onError: (error: Error) => {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive",
       });
-    },
-  });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleOpenDialog = () => {
     setReportName("");
     setScope("baseline");
     setSelectedProjectId("");
     setIsDialogOpen(true);
-  };
-
-  const handleGenerate = () => {
-    if (scope === "project" && !selectedProjectId) {
-      toast({
-        title: "Select a Project",
-        description: "Please select a project to generate a report for.",
-        variant: "destructive",
-      });
-      return;
-    }
-    generateReport.mutate();
   };
 
   if (isLoading) {
@@ -268,11 +282,11 @@ export default function Reports() {
               Cancel
             </Button>
             <Button 
-              onClick={handleGenerate} 
-              disabled={generateReport.isPending || (scope === "project" && !selectedProjectId)}
+              onClick={handleGenerateAndDownload} 
+              disabled={isGenerating || (scope === "project" && !selectedProjectId)}
               data-testid="button-confirm-generate"
             >
-              {generateReport.isPending ? "Generating..." : "Generate Report"}
+              {isGenerating ? "Generating..." : "Generate & Download"}
             </Button>
           </DialogFooter>
         </DialogContent>
