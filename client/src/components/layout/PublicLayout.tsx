@@ -17,6 +17,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         <nav className="hidden md:flex items-center gap-8">
           <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Product</Link>
           <Link href="/pricing" className="text-sm font-medium hover:text-primary transition-colors">Pricing</Link>
+          <Link href="/about" className="text-sm font-medium hover:text-primary transition-colors">About</Link>
           <Link href="/auth/signin" className="text-sm font-medium hover:text-primary transition-colors">Sign In</Link>
           <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30">
             Get Started
@@ -59,6 +60,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div>
             <h4 className="font-semibold mb-6">Legal & Company</h4>
             <ul className="space-y-3 text-sm text-muted-foreground">
+              <li><Link href="/about" className="hover:text-primary transition-colors">About Orbit</Link></li>
               <li><a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">About Synozur</a></li>
               <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
               <li><Link href="#" className="hover:text-primary transition-colors">Privacy Policy</Link></li>

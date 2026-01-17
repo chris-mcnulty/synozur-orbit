@@ -8,6 +8,7 @@ import { ThemeProvider } from "next-themes";
 import NotFound from "@/pages/not-found";
 
 import Landing from "@/pages/landing";
+import About from "@/pages/about";
 import AuthPage from "@/pages/auth";
 import Dashboard from "@/pages/app/dashboard";
 import Analysis from "@/pages/app/analysis";
@@ -26,6 +27,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
+      <Route path="/about" component={About} />
       <Route path="/pricing" component={Landing} /> {/* Placeholder */}
       <Route path="/auth/signin" component={AuthPage} />
       <Route path="/auth/signup" component={AuthPage} />
