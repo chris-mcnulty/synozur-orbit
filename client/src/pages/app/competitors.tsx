@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, FolderKanban } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, FolderKanban, Zap, Search, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -86,6 +86,20 @@ export default function Competitors() {
       return response.json();
     },
   });
+
+  // Fetch tenant info to check plan
+  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/info", {
+        credentials: "include",
+      });
+      if (!response.ok) return { plan: "trial", isPremium: false };
+      return response.json();
+    },
+  });
+  
+  const isPremiumPlan = tenantInfo?.isPremium || ["pro", "professional", "enterprise"].includes(tenantInfo?.plan || "");
 
   const addCompetitor = useMutation({
     mutationFn: async (data: { name: string; url: string; projectId?: string }) => {
@@ -196,20 +210,42 @@ export default function Competitors() {
     },
   });
 
+  const [analyzingCompetitor, setAnalyzingCompetitor] = useState<string | null>(null);
+
   const crawlCompetitor = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, analysisType }: { id: string; analysisType: "quick" | "full" | "full_with_change" }) => {
+      setAnalyzingCompetitor(id);
       const response = await fetch(`/api/competitors/${id}/crawl`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysisType }),
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Failed to crawl competitor");
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to analyze competitor");
+      }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setAnalyzingCompetitor(null);
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      const typeLabels: Record<string, string> = {
+        quick: "Quick Refresh",
+        full: "Full Analysis", 
+        full_with_change: "Full Analysis with Change Detection"
+      };
       toast({
-        title: "Crawl Started",
-        description: "Competitor data is being updated.",
+        title: typeLabels[data.analysisType] || "Analysis Complete",
+        description: data.message || "Competitor data has been updated.",
+      });
+    },
+    onError: (error: Error) => {
+      setAnalyzingCompetitor(null);
+      toast({
+        title: "Analysis Failed",
+        description: error.message,
+        variant: "destructive",
       });
     },
   });
@@ -649,16 +685,65 @@ export default function Competitors() {
                               </div>
 
                               <div className="flex items-center gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => crawlCompetitor.mutate(competitor.id)}
-                                  disabled={crawlCompetitor.isPending}
-                                  data-testid={`button-crawl-${competitor.id}`}
-                                >
-                                  <RefreshCw className="w-4 h-4 mr-2" /> Analyze
-                                </Button>
+                                {/* Analysis Type Dropdown */}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                      disabled={analyzingCompetitor === competitor.id}
+                                      data-testid={`button-crawl-${competitor.id}`}
+                                    >
+                                      {analyzingCompetitor === competitor.id ? (
+                                        <>
+                                          <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw className="w-4 h-4 mr-2" /> Analyze <ChevronDown className="w-3 h-3 ml-1" />
+                                        </>
+                                      )}
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-64">
+                                    <DropdownMenuItem 
+                                      onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "quick" })}
+                                      data-testid={`button-quick-analysis-${competitor.id}`}
+                                    >
+                                      <Zap className="w-4 h-4 mr-2 text-yellow-500" />
+                                      <div>
+                                        <div className="font-medium">Quick Refresh</div>
+                                        <div className="text-xs text-muted-foreground">Refresh webpage data only</div>
+                                      </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}
+                                      data-testid={`button-full-analysis-${competitor.id}`}
+                                    >
+                                      <Search className="w-4 h-4 mr-2 text-blue-500" />
+                                      <div>
+                                        <div className="font-medium">Full Analysis</div>
+                                        <div className="text-xs text-muted-foreground">Crawl + AI analysis</div>
+                                      </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => isPremiumPlan && crawlCompetitor.mutate({ id: competitor.id, analysisType: "full_with_change" })}
+                                      disabled={!isPremiumPlan}
+                                      className={!isPremiumPlan ? "opacity-50 cursor-not-allowed" : ""}
+                                      data-testid={`button-full-change-analysis-${competitor.id}`}
+                                    >
+                                      <Crown className="w-4 h-4 mr-2 text-amber-500" />
+                                      <div className="flex-1">
+                                        <div className="font-medium flex items-center gap-2">
+                                          Full + Change Analysis
+                                          {!isPremiumPlan && <Badge variant="outline" className="text-[10px] px-1 py-0">Pro</Badge>}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">Include social & news monitoring</div>
+                                      </div>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                                 
                                 {(analysis || competitor.screenshotUrl) && (
                                   <CollapsibleTrigger asChild>
@@ -675,7 +760,7 @@ export default function Competitors() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => crawlCompetitor.mutate(competitor.id)}>
+                                    <DropdownMenuItem onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}>
                                       Re-analyze Website
                                     </DropdownMenuItem>
                                     <DropdownMenuItem

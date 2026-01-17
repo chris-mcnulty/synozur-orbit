@@ -4313,6 +4313,37 @@ Return only the description text, no quotes or formatting.`;
 
   // ==================== TENANT ADMIN - SETTINGS ====================
 
+  // Get basic tenant info (plan, premium status) for any authenticated user
+  app.get("/api/tenant/info", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(domain);
+      
+      if (!tenant) {
+        return res.json({ plan: "trial", isPremium: false });
+      }
+
+      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise";
+      
+      res.json({
+        plan: tenant.plan,
+        isPremium,
+        name: tenant.name,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get current tenant settings (Domain Admin or Global Admin)
   app.get("/api/tenant/settings", async (req, res) => {
     try {
