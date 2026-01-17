@@ -83,6 +83,7 @@ Preferred communication style: Simple, everyday language.
 ## Backlog
 
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
+- **AI usage tracker**: System-level tracking of AI API usage (tokens, requests, costs) across all tenants with admin dashboard visibility
 - **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
 - **Battlecard PDF export**: Export battlecards as branded PDF documents
 - **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID
