@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
@@ -804,8 +804,16 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Could not analyze any competitors" });
       }
 
-      // Generate gap analysis using our positioning
-      const gaps = await generateGapAnalysis(ourPositioning, analyses);
+      // Get baseline analysis from company profile if available
+      const baselineAnalysis = companyProfile?.analysisData as CompetitorAnalysis | undefined;
+
+      // Generate gap analysis with baseline and grounding context
+      const gaps = await generateGapAnalysis(
+        ourPositioning, 
+        analyses,
+        baselineAnalysis,
+        groundingContext || undefined
+      );
 
       // Generate recommendations
       const recommendations = await generateRecommendations(gaps, analyses);
@@ -1797,7 +1805,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
-  // Analyze company website (baseline)
+  // Analyze company website (baseline) - uses robust web crawler like competitors
   app.post("/api/company-profile/analyze", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -1832,50 +1840,63 @@ Return ONLY valid JSON, no markdown or explanation.`;
         }
       }
 
-      // Fetch website content
-      let websiteContent = "";
-      let rawHtml = "";
-      try {
-        const response = await fetch(profile.websiteUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
-          },
-        });
-        rawHtml = await response.text();
-        
-        // Extract social media links from raw HTML before cleaning
-        const linkedInMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?linkedin\.com\/company\/[^"']+)["']/i);
-        const instagramMatch = rawHtml.match(/href=["'](https?:\/\/(www\.)?instagram\.com\/[^"']+)["']/i);
-        
-        const discoveredLinkedIn = linkedInMatch ? linkedInMatch[1] : null;
-        const discoveredInstagram = instagramMatch ? instagramMatch[1] : null;
-        
-        // Update social links only if not already set
-        if ((discoveredLinkedIn && !profile.linkedInUrl) || (discoveredInstagram && !profile.instagramUrl)) {
-          const socialUpdates: any = {};
-          if (discoveredLinkedIn && !profile.linkedInUrl) {
-            socialUpdates.linkedInUrl = discoveredLinkedIn;
-          }
-          if (discoveredInstagram && !profile.instagramUrl) {
-            socialUpdates.instagramUrl = discoveredInstagram;
-          }
-          await storage.updateCompanyProfile(profile.id, socialUpdates);
-        }
-        
-        // Extract text content from HTML (basic extraction)
-        websiteContent = rawHtml
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-      } catch (fetchError) {
-        console.error("Failed to fetch website:", fetchError);
-        return res.status(400).json({ error: "Could not fetch website content. Please check the URL." });
+      // Use the robust multi-page web crawler (same as competitors)
+      const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
+      
+      if (crawlResult.pages.length === 0) {
+        return res.status(400).json({ error: "Could not crawl website. Please check the URL." });
       }
 
-      // Use the same AI analysis service as competitors
-      const analysisResult = await analyzeCompetitorWebsite(profile.companyName, profile.websiteUrl, websiteContent);
+      // Update social links if discovered
+      const socialUpdates: any = {};
+      if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
+        socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+      }
+      if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
+        socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+      }
+      
+      // Store crawl data for future reference
+      socialUpdates.crawlData = {
+        pagesCrawled: crawlResult.pages.map(p => ({ 
+          url: p.url, 
+          pageType: p.pageType, 
+          title: p.title,
+          wordCount: p.wordCount 
+        })),
+        totalWordCount: crawlResult.totalWordCount,
+        crawledAt: crawlResult.crawledAt,
+      };
+      socialUpdates.lastFullCrawl = new Date();
+      
+      if (Object.keys(socialUpdates).length > 0) {
+        await storage.updateCompanyProfile(profile.id, socialUpdates);
+      }
+
+      // Get combined content from all crawled pages
+      const websiteContent = getCombinedContent(crawlResult);
+      
+      // Fetch grounding documents for this tenant to include in analysis
+      const groundingDocs = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      const globalDocs = await storage.getAllGlobalGroundingDocuments();
+      
+      // Build grounding context from documents
+      let groundingContext = "";
+      if (groundingDocs.length > 0 || globalDocs.length > 0) {
+        const allDocs = [...groundingDocs, ...globalDocs];
+        groundingContext = allDocs
+          .filter(doc => doc.extractedText)
+          .map(doc => `[${doc.name}]: ${doc.extractedText?.substring(0, 5000)}`)
+          .join("\n\n");
+      }
+
+      // Use AI analysis with grounding context
+      const analysisResult = await analyzeCompetitorWebsite(
+        profile.companyName, 
+        profile.websiteUrl, 
+        websiteContent,
+        groundingContext || undefined
+      );
 
       // Update profile with analysis data
       const updated = await storage.updateCompanyProfile(profile.id, {
@@ -1883,7 +1904,14 @@ Return ONLY valid JSON, no markdown or explanation.`;
         analysisData: analysisResult,
       });
 
-      res.json(updated);
+      res.json({
+        ...updated,
+        crawlStats: {
+          pagesCrawled: crawlResult.pages.length,
+          totalWordCount: crawlResult.totalWordCount,
+          groundingDocsUsed: groundingDocs.length + globalDocs.length,
+        }
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

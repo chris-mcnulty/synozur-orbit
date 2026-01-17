@@ -31,21 +31,34 @@ export interface Recommendation {
 export async function analyzeCompetitorWebsite(
   competitorName: string,
   websiteUrl: string,
-  websiteContent: string
+  websiteContent: string,
+  groundingContext?: string
 ): Promise<CompetitorAnalysis> {
+  // Build the prompt with optional grounding context
+  let contextSection = "";
+  if (groundingContext) {
+    contextSection = `
+
+IMPORTANT CONTEXT - Reference Documents (messaging frameworks, positioning, etc.):
+${groundingContext.slice(0, 8000)}
+
+Use this context to better understand the company's intended positioning and messaging when analyzing.
+`;
+  }
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 2048,
     messages: [
       {
         role: "user",
-        content: `Analyze this competitor's website content and extract key marketing insights.
+        content: `Analyze this company's website content and extract key marketing insights.
 
-Competitor: ${competitorName}
+Company: ${competitorName}
 Website: ${websiteUrl}
-
-Content:
-${websiteContent.slice(0, 10000)}
+${contextSection}
+Website Content:
+${websiteContent.slice(0, 15000)}
 
 Please provide a JSON response with the following structure:
 {
@@ -94,27 +107,54 @@ Return ONLY valid JSON, no additional text.`,
 
 export async function generateGapAnalysis(
   ourPositioning: string,
-  competitorAnalyses: CompetitorAnalysis[]
+  competitorAnalyses: CompetitorAnalysis[],
+  baselineAnalysis?: CompetitorAnalysis,
+  groundingContext?: string
 ): Promise<GapAnalysis[]> {
+  // Build comprehensive context including baseline and grounding documents
+  let baselineSection = "";
+  if (baselineAnalysis) {
+    baselineSection = `
+OUR COMPANY ANALYSIS (Baseline):
+${JSON.stringify(baselineAnalysis, null, 2)}
+`;
+  }
+
+  let groundingSection = "";
+  if (groundingContext) {
+    groundingSection = `
+REFERENCE DOCUMENTS (Messaging Frameworks, Positioning Guides, etc.):
+${groundingContext.slice(0, 6000)}
+`;
+  }
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 2048,
     messages: [
       {
         role: "user",
-        content: `Based on our positioning and competitor analyses, identify gaps in our market strategy.
+        content: `Based on our company analysis, positioning documents, and competitor analyses, identify gaps in our market strategy.
 
-Our Positioning: ${ourPositioning}
-
+Our Positioning Statement: ${ourPositioning}
+${baselineSection}
+${groundingSection}
 Competitor Analyses:
 ${JSON.stringify(competitorAnalyses, null, 2)}
+
+Compare our baseline company against competitors. Consider:
+1. Messaging and positioning differences
+2. Target audience alignment
+3. Value proposition gaps
+4. Feature or capability gaps
+5. Content and thought leadership gaps
 
 Please identify 3-5 key gaps and return as a JSON array:
 [
   {
     "area": "Area name (e.g., Messaging, Features, Audience)",
     "impact": "High/Medium/Low",
-    "observation": "Detailed observation about the gap"
+    "observation": "Detailed observation about the gap, referencing specific differences between our company and competitors"
   }
 ]
 

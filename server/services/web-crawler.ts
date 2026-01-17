@@ -141,7 +141,8 @@ function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   if (urlLower.includes("/about") || urlLower.includes("/who-we-are") || urlLower.includes("/our-story")) {
     return "about";
   }
-  if (urlLower.includes("/service") || urlLower.includes("/solution") || urlLower.includes("/what-we-do")) {
+  if (urlLower.includes("/service") || urlLower.includes("/solution") || urlLower.includes("/what-we-do") || 
+      urlLower.includes("/expertise") || urlLower.includes("/capabilit")) {
     return "services";
   }
   if (urlLower.includes("/product") || urlLower.includes("/pricing")) {
@@ -149,6 +150,15 @@ function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   }
   if (urlLower.includes("/blog") || urlLower.includes("/news") || urlLower.includes("/article")) {
     return "blog";
+  }
+  if (urlLower.includes("/case") || urlLower.includes("/success") || urlLower.includes("/customer-stor")) {
+    return "other"; // case studies
+  }
+  if (urlLower.includes("/resource") || urlLower.includes("/whitepaper") || urlLower.includes("/download")) {
+    return "other"; // resources
+  }
+  if (urlLower.includes("/industr") || urlLower.includes("/sector")) {
+    return "other"; // industries
   }
   
   if (htmlLower.includes("about us") && htmlLower.includes("our mission")) {
@@ -166,8 +176,20 @@ function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   return "other";
 }
 
-function findKeyPages(html: string, baseUrl: string): { about?: string; services?: string; products?: string; blog?: string } {
-  const pages: { about?: string; services?: string; products?: string; blog?: string } = {};
+interface KeyPages {
+  about?: string;
+  services?: string;
+  products?: string;
+  blog?: string;
+  caseStudies?: string;
+  resources?: string;
+  solutions?: string;
+  industries?: string;
+  expertise?: string;
+}
+
+function findKeyPages(html: string, baseUrl: string): KeyPages {
+  const pages: KeyPages = {};
   const base = new URL(baseUrl);
   
   const navMatch = html.match(/<nav[^>]*>([\s\S]*?)<\/nav>/i);
@@ -179,21 +201,37 @@ function findKeyPages(html: string, baseUrl: string): { about?: string; services
     try {
       const href = match[1];
       const text = match[2].toLowerCase().trim();
+      const hrefLower = href.toLowerCase();
       const url = new URL(href, baseUrl);
       
       if (url.hostname !== base.hostname) continue;
       
-      if (!pages.about && (text.includes("about") || href.toLowerCase().includes("/about"))) {
+      if (!pages.about && (text.includes("about") || hrefLower.includes("/about"))) {
         pages.about = url.href;
       }
-      if (!pages.services && (text.includes("service") || text.includes("solution") || href.toLowerCase().includes("/service"))) {
+      if (!pages.services && (text.includes("service") || hrefLower.includes("/service"))) {
         pages.services = url.href;
       }
-      if (!pages.products && (text.includes("product") || text.includes("pricing") || href.toLowerCase().includes("/product"))) {
+      if (!pages.solutions && (text.includes("solution") || hrefLower.includes("/solution"))) {
+        pages.solutions = url.href;
+      }
+      if (!pages.products && (text.includes("product") || text.includes("pricing") || hrefLower.includes("/product"))) {
         pages.products = url.href;
       }
-      if (!pages.blog && (text.includes("blog") || text.includes("news") || href.toLowerCase().includes("/blog"))) {
+      if (!pages.blog && (text.includes("blog") || text.includes("news") || hrefLower.includes("/blog"))) {
         pages.blog = url.href;
+      }
+      if (!pages.caseStudies && (text.includes("case stud") || text.includes("success stor") || hrefLower.includes("/case") || hrefLower.includes("/success"))) {
+        pages.caseStudies = url.href;
+      }
+      if (!pages.resources && (text.includes("resource") || text.includes("whitepaper") || text.includes("download") || hrefLower.includes("/resource"))) {
+        pages.resources = url.href;
+      }
+      if (!pages.industries && (text.includes("industr") || text.includes("sector") || hrefLower.includes("/industr"))) {
+        pages.industries = url.href;
+      }
+      if (!pages.expertise && (text.includes("expertise") || text.includes("capabilit") || text.includes("what we do") || hrefLower.includes("/expertise") || hrefLower.includes("/capabilit"))) {
+        pages.expertise = url.href;
       }
     } catch {
       // Invalid URL, skip
@@ -236,11 +274,17 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
   
   const keyPages = findKeyPages(homepage.html, homepage.finalUrl);
   
+  // Crawl key pages - expanded to include more page types for comprehensive analysis
   const pagesToCrawl: { url: string; type: CrawlResult["pageType"] }[] = [];
   if (keyPages.about) pagesToCrawl.push({ url: keyPages.about, type: "about" });
   if (keyPages.services) pagesToCrawl.push({ url: keyPages.services, type: "services" });
+  if (keyPages.solutions) pagesToCrawl.push({ url: keyPages.solutions, type: "services" });
   if (keyPages.products) pagesToCrawl.push({ url: keyPages.products, type: "products" });
   if (keyPages.blog) pagesToCrawl.push({ url: keyPages.blog, type: "blog" });
+  if (keyPages.caseStudies) pagesToCrawl.push({ url: keyPages.caseStudies, type: "other" });
+  if (keyPages.resources) pagesToCrawl.push({ url: keyPages.resources, type: "other" });
+  if (keyPages.industries) pagesToCrawl.push({ url: keyPages.industries, type: "other" });
+  if (keyPages.expertise) pagesToCrawl.push({ url: keyPages.expertise, type: "services" });
   
   const additionalPages = await Promise.all(
     pagesToCrawl.map(({ url: pageUrl, type }) =>
