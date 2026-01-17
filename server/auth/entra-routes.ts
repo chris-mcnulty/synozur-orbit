@@ -27,10 +27,16 @@ export function registerEntraRoutes(app: Express) {
       return res.status(503).json({ error: "Microsoft Entra SSO is not configured" });
     }
 
+    // Clear any existing session to force fresh authentication
+    if (req.session.userId) {
+      req.session.userId = undefined;
+    }
+
     const authCodeUrlParameters: msal.AuthorizationUrlRequest = {
       scopes: SCOPES,
       redirectUri: REDIRECT_URI,
       responseMode: msal.ResponseMode.QUERY,
+      prompt: "select_account", // Always prompt user to select account
     };
 
     try {
