@@ -10,6 +10,7 @@ import {
   companyProfiles,
   assessments,
   emailVerificationTokens,
+  tenantInvites,
   type User, 
   type InsertUser,
   type Tenant,
@@ -31,7 +32,9 @@ import {
   type Assessment,
   type InsertAssessment,
   type EmailVerificationToken,
-  type InsertEmailVerificationToken
+  type InsertEmailVerificationToken,
+  type TenantInvite,
+  type InsertTenantInvite
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -113,6 +116,15 @@ export interface IStorage {
   createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
   getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
   markEmailVerificationTokenUsed(token: string): Promise<void>;
+  
+  // Tenant Invite methods
+  createTenantInvite(invite: InsertTenantInvite): Promise<TenantInvite>;
+  getTenantInvite(id: string): Promise<TenantInvite | undefined>;
+  getTenantInviteByToken(token: string): Promise<TenantInvite | undefined>;
+  getTenantInvitesByDomain(tenantDomain: string): Promise<TenantInvite[]>;
+  updateTenantInvite(id: string, data: Partial<TenantInvite>): Promise<TenantInvite>;
+  deleteTenantInvite(id: string): Promise<void>;
+  deleteUser(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -468,6 +480,48 @@ export class DatabaseStorage implements IStorage {
     await db.update(emailVerificationTokens)
       .set({ used: true })
       .where(eq(emailVerificationTokens.token, token));
+  }
+
+  // Tenant Invite methods
+  async createTenantInvite(insertInvite: InsertTenantInvite): Promise<TenantInvite> {
+    const [invite] = await db
+      .insert(tenantInvites)
+      .values(insertInvite)
+      .returning();
+    return invite;
+  }
+
+  async getTenantInvite(id: string): Promise<TenantInvite | undefined> {
+    const [invite] = await db.select().from(tenantInvites).where(eq(tenantInvites.id, id));
+    return invite || undefined;
+  }
+
+  async getTenantInviteByToken(token: string): Promise<TenantInvite | undefined> {
+    const [invite] = await db.select().from(tenantInvites).where(eq(tenantInvites.token, token));
+    return invite || undefined;
+  }
+
+  async getTenantInvitesByDomain(tenantDomain: string): Promise<TenantInvite[]> {
+    return await db.select().from(tenantInvites)
+      .where(eq(tenantInvites.tenantDomain, tenantDomain))
+      .orderBy(desc(tenantInvites.createdAt));
+  }
+
+  async updateTenantInvite(id: string, data: Partial<TenantInvite>): Promise<TenantInvite> {
+    const [invite] = await db
+      .update(tenantInvites)
+      .set(data)
+      .where(eq(tenantInvites.id, id))
+      .returning();
+    return invite;
+  }
+
+  async deleteTenantInvite(id: string): Promise<void> {
+    await db.delete(tenantInvites).where(eq(tenantInvites.id, id));
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
   }
 }
 

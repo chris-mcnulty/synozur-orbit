@@ -1520,6 +1520,427 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
+
+  // Get team members for current tenant (Domain Admin or Global Admin)
+  app.get("/api/team/members", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Only Domain Admin or Global Admin can view team
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const members = await storage.getUsersByDomain(domain);
+      
+      res.json(members.map(u => {
+        const { password: _, ...userWithoutPassword } = u;
+        return userWithoutPassword;
+      }));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update team member role (Domain Admin or Global Admin)
+  app.patch("/api/team/members/:userId/role", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "Target user not found" });
+      }
+
+      // Verify same domain (unless Global Admin)
+      const currentDomain = currentUser.email.split("@")[1];
+      const targetDomain = targetUser.email.split("@")[1];
+      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+        return res.status(403).json({ error: "Cannot modify users from another tenant" });
+      }
+
+      const { role } = req.body;
+      const validRoles = ["Standard User", "Domain Admin"];
+      if (!role || !validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role. Must be 'Standard User' or 'Domain Admin'" });
+      }
+
+      // Cannot demote self
+      if (targetUser.id === currentUser.id && role !== currentUser.role) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+
+      // Cannot promote to Global Admin (only via database)
+      if (role === "Global Admin") {
+        return res.status(400).json({ error: "Cannot promote to Global Admin" });
+      }
+
+      const updated = await storage.updateUser(req.params.userId, { role });
+      const { password: _, ...userWithoutPassword } = updated;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove team member (Domain Admin or Global Admin)
+  app.delete("/api/team/members/:userId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "Target user not found" });
+      }
+
+      // Cannot delete self
+      if (targetUser.id === currentUser.id) {
+        return res.status(400).json({ error: "Cannot remove yourself" });
+      }
+
+      // Verify same domain (unless Global Admin)
+      const currentDomain = currentUser.email.split("@")[1];
+      const targetDomain = targetUser.email.split("@")[1];
+      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+        return res.status(403).json({ error: "Cannot remove users from another tenant" });
+      }
+
+      // Cannot remove Domain Admin (must demote first)
+      if (targetUser.role === "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(400).json({ error: "Cannot remove Domain Admin. Demote first." });
+      }
+
+      await storage.deleteUser(req.params.userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== TENANT ADMIN - INVITATIONS ====================
+
+  // Get pending invites for current tenant
+  app.get("/api/team/invites", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const invites = await storage.getTenantInvitesByDomain(domain);
+      res.json(invites);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send team invite
+  app.post("/api/team/invites", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const { email, role } = req.body;
+      if (!email || !email.includes("@")) {
+        return res.status(400).json({ error: "Valid email required" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const inviteeDomain = email.split("@")[1];
+      
+      // Must invite users to same domain
+      if (inviteeDomain !== domain) {
+        return res.status(400).json({ error: `Invitees must have an @${domain} email address` });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists with this email" });
+      }
+
+      // Check for existing pending invite
+      const existingInvites = await storage.getTenantInvitesByDomain(domain);
+      const pendingInvite = existingInvites.find(i => i.email === email && i.status === "pending");
+      if (pendingInvite) {
+        return res.status(400).json({ error: "Invite already pending for this email" });
+      }
+
+      const validRoles = ["Standard User", "Domain Admin"];
+      const invitedRole = validRoles.includes(role) ? role : "Standard User";
+
+      // Generate token
+      const token = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      const invite = await storage.createTenantInvite({
+        token,
+        email,
+        tenantDomain: domain,
+        invitedRole,
+        invitedBy: user.id,
+        status: "pending",
+        expiresAt,
+      });
+
+      // TODO: Send invite email with token link
+      // For now, return the invite with token for testing
+      res.json({ ...invite, inviteLink: `/auth/accept-invite?token=${token}` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Revoke invite
+  app.delete("/api/team/invites/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const invite = await storage.getTenantInvite(req.params.id);
+      if (!invite) {
+        return res.status(404).json({ error: "Invite not found" });
+      }
+
+      const domain = user.email.split("@")[1];
+      if (invite.tenantDomain !== domain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Cannot revoke invites from another tenant" });
+      }
+
+      await storage.updateTenantInvite(req.params.id, { status: "revoked" });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Accept invite (public endpoint for invitee)
+  app.post("/api/team/invites/accept", async (req, res) => {
+    try {
+      const { token, password, name } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ error: "Token required" });
+      }
+      if (!password || password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
+      }
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: "Name required" });
+      }
+
+      const invite = await storage.getTenantInviteByToken(token);
+      if (!invite) {
+        return res.status(404).json({ error: "Invite not found" });
+      }
+
+      if (invite.status !== "pending") {
+        return res.status(400).json({ error: "Invite is no longer valid" });
+      }
+
+      if (new Date() > new Date(invite.expiresAt)) {
+        await storage.updateTenantInvite(invite.id, { status: "expired" });
+        return res.status(400).json({ error: "Invite has expired" });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(invite.email);
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists" });
+      }
+
+      // Get tenant info
+      const tenant = await storage.getTenantByDomain(invite.tenantDomain);
+      if (!tenant) {
+        return res.status(400).json({ error: "Tenant not found" });
+      }
+
+      // Hash password and create user
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const avatar = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+
+      const newUser = await storage.createUser({
+        email: invite.email,
+        password: hashedPassword,
+        name: name.trim(),
+        role: invite.invitedRole,
+        company: tenant.name,
+        companySize: "",
+        jobTitle: "",
+        industry: "",
+        country: "",
+        avatar,
+        emailVerified: true,
+        status: "active",
+      });
+
+      // Mark invite as accepted
+      await storage.updateTenantInvite(invite.id, { 
+        status: "accepted",
+        acceptedAt: new Date(),
+      });
+
+      // Update tenant user count
+      await storage.updateTenant(tenant.id, { 
+        userCount: tenant.userCount + 1 
+      });
+
+      // Set session
+      req.session.userId = newUser.id;
+
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== TENANT ADMIN - SETTINGS ====================
+
+  // Get current tenant settings (Domain Admin or Global Admin)
+  app.get("/api/tenant/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(domain);
+      
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      res.json(tenant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update tenant settings (Domain Admin or Global Admin)
+  app.patch("/api/tenant/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(domain);
+      
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+      const validFrequencies = ["daily", "weekly", "disabled"];
+      
+      const { name, logoUrl, faviconUrl, primaryColor, secondaryColor, monitoringFrequency } = req.body;
+      const updateData: Record<string, any> = {};
+      
+      if (name && typeof name === "string" && name.trim()) {
+        updateData.name = name.trim();
+      }
+      if (logoUrl !== undefined) {
+        updateData.logoUrl = logoUrl || null;
+      }
+      if (faviconUrl !== undefined) {
+        updateData.faviconUrl = faviconUrl || null;
+      }
+      if (primaryColor && hexColorRegex.test(primaryColor)) {
+        updateData.primaryColor = primaryColor;
+      }
+      if (secondaryColor && hexColorRegex.test(secondaryColor)) {
+        updateData.secondaryColor = secondaryColor;
+      }
+      if (monitoringFrequency && validFrequencies.includes(monitoringFrequency)) {
+        updateData.monitoringFrequency = monitoringFrequency;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const updated = await storage.updateTenant(tenant.id, updateData);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== SCHEDULED JOBS (GLOBAL ADMIN) ====================
 
   app.get("/api/admin/jobs/status", async (req, res) => {
