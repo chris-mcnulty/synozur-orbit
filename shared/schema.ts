@@ -73,6 +73,8 @@ export const competitors = pgTable("competitors", {
   url: text("url").notNull(),
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
+  faviconUrl: text("favicon_url"), // URL to stored favicon/logo
+  screenshotUrl: text("screenshot_url"), // URL to stored homepage screenshot
   lastCrawl: text("last_crawl"),
   lastSocialCrawl: timestamp("last_social_crawl"),
   linkedInContent: text("linkedin_content"), // Last crawled LinkedIn page content for diff (messaging only)
