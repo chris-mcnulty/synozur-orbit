@@ -13,6 +13,8 @@ import {
   assessments,
   emailVerificationTokens,
   tenantInvites,
+  products,
+  projectProducts,
   type User, 
   type InsertUser,
   type Tenant,
@@ -40,7 +42,11 @@ import {
   type EmailVerificationToken,
   type InsertEmailVerificationToken,
   type TenantInvite,
-  type InsertTenantInvite
+  type InsertTenantInvite,
+  type Product,
+  type InsertProduct,
+  type ProjectProduct,
+  type InsertProjectProduct
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -146,6 +152,20 @@ export interface IStorage {
   updateClientProject(id: string, data: Partial<ClientProject>): Promise<ClientProject>;
   deleteClientProject(id: string): Promise<void>;
   getCompetitorsByProject(projectId: string): Promise<Competitor[]>;
+  
+  // Product methods (for product-vs-product analysis)
+  getProduct(id: string): Promise<Product | undefined>;
+  getProductsByTenant(tenantDomain: string): Promise<Product[]>;
+  getProductsByCompetitor(competitorId: string): Promise<Product[]>;
+  createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: string, data: Partial<Product>): Promise<Product>;
+  deleteProduct(id: string): Promise<void>;
+  
+  // Project-Product methods
+  getProjectProducts(projectId: string): Promise<Array<ProjectProduct & { product: Product }>>;
+  addProductToProject(data: InsertProjectProduct): Promise<ProjectProduct>;
+  removeProductFromProject(projectId: string, productId: string): Promise<void>;
+  updateProjectProductRole(projectId: string, productId: string, role: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -610,6 +630,83 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(competitors)
       .where(eq(competitors.projectId, projectId))
       .orderBy(desc(competitors.createdAt));
+  }
+
+  // Product methods
+  async getProduct(id: string): Promise<Product | undefined> {
+    const [product] = await db.select().from(products).where(eq(products.id, id));
+    return product || undefined;
+  }
+
+  async getProductsByTenant(tenantDomain: string): Promise<Product[]> {
+    return await db.select().from(products)
+      .where(eq(products.tenantDomain, tenantDomain))
+      .orderBy(desc(products.createdAt));
+  }
+
+  async getProductsByCompetitor(competitorId: string): Promise<Product[]> {
+    return await db.select().from(products)
+      .where(eq(products.competitorId, competitorId))
+      .orderBy(desc(products.createdAt));
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    const [result] = await db
+      .insert(products)
+      .values(product)
+      .returning();
+    return result;
+  }
+
+  async updateProduct(id: string, data: Partial<Product>): Promise<Product> {
+    const [result] = await db
+      .update(products)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteProduct(id: string): Promise<void> {
+    await db.delete(products).where(eq(products.id, id));
+  }
+
+  // Project-Product methods
+  async getProjectProducts(projectId: string): Promise<Array<ProjectProduct & { product: Product }>> {
+    const results = await db.select()
+      .from(projectProducts)
+      .innerJoin(products, eq(projectProducts.productId, products.id))
+      .where(eq(projectProducts.projectId, projectId));
+    
+    return results.map(r => ({
+      ...r.project_products,
+      product: r.products
+    }));
+  }
+
+  async addProductToProject(data: InsertProjectProduct): Promise<ProjectProduct> {
+    const [result] = await db
+      .insert(projectProducts)
+      .values(data)
+      .returning();
+    return result;
+  }
+
+  async removeProductFromProject(projectId: string, productId: string): Promise<void> {
+    await db.delete(projectProducts)
+      .where(and(
+        eq(projectProducts.projectId, projectId),
+        eq(projectProducts.productId, productId)
+      ));
+  }
+
+  async updateProjectProductRole(projectId: string, productId: string, role: string): Promise<void> {
+    await db.update(projectProducts)
+      .set({ role })
+      .where(and(
+        eq(projectProducts.projectId, projectId),
+        eq(projectProducts.productId, productId)
+      ));
   }
 }
 
