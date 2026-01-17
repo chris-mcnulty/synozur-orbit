@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, FolderKanban } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,6 +23,7 @@ export default function Competitors() {
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [expandedCompetitors, setExpandedCompetitors] = useState<Set<string>>(new Set());
   const [profileForm, setProfileForm] = useState({
     companyName: "",
@@ -60,6 +62,20 @@ export default function Competitors() {
     },
   });
 
+  const { data: projects = [] } = useQuery<{ id: string; name: string; clientName: string; status: string }[]>({
+    queryKey: ["/api/projects"],
+    queryFn: async () => {
+      const response = await fetch("/api/projects", {
+        credentials: "include",
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    retry: false,
+  });
+
+  const activeProjects = projects.filter(p => p.status === "active");
+
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery({
     queryKey: ["/api/company-profile"],
     queryFn: async () => {
@@ -72,7 +88,7 @@ export default function Competitors() {
   });
 
   const addCompetitor = useMutation({
-    mutationFn: async (data: { name: string; url: string }) => {
+    mutationFn: async (data: { name: string; url: string; projectId?: string }) => {
       const response = await fetch("/api/competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -87,6 +103,7 @@ export default function Competitors() {
       setIsDialogOpen(false);
       setName("");
       setUrl("");
+      setSelectedProjectId("");
       toast({
         title: "Competitor Added",
         description: "We've started tracking this competitor.",
@@ -217,7 +234,11 @@ export default function Competitors() {
 
   const handleAddCompetitor = (e: React.FormEvent) => {
     e.preventDefault();
-    addCompetitor.mutate({ name, url });
+    addCompetitor.mutate({ 
+      name, 
+      url,
+      projectId: selectedProjectId || undefined
+    });
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -296,6 +317,29 @@ export default function Competitors() {
                     required
                   />
                 </div>
+                {activeProjects.length > 0 && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="project" className="text-right">
+                      Project
+                    </Label>
+                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                      <SelectTrigger className="col-span-3" data-testid="select-project">
+                        <SelectValue placeholder="None (own analysis)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">None (own analysis)</SelectItem>
+                        {activeProjects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            <span className="flex items-center gap-2">
+                              <FolderKanban className="h-3 w-3" />
+                              {project.name} ({project.clientName})
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={addCompetitor.isPending}>
