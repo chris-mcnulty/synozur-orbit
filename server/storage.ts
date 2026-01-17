@@ -17,6 +17,7 @@ import {
   products,
   projectProducts,
   battlecards,
+  productBattlecards,
   type User, 
   type InsertUser,
   type Tenant,
@@ -52,7 +53,9 @@ import {
   type ProjectProduct,
   type InsertProjectProduct,
   type Battlecard,
-  type InsertBattlecard
+  type InsertBattlecard,
+  type ProductBattlecard,
+  type InsertProductBattlecard
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -191,6 +194,14 @@ export interface IStorage {
   createBattlecard(battlecard: InsertBattlecard): Promise<Battlecard>;
   updateBattlecard(id: string, data: Partial<Battlecard>): Promise<Battlecard>;
   deleteBattlecard(id: string): Promise<void>;
+  
+  // Product Battlecard methods
+  getProductBattlecard(id: string): Promise<ProductBattlecard | undefined>;
+  getProductBattlecardByProducts(baselineProductId: string, competitorProductId: string): Promise<ProductBattlecard | undefined>;
+  getProductBattlecardsByProject(projectId: string): Promise<ProductBattlecard[]>;
+  createProductBattlecard(battlecard: InsertProductBattlecard): Promise<ProductBattlecard>;
+  updateProductBattlecard(id: string, data: Partial<ProductBattlecard>): Promise<ProductBattlecard>;
+  deleteProductBattlecard(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -830,6 +841,48 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBattlecard(id: string): Promise<void> {
     await db.delete(battlecards).where(eq(battlecards.id, id));
+  }
+
+  // Product Battlecard methods
+  async getProductBattlecard(id: string): Promise<ProductBattlecard | undefined> {
+    const [battlecard] = await db.select().from(productBattlecards).where(eq(productBattlecards.id, id));
+    return battlecard || undefined;
+  }
+
+  async getProductBattlecardByProducts(baselineProductId: string, competitorProductId: string): Promise<ProductBattlecard | undefined> {
+    const [battlecard] = await db.select().from(productBattlecards)
+      .where(and(
+        eq(productBattlecards.baselineProductId, baselineProductId),
+        eq(productBattlecards.competitorProductId, competitorProductId)
+      ));
+    return battlecard || undefined;
+  }
+
+  async getProductBattlecardsByProject(projectId: string): Promise<ProductBattlecard[]> {
+    return await db.select().from(productBattlecards)
+      .where(eq(productBattlecards.projectId, projectId))
+      .orderBy(desc(productBattlecards.createdAt));
+  }
+
+  async createProductBattlecard(battlecard: InsertProductBattlecard): Promise<ProductBattlecard> {
+    const [result] = await db
+      .insert(productBattlecards)
+      .values(battlecard)
+      .returning();
+    return result;
+  }
+
+  async updateProductBattlecard(id: string, data: Partial<ProductBattlecard>): Promise<ProductBattlecard> {
+    const [result] = await db
+      .update(productBattlecards)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(productBattlecards.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteProductBattlecard(id: string): Promise<void> {
+    await db.delete(productBattlecards).where(eq(productBattlecards.id, id));
   }
 }
 
