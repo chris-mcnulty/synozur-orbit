@@ -112,7 +112,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Quick Action */}
         <div className="p-6 pb-2">
-           <Button className="w-full bg-primary hover:bg-primary/90 text-white shadow-md shadow-primary/20 transition-all font-medium" size="default">
+           <Button 
+             className="w-full bg-primary hover:bg-primary/90 text-white shadow-md shadow-primary/20 transition-all font-medium" 
+             size="default"
+             onClick={() => setLocation("/app/analysis")}
+             data-testid="button-new-analysis"
+           >
              <Plus className="w-4 h-4 mr-2" /> New Analysis
            </Button>
         </div>
