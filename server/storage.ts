@@ -1,5 +1,6 @@
 import { 
   users, 
+  tenants,
   competitors, 
   activity, 
   recommendations, 
@@ -10,6 +11,8 @@ import {
   assessments,
   type User, 
   type InsertUser,
+  type Tenant,
+  type InsertTenant,
   type Competitor,
   type InsertCompetitor,
   type Activity,
@@ -38,6 +41,15 @@ export interface IStorage {
   getAllUsers(): Promise<User[]>;
   getGlobalAdmin(): Promise<User | undefined>;
   getDomainAdmin(domain: string): Promise<User | undefined>;
+  getUsersByDomain(domain: string): Promise<User[]>;
+  
+  // Tenant methods
+  getTenant(id: string): Promise<Tenant | undefined>;
+  getTenantByDomain(domain: string): Promise<Tenant | undefined>;
+  getAllTenants(): Promise<Tenant[]>;
+  createTenant(tenant: InsertTenant): Promise<Tenant>;
+  updateTenant(id: string, data: Partial<Tenant>): Promise<Tenant>;
+  getTenantsWithUserCounts(): Promise<Array<Tenant & { actualUserCount: number }>>;
   
   // Competitor methods
   getCompetitor(id: string): Promise<Competitor | undefined>;
@@ -126,6 +138,53 @@ export class DatabaseStorage implements IStorage {
       u => u.role === "Domain Admin" && u.email.endsWith(`@${domain}`)
     );
     return domainAdmin || undefined;
+  }
+
+  async getUsersByDomain(domain: string): Promise<User[]> {
+    const allUsers = await db.select().from(users);
+    return allUsers.filter(u => u.email.endsWith(`@${domain}`));
+  }
+
+  // Tenant methods
+  async getTenant(id: string): Promise<Tenant | undefined> {
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id));
+    return tenant || undefined;
+  }
+
+  async getTenantByDomain(domain: string): Promise<Tenant | undefined> {
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.domain, domain));
+    return tenant || undefined;
+  }
+
+  async getAllTenants(): Promise<Tenant[]> {
+    return await db.select().from(tenants).orderBy(desc(tenants.createdAt));
+  }
+
+  async createTenant(insertTenant: InsertTenant): Promise<Tenant> {
+    const [tenant] = await db
+      .insert(tenants)
+      .values(insertTenant)
+      .returning();
+    return tenant;
+  }
+
+  async updateTenant(id: string, data: Partial<Tenant>): Promise<Tenant> {
+    const [tenant] = await db
+      .update(tenants)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tenants.id, id))
+      .returning();
+    return tenant;
+  }
+
+  async getTenantsWithUserCounts(): Promise<Array<Tenant & { actualUserCount: number }>> {
+    const allTenants = await this.getAllTenants();
+    const allUsers = await this.getAllUsers();
+    
+    return allTenants.map(tenant => {
+      const userCount = allUsers.filter(u => u.email.endsWith(`@${tenant.domain}`)).length;
+      return { ...tenant, actualUserCount: userCount };
+    });
   }
 
   // Competitor methods
