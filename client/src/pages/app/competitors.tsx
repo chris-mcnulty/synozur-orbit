@@ -31,6 +31,12 @@ export default function Competitors() {
     description: "",
   });
 
+  const [faviconErrors, setFaviconErrors] = useState<Set<string>>(new Set());
+
+  const handleFaviconError = (competitorId: string) => {
+    setFaviconErrors(prev => new Set(prev).add(competitorId));
+  };
+
   const toggleExpanded = (id: string) => {
     setExpandedCompetitors(prev => {
       const newSet = new Set(prev);
@@ -548,9 +554,22 @@ export default function Competitors() {
                         <CardContent className="p-6">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                                {competitor.name.charAt(0)}
-                              </div>
+                              {competitor.faviconUrl && !faviconErrors.has(competitor.id) ? (
+                                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden group-hover:ring-2 group-hover:ring-primary/50 transition-all">
+                                  <img 
+                                    src={competitor.faviconUrl} 
+                                    alt={`${competitor.name} logo`}
+                                    className="w-8 h-8 object-contain"
+                                    onError={() => handleFaviconError(competitor.id)}
+                                    referrerPolicy="no-referrer"
+                                    data-testid={`img-favicon-${competitor.id}`}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                                  {competitor.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
                               <div>
                                 <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
                                   {competitor.name}
@@ -597,7 +616,7 @@ export default function Competitors() {
                                   <RefreshCw className="w-4 h-4 mr-2" /> Analyze
                                 </Button>
                                 
-                                {analysis && (
+                                {(analysis || competitor.screenshotUrl) && (
                                   <CollapsibleTrigger asChild>
                                     <Button variant="ghost" size="icon" data-testid={`button-expand-${competitor.id}`}>
                                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -628,52 +647,68 @@ export default function Competitors() {
                           </div>
                           
                           <CollapsibleContent>
-                            {analysis && (
-                              <div className="mt-6 pt-6 border-t space-y-4">
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <div className="flex items-center gap-2 text-sm font-medium">
-                                      <Brain className="w-4 h-4 text-primary" />
-                                      Summary
+                            <div className="mt-6 pt-6 border-t space-y-4">
+                              {competitor.screenshotUrl && (
+                                <div className="mb-4">
+                                  <p className="text-sm font-medium mb-2">Homepage Screenshot</p>
+                                  <a href={competitor.url} target="_blank" rel="noopener noreferrer">
+                                    <img 
+                                      src={competitor.screenshotUrl} 
+                                      alt={`${competitor.name} homepage`}
+                                      className="rounded-lg border shadow-sm max-h-48 object-cover object-top w-full hover:opacity-90 transition-opacity"
+                                      referrerPolicy="no-referrer"
+                                      data-testid={`img-screenshot-${competitor.id}`}
+                                    />
+                                  </a>
+                                </div>
+                              )}
+                              {analysis && (
+                                <>
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2 text-sm font-medium">
+                                        <Brain className="w-4 h-4 text-primary" />
+                                        Summary
+                                      </div>
+                                      <p className="text-sm text-muted-foreground">{analysis.summary}</p>
                                     </div>
-                                    <p className="text-sm text-muted-foreground">{analysis.summary}</p>
+                                    
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2 text-sm font-medium">
+                                        <Target className="w-4 h-4 text-primary" />
+                                        Target Audience
+                                      </div>
+                                      <p className="text-sm text-muted-foreground">{analysis.targetAudience}</p>
+                                    </div>
                                   </div>
                                   
                                   <div className="space-y-2">
                                     <div className="flex items-center gap-2 text-sm font-medium">
-                                      <Target className="w-4 h-4 text-primary" />
-                                      Target Audience
+                                      <MessageSquare className="w-4 h-4 text-primary" />
+                                      Key Messages
                                     </div>
-                                    <p className="text-sm text-muted-foreground">{analysis.targetAudience}</p>
+                                    <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                                      {analysis.keyMessages?.map((msg: string, i: number) => (
+                                        <li key={i}>{msg}</li>
+                                      ))}
+                                    </ul>
                                   </div>
-                                </div>
-                                
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 text-sm font-medium">
-                                    <MessageSquare className="w-4 h-4 text-primary" />
-                                    Key Messages
+                                  
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-sm font-medium">
+                                      <Tags className="w-4 h-4 text-primary" />
+                                      Keywords & Tone
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {analysis.keywords?.map((keyword: string, i: number) => (
+                                        <Badge key={i} variant="outline">{keyword}</Badge>
+                                      ))}
+                                      <Badge variant="secondary">{analysis.tone}</Badge>
+                                    </div>
                                   </div>
-                                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                                    {analysis.keyMessages?.map((msg: string, i: number) => (
-                                      <li key={i}>{msg}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 text-sm font-medium">
-                                    <Tags className="w-4 h-4 text-primary" />
-                                    Keywords & Tone
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {analysis.keywords?.map((keyword: string, i: number) => (
-                                      <Badge key={i} variant="outline">{keyword}</Badge>
-                                    ))}
-                                    <Badge variant="secondary">{analysis.tone}</Badge>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                                </>
+                              )}
+                            </div>
                           </CollapsibleContent>
                         </CardContent>
                       </Card>
