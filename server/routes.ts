@@ -292,6 +292,25 @@ export async function registerRoutes(
           await storage.updateCompetitor(competitor.id, socialUpdates);
         }
         
+        // Extract blog post titles and count (digest, not full content)
+        const blogTitles: string[] = [];
+        // Common blog post patterns: article titles, h2/h3 in blog sections
+        const articleRegex = /<article[^>]*>[\s\S]*?<h[1-3][^>]*>([^<]+)<\/h[1-3]>/gi;
+        let articleMatch;
+        while ((articleMatch = articleRegex.exec(rawHtml)) !== null) {
+          if (articleMatch[1] && articleMatch[1].trim().length > 10) {
+            blogTitles.push(articleMatch[1].trim().substring(0, 100));
+          }
+        }
+        // Also look for blog links
+        const blogLinkRegex = /href=["'][^"']*\/blog\/[^"']*["'][^>]*>([^<]+)</gi;
+        let blogMatch;
+        while ((blogMatch = blogLinkRegex.exec(rawHtml)) !== null) {
+          if (blogMatch[1] && blogMatch[1].trim().length > 10 && !blogTitles.includes(blogMatch[1].trim())) {
+            blogTitles.push(blogMatch[1].trim().substring(0, 100));
+          }
+        }
+        
         // Extract text content from HTML (basic extraction)
         websiteContent = rawHtml
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -299,6 +318,33 @@ export async function registerRoutes(
           .replace(/<[^>]+>/g, " ")
           .replace(/\s+/g, " ")
           .trim();
+          
+        // Store blog snapshot
+        if (blogTitles.length > 0) {
+          const previousSnapshot = competitor.blogSnapshot as any;
+          const previousCount = previousSnapshot?.postCount || 0;
+          const newPosts = blogTitles.length - previousCount;
+          
+          await storage.updateCompetitor(competitor.id, {
+            blogSnapshot: {
+              postCount: blogTitles.length,
+              latestTitles: blogTitles.slice(0, 5), // Keep only latest 5 titles
+              capturedAt: new Date().toISOString(),
+            }
+          });
+          
+          // Create activity if new posts detected
+          if (previousCount > 0 && newPosts > 0) {
+            await storage.createActivity({
+              type: "blog_update",
+              competitorId: competitor.id,
+              competitorName: competitor.name,
+              description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${blogTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
+              date: new Date().toISOString(),
+              impact: newPosts >= 3 ? "High" : "Medium",
+            });
+          }
+        }
       } catch (fetchError) {
         console.error("Failed to fetch website:", fetchError);
       }
