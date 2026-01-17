@@ -138,17 +138,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3 px-2 py-2 mb-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer group">
             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-secondary p-[2px]">
               <div className="w-full h-full rounded-full bg-sidebar flex items-center justify-center">
-                 <span className="text-xs font-bold text-primary">{user?.avatar || "JD"}</span>
+                 <span className="text-xs font-bold text-primary">{user?.avatar || user?.name?.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "?"}</span>
               </div>
             </div>
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-sidebar-foreground group-hover:text-primary transition-colors truncate">{user?.name || "John Doe"}</p>
+                <p className="text-sm font-medium text-sidebar-foreground group-hover:text-primary transition-colors truncate">{user?.name || "User"}</p>
                 {user?.role === "Global Admin" && (
                   <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 border-primary/20 text-primary bg-primary/5">GA</Badge>
                 )}
               </div>
-              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.company || "Acme Corp"}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.company || ""}</p>
             </div>
             <Settings size={16} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground transition-colors" />
           </div>
