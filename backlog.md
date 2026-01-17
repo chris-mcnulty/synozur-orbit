@@ -126,6 +126,16 @@
 - [ ] Deduplicate entries by domain/company name
 **Effort**: Medium
 
+### 3.6 Visual Competitor Assets
+**Status**: Not implemented
+**Spec Requirement**: Capture visual assets for richer competitor profiles
+- [ ] Fetch favicon/logo from competitor website as thumbnail
+- [ ] Capture above-the-fold homepage screenshot during crawl
+- [ ] Store images in object storage
+- [ ] Display logo in competitor cards and lists
+- [ ] Show homepage screenshot in competitor detail view
+**Effort**: Medium (requires headless browser for screenshots)
+
 ---
 
 ## Post-MVP Roadmap (Year One)
