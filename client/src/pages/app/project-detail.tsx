@@ -64,6 +64,7 @@ export default function ProjectDetail() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isAutoFetching, setIsAutoFetching] = useState(false);
+  const [isAddAutoFetching, setIsAddAutoFetching] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedProduct[]>([]);
   const [productFormData, setProductFormData] = useState({
     name: "",
@@ -270,6 +271,45 @@ export default function ProjectDetail() {
       companyName: product.companyName || "",
     });
     setIsEditProductOpen(true);
+  };
+
+  const autoFetchDescriptionForAdd = async () => {
+    if (!productFormData.url) {
+      toast({
+        title: "URL Required",
+        description: "Please enter a product URL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAddAutoFetching(true);
+    try {
+      const response = await fetch("/api/products/auto-describe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: productFormData.url, name: productFormData.name }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to fetch description");
+      }
+      const data = await response.json();
+      setProductFormData(prev => ({ ...prev, description: data.description }));
+      toast({
+        title: "Description Generated",
+        description: "AI has generated a description based on the product website.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddAutoFetching(false);
+    }
   };
 
   const autoFetchDescription = async () => {
@@ -550,7 +590,24 @@ export default function ProjectDetail() {
                                   />
                                 </div>
                                 <div className="grid gap-2">
-                                  <Label htmlFor="description">Description (optional)</Label>
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor="description">Description</Label>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={autoFetchDescriptionForAdd}
+                                      disabled={isAddAutoFetching || !productFormData.url}
+                                      data-testid="button-auto-fetch-add"
+                                    >
+                                      {isAddAutoFetching ? (
+                                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Wand2 className="mr-2 h-3 w-3" />
+                                      )}
+                                      Auto-fetch from URL
+                                    </Button>
+                                  </div>
                                   <Textarea
                                     id="description"
                                     data-testid="input-product-description"
@@ -562,7 +619,7 @@ export default function ProjectDetail() {
                                 </div>
                               </div>
                               <DialogFooter>
-                                <Button type="submit" data-testid="button-create-product" disabled={createProduct.isPending}>
+                                <Button type="submit" data-testid="button-create-product" disabled={createProduct.isPending || isAddAutoFetching}>
                                   {createProduct.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                   Add Product
                                 </Button>
@@ -692,7 +749,24 @@ export default function ProjectDetail() {
                               />
                             </div>
                             <div className="grid gap-2">
-                              <Label htmlFor="comp-description">Description (optional)</Label>
+                              <div className="flex items-center justify-between">
+                                <Label htmlFor="comp-description">Description</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={autoFetchDescriptionForAdd}
+                                  disabled={isAddAutoFetching || !productFormData.url}
+                                  data-testid="button-auto-fetch-competitor"
+                                >
+                                  {isAddAutoFetching ? (
+                                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Wand2 className="mr-2 h-3 w-3" />
+                                  )}
+                                  Auto-fetch from URL
+                                </Button>
+                              </div>
                               <Textarea
                                 id="comp-description"
                                 data-testid="input-competitor-product-description"
@@ -704,7 +778,7 @@ export default function ProjectDetail() {
                             </div>
                           </div>
                           <DialogFooter>
-                            <Button type="submit" data-testid="button-create-competitor-product" disabled={createProduct.isPending}>
+                            <Button type="submit" data-testid="button-create-competitor-product" disabled={createProduct.isPending || isAddAutoFetching}>
                               {createProduct.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                               Add Competitor
                             </Button>
