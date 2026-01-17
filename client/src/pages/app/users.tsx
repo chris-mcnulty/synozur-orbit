@@ -47,6 +47,10 @@ export default function UsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Standard User");
+  const [editRoleOpen, setEditRoleOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [newRole, setNewRole] = useState("Standard User");
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
 
   const { data: users = [], isLoading, error } = useQuery({
     queryKey: ["/api/users"],
@@ -84,6 +88,54 @@ export default function UsersPage() {
       setInviteRole("Standard User");
       setInviteOpen(false);
       toast.success("Invite sent successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
+      const res = await fetch(`/api/team/members/${userId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update role");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setEditRoleOpen(false);
+      setSelectedUser(null);
+      toast.success("Role updated successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const removeUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await fetch(`/api/team/members/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to remove user");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setRemoveConfirmOpen(false);
+      setSelectedUser(null);
+      toast.success("User removed successfully");
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -257,8 +309,28 @@ export default function UsersPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Edit Role</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Remove User</DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setNewRole(user.role === "Global Admin" ? "Domain Admin" : user.role);
+                              setEditRoleOpen(true);
+                            }}
+                            disabled={user.role === "Global Admin" || user.id === currentUser?.id}
+                            data-testid={`button-edit-role-${user.id}`}
+                          >
+                            Edit Role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setRemoveConfirmOpen(true);
+                            }}
+                            disabled={user.role === "Global Admin" || user.id === currentUser?.id}
+                            data-testid={`button-remove-user-${user.id}`}
+                          >
+                            Remove User
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -269,6 +341,75 @@ export default function UsersPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editRoleOpen} onOpenChange={setEditRoleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User Role</DialogTitle>
+            <DialogDescription>
+              Change the role for {selectedUser?.name || selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>New Role</Label>
+            <Select value={newRole} onValueChange={setNewRole}>
+              <SelectTrigger data-testid="select-new-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Standard User">Standard User</SelectItem>
+                <SelectItem value="Domain Admin">Domain Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRoleOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedUser) {
+                  updateRoleMutation.mutate({ userId: selectedUser.id, role: newRole });
+                }
+              }}
+              disabled={updateRoleMutation.isPending}
+              data-testid="button-save-role"
+            >
+              {updateRoleMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removeConfirmOpen} onOpenChange={setRemoveConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove {selectedUser?.name || selectedUser?.email} from your organization? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (selectedUser) {
+                  removeUserMutation.mutate(selectedUser.id);
+                }
+              }}
+              disabled={removeUserMutation.isPending}
+              data-testid="button-confirm-remove"
+            >
+              {removeUserMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Remove User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
