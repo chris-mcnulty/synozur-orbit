@@ -3120,6 +3120,52 @@ Return only the description text, no quotes or formatting.`;
     }
   });
 
+  // Toggle email verification (Domain Admin or Global Admin)
+  app.patch("/api/team/members/:userId/verification", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "Target user not found" });
+      }
+
+      // Verify same domain (unless Global Admin)
+      const currentDomain = currentUser.email.split("@")[1];
+      const targetDomain = targetUser.email.split("@")[1];
+      if (currentUser.role !== "Global Admin" && currentDomain !== targetDomain) {
+        return res.status(403).json({ error: "Cannot modify users from another tenant" });
+      }
+
+      // Cannot modify self
+      if (targetUser.id === currentUser.id) {
+        return res.status(400).json({ error: "Cannot change your own verification status" });
+      }
+
+      const { emailVerified } = req.body;
+      if (typeof emailVerified !== "boolean") {
+        return res.status(400).json({ error: "emailVerified must be a boolean" });
+      }
+
+      const updated = await storage.updateUser(req.params.userId, { emailVerified });
+      const { password: _, ...userWithoutPassword } = updated;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Remove team member (Domain Admin or Global Admin)
   app.delete("/api/team/members/:userId", async (req, res) => {
     try {

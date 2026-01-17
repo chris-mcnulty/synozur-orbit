@@ -142,6 +142,29 @@ export default function UsersPage() {
     },
   });
 
+  const toggleVerificationMutation = useMutation({
+    mutationFn: async ({ userId, emailVerified }: { userId: string; emailVerified: boolean }) => {
+      const res = await fetch(`/api/team/members/${userId}/verification`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ emailVerified }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update verification");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast.success("Verification status updated");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case "Global Admin":
@@ -263,6 +286,7 @@ export default function UsersPage() {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>Joined</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -297,6 +321,11 @@ export default function UsersPage() {
                         </Badge>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <Badge variant={user.emailVerified ? "default" : "secondary"} className={user.emailVerified ? "bg-green-600" : "bg-amber-600"}>
+                        {user.emailVerified ? "Verified" : "Unverified"}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{user.company || "-"}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "-"}
@@ -319,6 +348,18 @@ export default function UsersPage() {
                             data-testid={`button-edit-role-${user.id}`}
                           >
                             Edit Role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              toggleVerificationMutation.mutate({
+                                userId: user.id,
+                                emailVerified: !user.emailVerified,
+                              });
+                            }}
+                            disabled={user.id === currentUser?.id}
+                            data-testid={`button-toggle-verify-${user.id}`}
+                          >
+                            {user.emailVerified ? "Mark as Unverified" : "Mark as Verified"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
