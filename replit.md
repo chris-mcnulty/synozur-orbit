@@ -89,4 +89,4 @@ Preferred communication style: Simple, everyday language.
 - **Per-tenant branding**: Custom logos and colors per tenant
 - **Visual competitor assets**: Screenshot capture and visual analysis
 - **Domain blocklist**: Prevent signups from specific email domains
-- **Active social/blog monitoring**: Real-time tracking of competitor social media and blog updates
+- **Active social/blog monitoring**: Scheduled monitoring of competitor social media accounts and blog posts with configurable check intervals, change detection, and AI-summarized diffs highlighting what changed
