@@ -75,6 +75,19 @@ export const domainBlocklist = pgTable("domain_blocklist", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const clientProjects = pgTable("client_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g., "Rightpoint Q1 2026 Analysis"
+  clientName: text("client_name").notNull(), // e.g., "Rightpoint"
+  clientDomain: text("client_domain"), // optional: rightpoint.com
+  description: text("description"),
+  status: text("status").notNull().default("active"), // active, completed, archived
+  tenantDomain: text("tenant_domain").notNull(), // owner tenant (e.g., synozur.com)
+  ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const competitors = pgTable("competitors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -94,6 +107,7 @@ export const competitors = pgTable("competitors", {
   lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
   analysisData: jsonb("analysis_data"), // AI analysis results
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -216,6 +230,12 @@ export const insertDomainBlocklistSchema = createInsertSchema(domainBlocklist).o
   createdAt: true,
 });
 
+export const insertClientProjectSchema = createInsertSchema(clientProjects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -226,6 +246,8 @@ export type InsertTenantInvite = z.infer<typeof insertTenantInviteSchema>;
 export type TenantInvite = typeof tenantInvites.$inferSelect;
 export type InsertDomainBlocklist = z.infer<typeof insertDomainBlocklistSchema>;
 export type DomainBlocklist = typeof domainBlocklist.$inferSelect;
+export type InsertClientProject = z.infer<typeof insertClientProjectSchema>;
+export type ClientProject = typeof clientProjects.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
