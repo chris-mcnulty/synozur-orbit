@@ -52,11 +52,14 @@ export const tenants = pgTable("tenants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   domain: text("domain").notNull().unique(),
   name: text("name").notNull(),
-  plan: text("plan").notNull().default("free"), // free, professional, enterprise
+  plan: text("plan").notNull().default("trial"), // trial, free, pro, enterprise
   status: text("status").notNull().default("active"),
   userCount: integer("user_count").notNull().default(0),
   competitorLimit: integer("competitor_limit").notNull().default(3),
   analysisLimit: integer("analysis_limit").notNull().default(5),
+  adminUserLimit: integer("admin_user_limit").notNull().default(1),
+  readWriteUserLimit: integer("read_write_user_limit").notNull().default(2),
+  readOnlyUserLimit: integer("read_only_user_limit").notNull().default(5),
   monitoringFrequency: text("monitoring_frequency").default("weekly"), // weekly, daily, disabled
   socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false), // Premium feature
   logoUrl: text("logo_url"),
