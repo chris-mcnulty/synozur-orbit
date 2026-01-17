@@ -1328,6 +1328,62 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  app.post("/api/reports/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const { scope, projectId, name } = req.body;
+
+      // Validate scope
+      if (scope && !["baseline", "project"].includes(scope)) {
+        return res.status(400).json({ error: "Invalid scope. Must be 'baseline' or 'project'" });
+      }
+
+      // If project scope, validate project access (owner or Global Admin only)
+      if (scope === "project") {
+        if (!projectId) {
+          return res.status(400).json({ error: "Project ID is required for project scope" });
+        }
+        const project = await storage.getClientProject(projectId);
+        if (!project) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+        const isOwner = project.ownerUserId === req.session.userId;
+        const isGlobalAdmin = user.role === "Global Admin";
+        const isTenantMember = project.tenantDomain === tenantDomain;
+        if (!isTenantMember || (!isOwner && !isGlobalAdmin)) {
+          return res.status(403).json({ error: "Access denied. Only project owners can generate project reports." });
+        }
+      }
+
+      const { generatePdfReport } = await import("./services/pdf-generator");
+      const reportName = name || `Competitive Analysis - ${new Date().toLocaleDateString()}`;
+      const { pdfBuffer, report } = await generatePdfReport(
+        tenantDomain,
+        req.session.userId,
+        reportName,
+        scope || "baseline",
+        projectId
+      );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf"`);
+      res.setHeader("X-Report-Id", report.id);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("PDF generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/reports", async (req, res) => {
     try {
       if (!req.session.userId) {
