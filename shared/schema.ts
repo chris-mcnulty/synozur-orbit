@@ -66,6 +66,11 @@ export const tenants = pgTable("tenants", {
   faviconUrl: text("favicon_url"),
   primaryColor: text("primary_color").default("#810FFB"),
   secondaryColor: text("secondary_color").default("#E60CB3"),
+  // Tenant-level Entra ID configuration (Domain Admin editable)
+  entraClientId: text("entra_client_id"), // Azure AD App Registration Client ID
+  entraTenantId: text("entra_tenant_id"), // Azure AD Tenant ID
+  entraClientSecret: text("entra_client_secret"), // Azure AD App Registration Client Secret (encrypted)
+  entraEnabled: boolean("entra_enabled").default(false), // Whether tenant-level Entra SSO is enabled
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
