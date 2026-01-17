@@ -20,6 +20,7 @@ import Documents from "@/pages/app/documents";
 import Assessments from "@/pages/app/assessments";
 import Settings from "@/pages/app/settings";
 import UsersPage from "@/pages/app/users";
+import AdminPage from "@/pages/app/admin";
 
 function Router() {
   return (
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
       <Route path="/app/users" component={UsersPage} />
+      <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}
       
       {/* Fallback to 404 */}

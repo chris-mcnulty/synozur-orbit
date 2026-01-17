@@ -1,0 +1,381 @@
+import React, { useState } from "react";
+import AppLayout from "@/components/layout/AppLayout";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Building2, Users, Crown, Edit, AlertCircle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useUser } from "@/lib/userContext";
+import type { Tenant } from "@shared/schema";
+
+type TenantWithCounts = Tenant & { actualUserCount: number };
+
+export default function AdminPage() {
+  const { user: currentUser } = useUser();
+  const queryClient = useQueryClient();
+  const [selectedTenant, setSelectedTenant] = useState<TenantWithCounts | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    plan: "",
+    status: "",
+    competitorLimit: 0,
+    analysisLimit: 0,
+  });
+
+  const { data: tenants = [], isLoading, error } = useQuery<TenantWithCounts[]>({
+    queryKey: ["/api/tenants"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenants", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error("Access denied - Global Admin only");
+        }
+        throw new Error("Failed to fetch tenants");
+      }
+      return response.json();
+    },
+  });
+
+  const updateTenantMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Tenant> }) => {
+      const response = await fetch(`/api/tenants/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update tenant");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
+      setEditDialogOpen(false);
+    },
+  });
+
+  const getPlanBadge = (plan: string) => {
+    switch (plan) {
+      case "enterprise":
+        return <Badge className="bg-gradient-to-r from-purple-500 to-pink-500">Enterprise</Badge>;
+      case "pro":
+        return <Badge className="bg-primary">Pro</Badge>;
+      default:
+        return <Badge variant="outline">Free</Badge>;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "active":
+        return <Badge className="bg-green-500">Active</Badge>;
+      case "suspended":
+        return <Badge variant="destructive">Suspended</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const handleEditClick = (tenant: TenantWithCounts) => {
+    setSelectedTenant(tenant);
+    setEditForm({
+      name: tenant.name,
+      plan: tenant.plan,
+      status: tenant.status,
+      competitorLimit: tenant.competitorLimit,
+      analysisLimit: tenant.analysisLimit,
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedTenant) return;
+    
+    const changedFields: Partial<Tenant> = {};
+    if (editForm.name !== selectedTenant.name && editForm.name.trim()) {
+      changedFields.name = editForm.name.trim();
+    }
+    if (editForm.plan !== selectedTenant.plan && editForm.plan) {
+      changedFields.plan = editForm.plan;
+    }
+    if (editForm.status !== selectedTenant.status && editForm.status) {
+      changedFields.status = editForm.status;
+    }
+    if (editForm.competitorLimit !== selectedTenant.competitorLimit) {
+      changedFields.competitorLimit = editForm.competitorLimit;
+    }
+    if (editForm.analysisLimit !== selectedTenant.analysisLimit) {
+      changedFields.analysisLimit = editForm.analysisLimit;
+    }
+
+    if (Object.keys(changedFields).length === 0) {
+      setEditDialogOpen(false);
+      return;
+    }
+
+    updateTenantMutation.mutate({
+      id: selectedTenant.id,
+      data: changedFields,
+    });
+  };
+
+  if (currentUser?.role !== "Global Admin") {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center h-64">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <p className="text-destructive text-lg font-medium">Access Denied</p>
+          <p className="text-muted-foreground text-sm">This page is only accessible to Global Admins.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading tenants...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center h-64">
+          <p className="text-destructive mb-2">{(error as Error).message}</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const totalUsers = tenants.reduce((sum, t) => sum + t.actualUserCount, 0);
+  const activeTenants = tenants.filter(t => t.status === "active").length;
+  const proTenants = tenants.filter(t => t.plan === "pro" || t.plan === "enterprise").length;
+
+  return (
+    <AppLayout>
+      <div className="space-y-6" data-testid="admin-page">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Crown className="h-8 w-8 text-yellow-500" />
+            Global Admin Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Manage all tenants across the Orbit platform
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Tenants</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                {tenants.length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Active Tenants</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-500">{activeTenants}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Users</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                {totalUsers}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Paid Plans</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-primary">{proTenants}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>All Tenants</CardTitle>
+            <CardDescription>
+              View and manage organizations using Orbit
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {tenants.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No tenants yet. Tenants are created automatically when users register.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Organization</TableHead>
+                    <TableHead>Domain</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-center">Users</TableHead>
+                    <TableHead className="text-center">Limits</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tenants.map((tenant) => (
+                    <TableRow key={tenant.id} data-testid={`tenant-row-${tenant.id}`}>
+                      <TableCell className="font-medium">{tenant.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{tenant.domain}</TableCell>
+                      <TableCell>{getPlanBadge(tenant.plan)}</TableCell>
+                      <TableCell>{getStatusBadge(tenant.status)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">{tenant.actualUserCount}</Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-sm text-muted-foreground">
+                        {tenant.competitorLimit} comp / {tenant.analysisLimit} analysis
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditClick(tenant)}
+                          data-testid={`edit-tenant-${tenant.id}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Tenant</DialogTitle>
+              <DialogDescription>
+                Update tenant settings for {selectedTenant?.domain}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Organization Name</Label>
+                <Input
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  data-testid="edit-tenant-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Plan</Label>
+                <Select
+                  value={editForm.plan}
+                  onValueChange={(value) => setEditForm({ ...editForm, plan: value })}
+                >
+                  <SelectTrigger data-testid="edit-tenant-plan">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">Free</SelectItem>
+                    <SelectItem value="pro">Pro</SelectItem>
+                    <SelectItem value="enterprise">Enterprise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={editForm.status}
+                  onValueChange={(value) => setEditForm({ ...editForm, status: value })}
+                >
+                  <SelectTrigger data-testid="edit-tenant-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Competitor Limit</Label>
+                  <Input
+                    type="number"
+                    value={editForm.competitorLimit}
+                    onChange={(e) => setEditForm({ ...editForm, competitorLimit: parseInt(e.target.value) || 0 })}
+                    data-testid="edit-tenant-competitor-limit"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Analysis Limit</Label>
+                  <Input
+                    type="number"
+                    value={editForm.analysisLimit}
+                    onChange={(e) => setEditForm({ ...editForm, analysisLimit: parseInt(e.target.value) || 0 })}
+                    data-testid="edit-tenant-analysis-limit"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveEdit}
+                disabled={updateTenantMutation.isPending}
+                data-testid="save-tenant-edit"
+              >
+                {updateTenantMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </AppLayout>
+  );
+}

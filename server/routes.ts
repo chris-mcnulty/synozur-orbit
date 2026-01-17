@@ -58,7 +58,7 @@ export async function registerRoutes(
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create user
+      // Create user first
       const user = await storage.createUser({
         email,
         password: hashedPassword,
@@ -71,6 +71,20 @@ export async function registerRoutes(
         avatar,
         role
       });
+
+      // Create tenant for this domain if it doesn't exist (after user creation to ensure consistency)
+      const existingTenant = await storage.getTenantByDomain(domain);
+      if (!existingTenant) {
+        await storage.createTenant({
+          domain,
+          name: company,
+          plan: "free",
+          status: "active",
+          userCount: 0,
+          competitorLimit: 3,
+          analysisLimit: 5,
+        });
+      }
 
       // Set session
       req.session.userId = user.id;
@@ -1190,14 +1204,21 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied - Global Admin only" });
       }
 
-      const { plan, status, competitorLimit, analysisLimit, name } = req.body;
-      const updateData: any = {};
+      const validPlans = ["free", "pro", "enterprise"];
+      const validStatuses = ["active", "suspended"];
       
-      if (plan) updateData.plan = plan;
-      if (status) updateData.status = status;
-      if (competitorLimit !== undefined) updateData.competitorLimit = competitorLimit;
-      if (analysisLimit !== undefined) updateData.analysisLimit = analysisLimit;
-      if (name) updateData.name = name;
+      const { plan, status, competitorLimit, analysisLimit, name } = req.body;
+      const updateData: { plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string } = {};
+      
+      if (plan && validPlans.includes(plan)) updateData.plan = plan;
+      if (status && validStatuses.includes(status)) updateData.status = status;
+      if (typeof competitorLimit === "number" && competitorLimit >= 0) updateData.competitorLimit = competitorLimit;
+      if (typeof analysisLimit === "number" && analysisLimit >= 0) updateData.analysisLimit = analysisLimit;
+      if (name && typeof name === "string" && name.trim()) updateData.name = name.trim();
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
 
       const updated = await storage.updateTenant(req.params.id, updateData);
       res.json(updated);
