@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2 } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -61,6 +61,10 @@ export default function Settings() {
   const [brandingPrimary, setBrandingPrimary] = useState("");
   const [brandingSecondary, setBrandingSecondary] = useState("");
   const [monitoringFreq, setMonitoringFreq] = useState("");
+  
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
@@ -193,6 +197,34 @@ export default function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
       toast.success("Settings saved");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async () => {
+      if (newPassword !== confirmPassword) {
+        throw new Error("Passwords do not match");
+      }
+      const res = await fetch("/api/me/password", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to change password");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Password changed successfully");
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -446,6 +478,60 @@ export default function Settings() {
               >
                 {updateSettingsMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Save Changes
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {user?.authProvider !== "entra" && (
+          <Card data-testid="card-password">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Change Password
+              </CardTitle>
+              <CardDescription>Update your account password.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Current Password</Label>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  data-testid="input-current-password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  data-testid="input-new-password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm New Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  data-testid="input-confirm-password"
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="border-t border-border px-6 py-4">
+              <Button
+                onClick={() => changePasswordMutation.mutate()}
+                disabled={!currentPassword || !newPassword || !confirmPassword || changePasswordMutation.isPending}
+                data-testid="button-change-password"
+              >
+                {changePasswordMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Change Password
               </Button>
             </CardFooter>
           </Card>

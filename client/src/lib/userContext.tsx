@@ -13,6 +13,7 @@ interface User {
   jobTitle?: string;
   industry?: string;
   country?: string;
+  authProvider?: string;
 }
 
 interface UserContextType {
