@@ -3161,6 +3161,492 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // =====================================================
+  // Long-form Recommendation Endpoints (GTM, Messaging)
+  // =====================================================
+  
+  // Get all long-form recommendations for a project
+  app.get("/api/projects/:projectId/recommendations", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
+      res.json(recommendations);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get a specific recommendation by type for a project
+  app.get("/api/projects/:projectId/recommendations/:type", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const recommendation = await storage.getLongFormRecommendationByType(
+        req.params.type,
+        req.params.projectId
+      );
+      
+      if (!recommendation) {
+        // Return a placeholder if not generated yet
+        return res.json({
+          type: req.params.type,
+          projectId: req.params.projectId,
+          status: "not_generated",
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null
+        });
+      }
+      
+      res.json(recommendation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate GTM plan for a project
+  app.post("/api/projects/:projectId/recommendations/gtm_plan/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Extract prompts from request body
+      const { targetRoles, distributionChannels, customGuidance, budget, timeline } = req.body;
+      const savedPrompts = { targetRoles, distributionChannels, customGuidance, budget, timeline };
+
+      // Get project products for context
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      // Build context for AI
+      let productContext = "";
+      if (baselineProduct) {
+        productContext += `\n\nOur Product: ${baselineProduct.product.name}\nDescription: ${baselineProduct.product.description || "N/A"}\nCompany: ${baselineProduct.product.companyName || "N/A"}`;
+      }
+      if (competitorProducts.length > 0) {
+        productContext += "\n\nCompetitors:";
+        for (const cp of competitorProducts) {
+          productContext += `\n- ${cp.product.name} (${cp.product.companyName || "Unknown"})`;
+        }
+      }
+
+      const prompt = `You are an expert go-to-market strategist. Create a comprehensive Go-To-Market Plan in markdown format for the following project.
+
+Project: ${project.name}
+Client: ${project.clientName}
+${productContext}
+
+User Guidance:
+- Target Roles/Personas: ${targetRoles || "Not specified - suggest appropriate targets"}
+- Distribution Channels: ${distributionChannels || "Not specified - recommend optimal channels"}
+- Custom Guidance: ${customGuidance || "None"}
+- Budget Considerations: ${budget || "Not specified"}
+- Timeline: ${timeline || "Not specified"}
+
+Create a detailed, actionable GTM plan with the following sections:
+
+# Go-To-Market Plan: ${project.clientName}
+
+## Executive Summary
+Brief overview of the GTM strategy
+
+## Target Market & Buyer Personas
+Define ideal customer profiles, decision-makers, and influencers
+
+## Value Proposition & Positioning
+Core messaging and differentiation from competitors
+
+## Distribution Strategy
+${distributionChannels ? `Focus on: ${distributionChannels}` : "Recommend: Direct sales, Digital marketing, Channel partnerships"}
+
+## Marketing Tactics
+- Content marketing
+- Demand generation
+- Campaigns and initiatives
+
+## Sales Enablement
+- Sales playbook highlights
+- Objection handling
+- Competitive positioning
+
+## Launch Timeline & Milestones
+Phased approach with key dates
+
+## Success Metrics & KPIs
+How to measure success
+
+## Budget Recommendations
+Resource allocation suggestions
+
+## Risks & Mitigation
+Potential challenges and solutions
+
+Make this practical and actionable. Use bullet points and clear formatting.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      // Check if recommendation already exists
+      const existing = await storage.getLongFormRecommendationByType("gtm_plan", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          savedPrompts,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "gtm_plan",
+          projectId: req.params.projectId,
+          tenantDomain,
+          content,
+          savedPrompts,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("GTM plan generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate messaging framework for a project
+  app.post("/api/projects/:projectId/recommendations/messaging_framework/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Extract prompts from request body
+      const { targetAudience, toneOfVoice, keyMessages, customGuidance } = req.body;
+      const savedPrompts = { targetAudience, toneOfVoice, keyMessages, customGuidance };
+
+      // Get project products for context
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      let productContext = "";
+      if (baselineProduct) {
+        productContext += `\n\nOur Product: ${baselineProduct.product.name}\nDescription: ${baselineProduct.product.description || "N/A"}\nCompany: ${baselineProduct.product.companyName || "N/A"}`;
+      }
+      if (competitorProducts.length > 0) {
+        productContext += "\n\nCompetitors:";
+        for (const cp of competitorProducts) {
+          productContext += `\n- ${cp.product.name} (${cp.product.companyName || "Unknown"})`;
+        }
+      }
+
+      const prompt = `You are an expert brand strategist and messaging architect. Create a comprehensive Messaging & Positioning Framework in markdown format.
+
+Project: ${project.name}
+Client: ${project.clientName}
+${productContext}
+
+User Guidance:
+- Target Audience: ${targetAudience || "Not specified - identify appropriate audiences"}
+- Tone of Voice: ${toneOfVoice || "Not specified - recommend appropriate tone"}
+- Key Messages to Emphasize: ${keyMessages || "Not specified"}
+- Custom Guidance: ${customGuidance || "None"}
+
+Create a detailed messaging framework with the following sections:
+
+# Messaging & Positioning Framework: ${project.clientName}
+
+## Brand Positioning Statement
+A clear, concise positioning statement following the format:
+"For [target audience] who [need], [product/brand] is the [category] that [key benefit] because [reason to believe]."
+
+## Core Value Proposition
+The primary value we deliver to customers
+
+## Messaging Pillars
+3-5 key themes that support the positioning
+
+## Audience Segments & Tailored Messages
+For each key audience:
+- Who they are
+- Their pain points
+- Key messages that resonate
+- Proof points
+
+## Competitive Differentiation
+How we stand apart from competitors
+
+## Tone of Voice Guidelines
+- Personality traits
+- Do's and Don'ts
+- Example phrases
+
+## Key Talking Points
+Elevator pitches of varying lengths:
+- 10-second version
+- 30-second version
+- 2-minute version
+
+## Tagline Options
+3-5 potential taglines
+
+## Proof Points & Evidence
+Statistics, case studies, testimonials to support claims
+
+## Messaging Do's and Don'ts
+Clear guidelines on messaging boundaries
+
+Make this practical and ready for use by sales, marketing, and leadership teams.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      // Check if recommendation already exists
+      const existing = await storage.getLongFormRecommendationByType("messaging_framework", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          savedPrompts,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "messaging_framework",
+          projectId: req.params.projectId,
+          tenantDomain,
+          content,
+          savedPrompts,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Messaging framework generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Download recommendation as markdown
+  app.get("/api/recommendations/:id/download/markdown", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const recommendation = await storage.getLongFormRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const filename = `${recommendation.type}_${new Date().toISOString().split('T')[0]}.md`;
+      res.setHeader("Content-Type", "text/markdown");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(recommendation.content || "");
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Download recommendation as Word document (DOCX)
+  app.get("/api/recommendations/:id/download/docx", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const recommendation = await storage.getLongFormRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Convert markdown to simple HTML then to docx-compatible format
+      const content = recommendation.content || "";
+      
+      // Simple markdown to HTML conversion for basic formatting
+      let html = content
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+        .replace(/^- (.*$)/gim, '<li>$1</li>')
+        .replace(/\n/gim, '<br/>');
+
+      // Create a simple Word-compatible HTML document
+      const docContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+            h1 { color: #333; border-bottom: 2px solid #810FFB; padding-bottom: 10px; }
+            h2 { color: #555; margin-top: 30px; }
+            h3 { color: #666; }
+            li { margin: 5px 0; }
+          </style>
+        </head>
+        <body>
+          ${html}
+        </body>
+        </html>
+      `;
+
+      const filename = `${recommendation.type}_${new Date().toISOString().split('T')[0]}.doc`;
+      res.setHeader("Content-Type", "application/msword");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(docContent);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update saved prompts for a recommendation
+  app.patch("/api/recommendations/:id/prompts", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const recommendation = await storage.getLongFormRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateLongFormRecommendation(req.params.id, {
+        savedPrompts: req.body.savedPrompts,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // AI-suggest competitor products for a baseline product
   app.post("/api/products/:productId/suggest-competitors", async (req, res) => {
     try {
