@@ -482,7 +482,7 @@ export async function registerRoutes(
       const tenantDomain = user.email.split("@")[1];
       const tenant = await storage.getTenantByDomain(tenantDomain);
 
-      if (!tenant || tenant.plan === "free") {
+      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
         return res.status(403).json({ 
           error: "Social media monitoring is a premium feature. Please upgrade your plan.",
           upgradeRequired: true 
@@ -590,7 +590,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Tenant not found" });
       }
 
-      if (tenant.plan === "free") {
+      if (tenant.plan === "free" || tenant.plan === "trial") {
         return res.status(403).json({ 
           error: "Social media monitoring settings require a premium plan",
           upgradeRequired: true 
@@ -1525,6 +1525,22 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       if (!profile) {
         return res.status(404).json({ error: "Company profile not found. Please set up your company profile first." });
+      }
+
+      // Plan-gating: Re-validate domain restriction at analysis time for Trial/Free plans
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      if (tenant && (tenant.plan === "trial" || tenant.plan === "free")) {
+        try {
+          const websiteDomain = new URL(profile.websiteUrl).hostname.replace(/^www\./, "").toLowerCase();
+          if (websiteDomain !== tenantDomain.toLowerCase()) {
+            return res.status(403).json({ 
+              error: `Your ${tenant.plan} plan only allows analyzing your own company website (${tenantDomain}). Upgrade to Pro or Enterprise to analyze other companies.`,
+              upgradeRequired: true
+            });
+          }
+        } catch {
+          return res.status(400).json({ error: "Invalid website URL in company profile" });
+        }
       }
 
       // Fetch website content
