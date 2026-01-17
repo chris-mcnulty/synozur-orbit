@@ -67,6 +67,14 @@ export const tenants = pgTable("tenants", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const domainBlocklist = pgTable("domain_blocklist", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  domain: text("domain").notNull().unique(),
+  reason: text("reason"), // e.g., "Personal email provider", "Generic domain"
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const competitors = pgTable("competitors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -203,6 +211,11 @@ export const insertTenantInviteSchema = createInsertSchema(tenantInvites).omit({
   acceptedAt: true,
 });
 
+export const insertDomainBlocklistSchema = createInsertSchema(domainBlocklist).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -211,6 +224,8 @@ export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificatio
 export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 export type InsertTenantInvite = z.infer<typeof insertTenantInviteSchema>;
 export type TenantInvite = typeof tenantInvites.$inferSelect;
+export type InsertDomainBlocklist = z.infer<typeof insertDomainBlocklistSchema>;
+export type DomainBlocklist = typeof domainBlocklist.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
