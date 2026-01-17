@@ -15,6 +15,7 @@ import {
   tenantInvites,
   products,
   projectProducts,
+  battlecards,
   type User, 
   type InsertUser,
   type Tenant,
@@ -46,7 +47,9 @@ import {
   type Product,
   type InsertProduct,
   type ProjectProduct,
-  type InsertProjectProduct
+  type InsertProjectProduct,
+  type Battlecard,
+  type InsertBattlecard
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -168,6 +171,14 @@ export interface IStorage {
   addProductToProject(data: InsertProjectProduct): Promise<ProjectProduct>;
   removeProductFromProject(projectId: string, productId: string): Promise<void>;
   updateProjectProductRole(projectId: string, productId: string, role: string): Promise<void>;
+  
+  // Battlecard methods
+  getBattlecard(id: string): Promise<Battlecard | undefined>;
+  getBattlecardByCompetitor(competitorId: string): Promise<Battlecard | undefined>;
+  getBattlecardsByTenant(tenantDomain: string): Promise<Battlecard[]>;
+  createBattlecard(battlecard: InsertBattlecard): Promise<Battlecard>;
+  updateBattlecard(id: string, data: Partial<Battlecard>): Promise<Battlecard>;
+  deleteBattlecard(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -720,6 +731,45 @@ export class DatabaseStorage implements IStorage {
         eq(projectProducts.projectId, projectId),
         eq(projectProducts.productId, productId)
       ));
+  }
+
+  // Battlecard methods
+  async getBattlecard(id: string): Promise<Battlecard | undefined> {
+    const [battlecard] = await db.select().from(battlecards).where(eq(battlecards.id, id));
+    return battlecard || undefined;
+  }
+
+  async getBattlecardByCompetitor(competitorId: string): Promise<Battlecard | undefined> {
+    const [battlecard] = await db.select().from(battlecards)
+      .where(eq(battlecards.competitorId, competitorId));
+    return battlecard || undefined;
+  }
+
+  async getBattlecardsByTenant(tenantDomain: string): Promise<Battlecard[]> {
+    return await db.select().from(battlecards)
+      .where(eq(battlecards.tenantDomain, tenantDomain))
+      .orderBy(desc(battlecards.createdAt));
+  }
+
+  async createBattlecard(battlecard: InsertBattlecard): Promise<Battlecard> {
+    const [result] = await db
+      .insert(battlecards)
+      .values(battlecard)
+      .returning();
+    return result;
+  }
+
+  async updateBattlecard(id: string, data: Partial<Battlecard>): Promise<Battlecard> {
+    const [result] = await db
+      .update(battlecards)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(battlecards.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteBattlecard(id: string): Promise<void> {
+    await db.delete(battlecards).where(eq(battlecards.id, id));
   }
 }
 
