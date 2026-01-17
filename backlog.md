@@ -116,6 +116,16 @@
 - [ ] Free tier: basic analysis only, no AI recommendations
 **Effort**: Medium
 
+### 3.5 Global Company Directory
+**Status**: Not implemented
+**Spec Requirement**: Build a shared company database for competitor suggestions
+- [ ] Create global `companyDirectory` table (not tenant-scoped)
+- [ ] Capture: name, company, category, SIC code (if available), brief description
+- [ ] Auto-populate when users add competitors (extract via AI during profiling)
+- [ ] Use directory for typeahead suggestions when adding new competitors
+- [ ] Deduplicate entries by domain/company name
+**Effort**: Medium
+
 ---
 
 ## Post-MVP Roadmap (Year One)
