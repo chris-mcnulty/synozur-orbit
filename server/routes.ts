@@ -632,6 +632,11 @@ export async function registerRoutes(
         });
       }
 
+      // Get our company's positioning from analysis data if available
+      const ourAnalysisData = companyProfile?.analysisData as any;
+      const ourSummary = ourAnalysisData?.summary || companyProfile?.description || "Our positioning";
+      const ourKeyMessages = ourAnalysisData?.keyMessages || [];
+
       // Save tenant-scoped analysis
       const savedAnalysis = await storage.createAnalysis({
         userId: user.id,
@@ -642,9 +647,9 @@ export async function registerRoutes(
           competitorA: "High",
           competitorB: "Medium",
         })),
-        messaging: analyses.slice(0, 3).map(a => ({
-          category: a.targetAudience,
-          us: companyProfile?.description?.slice(0, 100) || "Our messaging",
+        messaging: analyses.slice(0, 3).map((a, i) => ({
+          category: a.targetAudience || "Market Positioning",
+          us: ourKeyMessages[i] || ourSummary,
           competitorA: a.keyMessages[0] || "",
           competitorB: a.keyMessages[1] || "",
         })),
