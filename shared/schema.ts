@@ -402,6 +402,38 @@ export const insertGroundingDocumentSchema = createInsertSchema(groundingDocumen
 export type GroundingDocument = typeof groundingDocuments.$inferSelect;
 export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSchema>;
 
+// Global grounding documents - application-wide AI context (Global Admin only)
+export const globalGroundingDocuments = pgTable("global_grounding_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // brand_voice, marketing_guidelines, digital_assets, methodology, etc.
+  fileType: text("file_type").notNull(), // pdf, docx, txt, md
+  originalFileName: text("original_file_name").notNull(),
+  extractedText: text("extracted_text").notNull(), // Extracted text content - we only store this to save space
+  wordCount: integer("word_count").notNull().default(0),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  isActive: boolean("is_active").notNull().default(true), // Can disable without deleting
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const globalGroundingDocumentsRelations = relations(globalGroundingDocuments, ({ one }) => ({
+  uploader: one(users, {
+    fields: [globalGroundingDocuments.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertGlobalGroundingDocumentSchema = createInsertSchema(globalGroundingDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type GlobalGroundingDocument = typeof globalGroundingDocuments.$inferSelect;
+export type InsertGlobalGroundingDocument = z.infer<typeof insertGlobalGroundingDocumentSchema>;
+
 // Company profiles table for baselining own website
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
