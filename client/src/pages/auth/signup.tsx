@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useUser } from "@/lib/userContext";
 import { COMPANY_SIZES, JOB_ROLES, INDUSTRIES, COUNTRIES } from "@/lib/constants";
 import { Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 export default function SignUp() {
   const [, setLocation] = useLocation();
@@ -24,6 +25,22 @@ export default function SignUp() {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const { data: entraStatus } = useQuery({
+    queryKey: ["/api/auth/entra/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/entra/status");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlError = params.get("error");
+    if (urlError) {
+      setError(urlError === "sso_not_configured" ? "SSO is not configured" : urlError);
+    }
+  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,6 +278,34 @@ export default function SignUp() {
                 </a>
               </p>
             </form>
+
+            {entraStatus?.configured && (
+              <>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                  </div>
+                </div>
+                
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  onClick={() => window.location.href = "/api/auth/entra"}
+                  data-testid="signup-microsoft"
+                >
+                  <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#00a4ef"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#7fba00"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                  </svg>
+                  Sign up with Microsoft
+                </Button>
+              </>
+            )}
           </CardContent>
           <CardFooter className="flex justify-center">
             <p className="text-sm text-muted-foreground">

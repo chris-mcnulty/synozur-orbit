@@ -7,6 +7,7 @@ import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "./ai-service";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
+import { registerEntraRoutes } from "./auth/entra-routes";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -15,6 +16,9 @@ export async function registerRoutes(
   
   // Register object storage routes
   registerObjectStorageRoutes(app);
+  
+  // Register Entra SSO routes
+  registerEntraRoutes(app);
   
   // ==================== AUTH ROUTES ====================
   

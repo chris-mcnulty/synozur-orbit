@@ -16,6 +16,8 @@ export const users = pgTable("users", {
   industry: text("industry"),
   country: text("country"),
   avatar: text("avatar").notNull(),
+  entraId: text("entra_id"),
+  authProvider: text("auth_provider").default("local"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
