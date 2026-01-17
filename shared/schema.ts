@@ -81,12 +81,37 @@ export const clientProjects = pgTable("client_projects", {
   clientName: text("client_name").notNull(), // e.g., "Rightpoint"
   clientDomain: text("client_domain"), // optional: rightpoint.com
   description: text("description"),
+  analysisType: text("analysis_type").notNull().default("company"), // company, product
   status: text("status").notNull().default("active"), // active, completed, archived
   notifyOnUpdates: boolean("notify_on_updates").default(false), // Notify when competitor site/social updates detected
   tenantDomain: text("tenant_domain").notNull(), // owner tenant (e.g., synozur.com)
   ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const products = pgTable("products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  url: text("url"), // Product page URL
+  companyName: text("company_name"), // Company that makes this product
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
+  tenantDomain: text("tenant_domain").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  crawlData: jsonb("crawl_data"), // Crawled product page data
+  analysisData: jsonb("analysis_data"), // AI analysis of product
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const projectProducts = pgTable("project_products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => clientProjects.id, { onDelete: "cascade" }),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("competitor"), // baseline, competitor, optional
+  source: text("source").notNull().default("manual"), // manual, suggested
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const competitors = pgTable("competitors", {
@@ -237,6 +262,17 @@ export const insertClientProjectSchema = createInsertSchema(clientProjects).omit
   updatedAt: true,
 });
 
+export const insertProductSchema = createInsertSchema(products).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProjectProductSchema = createInsertSchema(projectProducts).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -249,6 +285,10 @@ export type InsertDomainBlocklist = z.infer<typeof insertDomainBlocklistSchema>;
 export type DomainBlocklist = typeof domainBlocklist.$inferSelect;
 export type InsertClientProject = z.infer<typeof insertClientProjectSchema>;
 export type ClientProject = typeof clientProjects.$inferSelect;
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type Product = typeof products.$inferSelect;
+export type InsertProjectProduct = z.infer<typeof insertProjectProductSchema>;
+export type ProjectProduct = typeof projectProducts.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
