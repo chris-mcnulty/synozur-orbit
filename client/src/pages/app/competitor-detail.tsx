@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil, Activity, Lock } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -91,6 +92,53 @@ export default function CompetitorDetail() {
       instagramUrl: editInstagram || undefined,
     });
   };
+
+  const { data: monitoringSettings } = useQuery({
+    queryKey: ["/api/social-monitoring/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/social-monitoring/settings", {
+        credentials: "include",
+      });
+      if (!response.ok) return { isPremium: false };
+      return response.json();
+    },
+  });
+
+  const socialMonitorMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/monitor-social`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to monitor social media");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      
+      const changesFound = data.results?.some((r: any) => r.hasChanges);
+      toast({
+        title: changesFound ? "Social Updates Found" : "Social Check Complete",
+        description: changesFound 
+          ? "New social media updates have been detected and logged."
+          : "No significant changes detected on social media profiles.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Monitoring Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl;
+  const isPremium = monitoringSettings?.isPremium;
 
   if (isLoading) {
     return (
@@ -230,6 +278,34 @@ export default function CompetitorDetail() {
               >
                 <RefreshCw className="h-4 w-4" /> {crawlMutation.isPending ? "Crawling..." : "Re-crawl"}
               </Button>
+              
+              {hasSocialUrls && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button 
+                          variant="outline" 
+                          className="gap-2"
+                          onClick={() => socialMonitorMutation.mutate()}
+                          disabled={!isPremium || socialMonitorMutation.isPending}
+                          data-testid="button-monitor-social"
+                        >
+                          {!isPremium && <Lock className="h-3 w-3" />}
+                          <Activity className="h-4 w-4" /> 
+                          {socialMonitorMutation.isPending ? "Checking..." : "Check Social"}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!isPremium && (
+                      <TooltipContent>
+                        <p>Social monitoring is a premium feature</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              
               <Button className="gap-2">
                 <FileText className="h-4 w-4" /> Generate Report
               </Button>

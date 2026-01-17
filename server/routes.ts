@@ -380,7 +380,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No social media URLs configured for this competitor" });
       }
 
-      const results = await monitorCompetitorSocialMedia(req.params.id);
+      const results = await monitorCompetitorSocialMedia(req.params.id, user.id, tenantDomain);
       res.json({ success: true, results });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

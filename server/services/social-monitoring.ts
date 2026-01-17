@@ -140,7 +140,9 @@ Summary:`
 }
 
 export async function monitorCompetitorSocialMedia(
-  competitorId: string
+  competitorId: string,
+  userId?: string,
+  tenantDomain?: string
 ): Promise<SocialMonitoringResult[]> {
   const competitor = await storage.getCompetitor(competitorId);
   if (!competitor) {
@@ -184,8 +186,10 @@ export async function monitorCompetitorSocialMedia(
             competitorId: competitor.id,
             competitorName: competitor.name,
             description: `LinkedIn Update: ${summary}`,
-            date: now.toLocaleString(),
+            date: now.toISOString(),
             impact: changeScore > 70 ? "High" : "Medium",
+            userId: userId || competitor.userId,
+            tenantDomain,
           });
         }
       }
@@ -245,8 +249,10 @@ export async function monitorCompetitorSocialMedia(
             competitorId: competitor.id,
             competitorName: competitor.name,
             description: `Instagram Update: ${summary}`,
-            date: now.toLocaleString(),
+            date: now.toISOString(),
             impact: changeScore > 70 ? "High" : "Medium",
+            userId: userId || competitor.userId,
+            tenantDomain,
           });
         }
       }
@@ -299,7 +305,7 @@ export async function monitorAllCompetitorsForTenant(
     for (const competitor of competitors) {
       if (competitor.linkedInUrl || competitor.instagramUrl) {
         try {
-          const results = await monitorCompetitorSocialMedia(competitor.id);
+          const results = await monitorCompetitorSocialMedia(competitor.id, user.id, tenantDomain);
           allResults.push(...results);
         } catch (error) {
           console.error(`Error monitoring competitor ${competitor.id}:`, error);

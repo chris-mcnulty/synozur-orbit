@@ -40,13 +40,17 @@
 **Effort**: Medium
 
 ### 1.5 Competitor Change Monitoring
-**Status**: Activity table exists, no automated detection
+**Status**: Social media monitoring implemented (LinkedIn/Instagram), website monitoring pending
 **Spec Requirement**: "Daily or weekly schedule...detect significant updates"
+- [x] Social media monitoring (LinkedIn, Instagram) with AI summarization
+- [x] Diff detection between crawl snapshots
+- [x] AI summarization of changes using Claude
+- [x] Store changes in activity log
+- [x] Premium feature gating (free tier blocked)
+- [x] On-demand monitoring via UI button
 - [ ] Scheduled job (cron) for periodic crawling
-- [ ] Diff detection between crawl snapshots
-- [ ] AI summarization of changes
-- [ ] Store changes in activity log
-**Effort**: Medium
+- [ ] Website content change monitoring
+**Effort**: Medium (remaining: scheduled jobs)
 
 ---
 
