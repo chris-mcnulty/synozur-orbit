@@ -172,12 +172,36 @@ export async function syncNewAccountToHubSpot(data: NewAccountData): Promise<{
     // 3. Create Deal for new trial
     let dealId: string;
     try {
+      // Get the first available pipeline and its first stage
+      // This handles HubSpot accounts with custom pipelines
+      let pipelineId = process.env.HUBSPOT_PIPELINE_ID || 'default';
+      let dealstageId = process.env.HUBSPOT_DEALSTAGE_ID || '';
+      
+      // If no dealstage configured, try to get the first stage from the pipeline
+      if (!dealstageId) {
+        try {
+          const pipelines = await client.crm.pipelines.pipelinesApi.getAll('deals');
+          const targetPipeline = pipelines.results.find(p => p.id === pipelineId) || pipelines.results[0];
+          if (targetPipeline) {
+            pipelineId = targetPipeline.id;
+            // Get the first stage (usually the earliest in the pipeline)
+            const sortedStages = targetPipeline.stages.sort((a, b) => a.displayOrder - b.displayOrder);
+            dealstageId = sortedStages[0]?.id || '';
+            console.log(`[HubSpot] Using pipeline "${targetPipeline.label}" (${pipelineId}) with stage "${sortedStages[0]?.label}" (${dealstageId})`);
+          }
+        } catch (pipelineError) {
+          console.warn('[HubSpot] Could not fetch pipelines, using defaults:', pipelineError);
+          // Fall back to standard HubSpot defaults if pipeline API fails
+          dealstageId = 'qualifiedtobuy';
+        }
+      }
+
       const dealName = `Orbit Trial - ${data.companyName}`;
       const newDeal = await client.crm.deals.basicApi.create({
         properties: {
           dealname: dealName,
-          pipeline: 'default',
-          dealstage: 'appointmentscheduled',
+          pipeline: pipelineId,
+          dealstage: dealstageId,
           amount: '0',
           closedate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         }
@@ -201,8 +225,13 @@ export async function syncNewAccountToHubSpot(data: NewAccountData): Promise<{
         [{ associationCategory: 'HUBSPOT_DEFINED' as any, associationTypeId: 5 }]
       );
       console.log(`[HubSpot] Associated deal with contact and company`);
-    } catch (error) {
-      console.error('[HubSpot] Error creating deal:', error);
+    } catch (error: any) {
+      // Log detailed error for pipeline/stage issues
+      if (error?.body?.message) {
+        console.error(`[HubSpot] Error creating deal: ${error.body.message}`);
+      } else {
+        console.error('[HubSpot] Error creating deal:', error);
+      }
       throw error;
     }
 
