@@ -256,9 +256,9 @@ export async function registerRoutes(
 
           // Plan-gating: Only Pro/Enterprise can use projects
           const tenant = await storage.getTenantByDomain(tenantDomain);
-          if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+          if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
             return res.status(403).json({ 
-              error: "Client Projects require a Professional or Enterprise plan",
+              error: "Client Projects require a Pro or Enterprise plan",
               upgradeRequired: true
             });
           }
@@ -303,9 +303,9 @@ export async function registerRoutes(
 
         // Plan-gating: Only Pro/Enterprise can use projects
         const tenant = await storage.getTenantByDomain(tenantDomain);
-        if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
           return res.status(403).json({ 
-            error: "Client Projects require a Professional or Enterprise plan",
+            error: "Client Projects require a Pro or Enterprise plan",
             upgradeRequired: true
           });
         }
@@ -1463,6 +1463,22 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const { companyName, websiteUrl, description, linkedInUrl, instagramUrl } = parsed.data;
+      
+      // Plan-gating: Trial/Free plans can only baseline their own domain
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      if (tenant && (tenant.plan === "trial" || tenant.plan === "free")) {
+        try {
+          const websiteDomain = new URL(websiteUrl).hostname.replace(/^www\./, "").toLowerCase();
+          if (websiteDomain !== tenantDomain.toLowerCase()) {
+            return res.status(403).json({ 
+              error: `Your ${tenant.plan} plan only allows analyzing your own company website (${tenantDomain}). Upgrade to Pro or Enterprise to analyze other companies.`,
+              upgradeRequired: true
+            });
+          }
+        } catch {
+          return res.status(400).json({ error: "Invalid website URL" });
+        }
+      }
 
       const existingProfile = await storage.getCompanyProfileByTenant(tenantDomain);
 
@@ -2055,9 +2071,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const tenant = await storage.getTenantByDomain(tenantDomain);
       
       // Plan-gating: only Pro and Enterprise tenants can use client projects
-      if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
         return res.status(403).json({ 
-          error: "Client Projects require a Professional or Enterprise plan",
+          error: "Client Projects require a Pro or Enterprise plan",
           upgradeRequired: true
         });
       }
@@ -2117,9 +2133,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const tenant = await storage.getTenantByDomain(tenantDomain);
       
       // Plan-gating
-      if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
         return res.status(403).json({ 
-          error: "Client Projects require a Professional or Enterprise plan",
+          error: "Client Projects require a Pro or Enterprise plan",
           upgradeRequired: true
         });
       }
