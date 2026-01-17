@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -60,9 +60,18 @@ export default function ProjectDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [isEditProductOpen, setIsEditProductOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [isAutoFetching, setIsAutoFetching] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedProduct[]>([]);
   const [productFormData, setProductFormData] = useState({
+    name: "",
+    description: "",
+    url: "",
+    companyName: "",
+  });
+  const [editFormData, setEditFormData] = useState({
     name: "",
     description: "",
     url: "",
@@ -219,6 +228,89 @@ export default function ProjectDetail() {
     },
   });
 
+  const updateProduct = useMutation({
+    mutationFn: async ({ productId, data }: { productId: string; data: typeof editFormData }) => {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to update product");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setIsEditProductOpen(false);
+      setEditingProduct(null);
+      toast({
+        title: "Product Updated",
+        description: "Product details have been saved.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const openEditDialog = (product: Product) => {
+    setEditingProduct(product);
+    setEditFormData({
+      name: product.name,
+      description: product.description || "",
+      url: product.url || "",
+      companyName: product.companyName || "",
+    });
+    setIsEditProductOpen(true);
+  };
+
+  const autoFetchDescription = async () => {
+    if (!editFormData.url) {
+      toast({
+        title: "URL Required",
+        description: "Please enter a product URL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAutoFetching(true);
+    try {
+      const response = await fetch("/api/products/auto-describe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: editFormData.url, name: editFormData.name }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to fetch description");
+      }
+      const data = await response.json();
+      setEditFormData(prev => ({ ...prev, description: data.description }));
+      toast({
+        title: "Description Generated",
+        description: "AI has generated a description based on the product website.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsAutoFetching(false);
+    }
+  };
+
   const getSuggestions = async () => {
     const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
     if (!baselineProduct) {
@@ -372,6 +464,9 @@ export default function ProjectDetail() {
                           {baselineProduct.product.description && (
                             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{baselineProduct.product.description}</p>
                           )}
+                          {!baselineProduct.product.description && (
+                            <p className="text-sm text-muted-foreground/60 italic mt-1">No description - click edit to add one</p>
+                          )}
                           {baselineProduct.product.url && (
                             <a 
                               href={baselineProduct.product.url} 
@@ -383,14 +478,25 @@ export default function ProjectDetail() {
                             </a>
                           )}
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => removeProductFromProject.mutate(baselineProduct.productId)}
-                          data-testid="button-remove-baseline"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => openEditDialog(baselineProduct.product)}
+                            data-testid="button-edit-baseline"
+                            title="Edit product"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => removeProductFromProject.mutate(baselineProduct.productId)}
+                            data-testid="button-remove-baseline"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <div className="text-center py-8 border-2 border-dashed rounded-lg">
@@ -645,6 +751,15 @@ export default function ProjectDetail() {
                             <Button 
                               variant="ghost" 
                               size="icon"
+                              onClick={() => openEditDialog(pp.product)}
+                              title="Edit product"
+                              data-testid={`button-edit-${pp.productId}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
                               onClick={() => setAsBaseline.mutate(pp.productId)}
                               title="Set as baseline"
                               data-testid={`button-set-baseline-${pp.productId}`}
@@ -696,6 +811,92 @@ export default function ProjectDetail() {
           )}
         </div>
       </div>
+
+      <Dialog open={isEditProductOpen} onOpenChange={(open) => {
+        setIsEditProductOpen(open);
+        if (!open) setEditingProduct(null);
+      }}>
+        <DialogContent>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (editingProduct) {
+              updateProduct.mutate({ productId: editingProduct.id, data: editFormData });
+            }
+          }}>
+            <DialogHeader>
+              <DialogTitle>Edit Product</DialogTitle>
+              <DialogDescription>
+                Update product details. Use the auto-fetch button to generate a description from the website.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name">Product Name</Label>
+                <Input
+                  id="edit-name"
+                  data-testid="input-edit-product-name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-companyName">Company Name</Label>
+                <Input
+                  id="edit-companyName"
+                  data-testid="input-edit-company-name"
+                  value={editFormData.companyName}
+                  onChange={(e) => setEditFormData({ ...editFormData, companyName: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-url">Product URL</Label>
+                <Input
+                  id="edit-url"
+                  data-testid="input-edit-product-url"
+                  placeholder="https://..."
+                  value={editFormData.url}
+                  onChange={(e) => setEditFormData({ ...editFormData, url: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Button 
+                    type="button"
+                    variant="outline" 
+                    size="sm"
+                    onClick={autoFetchDescription}
+                    disabled={isAutoFetching || !editFormData.url}
+                    data-testid="button-auto-fetch-description"
+                  >
+                    {isAutoFetching ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="mr-2 h-3 w-3" />
+                    )}
+                    Auto-fetch from URL
+                  </Button>
+                </div>
+                <Textarea
+                  id="edit-description"
+                  data-testid="input-edit-product-description"
+                  placeholder="Brief description of the product..."
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  rows={4}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="submit" data-testid="button-save-product" disabled={updateProduct.isPending}>
+                {updateProduct.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

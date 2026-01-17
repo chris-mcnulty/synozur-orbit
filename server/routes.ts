@@ -2679,6 +2679,93 @@ Only return the JSON array, no other text.`;
     }
   });
 
+  // Auto-generate product description from URL
+  app.post("/api/products/auto-describe", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { url, name } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+
+      // Validate URL format and protocol
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          return res.status(400).json({ error: "Only HTTP/HTTPS URLs are allowed" });
+        }
+        // Block private IP ranges and localhost
+        const hostname = parsedUrl.hostname.toLowerCase();
+        if (hostname === "localhost" || 
+            hostname === "127.0.0.1" || 
+            hostname.startsWith("192.168.") ||
+            hostname.startsWith("10.") ||
+            hostname.startsWith("172.16.") ||
+            hostname.endsWith(".local")) {
+          return res.status(400).json({ error: "Internal/private URLs are not allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid URL format" });
+      }
+
+      // Fetch website content with timeout
+      let websiteContent = "";
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)",
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch URL: ${response.status}`);
+        }
+        const rawHtml = await response.text();
+        
+        // Extract text content from HTML
+        websiteContent = rawHtml
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .substring(0, 5000); // Limit content to avoid huge prompts
+      } catch (fetchError: any) {
+        return res.status(400).json({ error: `Could not fetch website: ${fetchError.message}` });
+      }
+
+      // Use AI to generate description
+      const prompt = `Based on the following website content for a product${name ? ` called "${name}"` : ""}, write a concise 2-3 sentence description that captures what the product does and its key value proposition. Be specific and factual.
+
+Website content:
+${websiteContent}
+
+Return only the description text, no quotes or formatting.`;
+
+      const anthropic = new Anthropic();
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 256,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const description = message.content[0].type === "text" ? message.content[0].text.trim() : "";
+      
+      res.json({ description });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
 
   // Get team members for current tenant (Domain Admin or Global Admin)
