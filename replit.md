@@ -270,6 +270,15 @@ Based on the Orbit MVP Specification, the following features are required for la
 - Thumbs up/down on recommendations
 - AI learning from feedback
 
+##### 3.4 Secondary Pages / Microsites
+**Status**: Not implemented
+**Description**: Attach secondary pages (microsites, landing pages, campaign sites) to a parent competitor or company profile
+- Link child URLs to a "home" site for combined analysis
+- Track microsites as part of overall competitive picture
+- Aggregate messaging analysis across parent + child sites
+- Use cases: product landing pages, regional sites, campaign microsites
+**Effort**: Medium
+
 ---
 
 ## Post-MVP Roadmap (Year One)
