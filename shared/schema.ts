@@ -39,11 +39,13 @@ export const tenants = pgTable("tenants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   domain: text("domain").notNull().unique(),
   name: text("name").notNull(),
-  plan: text("plan").notNull().default("free"),
+  plan: text("plan").notNull().default("free"), // free, professional, enterprise
   status: text("status").notNull().default("active"),
   userCount: integer("user_count").notNull().default(0),
   competitorLimit: integer("competitor_limit").notNull().default(3),
   analysisLimit: integer("analysis_limit").notNull().default(5),
+  monitoringFrequency: text("monitoring_frequency").default("weekly"), // weekly, daily, disabled
+  socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false), // Premium feature
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),
   primaryColor: text("primary_color").default("#810FFB"),
@@ -59,6 +61,9 @@ export const competitors = pgTable("competitors", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   lastCrawl: text("last_crawl"),
+  lastSocialCrawl: timestamp("last_social_crawl"),
+  linkedInContent: text("linkedin_content"), // Last crawled LinkedIn page content for diff
+  instagramContent: text("instagram_content"), // Last crawled Instagram page content for diff
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
   analysisData: jsonb("analysis_data"), // AI analysis results

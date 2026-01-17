@@ -8,6 +8,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations 
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
+import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -337,6 +338,153 @@ export async function registerRoutes(
       } else {
         res.json({ success: true, lastCrawl, message: "Website content could not be fetched" });
       }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== SOCIAL MEDIA MONITORING (PREMIUM) ====================
+
+  // Monitor social media for a single competitor (on-demand)
+  app.post("/api/competitors/:id/monitor-social", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant || tenant.plan === "free") {
+        return res.status(403).json({ 
+          error: "Social media monitoring is a premium feature. Please upgrade your plan.",
+          upgradeRequired: true 
+        });
+      }
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (competitor.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!competitor.linkedInUrl && !competitor.instagramUrl) {
+        return res.status(400).json({ error: "No social media URLs configured for this competitor" });
+      }
+
+      const results = await monitorCompetitorSocialMedia(req.params.id);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Monitor all competitors' social media for tenant (scheduled/bulk)
+  app.post("/api/social-monitoring/run", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      const results = await monitorAllCompetitorsForTenant(tenantDomain);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error.message.includes("premium feature")) {
+        return res.status(403).json({ error: error.message, upgradeRequired: true });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get social monitoring settings for tenant
+  app.get("/api/social-monitoring/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      res.json({
+        plan: tenant.plan,
+        monitoringFrequency: tenant.monitoringFrequency || "weekly",
+        socialMonitoringEnabled: tenant.plan !== "free",
+        isPremium: tenant.plan !== "free",
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update social monitoring settings (admin only)
+  app.patch("/api/social-monitoring/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      if (tenant.plan === "free") {
+        return res.status(403).json({ 
+          error: "Social media monitoring settings require a premium plan",
+          upgradeRequired: true 
+        });
+      }
+
+      const { monitoringFrequency } = req.body;
+      if (monitoringFrequency && !["weekly", "daily", "disabled"].includes(monitoringFrequency)) {
+        return res.status(400).json({ error: "Invalid monitoring frequency" });
+      }
+
+      const updated = await storage.updateTenant(tenant.id, {
+        monitoringFrequency: monitoringFrequency || tenant.monitoringFrequency,
+      });
+
+      res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
