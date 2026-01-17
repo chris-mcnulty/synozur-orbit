@@ -70,7 +70,7 @@ export default function Landing() {
             <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 flex items-center justify-center gap-2">
               Get started now <ArrowRight size={20} />
             </Link>
-            <Link href="/auth/signin" className="bg-muted hover:bg-muted/80 text-foreground px-8 py-4 rounded-lg text-lg font-medium transition-all">
+            <Link href="/auth/signin" className="bg-muted hover:bg-muted/80 text-primary px-8 py-4 rounded-lg text-lg font-medium transition-all">
               Log in
             </Link>
           </div>
