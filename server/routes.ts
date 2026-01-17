@@ -2884,6 +2884,278 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // ==================== PRODUCT BATTLECARDS ====================
+
+  // Get all product battlecards for a project
+  app.get("/api/projects/:projectId/battlecards", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+      res.json(battlecards);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get a specific product battlecard
+  app.get("/api/product-battlecards/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const battlecard = await storage.getProductBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (battlecard.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(battlecard);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate a product battlecard for a competitor product
+  app.post("/api/projects/:projectId/battlecards/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { competitorProductId } = req.body;
+      if (!competitorProductId) {
+        return res.status(400).json({ error: "Competitor product ID is required" });
+      }
+
+      // Get project products to find baseline
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set for this project" });
+      }
+
+      const competitorPP = projectProducts.find(pp => pp.productId === competitorProductId);
+      if (!competitorPP) {
+        return res.status(400).json({ error: "Competitor product not found in this project" });
+      }
+
+      // Get full product details
+      const baseline = await storage.getProduct(baselineProduct.productId);
+      const competitor = await storage.getProduct(competitorProductId);
+
+      if (!baseline || !competitor) {
+        return res.status(404).json({ error: "Product details not found" });
+      }
+
+      // Check if battlecard already exists
+      let existingBattlecard = await storage.getProductBattlecardByProducts(baseline.id, competitor.id);
+
+      // Use Claude to generate battlecard content
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const prompt = `You are a competitive intelligence analyst. Generate a comprehensive product comparison battlecard for "${baseline.name}" (our product) competing against "${competitor.name}".
+
+Our Product: ${baseline.name}
+Our Company: ${baseline.companyName || "Unknown"}
+Our Description: ${baseline.description || "No description"}
+Our URL: ${baseline.url || "No URL"}
+
+Competitor Product: ${competitor.name}
+Competitor Company: ${competitor.companyName || "Unknown"}
+Competitor Description: ${competitor.description || "No description"}
+Competitor URL: ${competitor.url || "No URL"}
+
+Generate a battlecard with the following sections in valid JSON format:
+{
+  "strengths": ["strength1", "strength2", ...], // 3-5 competitor product strengths
+  "weaknesses": ["weakness1", "weakness2", ...], // 3-5 competitor product weaknesses
+  "ourAdvantages": ["advantage1", "advantage2", ...], // 3-5 ways our product beats this competitor
+  "keyDifferentiators": [
+    {"feature": "Feature name", "ours": "What we offer", "theirs": "What they offer"},
+    ...
+  ], // 4-6 key feature comparisons
+  "objections": [
+    {"objection": "Common customer objection about choosing us over them", "response": "How to respond"},
+    ...
+  ], // 3-4 common objections and responses
+  "talkTracks": [
+    {"scenario": "When customer mentions X", "script": "Say this..."},
+    ...
+  ], // 2-3 sales talk tracks
+  "featureComparison": {
+    "Pricing": {"ours": "Our pricing info", "theirs": "Their pricing info"},
+    "Target Market": {"ours": "Who we target", "theirs": "Who they target"},
+    "Key Strength": {"ours": "Our main strength", "theirs": "Their main strength"}
+  }
+}
+
+Return ONLY valid JSON, no markdown or explanation.`;
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2500,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      let battlecardContent: any = {};
+      try {
+        const responseText = response.content[0].type === "text" ? response.content[0].text : "";
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          battlecardContent = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        console.error("Failed to parse AI battlecard response:", e);
+        return res.status(500).json({ error: "Failed to generate battlecard content" });
+      }
+
+      if (existingBattlecard) {
+        // Update existing battlecard
+        const updated = await storage.updateProductBattlecard(existingBattlecard.id, {
+          strengths: battlecardContent.strengths,
+          weaknesses: battlecardContent.weaknesses,
+          ourAdvantages: battlecardContent.ourAdvantages,
+          keyDifferentiators: battlecardContent.keyDifferentiators,
+          objections: battlecardContent.objections,
+          talkTracks: battlecardContent.talkTracks,
+          featureComparison: battlecardContent.featureComparison,
+          lastGeneratedAt: new Date(),
+        });
+        res.json(updated);
+      } else {
+        // Create new battlecard
+        const created = await storage.createProductBattlecard({
+          baselineProductId: baseline.id,
+          competitorProductId: competitor.id,
+          projectId: req.params.projectId,
+          tenantDomain,
+          strengths: battlecardContent.strengths,
+          weaknesses: battlecardContent.weaknesses,
+          ourAdvantages: battlecardContent.ourAdvantages,
+          keyDifferentiators: battlecardContent.keyDifferentiators,
+          objections: battlecardContent.objections,
+          talkTracks: battlecardContent.talkTracks,
+          featureComparison: battlecardContent.featureComparison,
+          status: "draft",
+          createdBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Product battlecard generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update a product battlecard (e.g., custom notes)
+  app.patch("/api/product-battlecards/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const battlecard = await storage.getProductBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (battlecard.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { customNotes, status } = req.body;
+      const updates: any = {};
+      if (customNotes !== undefined) updates.customNotes = customNotes;
+      if (status !== undefined) updates.status = status;
+
+      const updated = await storage.updateProductBattlecard(req.params.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete a product battlecard
+  app.delete("/api/product-battlecards/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const battlecard = await storage.getProductBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (battlecard.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteProductBattlecard(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // AI-suggest competitor products for a baseline product
   app.post("/api/products/:productId/suggest-competitors", async (req, res) => {
     try {
