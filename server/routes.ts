@@ -214,22 +214,57 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      if (competitor.userId !== req.session.userId) {
+      if (competitor.userId !== req.session.userId && user.role !== "Global Admin") {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, name, url } = req.body;
+      const { linkedInUrl, instagramUrl, name, url, projectId } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
       if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
       if (name) updateData.name = name;
       if (url) updateData.url = url;
+
+      // Handle projectId changes with security validation
+      if (projectId !== undefined) {
+        if (projectId === null || projectId === "") {
+          updateData.projectId = null;
+        } else {
+          const project = await storage.getClientProject(projectId);
+          if (!project) {
+            return res.status(400).json({ error: "Project not found" });
+          }
+
+          const tenantDomain = user.email.split("@")[1];
+          
+          // Security: Verify the project belongs to the user's tenant
+          if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+            return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
+          }
+
+          // Plan-gating: Only Pro/Enterprise can use projects
+          const tenant = await storage.getTenantByDomain(tenantDomain);
+          if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+            return res.status(403).json({ 
+              error: "Client Projects require a Professional or Enterprise plan",
+              upgradeRequired: true
+            });
+          }
+
+          updateData.projectId = projectId;
+        }
+      }
 
       const updated = await storage.updateCompetitor(req.params.id, updateData);
       res.json(updated);
@@ -244,8 +279,40 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
 
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { projectId, ...competitorData } = req.body;
+      
+      // If projectId is provided, validate ownership and plan-gating
+      if (projectId) {
+        const project = await storage.getClientProject(projectId);
+        if (!project) {
+          return res.status(400).json({ error: "Project not found" });
+        }
+
+        const tenantDomain = user.email.split("@")[1];
+        
+        // Security: Verify the project belongs to the user's tenant
+        if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+          return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
+        }
+
+        // Plan-gating: Only Pro/Enterprise can use projects
+        const tenant = await storage.getTenantByDomain(tenantDomain);
+        if (!tenant || (tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+          return res.status(403).json({ 
+            error: "Client Projects require a Professional or Enterprise plan",
+            upgradeRequired: true
+          });
+        }
+      }
+
       const parsed = insertCompetitorSchema.safeParse({
-        ...req.body,
+        ...competitorData,
+        projectId: projectId || null,
         userId: req.session.userId
       });
 
