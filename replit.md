@@ -38,8 +38,10 @@ Preferred communication style: Simple, everyday language.
 - **Authentication**: Session-based with `express-session`.
 - **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO.
 - **Fallback**: Traditional email/password login for non-SSO users.
-- **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User).
-- **Provisioning**: First registered user is Global Admin; first user per email domain is Domain Admin.
+- **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
+- **Provisioning**: Self-service signup only creates Standard User or Consultant (synozur.com domain) roles. Global Admin and Domain Admin must be manually assigned by existing admins.
+- **Consultant Role**: Special role for Synozur platform staff with intended cross-tenant read access (full implementation pending).
+- **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, role hierarchy, tenant-specific plan/usage limits.
