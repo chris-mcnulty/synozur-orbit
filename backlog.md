@@ -11,14 +11,15 @@
 - [ ] Google SSO (optional, not critical for enterprise)
 **Effort**: Remaining: Low (Google SSO only)
 
-### 1.2 PDF Report Generation & Export
-**Status**: Reports table exists, no generation
+### 1.2 PDF Report Generation & Export ✅
+**Status**: Implemented
 **Spec Requirement**: "Download a PDF report...formatted with Synozur's branding"
-- [ ] Server-side PDF generation (puppeteer or pdfkit)
-- [ ] Branded template with company logo
-- [ ] Include analysis findings, recommendations, competitor comparison
-- [ ] Download endpoint for generated reports
-**Effort**: Medium
+- [x] Server-side PDF generation using Puppeteer
+- [x] Branded template with Synozur branding (dark mode, professional styling)
+- [x] Include analysis findings, recommendations, competitor comparison
+- [x] Download endpoint for generated reports (/api/reports/generate)
+- [x] Frontend integration with generate dialog and download buttons
+**Effort**: Medium - COMPLETED
 
 ### 1.3 Web Crawling Service ✅
 **Status**: Implemented

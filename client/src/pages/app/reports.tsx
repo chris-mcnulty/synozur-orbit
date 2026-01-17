@@ -121,6 +121,49 @@ export default function Reports() {
     setIsDialogOpen(true);
   };
 
+  const handleDownloadReport = async (report: any) => {
+    try {
+      const response = await fetch("/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: report.name,
+          scope: report.scope || "baseline",
+          projectId: report.projectId || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to download report");
+      }
+
+      const blob = await response.blob();
+      const fileName = `${report.name.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Report Downloaded",
+        description: "Your report has been downloaded successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -191,7 +234,12 @@ export default function Reports() {
                       </p>
                   </CardContent>
                   <CardFooter className="border-t border-border pt-4">
-                      <Button variant="outline" className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all" data-testid={`button-download-${report.id}`}>
+                      <Button 
+                        variant="outline" 
+                        className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all" 
+                        onClick={() => handleDownloadReport(report)}
+                        data-testid={`button-download-${report.id}`}
+                      >
                           <Download className="w-4 h-4 mr-2" /> Download {report.type || "PDF"}
                       </Button>
                   </CardFooter>
