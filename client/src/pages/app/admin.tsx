@@ -29,18 +29,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import type { Tenant } from "@shared/schema";
 
 type TenantWithCounts = Tenant & { actualUserCount: number };
+type BlockedDomain = {
+  id: string;
+  domain: string;
+  reason: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
 
 export default function AdminPage() {
   const { user: currentUser } = useUser();
   const queryClient = useQueryClient();
   const [selectedTenant, setSelectedTenant] = useState<TenantWithCounts | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [newBlockedDomain, setNewBlockedDomain] = useState("");
+  const [newBlockedReason, setNewBlockedReason] = useState("");
   const [editForm, setEditForm] = useState({
     name: "",
     plan: "",
@@ -83,6 +92,52 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
       setEditDialogOpen(false);
+    },
+  });
+
+  const { data: blockedDomains = [] } = useQuery<BlockedDomain[]>({
+    queryKey: ["/api/admin/domain-blocklist"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/domain-blocklist", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch blocklist");
+      return response.json();
+    },
+  });
+
+  const addBlockedDomainMutation = useMutation({
+    mutationFn: async ({ domain, reason }: { domain: string; reason: string }) => {
+      const response = await fetch("/api/admin/domain-blocklist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ domain, reason: reason || null }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to add domain");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/domain-blocklist"] });
+      setNewBlockedDomain("");
+      setNewBlockedReason("");
+    },
+  });
+
+  const removeBlockedDomainMutation = useMutation({
+    mutationFn: async (domain: string) => {
+      const response = await fetch(`/api/admin/domain-blocklist/${encodeURIComponent(domain)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to remove domain");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/domain-blocklist"] });
     },
   });
 
@@ -303,6 +358,98 @@ export default function AdminPage() {
                           data-testid={`edit-tenant-${tenant.id}`}
                         >
                           <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-destructive" />
+              Domain Blocklist
+            </CardTitle>
+            <CardDescription>
+              Prevent users from these domains from self-registering and creating new tenants
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="domain.com"
+                value={newBlockedDomain}
+                onChange={(e) => setNewBlockedDomain(e.target.value)}
+                className="max-w-xs"
+                data-testid="input-blocked-domain"
+              />
+              <Input
+                placeholder="Reason (optional)"
+                value={newBlockedReason}
+                onChange={(e) => setNewBlockedReason(e.target.value)}
+                className="flex-1"
+                data-testid="input-blocked-reason"
+              />
+              <Button
+                onClick={() => {
+                  if (newBlockedDomain.trim()) {
+                    addBlockedDomainMutation.mutate({
+                      domain: newBlockedDomain.trim(),
+                      reason: newBlockedReason.trim(),
+                    });
+                  }
+                }}
+                disabled={!newBlockedDomain.trim() || addBlockedDomainMutation.isPending}
+                data-testid="btn-add-blocked-domain"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+
+            {addBlockedDomainMutation.isError && (
+              <p className="text-sm text-destructive">
+                {(addBlockedDomainMutation.error as Error).message}
+              </p>
+            )}
+
+            {blockedDomains.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4 text-center">
+                No domains blocked. Add domains above to prevent self-registration.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Domain</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Added</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {blockedDomains.map((entry) => (
+                    <TableRow key={entry.id} data-testid={`blocked-domain-${entry.domain}`}>
+                      <TableCell className="font-medium">{entry.domain}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {entry.reason || "-"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(entry.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeBlockedDomainMutation.mutate(entry.domain)}
+                          disabled={removeBlockedDomainMutation.isPending}
+                          data-testid={`remove-blocked-${entry.domain}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>
                     </TableRow>
