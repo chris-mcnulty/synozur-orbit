@@ -1538,6 +1538,133 @@ export async function registerRoutes(
     }
   });
 
+  // Create tenant manually (Global Admin only)
+  app.post("/api/tenants", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { domain, name, plan, competitorLimit, analysisLimit, primaryColor, secondaryColor } = req.body;
+      
+      if (!domain || typeof domain !== "string" || !domain.includes(".")) {
+        return res.status(400).json({ error: "Valid domain is required (e.g., 'acme.com')" });
+      }
+      
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "Company name is required" });
+      }
+
+      const normalizedDomain = domain.toLowerCase().trim();
+      
+      // Check if tenant already exists
+      const existing = await storage.getTenantByDomain(normalizedDomain);
+      if (existing) {
+        return res.status(400).json({ error: "Tenant already exists for this domain" });
+      }
+
+      const tenant = await storage.createTenant({
+        domain: normalizedDomain,
+        name: name.trim(),
+        plan: plan || "free",
+        status: "active",
+        userCount: 0,
+        competitorLimit: competitorLimit || 3,
+        analysisLimit: analysisLimit || 5,
+        primaryColor: primaryColor || "#810FFB",
+        secondaryColor: secondaryColor || "#E60CB3",
+      });
+
+      res.status(201).json(tenant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== DOMAIN BLOCKLIST (Global Admin) ====================
+
+  // Get all blocked domains
+  app.get("/api/admin/domain-blocklist", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const blocklist = await storage.getDomainBlocklist();
+      res.json(blocklist);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add domain to blocklist
+  app.post("/api/admin/domain-blocklist", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { domain, reason } = req.body;
+      
+      if (!domain || typeof domain !== "string") {
+        return res.status(400).json({ error: "Domain is required" });
+      }
+
+      const normalizedDomain = domain.toLowerCase().trim();
+      
+      // Check if already blocked
+      const isBlocked = await storage.isdomainBlocked(normalizedDomain);
+      if (isBlocked) {
+        return res.status(400).json({ error: "Domain is already blocked" });
+      }
+
+      const entry = await storage.addBlockedDomain({
+        domain: normalizedDomain,
+        reason: reason || null,
+        createdBy: user.id,
+      });
+
+      res.status(201).json(entry);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Remove domain from blocklist
+  app.delete("/api/admin/domain-blocklist/:domain", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const domain = req.params.domain.toLowerCase();
+      await storage.removeBlockedDomain(domain);
+      res.json({ success: true, message: `Domain ${domain} removed from blocklist` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
 
   // Get team members for current tenant (Domain Admin or Global Admin)
