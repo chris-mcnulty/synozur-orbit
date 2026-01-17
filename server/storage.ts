@@ -2,6 +2,7 @@ import {
   users, 
   tenants,
   domainBlocklist,
+  clientProjects,
   competitors, 
   activity, 
   recommendations, 
@@ -18,6 +19,8 @@ import {
   type InsertTenant,
   type DomainBlocklist,
   type InsertDomainBlocklist,
+  type ClientProject,
+  type InsertClientProject,
   type Competitor,
   type InsertCompetitor,
   type Activity,
@@ -134,6 +137,15 @@ export interface IStorage {
   isdomainBlocked(domain: string): Promise<boolean>;
   addBlockedDomain(entry: InsertDomainBlocklist): Promise<DomainBlocklist>;
   removeBlockedDomain(domain: string): Promise<void>;
+  
+  // Client Project methods (proxy analysis for consulting firms)
+  getClientProject(id: string): Promise<ClientProject | undefined>;
+  getClientProjectsByTenant(tenantDomain: string): Promise<ClientProject[]>;
+  getClientProjectsByOwner(ownerUserId: string): Promise<ClientProject[]>;
+  createClientProject(project: InsertClientProject): Promise<ClientProject>;
+  updateClientProject(id: string, data: Partial<ClientProject>): Promise<ClientProject>;
+  deleteClientProject(id: string): Promise<void>;
+  getCompetitorsByProject(projectId: string): Promise<Competitor[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -553,6 +565,51 @@ export class DatabaseStorage implements IStorage {
 
   async removeBlockedDomain(domain: string): Promise<void> {
     await db.delete(domainBlocklist).where(eq(domainBlocklist.domain, domain.toLowerCase()));
+  }
+
+  // Client Project methods
+  async getClientProject(id: string): Promise<ClientProject | undefined> {
+    const [project] = await db.select().from(clientProjects).where(eq(clientProjects.id, id));
+    return project || undefined;
+  }
+
+  async getClientProjectsByTenant(tenantDomain: string): Promise<ClientProject[]> {
+    return await db.select().from(clientProjects)
+      .where(eq(clientProjects.tenantDomain, tenantDomain))
+      .orderBy(desc(clientProjects.createdAt));
+  }
+
+  async getClientProjectsByOwner(ownerUserId: string): Promise<ClientProject[]> {
+    return await db.select().from(clientProjects)
+      .where(eq(clientProjects.ownerUserId, ownerUserId))
+      .orderBy(desc(clientProjects.createdAt));
+  }
+
+  async createClientProject(project: InsertClientProject): Promise<ClientProject> {
+    const [result] = await db
+      .insert(clientProjects)
+      .values(project)
+      .returning();
+    return result;
+  }
+
+  async updateClientProject(id: string, data: Partial<ClientProject>): Promise<ClientProject> {
+    const [result] = await db
+      .update(clientProjects)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(clientProjects.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteClientProject(id: string): Promise<void> {
+    await db.delete(clientProjects).where(eq(clientProjects.id, id));
+  }
+
+  async getCompetitorsByProject(projectId: string): Promise<Competitor[]> {
+    return await db.select().from(competitors)
+      .where(eq(competitors.projectId, projectId))
+      .orderBy(desc(competitors.createdAt));
   }
 }
 
