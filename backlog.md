@@ -11,17 +11,7 @@
 - [ ] Google SSO (optional, not critical for enterprise)
 **Effort**: Remaining: Low (Google SSO only)
 
-### 1.2 Trial & Feature Gating System
-**Status**: Schema exists, no enforcement
-**Spec Requirement**: "14-day free trial, then Free tier with limited functionality"
-- [ ] Add `trialStartDate` and `trialEndsAt` to tenants
-- [ ] Implement trial countdown and expiration logic
-- [ ] Feature gating middleware on API routes
-- [ ] UI upgrade prompts when hitting limits (3 competitors, 5 analyses)
-- [ ] Free tier: basic analysis only, no AI recommendations
-**Effort**: Medium
-
-### 1.3 PDF Report Generation & Export
+### 1.2 PDF Report Generation & Export
 **Status**: Reports table exists, no generation
 **Spec Requirement**: "Download a PDF report...formatted with Synozur's branding"
 - [ ] Server-side PDF generation (puppeteer or pdfkit)
@@ -73,13 +63,14 @@
 - [x] CSS variable switching for theme
 **Effort**: Low
 
-### 2.3 Tenant Admin Features
-**Status**: Domain Admin exists, limited capabilities
+### 2.3 Tenant Admin Features ✅
+**Status**: Implemented
 **Spec Requirement**: "Tenant Admin manages organization's account – inviting team members"
-- [ ] Team invite flow (email invitations)
-- [ ] User management within tenant (view/remove team members)
-- [ ] Tenant settings page (branding, integrations)
-**Effort**: Medium
+- [x] Team invite flow with token-based acceptance
+- [x] User management (view/update roles/remove members)
+- [x] Tenant settings page (branding, monitoring frequency)
+- [x] RBAC enforcement for Domain Admin and Global Admin
+**Effort**: Medium - COMPLETED
 
 ### 2.4 Side-by-Side Messaging Comparison
 **Status**: Analysis exists, not side-by-side format
@@ -113,6 +104,16 @@
 **Spec Requirement**: "Users can mark recommendations as 'not relevant'"
 - [ ] Thumbs up/down on recommendations
 - [ ] AI learning from feedback
+
+### 3.4 Trial & Feature Gating System
+**Status**: Schema exists, no enforcement
+**Spec Requirement**: "14-day free trial, then Free tier with limited functionality"
+- [ ] Add `trialStartDate` and `trialEndsAt` to tenants
+- [ ] Implement trial countdown and expiration logic
+- [ ] Feature gating middleware on API routes
+- [ ] UI upgrade prompts when hitting limits (3 competitors, 5 analyses)
+- [ ] Free tier: basic analysis only, no AI recommendations
+**Effort**: Medium
 
 ---
 
