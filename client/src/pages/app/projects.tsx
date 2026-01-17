@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle, Bell, BellOff } from "lucide-react";
+import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle, Bell, BellOff, Package, Building } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -21,6 +22,7 @@ interface ClientProject {
   clientName: string;
   clientDomain: string | null;
   description: string | null;
+  analysisType: "company" | "product";
   status: string;
   notifyOnUpdates: boolean;
   tenantDomain: string;
@@ -41,6 +43,7 @@ export default function Projects() {
     clientName: "",
     clientDomain: "",
     description: "",
+    analysisType: "company" as "company" | "product",
     notifyOnUpdates: false,
   });
 
@@ -79,7 +82,7 @@ export default function Projects() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", clientName: "", clientDomain: "", description: "", notifyOnUpdates: false });
+      setFormData({ name: "", clientName: "", clientDomain: "", description: "", analysisType: "company", notifyOnUpdates: false });
       toast({
         title: "Project Created",
         description: "Your client project has been created.",
@@ -182,6 +185,7 @@ export default function Projects() {
       clientName: project.clientName,
       clientDomain: project.clientDomain || "",
       description: project.description || "",
+      analysisType: project.analysisType || "company",
       notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
@@ -261,6 +265,35 @@ export default function Projects() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label>Analysis Type</Label>
+                      <RadioGroup
+                        value={formData.analysisType}
+                        onValueChange={(value: "company" | "product") => setFormData({ ...formData, analysisType: value })}
+                        className="grid grid-cols-2 gap-4"
+                        data-testid="radio-analysis-type"
+                      >
+                        <div className="flex items-center space-x-2 rounded-lg border p-3 cursor-pointer hover:bg-accent">
+                          <RadioGroupItem value="company" id="company" />
+                          <Label htmlFor="company" className="flex items-center gap-2 cursor-pointer">
+                            <Building className="h-4 w-4" />
+                            Company vs Company
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2 rounded-lg border p-3 cursor-pointer hover:bg-accent">
+                          <RadioGroupItem value="product" id="product" />
+                          <Label htmlFor="product" className="flex items-center gap-2 cursor-pointer">
+                            <Package className="h-4 w-4" />
+                            Product vs Product
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                      <p className="text-xs text-muted-foreground">
+                        {formData.analysisType === "company" 
+                          ? "Compare company websites, positioning, and market presence" 
+                          : "Compare specific products against competitor products"}
+                      </p>
+                    </div>
                     <div className="grid gap-2">
                       <Label htmlFor="name">Project Name</Label>
                       <Input
@@ -433,6 +466,13 @@ export default function Projects() {
                   <CardContent className="space-y-3">
                     <div className="flex items-center gap-2 flex-wrap">
                       {getStatusBadge(project.status)}
+                      <Badge variant="outline" className="text-xs" data-testid={`badge-analysis-type-${project.id}`}>
+                        {project.analysisType === "product" ? (
+                          <><Package className="h-3 w-3 mr-1" /> Product</>
+                        ) : (
+                          <><Building className="h-3 w-3 mr-1" /> Company</>
+                        )}
+                      </Badge>
                       {project.notifyOnUpdates && (
                         <Badge className="bg-primary/20 text-primary border-primary/50 text-xs">
                           <Bell className="h-3 w-3 mr-1" />
@@ -484,6 +524,17 @@ export default function Projects() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+              <div className="flex items-center gap-2 rounded-lg border p-3 bg-muted/50">
+                <Label className="text-sm text-muted-foreground">Analysis Type:</Label>
+                <Badge variant="outline" className="text-xs">
+                  {formData.analysisType === "product" ? (
+                    <><Package className="h-3 w-3 mr-1" /> Product vs Product</>
+                  ) : (
+                    <><Building className="h-3 w-3 mr-1" /> Company vs Company</>
+                  )}
+                </Badge>
+                <span className="text-xs text-muted-foreground">(cannot be changed)</span>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-name">Project Name</Label>
                 <Input
