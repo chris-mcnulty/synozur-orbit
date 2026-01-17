@@ -140,6 +140,8 @@ export const competitors = pgTable("competitors", {
   blogSnapshot: jsonb("blog_snapshot"), // Snapshot: {postCount, latestTitles, capturedAt}
   crawlData: jsonb("crawl_data"), // Multi-page crawl results: {pages[], totalWordCount, crawledAt}
   lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
+  previousWebsiteContent: text("previous_website_content"), // Previous crawl content for change detection
+  lastWebsiteMonitor: timestamp("last_website_monitor"), // Timestamp of last website change monitoring
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
