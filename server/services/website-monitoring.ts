@@ -160,9 +160,21 @@ export async function monitorCompetitorWebsite(
     await storage.updateCompetitor(competitor.id, {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
-      crawlData: crawlResult,
+      crawlData: {
+        pagesCrawled: crawlResult.pages.map(p => ({
+          url: p.url,
+          pageType: p.pageType,
+          title: p.title,
+          wordCount: p.wordCount,
+        })),
+        totalWordCount: crawlResult.totalWordCount,
+        crawledAt: crawlResult.crawledAt,
+      },
       lastFullCrawl: now,
-      blogSnapshot: crawlResult.blogSnapshot,
+      blogSnapshot: crawlResult.blogSnapshot ? {
+        ...crawlResult.blogSnapshot,
+        capturedAt: now.toISOString(),
+      } : undefined,
       linkedInUrl: competitor.linkedInUrl || crawlResult.socialLinks.linkedIn,
       instagramUrl: competitor.instagramUrl || crawlResult.socialLinks.instagram,
     });
@@ -199,7 +211,7 @@ export async function monitorAllCompetitorsForTenant(
     throw new Error("Tenant not found");
   }
   
-  if (tenant.plan === "free") {
+  if (tenant.plan === "free" || tenant.plan === "trial") {
     throw new Error("Website monitoring is a premium feature. Please upgrade your plan to access this functionality.");
   }
   

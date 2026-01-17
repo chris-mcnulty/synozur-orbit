@@ -238,7 +238,7 @@ async function runWebsiteMonitorJob(): Promise<void> {
 
     for (const tenant of tenants) {
       if (tenant.status !== "active") continue;
-      if (tenant.plan === "free") continue;
+      if (tenant.plan === "free" || tenant.plan === "trial") continue;
 
       const frequency = tenant.monitoringFrequency || "weekly";
       if (frequency === "disabled") continue;
@@ -247,8 +247,6 @@ async function runWebsiteMonitorJob(): Promise<void> {
       if (intervalMs === 0) continue;
 
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
-      const users = await storage.getUsersByDomain(tenant.domain);
-      const primaryUser = users[0];
 
       for (const competitor of competitors) {
         const lastWebsiteMonitor = competitor.lastWebsiteMonitor
@@ -265,7 +263,7 @@ async function runWebsiteMonitorJob(): Promise<void> {
         try {
           await monitorCompetitorWebsite(
             competitor.id, 
-            primaryUser?.id, 
+            competitor.userId,
             tenant.domain
           );
           await new Promise(resolve => setTimeout(resolve, 3000));

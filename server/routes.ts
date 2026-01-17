@@ -745,7 +745,7 @@ export async function registerRoutes(
       const tenantDomain = user.email.split("@")[1];
       const tenant = await storage.getTenantByDomain(tenantDomain);
 
-      if (!tenant || tenant.plan === "free") {
+      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
         return res.status(403).json({ 
           error: "Website change monitoring is a premium feature. Please upgrade your plan.",
           upgradeRequired: true 

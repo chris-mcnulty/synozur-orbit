@@ -30,18 +30,18 @@
 - [x] Admin API endpoints for job status and manual triggering
 **Effort**: Medium - COMPLETED
 
-### 1.4 Competitor Change Monitoring
-**Status**: Social media monitoring implemented (LinkedIn/Instagram), website monitoring pending
+### 1.4 Competitor Change Monitoring ✅
+**Status**: Implemented
 **Spec Requirement**: "Daily or weekly schedule...detect significant updates"
 - [x] Social media monitoring (LinkedIn, Instagram) with AI summarization
 - [x] Diff detection between crawl snapshots
 - [x] AI summarization of changes using Claude
 - [x] Store changes in activity log
-- [x] Premium feature gating (free tier blocked)
+- [x] Premium feature gating (free/trial tier blocked)
 - [x] On-demand monitoring via UI button
 - [x] Scheduled job for periodic crawling (via web crawler service)
-- [ ] Website content change monitoring
-**Effort**: Medium (remaining: website change detection)
+- [x] Website content change monitoring with AI-summarized diffs
+**Effort**: Medium - COMPLETED
 
 ---
 
