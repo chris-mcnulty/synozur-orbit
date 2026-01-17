@@ -94,6 +94,8 @@ export interface IStorage {
   
   // Report methods
   getAllReports(): Promise<Report[]>;
+  getReportsByTenant(tenantDomain: string): Promise<Report[]>;
+  getReport(id: string): Promise<Report | undefined>;
   createReport(report: InsertReport): Promise<Report>;
   
   // Analysis methods
@@ -363,6 +365,17 @@ export class DatabaseStorage implements IStorage {
   // Report methods
   async getAllReports(): Promise<Report[]> {
     return await db.select().from(reports).orderBy(desc(reports.createdAt));
+  }
+
+  async getReportsByTenant(tenantDomain: string): Promise<Report[]> {
+    return await db.select().from(reports)
+      .where(eq(reports.tenantDomain, tenantDomain))
+      .orderBy(desc(reports.createdAt));
+  }
+
+  async getReport(id: string): Promise<Report | undefined> {
+    const [report] = await db.select().from(reports).where(eq(reports.id, id));
+    return report || undefined;
   }
 
   async createReport(insertReport: InsertReport): Promise<Report> {

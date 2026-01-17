@@ -170,6 +170,11 @@ export const reports = pgTable("reports", {
   size: text("size").notNull(),
   author: text("author").notNull(),
   status: text("status").notNull(),
+  scope: text("scope").notNull().default("baseline"), // "baseline" | "project"
+  projectId: varchar("project_id").references(() => clientProjects.id),
+  tenantDomain: text("tenant_domain"),
+  createdBy: varchar("created_by").references(() => users.id),
+  fileUrl: text("file_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
