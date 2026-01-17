@@ -141,3 +141,29 @@ Generate competitive battlecards for sales enablement with the following compone
 
 **Data Sources**: Company profile, grounding documents, competitor analysis data
 **Output Format**: Exportable PDF battlecard, in-app interactive view
+
+### Feature Gating by Service Plan (Priority: Medium)
+Implement a tiered subscription system to gate features by plan level:
+
+1. **Plan Tiers**
+   - Free: Limited competitors (3), limited analysis runs/month (5), basic features
+   - Pro: More competitors (10), unlimited analysis, battlecards, PDF exports
+   - Enterprise: Unlimited everything, SSO, audit logs, priority support
+
+2. **Feature Matrix**
+   - Define which features are available at each tier
+   - Entitlements stored on user record or separate subscriptions table
+   - UI shows upgrade prompts when hitting limits
+
+3. **Enforcement**
+   - Backend middleware to check entitlements before feature access
+   - Frontend feature flags to show/hide UI elements
+   - Usage tracking for metered features (competitors, analysis runs)
+
+4. **Billing Integration**
+   - Stripe integration for payment processing
+   - Plan upgrade/downgrade flows
+   - Usage-based billing for enterprise tier
+
+**Schema Changes**: Add `plan` field to users, create `subscriptions` and `usage` tables
+**UI Changes**: Settings page billing section, upgrade modals, usage indicators
