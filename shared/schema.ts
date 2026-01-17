@@ -214,6 +214,27 @@ export const battlecards = pgTable("battlecards", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const productBattlecards = pgTable("product_battlecards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  baselineProductId: varchar("baseline_product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  competitorProductId: varchar("competitor_product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => clientProjects.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  strengths: jsonb("strengths"), // Array of competitor product strengths
+  weaknesses: jsonb("weaknesses"), // Array of competitor product weaknesses
+  ourAdvantages: jsonb("our_advantages"), // How our product beats this competitor
+  keyDifferentiators: jsonb("key_differentiators"), // [{feature, ours, theirs}]
+  objections: jsonb("objections"), // Common objections and responses: [{objection, response}]
+  talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
+  featureComparison: jsonb("feature_comparison"), // {feature: {ours: bool/text, theirs: bool/text}}
+  customNotes: text("custom_notes"), // Free-form notes
+  status: text("status").notNull().default("draft"), // draft, published
+  lastGeneratedAt: timestamp("last_generated_at"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   competitors: many(competitors),
 }));
@@ -311,6 +332,13 @@ export const insertBattlecardSchema = createInsertSchema(battlecards).omit({
   lastGeneratedAt: true,
 });
 
+export const insertProductBattlecardSchema = createInsertSchema(productBattlecards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastGeneratedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -339,6 +367,8 @@ export type InsertAnalysis = z.infer<typeof insertAnalysisSchema>;
 export type Analysis = typeof analysis.$inferSelect;
 export type InsertBattlecard = z.infer<typeof insertBattlecardSchema>;
 export type Battlecard = typeof battlecards.$inferSelect;
+export type InsertProductBattlecard = z.infer<typeof insertProductBattlecardSchema>;
+export type ProductBattlecard = typeof productBattlecards.$inferSelect;
 
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {
