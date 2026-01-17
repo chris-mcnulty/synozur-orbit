@@ -396,6 +396,16 @@ export default function AuthPage() {
               )}
             </TabsContent>
           </Tabs>
+          
+          <div className="mt-6 text-center">
+            <a 
+              href="/" 
+              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              data-testid="link-back-home"
+            >
+              ← Back to homepage
+            </a>
+          </div>
         </CardContent>
       </Card>
     </div>
