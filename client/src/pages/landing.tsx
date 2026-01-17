@@ -50,10 +50,11 @@ export default function Landing() {
     <PublicLayout>
       {/* Hero Section */}
       <section className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
-        <div className="absolute inset-0 z-0 select-none">
-          <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/80 to-background" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/10 via-background/40 to-background/80" />
-        </div>
+        <div 
+          className="absolute inset-0 z-0 select-none bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/images/hero-background.png')" }}
+        />
+        <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/60 via-background/85 to-background" />
         
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
