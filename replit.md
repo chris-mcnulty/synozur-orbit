@@ -83,6 +83,10 @@ Preferred communication style: Simple, everyday language.
 
 ## Backlog
 
+### High Priority
+- **Input safety validation**: Pre-validate all user-entered URLs and uploaded data before crawling or processing. Check for malicious URLs, SSRF attempts, private IP ranges, and unsafe file content to protect the platform from security threats.
+
+### Standard Priority
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
 - **Battlecard PDF export**: Export battlecards as branded PDF documents
 - **AI usage tracker**: System-level tracking of AI API usage (tokens, requests, costs) across all tenants with admin dashboard visibility
