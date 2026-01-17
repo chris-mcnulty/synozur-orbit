@@ -235,6 +235,26 @@ export const productBattlecards = pgTable("product_battlecards", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Long-form AI-generated recommendations (GTM plan, messaging framework)
+export const longFormRecommendations = pgTable("long_form_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(), // gtm_plan, messaging_framework
+  // Scope: can be for a project (product analysis) or company profile (company analysis)
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  // The generated content (markdown format)
+  content: text("content"),
+  // Saved prompts/parameters for regeneration
+  savedPrompts: jsonb("saved_prompts"), // {targetRoles: [], distributionChannels: [], customGuidance: string, ...}
+  // Status tracking
+  status: text("status").notNull().default("not_generated"), // not_generated, generating, generated
+  lastGeneratedAt: timestamp("last_generated_at"),
+  generatedBy: varchar("generated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   competitors: many(competitors),
 }));
@@ -339,6 +359,13 @@ export const insertProductBattlecardSchema = createInsertSchema(productBattlecar
   lastGeneratedAt: true,
 });
 
+export const insertLongFormRecommendationSchema = createInsertSchema(longFormRecommendations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastGeneratedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -369,6 +396,8 @@ export type InsertBattlecard = z.infer<typeof insertBattlecardSchema>;
 export type Battlecard = typeof battlecards.$inferSelect;
 export type InsertProductBattlecard = z.infer<typeof insertProductBattlecardSchema>;
 export type ProductBattlecard = typeof productBattlecards.$inferSelect;
+export type InsertLongFormRecommendation = z.infer<typeof insertLongFormRecommendationSchema>;
+export type LongFormRecommendation = typeof longFormRecommendations.$inferSelect;
 
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {

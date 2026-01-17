@@ -18,6 +18,7 @@ import {
   projectProducts,
   battlecards,
   productBattlecards,
+  longFormRecommendations,
   type User, 
   type InsertUser,
   type Tenant,
@@ -55,7 +56,9 @@ import {
   type Battlecard,
   type InsertBattlecard,
   type ProductBattlecard,
-  type InsertProductBattlecard
+  type InsertProductBattlecard,
+  type LongFormRecommendation,
+  type InsertLongFormRecommendation
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -202,6 +205,15 @@ export interface IStorage {
   createProductBattlecard(battlecard: InsertProductBattlecard): Promise<ProductBattlecard>;
   updateProductBattlecard(id: string, data: Partial<ProductBattlecard>): Promise<ProductBattlecard>;
   deleteProductBattlecard(id: string): Promise<void>;
+  
+  // Long-form recommendation methods
+  getLongFormRecommendation(id: string): Promise<LongFormRecommendation | undefined>;
+  getLongFormRecommendationByType(type: string, projectId?: string, companyProfileId?: string): Promise<LongFormRecommendation | undefined>;
+  getLongFormRecommendationsByProject(projectId: string): Promise<LongFormRecommendation[]>;
+  getLongFormRecommendationsByCompanyProfile(companyProfileId: string): Promise<LongFormRecommendation[]>;
+  createLongFormRecommendation(recommendation: InsertLongFormRecommendation): Promise<LongFormRecommendation>;
+  updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation>;
+  deleteLongFormRecommendation(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -883,6 +895,65 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProductBattlecard(id: string): Promise<void> {
     await db.delete(productBattlecards).where(eq(productBattlecards.id, id));
+  }
+  
+  // Long-form recommendation methods
+  async getLongFormRecommendation(id: string): Promise<LongFormRecommendation | undefined> {
+    const [recommendation] = await db.select().from(longFormRecommendations).where(eq(longFormRecommendations.id, id));
+    return recommendation || undefined;
+  }
+
+  async getLongFormRecommendationByType(type: string, projectId?: string, companyProfileId?: string): Promise<LongFormRecommendation | undefined> {
+    if (projectId) {
+      const [recommendation] = await db.select().from(longFormRecommendations)
+        .where(and(
+          eq(longFormRecommendations.type, type),
+          eq(longFormRecommendations.projectId, projectId)
+        ));
+      return recommendation || undefined;
+    }
+    if (companyProfileId) {
+      const [recommendation] = await db.select().from(longFormRecommendations)
+        .where(and(
+          eq(longFormRecommendations.type, type),
+          eq(longFormRecommendations.companyProfileId, companyProfileId)
+        ));
+      return recommendation || undefined;
+    }
+    return undefined;
+  }
+
+  async getLongFormRecommendationsByProject(projectId: string): Promise<LongFormRecommendation[]> {
+    return await db.select().from(longFormRecommendations)
+      .where(eq(longFormRecommendations.projectId, projectId))
+      .orderBy(desc(longFormRecommendations.createdAt));
+  }
+
+  async getLongFormRecommendationsByCompanyProfile(companyProfileId: string): Promise<LongFormRecommendation[]> {
+    return await db.select().from(longFormRecommendations)
+      .where(eq(longFormRecommendations.companyProfileId, companyProfileId))
+      .orderBy(desc(longFormRecommendations.createdAt));
+  }
+
+  async createLongFormRecommendation(recommendation: InsertLongFormRecommendation): Promise<LongFormRecommendation> {
+    const [result] = await db
+      .insert(longFormRecommendations)
+      .values(recommendation)
+      .returning();
+    return result;
+  }
+
+  async updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation> {
+    const [result] = await db
+      .update(longFormRecommendations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(longFormRecommendations.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteLongFormRecommendation(id: string): Promise<void> {
+    await db.delete(longFormRecommendations).where(eq(longFormRecommendations.id, id));
   }
 }
 
