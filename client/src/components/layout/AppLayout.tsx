@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useUser } from "@/lib/userContext";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -130,6 +131,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Sidebar Footer - User Profile */}
         <div className="p-4 border-t border-sidebar-border bg-sidebar/50">
+          <div className="flex items-center justify-between px-2 mb-2">
+            <span className="text-xs text-sidebar-foreground/50">Theme</span>
+            <ThemeToggle />
+          </div>
           <div className="flex items-center gap-3 px-2 py-2 mb-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors cursor-pointer group">
             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-secondary p-[2px]">
               <div className="w-full h-full rounded-full bg-sidebar flex items-center justify-center">
