@@ -27,11 +27,26 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useUser } from "@/lib/userContext";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useQuery } from "@tanstack/react-query";
+import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const { user, logout, loading } = useUser();
+  
+  const { data: companyProfile, isLoading: profileLoading, refetch: refetchProfile } = useQuery({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const response = await fetch("/api/company-profile", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!user,
+  });
+  
+  const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user;
   
   useEffect(() => {
     if (!loading && !user) {
@@ -227,6 +242,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </footer>
         </div>
       </main>
+
+      <CompanySetupDialog 
+        open={showOnboarding} 
+        onComplete={() => {
+          setOnboardingDismissed(true);
+          refetchProfile();
+        }} 
+      />
     </div>
   );
 }

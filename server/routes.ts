@@ -1713,6 +1713,103 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   // ==================== COMPANY PROFILE ROUTES (Baseline Own Website) ====================
 
+  // Fetch company info from a domain for onboarding pre-population
+  app.get("/api/company-info/from-domain", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const websiteUrl = `https://www.${tenantDomain}`;
+
+      // Try to fetch homepage and extract company info
+      try {
+        const response = await fetch(websiteUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)" },
+          redirect: "follow",
+        });
+
+        if (!response.ok) {
+          return res.json({
+            domain: tenantDomain,
+            websiteUrl,
+            companyName: tenantDomain.split(".")[0].charAt(0).toUpperCase() + tenantDomain.split(".")[0].slice(1),
+            description: "",
+            fetchSuccess: false,
+          });
+        }
+
+        const html = await response.text();
+
+        // Extract title for company name
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        let companyName = titleMatch ? titleMatch[1].trim() : "";
+        
+        // Clean up title - remove common suffixes
+        companyName = companyName
+          .replace(/\s*[-|–—]\s*.*(home|homepage|welcome|official site|official website).*/i, "")
+          .replace(/\s*[-|–—]\s*$/i, "")
+          .trim();
+        
+        // If title is too long or empty, try OG title or default to domain
+        if (!companyName || companyName.length > 50) {
+          const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) ||
+                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+          if (ogTitleMatch) {
+            companyName = ogTitleMatch[1].trim();
+          } else {
+            companyName = tenantDomain.split(".")[0].charAt(0).toUpperCase() + tenantDomain.split(".")[0].slice(1);
+          }
+        }
+
+        // Extract meta description
+        const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                          html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
+        let description = descMatch ? descMatch[1].trim() : "";
+
+        // Try OG description if meta description is empty
+        if (!description) {
+          const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) ||
+                              html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+          if (ogDescMatch) {
+            description = ogDescMatch[1].trim();
+          }
+        }
+
+        // Extract social links
+        const linkedInMatch = html.match(/href=["'](https?:\/\/(www\.)?linkedin\.com\/company\/[^"']+)["']/i);
+        const instagramMatch = html.match(/href=["'](https?:\/\/(www\.)?instagram\.com\/[^"']+)["']/i);
+
+        res.json({
+          domain: tenantDomain,
+          websiteUrl: response.url || websiteUrl,
+          companyName,
+          description,
+          linkedInUrl: linkedInMatch ? linkedInMatch[1] : null,
+          instagramUrl: instagramMatch ? instagramMatch[1] : null,
+          fetchSuccess: true,
+        });
+      } catch (fetchError) {
+        // Website not reachable - return basic info
+        res.json({
+          domain: tenantDomain,
+          websiteUrl,
+          companyName: tenantDomain.split(".")[0].charAt(0).toUpperCase() + tenantDomain.split(".")[0].slice(1),
+          description: "",
+          fetchSuccess: false,
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get company profile for current tenant
   app.get("/api/company-profile", async (req, res) => {
     try {
