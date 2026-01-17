@@ -243,6 +243,35 @@ export default function Settings() {
     },
   });
 
+  const updateEntraMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/tenant/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          entraClientId,
+          entraTenantId,
+          entraClientSecret: entraClientSecret || undefined,
+          entraEnabled,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update SSO settings");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      setEntraClientSecret("");
+      toast.success("SSO settings saved");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const pendingInvites = invites.filter(i => i.status === "pending");
 
   return (
