@@ -16,6 +16,7 @@
     "@azure/msal-node": "^5.0.1",
     "@google-cloud/storage": "^7.18.0",
     "@hookform/resolvers": "^3.10.0",
+    "@hubspot/api-client": "^12.0.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
