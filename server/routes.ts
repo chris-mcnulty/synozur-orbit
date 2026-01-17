@@ -1435,7 +1435,26 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
-  // Create global grounding document with text extraction (Global Admin only)
+  // Extract text from uploaded file (authenticated users only)
+  app.post("/api/documents/extract-text", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { fileUrl, fileType } = req.body;
+      if (!fileUrl || !fileType) {
+        return res.status(400).json({ error: "Missing required fields: fileUrl, fileType" });
+      }
+
+      const text = await documentExtractionService.extractTextFromDocument(fileUrl, fileType);
+      res.json({ text });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create global grounding document (Global Admin only)
   app.post("/api/admin/global-documents", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -1447,11 +1466,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(403).json({ error: "Only Global Admins can manage global documents" });
       }
 
-      const { name, description, category, fileType, originalFileName, fileUrl, fileSize } = req.body;
+      const { name, description, category, fileType, originalFileName, content } = req.body;
 
-      // Validate required fields
-      if (!name || !category || !fileType || !originalFileName || !fileUrl) {
-        return res.status(400).json({ error: "Missing required fields: name, category, fileType, originalFileName, fileUrl" });
+      // Validate required fields - content is now required
+      if (!name || !category || !content) {
+        return res.status(400).json({ error: "Missing required fields: name, category, content" });
       }
 
       // Validate category
@@ -1460,23 +1479,15 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(", ")}` });
       }
 
-      // Extract text from Object Storage file (same pattern as grounding documents)
-      let extractedText = "";
-      try {
-        extractedText = await documentExtractionService.extractTextFromDocument(fileUrl, fileType);
-      } catch (extractError: any) {
-        return res.status(400).json({ error: `Failed to extract text: ${extractError.message}` });
-      }
-
-      const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
 
       const document = await storage.createGlobalGroundingDocument({
         name,
         description: description || null,
         category,
-        fileType,
-        originalFileName,
-        extractedText,
+        fileType: fileType || "txt",
+        originalFileName: originalFileName || `${name}.txt`,
+        extractedText: content,
         wordCount,
         uploadedBy: user.id,
         isActive: true,

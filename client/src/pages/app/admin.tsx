@@ -77,8 +77,10 @@ export default function AdminPage() {
     name: "",
     description: "",
     category: "brand_voice" as string,
+    content: "",
   });
   const [uploadedGlobalDocFile, setUploadedGlobalDocFile] = useState<{ name: string; url: string; size: number } | null>(null);
+  const [isExtractingText, setIsExtractingText] = useState(false);
   const pendingGlobalDocPathRef = useRef<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -186,10 +188,7 @@ export default function AdminPage() {
   });
 
   const uploadGlobalDocMutation = useMutation({
-    mutationFn: async (data: { name: string; description: string; category: string; fileUrl: string; originalFileName: string; fileSize: number }) => {
-      const extension = data.originalFileName.split(".").pop()?.toLowerCase() || "";
-      const fileType = extension === "pdf" ? "pdf" : extension === "docx" ? "docx" : "txt";
-
+    mutationFn: async (data: { name: string; description: string; category: string; content: string; fileUrl?: string; originalFileName?: string; fileSize?: number }) => {
       const response = await fetch("/api/admin/global-documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -198,10 +197,10 @@ export default function AdminPage() {
           name: data.name,
           description: data.description || null,
           category: data.category,
-          fileType,
-          originalFileName: data.originalFileName,
-          fileUrl: data.fileUrl,
-          fileSize: data.fileSize,
+          content: data.content,
+          fileType: data.originalFileName ? (data.originalFileName.endsWith(".pdf") ? "pdf" : data.originalFileName.endsWith(".docx") ? "docx" : "txt") : "txt",
+          originalFileName: data.originalFileName || `${data.name}.txt`,
+          fileUrl: data.fileUrl || null,
         }),
       });
       if (!response.ok) {
@@ -213,7 +212,7 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
       setGlobalDocDialogOpen(false);
-      setNewGlobalDoc({ name: "", description: "", category: "brand_voice" });
+      setNewGlobalDoc({ name: "", description: "", category: "brand_voice", content: "" });
       setUploadedGlobalDocFile(null);
       pendingGlobalDocPathRef.current = null;
     },
@@ -720,29 +719,8 @@ export default function AdminPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>File (PDF, DOCX, or TXT)</Label>
-                {uploadedGlobalDocFile ? (
-                  <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                    <FileText className="w-5 h-5 text-primary" />
-                    <span className="flex-1 truncate">{uploadedGlobalDocFile.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {uploadedGlobalDocFile.size < 1024 * 1024 
-                        ? `${(uploadedGlobalDocFile.size / 1024).toFixed(1)} KB`
-                        : `${(uploadedGlobalDocFile.size / (1024 * 1024)).toFixed(1)} MB`}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setUploadedGlobalDocFile(null);
-                        pendingGlobalDocPathRef.current = null;
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ) : (
+                <Label>Content</Label>
+                <div className="flex items-center gap-2 mb-2">
                   <ObjectUploader
                     maxNumberOfFiles={1}
                     maxFileSize={20 * 1024 * 1024}
@@ -765,7 +743,7 @@ export default function AdminPage() {
                         headers: { "Content-Type": file.type || "application/octet-stream" },
                       };
                     }}
-                    onComplete={(result) => {
+                    onComplete={async (result) => {
                       const file = result.successful?.[0];
                       if (file && pendingGlobalDocPathRef.current) {
                         setUploadedGlobalDocFile({
@@ -773,12 +751,46 @@ export default function AdminPage() {
                           url: pendingGlobalDocPathRef.current,
                           size: file.size ?? 0,
                         });
+                        setIsExtractingText(true);
+                        try {
+                          const res = await fetch("/api/documents/extract-text", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({
+                              fileUrl: pendingGlobalDocPathRef.current,
+                              fileType: file.name?.endsWith(".pdf") ? "pdf" : file.name?.endsWith(".docx") ? "docx" : "txt",
+                            }),
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setNewGlobalDoc(prev => ({ ...prev, content: data.text || "" }));
+                          }
+                        } catch (err) {
+                          console.error("Text extraction failed:", err);
+                        } finally {
+                          setIsExtractingText(false);
+                        }
                       }
                     }}
-                    buttonClassName="w-full"
+                    buttonClassName=""
                   >
-                    <Upload className="w-4 h-4 mr-2" /> Choose File
+                    <Upload className="w-4 h-4 mr-2" /> Upload File (.txt, .md, .json, .pdf, .docx)
                   </ObjectUploader>
+                  {uploadedGlobalDocFile && (
+                    <span className="text-xs text-muted-foreground">{uploadedGlobalDocFile.name}</span>
+                  )}
+                </div>
+                <Textarea
+                  placeholder="Enter the grounding document content here. This will be provided to the AI as context for generating responses..."
+                  value={newGlobalDoc.content}
+                  onChange={(e) => setNewGlobalDoc({ ...newGlobalDoc, content: e.target.value })}
+                  rows={8}
+                  disabled={isExtractingText}
+                  data-testid="input-global-doc-content"
+                />
+                {isExtractingText && (
+                  <p className="text-xs text-muted-foreground">Extracting text from file...</p>
                 )}
               </div>
               {uploadGlobalDocMutation.isError && (
@@ -790,6 +802,7 @@ export default function AdminPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => {
                 setGlobalDocDialogOpen(false);
+                setNewGlobalDoc({ name: "", description: "", category: "brand_voice", content: "" });
                 setUploadedGlobalDocFile(null);
                 pendingGlobalDocPathRef.current = null;
               }}>
@@ -797,18 +810,19 @@ export default function AdminPage() {
               </Button>
               <Button
                 onClick={() => {
-                  if (newGlobalDoc.name && uploadedGlobalDocFile) {
+                  if (newGlobalDoc.name && newGlobalDoc.content) {
                     uploadGlobalDocMutation.mutate({
                       name: newGlobalDoc.name,
                       description: newGlobalDoc.description,
                       category: newGlobalDoc.category,
-                      fileUrl: uploadedGlobalDocFile.url,
-                      originalFileName: uploadedGlobalDocFile.name,
-                      fileSize: uploadedGlobalDocFile.size,
+                      content: newGlobalDoc.content,
+                      fileUrl: uploadedGlobalDocFile?.url,
+                      originalFileName: uploadedGlobalDocFile?.name,
+                      fileSize: uploadedGlobalDocFile?.size,
                     });
                   }
                 }}
-                disabled={!newGlobalDoc.name || !uploadedGlobalDocFile || uploadGlobalDocMutation.isPending}
+                disabled={!newGlobalDoc.name || !newGlobalDoc.content || uploadGlobalDocMutation.isPending}
                 data-testid="btn-submit-global-doc"
               >
                 {uploadGlobalDocMutation.isPending ? "Saving..." : "Upload Document"}
