@@ -79,3 +79,13 @@ Preferred communication style: Simple, everyday language.
 - `SESSION_SECRET`
 - AI provider keys (optional)
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
+
+## Backlog
+
+- **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
+- **Battlecard PDF export**: Export battlecards as branded PDF documents
+- **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID
+- **Per-tenant branding**: Custom logos and colors per tenant
+- **Visual competitor assets**: Screenshot capture and visual analysis
+- **Domain blocklist**: Prevent signups from specific email domains
+- **Active social/blog monitoring**: Real-time tracking of competitor social media and blog updates
