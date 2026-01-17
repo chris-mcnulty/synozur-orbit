@@ -7,8 +7,7 @@ import { UserProvider } from "@/lib/userContext";
 import NotFound from "@/pages/not-found";
 
 import Landing from "@/pages/landing";
-import SignIn from "@/pages/auth/signin";
-import SignUp from "@/pages/auth/signup";
+import AuthPage from "@/pages/auth";
 import Dashboard from "@/pages/app/dashboard";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
@@ -27,8 +26,9 @@ function Router() {
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/pricing" component={Landing} /> {/* Placeholder */}
-      <Route path="/auth/signin" component={SignIn} />
-      <Route path="/auth/signup" component={SignUp} />
+      <Route path="/auth/signin" component={AuthPage} />
+      <Route path="/auth/signup" component={AuthPage} />
+      <Route path="/auth" component={AuthPage} />
       
       {/* App Routes */}
       <Route path="/app" component={Dashboard} />
