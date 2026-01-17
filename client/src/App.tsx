@@ -12,6 +12,7 @@ import About from "@/pages/about";
 import Changelog from "@/pages/changelog";
 import Roadmap from "@/pages/roadmap";
 import AuthPage from "@/pages/auth";
+import VerifyPending from "@/pages/auth/verify-pending";
 import Dashboard from "@/pages/app/dashboard";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
@@ -35,6 +36,7 @@ function Router() {
       <Route path="/pricing" component={Landing} /> {/* Placeholder */}
       <Route path="/auth/signin" component={AuthPage} />
       <Route path="/auth/signup" component={AuthPage} />
+      <Route path="/auth/verify-pending" component={VerifyPending} />
       <Route path="/auth" component={AuthPage} />
       
       {/* App Routes */}
