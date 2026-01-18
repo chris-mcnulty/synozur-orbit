@@ -96,6 +96,7 @@ export default function BattleCardsPage() {
   const queryClient = useQueryClient();
   const [selectedCompetitor, setSelectedCompetitor] = useState<string>("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -339,7 +340,13 @@ export default function BattleCardsPage() {
                     <span className="text-xs text-muted-foreground">
                       {(card.salesChallenges || []).length} sales challenges
                     </span>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 text-xs"
+                      onClick={() => setSelectedCard(card)}
+                      data-testid={`btn-view-card-${card.id}`}
+                    >
                       View Full Card <ChevronRight className="w-3 h-3 ml-1" />
                     </Button>
                   </div>
@@ -379,6 +386,135 @@ export default function BattleCardsPage() {
           </Card>
         )}
       </div>
+
+      <Dialog open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Building2 className="w-5 h-5 text-primary" />
+              {selectedCard?.competitorName} Battle Card
+            </DialogTitle>
+            <DialogDescription>
+              Competitive comparison vs {companyProfile?.companyName || "Your Company"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-6 py-4">
+              {selectedCard?.overview && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Overview</h3>
+                  
+                  {selectedCard.overview.positioning && (
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-sm">{selectedCard.overview.positioning}</p>
+                    </div>
+                  )}
+                  
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-green-500">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="font-medium text-sm">Their Strengths</span>
+                      </div>
+                      <ul className="space-y-1 pl-6">
+                        {(selectedCard.overview.strengths || []).map((s, i) => (
+                          <li key={i} className="text-sm text-muted-foreground list-disc">{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-red-500">
+                        <XCircle className="w-4 h-4" />
+                        <span className="font-medium text-sm">Their Weaknesses</span>
+                      </div>
+                      <ul className="space-y-1 pl-6">
+                        {(selectedCard.overview.weaknesses || []).map((w, i) => (
+                          <li key={i} className="text-sm text-muted-foreground list-disc">{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              {selectedCard?.comparison && selectedCard.comparison.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                    Feature Comparison
+                  </h3>
+                  <div className="space-y-3">
+                    {selectedCard.comparison.map((item, i) => (
+                      <div key={i} className="p-3 rounded-lg bg-muted/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">{item.category}</span>
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Us:</span>
+                              <HarveyBallIcon value={item.us} />
+                              <span className="text-xs">{harveyBallToLabel(item.us)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Them:</span>
+                              <HarveyBallIcon value={item.them} />
+                              <span className="text-xs">{harveyBallToLabel(item.them)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        {item.notes && (
+                          <p className="text-xs text-muted-foreground">{item.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              {selectedCard?.salesChallenges && selectedCard.salesChallenges.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                    Sales Challenges & Responses
+                  </h3>
+                  <div className="space-y-3">
+                    {selectedCard.salesChallenges.map((challenge, i) => (
+                      <div key={i} className="p-3 rounded-lg bg-muted/30">
+                        <div className="flex items-start gap-2 mb-2">
+                          <Target className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                          <p className="text-sm font-medium">{challenge.question}</p>
+                        </div>
+                        <p className="text-sm text-muted-foreground pl-6">{challenge.response}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedCard?.winTips && selectedCard.winTips.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Tips to Win
+                    </h3>
+                    <ul className="space-y-2">
+                      {selectedCard.winTips.map((tip, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                          <span className="text-sm">{tip}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
