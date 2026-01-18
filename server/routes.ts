@@ -3343,7 +3343,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       res.json(product);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error("Create product error:", error);
+      res.status(500).json({ error: error.message || "Failed to create product" });
     }
   });
 
