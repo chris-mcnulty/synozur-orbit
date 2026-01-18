@@ -354,7 +354,7 @@ export default function BattleCardsPage() {
 
       <Dialog open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-3">
               <Building2 className="w-5 h-5 text-primary" />
               {selectedCard?.competitorName} Battle Card
@@ -364,7 +364,7 @@ export default function BattleCardsPage() {
             </DialogDescription>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 min-h-0 pr-4" style={{ maxHeight: 'calc(85vh - 120px)' }}>
             <div className="space-y-6 py-4">
               {(selectedCard?.strengths?.length || selectedCard?.weaknesses?.length) ? (
                 <div className="space-y-4">
