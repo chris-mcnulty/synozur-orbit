@@ -1448,16 +1448,40 @@ export class DatabaseStorage implements IStorage {
     const userIds = domainUsers.map(u => u.id);
     if (userIds.length === 0) return [];
     
-    const allCompetitors = await db.select().from(competitors)
+    // First get competitors specifically for this market
+    const marketCompetitors = await db.select().from(competitors)
       .where(
         and(
-          or(eq(competitors.marketId, ctx.marketId), isNull(competitors.marketId)),
+          eq(competitors.marketId, ctx.marketId),
           isNull(competitors.projectId)
         )
       )
       .orderBy(desc(competitors.createdAt));
     
-    return allCompetitors.filter(c => userIds.includes(c.userId));
+    let result = marketCompetitors.filter(c => userIds.includes(c.userId));
+    
+    // For default market only, also include legacy competitors with NULL marketId
+    const defaultMarket = await db.select().from(markets)
+      .where(and(
+        eq(markets.tenantId, ctx.tenantId),
+        eq(markets.isDefault, true)
+      ));
+    
+    if (defaultMarket.length > 0 && defaultMarket[0].id === ctx.marketId) {
+      const legacyCompetitors = await db.select().from(competitors)
+        .where(
+          and(
+            isNull(competitors.marketId),
+            isNull(competitors.projectId)
+          )
+        )
+        .orderBy(desc(competitors.createdAt));
+      
+      const legacyFiltered = legacyCompetitors.filter(c => userIds.includes(c.userId));
+      result = [...result, ...legacyFiltered];
+    }
+    
+    return result;
   }
 
   async getCompetitorByIdWithContext(id: string, ctx: ContextFilter): Promise<Competitor | undefined> {
@@ -1476,14 +1500,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCompanyProfileByContext(ctx: ContextFilter): Promise<CompanyProfile | undefined> {
-    const [profile] = await db.select().from(companyProfiles)
+    // First try to find a profile specifically for this market
+    const [marketProfile] = await db.select().from(companyProfiles)
       .where(
         and(
           eq(companyProfiles.tenantDomain, ctx.tenantDomain),
-          or(eq(companyProfiles.marketId, ctx.marketId), isNull(companyProfiles.marketId))
+          eq(companyProfiles.marketId, ctx.marketId)
         )
       );
-    return profile || undefined;
+    if (marketProfile) return marketProfile;
+    
+    // For default market only, also check for legacy profiles with NULL marketId
+    const defaultMarket = await db.select().from(markets)
+      .where(and(
+        eq(markets.tenantId, ctx.tenantId),
+        eq(markets.isDefault, true)
+      ));
+    
+    if (defaultMarket.length > 0 && defaultMarket[0].id === ctx.marketId) {
+      const [legacyProfile] = await db.select().from(companyProfiles)
+        .where(
+          and(
+            eq(companyProfiles.tenantDomain, ctx.tenantDomain),
+            isNull(companyProfiles.marketId)
+          )
+        );
+      return legacyProfile || undefined;
+    }
+    
+    return undefined;
   }
 
   async getClientProjectsByContext(ctx: ContextFilter): Promise<ClientProject[]> {
