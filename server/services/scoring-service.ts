@@ -14,11 +14,17 @@
  *    - Analysis completeness: 15% weight - depth of analysis data
  * 
  * 2. MARKET PRESENCE SCORE (0-100) - How visible/established in the market?
- *    - Social followers: 30% weight - LinkedIn/Instagram follower counts (logarithmic scale)
- *    - Social engagement: 25% weight - posts, reactions, comments (logarithmic scale)
- *    - Website completeness: 20% weight - pages crawled successfully
- *    - Analysis completeness: 15% weight - depth of analysis data
- *    - Brand consistency: 10% weight - presence of clear key messages
+ *    When social data is available:
+ *    - Social followers: 25% weight - LinkedIn/Instagram follower counts (logarithmic scale)
+ *    - Social engagement: 20% weight - posts, reactions, comments (logarithmic scale)
+ *    - Website depth: 20% weight - pages crawled and content volume
+ *    - Content richness: 20% weight - keyword diversity + key messages
+ *    - Brand consistency: 15% weight - analysis completeness + clear messaging
+ * 
+ *    When social data is NOT available (adaptive weights):
+ *    - Website depth: 35% weight - pages crawled and content volume
+ *    - Content richness: 35% weight - keyword diversity + key messages  
+ *    - Brand consistency: 30% weight - analysis completeness + clear messaging
  * 
  * 3. OVERALL ORBIT SCORE - Weighted composite:
  *    - Innovation Score: 35%
@@ -180,14 +186,37 @@ export function calculateScores(
     (analysisCompleteness * 0.15)
   );
 
-  // Market Presence Score (weighted average of presence factors)
-  const marketPresenceScore = (
-    (socialFollowers * 0.30) +
-    (socialEngagementScore * 0.25) +
-    (websiteCompleteness * 0.20) +
-    (analysisCompleteness * 0.15) +
-    (keyMessageCount > 0 ? 100 : 0) * 0.10 // Brand consistency
-  );
+  // Content richness score (combines keyword diversity and key messages)
+  const contentRichnessScore = (keywordDiversity * 0.5) + (keyMessageCount * 0.5);
+  
+  // Brand consistency score (analysis completeness + clear messaging presence)
+  const brandConsistencyScore = (analysisCompleteness * 0.6) + 
+    ((keyMessageCount > 0 ? 100 : 0) * 0.4);
+
+  // Check if we have meaningful social data
+  const hasSocialData = socialFollowers > 0 || socialEngagementScore > 0;
+
+  // Market Presence Score with ADAPTIVE WEIGHTS based on data availability
+  let marketPresenceScore: number;
+  
+  if (hasSocialData) {
+    // Full formula when social data is available
+    marketPresenceScore = (
+      (socialFollowers * 0.25) +
+      (socialEngagementScore * 0.20) +
+      (websiteCompleteness * 0.20) +
+      (contentRichnessScore * 0.20) +
+      (brandConsistencyScore * 0.15)
+    );
+  } else {
+    // Adaptive formula when social data is NOT available
+    // Redistribute social weights to content-based factors for differentiation
+    marketPresenceScore = (
+      (websiteCompleteness * 0.35) +
+      (contentRichnessScore * 0.35) +
+      (brandConsistencyScore * 0.30)
+    );
+  }
 
   // Content Activity Score
   const contentActivityScore = (
