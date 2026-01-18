@@ -18,12 +18,14 @@ import { useState } from "react";
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
+    const innovationVal = typeof payload[0]?.value === 'number' ? payload[0].value.toFixed(2) : payload[0]?.value;
+    const presenceVal = typeof payload[1]?.value === 'number' ? payload[1].value.toFixed(2) : payload[1]?.value;
     return (
       <div className="bg-card border border-border p-3 rounded-lg shadow-lg text-xs">
         <p className="font-semibold text-sm mb-1">{payload[0].payload.name}</p>
         <div className="space-y-1 text-muted-foreground">
-          <p>Innovation: {payload[0].value}%</p>
-          <p>Market Presence: {payload[1].value}%</p>
+          <p>Innovation: {innovationVal}</p>
+          <p>Market Presence: {presenceVal}</p>
         </div>
         <p className="text-primary text-xs mt-2 flex items-center">
           Click to view details <ChevronRight className="w-3 h-3 ml-1" />
@@ -113,6 +115,21 @@ export default function Dashboard() {
     },
   });
 
+  // Fetch calculated scores for baseline and competitors
+  const { data: dashboardScores } = useQuery<{
+    baseline: { name: string; innovationScore: number; marketPresenceScore: number; overallScore: number } | null;
+    competitors: { id: string; name: string; innovationScore: number; marketPresenceScore: number; overallScore: number }[];
+    marketAverages: { innovationScore: number; marketPresenceScore: number; overallScore: number };
+    deltaVsMarket: { absolute: number; percent: number };
+  }>({
+    queryKey: ["/api/dashboard/scores"],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/scores", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
   const baselineComplete = companyProfile && companyProfile.websiteUrl;
   const hasAnalysis = analysis && analysis.themes;
   const activeProjects = projects.filter((p: any) => p.status === "active");
@@ -171,23 +188,32 @@ export default function Dashboard() {
     setChecklistDismissed(true);
   };
 
+  // Build positioning data from calculated scores
   const positioningData = [
-    { x: 85, y: 75, name: companyProfile?.name || 'Your Company', type: 'us', id: 'baseline' },
-    ...competitors.slice(0, 6).map((c: any, i: number) => ({
-      x: Math.max(15, Math.min(85, 30 + (i * 12) + Math.random() * 15)),
-      y: Math.max(15, Math.min(85, 35 + (i * 10) + Math.random() * 15)),
+    ...(dashboardScores?.baseline ? [{
+      x: dashboardScores.baseline.innovationScore,
+      y: dashboardScores.baseline.marketPresenceScore,
+      name: dashboardScores.baseline.name || 'Your Company',
+      type: 'us',
+      id: 'baseline'
+    }] : []),
+    ...(dashboardScores?.competitors || []).slice(0, 6).map((c) => ({
+      x: c.innovationScore,
+      y: c.marketPresenceScore,
       name: c.name,
       type: 'competitor',
       id: c.id
     }))
   ];
 
+  // Trend data placeholder - will be replaced with historical data when available
+  const baselineScore = dashboardScores?.baseline?.overallScore || 50;
   const trendData = [
-    { name: 'Week 1', score: 72 },
-    { name: 'Week 2', score: 75 },
-    { name: 'Week 3', score: 78 },
-    { name: 'Week 4', score: 82 },
-    { name: 'Week 5', score: 85 },
+    { name: 'Week 1', score: Math.max(0, baselineScore - 12) },
+    { name: 'Week 2', score: Math.max(0, baselineScore - 8) },
+    { name: 'Week 3', score: Math.max(0, baselineScore - 5) },
+    { name: 'Week 4', score: Math.max(0, baselineScore - 2) },
+    { name: 'Week 5', score: baselineScore },
   ];
 
   const getImpactColor = (impact: string) => {
@@ -405,8 +431,14 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-primary">85</span>
-                <span className="text-xs text-green-500">+5%</span>
+                <span className="text-2xl font-bold text-primary">
+                  {dashboardScores?.baseline?.overallScore?.toFixed(2) || '—'}
+                </span>
+                {dashboardScores?.deltaVsMarket && (
+                  <span className={cn("text-xs", dashboardScores.deltaVsMarket.percent >= 0 ? "text-green-500" : "text-red-500")}>
+                    {dashboardScores.deltaVsMarket.percent >= 0 ? '+' : ''}{dashboardScores.deltaVsMarket.percent}%
+                  </span>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">vs market average</p>
             </CardContent>
@@ -519,7 +551,15 @@ export default function Dashboard() {
           </CardContent>
           <CardFooter className="pt-0">
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500 font-medium">+18%</span> improvement this month
+              {dashboardScores?.deltaVsMarket ? (
+                <>
+                  <span className={cn("font-medium", dashboardScores.deltaVsMarket.absolute >= 0 ? "text-green-500" : "text-red-500")}>
+                    {dashboardScores.deltaVsMarket.absolute >= 0 ? '+' : ''}{dashboardScores.deltaVsMarket.absolute.toFixed(2)}
+                  </span> vs market average ({dashboardScores.marketAverages?.overallScore?.toFixed(2) || '—'})
+                </>
+              ) : (
+                'Score data loading...'
+              )}
             </p>
           </CardFooter>
         </Card>

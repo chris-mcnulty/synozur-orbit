@@ -22,6 +22,7 @@ import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
+import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
 
 // Helper: Check if user has cross-tenant READ access
 // Global Admin and Consultant roles can read across tenants
@@ -6292,6 +6293,90 @@ Return only the description text, no quotes or formatting.`;
   });
 
   // ==================== TENANT ADMIN - SETTINGS ====================
+
+  // Get dashboard scores with calculated values for baseline and competitors
+  app.get("/api/dashboard/scores", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      // Get baseline company profile
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      
+      // Get competitors
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      
+      // Calculate baseline scores
+      let baselineScores: ScoreBreakdown | null = null;
+      if (companyProfile) {
+        const analysisData = companyProfile.analysisData as any;
+        baselineScores = calculateScores(
+          analysisData,
+          null, // Company profile doesn't have social data yet
+          null,
+          null,
+          null,
+          companyProfile.lastAnalysis
+        );
+      }
+      
+      // Calculate competitor scores
+      const competitorScores = competitors.map(c => {
+        const analysisData = c.analysisData as any;
+        const scores = calculateScores(
+          analysisData,
+          c.linkedInEngagement as any,
+          c.instagramEngagement as any,
+          c.crawlData as any,
+          c.blogSnapshot as any,
+          c.lastCrawl ? new Date(c.lastCrawl) : null
+        );
+        return {
+          id: c.id,
+          name: c.name,
+          ...scores,
+        };
+      });
+      
+      // Calculate market average
+      const avgInnovation = competitorScores.length > 0
+        ? competitorScores.reduce((sum, c) => sum + c.innovationScore, 0) / competitorScores.length
+        : 50;
+      const avgMarketPresence = competitorScores.length > 0
+        ? competitorScores.reduce((sum, c) => sum + c.marketPresenceScore, 0) / competitorScores.length
+        : 50;
+      const avgOverall = competitorScores.length > 0
+        ? competitorScores.reduce((sum, c) => sum + c.overallScore, 0) / competitorScores.length
+        : 50;
+      
+      // Calculate delta vs market average
+      const baselineOverall = baselineScores?.overallScore || 0;
+      const deltaVsMarket = baselineOverall - avgOverall;
+      const deltaPercent = avgOverall > 0 ? Math.round((deltaVsMarket / avgOverall) * 100) : 0;
+      
+      res.json({
+        baseline: baselineScores ? {
+          name: companyProfile?.companyName || 'Your Company',
+          ...baselineScores,
+        } : null,
+        competitors: competitorScores,
+        marketAverages: {
+          innovationScore: Math.round(avgInnovation * 100) / 100,
+          marketPresenceScore: Math.round(avgMarketPresence * 100) / 100,
+          overallScore: Math.round(avgOverall * 100) / 100,
+        },
+        deltaVsMarket: {
+          absolute: Math.round(deltaVsMarket * 100) / 100,
+          percent: deltaPercent,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Dashboard scores error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // Get basic tenant info (plan, premium status) for any authenticated user
   app.get("/api/tenant/info", async (req, res) => {
