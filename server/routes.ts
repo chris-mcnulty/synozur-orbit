@@ -1117,7 +1117,7 @@ Generate a battlecard with the following sections in valid JSON format:
 Return ONLY valid JSON, no markdown or explanation.`;
 
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       });
@@ -1708,7 +1708,7 @@ Generate a comprehensive battle card in the following JSON format:
 Return ONLY valid JSON, no markdown or explanations.`;
 
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       });
@@ -3666,7 +3666,7 @@ Generate a battlecard with the following sections in valid JSON format:
 Return ONLY valid JSON, no markdown or explanation.`;
 
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 2500,
         messages: [{ role: "user", content: prompt }],
       });
@@ -3964,7 +3964,7 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
       });
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
@@ -4107,7 +4107,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
       });
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
@@ -4359,7 +4359,7 @@ Make this practical and actionable for the team.`;
       });
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
@@ -4508,7 +4508,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
       });
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
@@ -4718,7 +4718,7 @@ Only return the JSON array, no other text.`;
         baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
       });
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 1024,
         messages: [{ role: "user", content: prompt }],
       });
@@ -4819,7 +4819,7 @@ Return only the description text, no quotes or formatting.`;
         baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
       });
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 256,
         messages: [{ role: "user", content: prompt }],
       });
