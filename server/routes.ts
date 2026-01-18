@@ -1620,7 +1620,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      if (competitor.tenantDomain !== tenantDomain && !hasCrossTenantReadAccess(user.role)) {
+      // Check competitor ownership via the user who created it
+      const competitorOwner = await storage.getUser(competitor.userId);
+      const competitorTenant = competitorOwner?.email.split("@")[1];
+      if (competitorTenant !== tenantDomain && !hasCrossTenantReadAccess(user.role)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -1628,7 +1631,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
 
       // Generate AI content for battle card
-      const anthropic = new Anthropic();
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
       const competitorData = competitor.analysisData as any || {};
       const companyData = companyProfile?.analysisData as any || {};
 
