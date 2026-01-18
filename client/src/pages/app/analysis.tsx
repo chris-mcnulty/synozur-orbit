@@ -4,9 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+type AnalysisMode = "quick" | "full" | "full_with_change";
 
 export default function Analysis() {
   const queryClient = useQueryClient();
@@ -30,12 +33,25 @@ export default function Analysis() {
     },
   });
 
+  const { data: tenant } = useQuery({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const isPremium = tenant?.isPremium || tenant?.plan === "pro" || tenant?.plan === "enterprise";
+
   const generateAnalysisMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (mode: AnalysisMode) => {
       setIsGenerating(true);
       const response = await fetch("/api/analysis/generate", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysisType: mode }),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -55,6 +71,14 @@ export default function Analysis() {
       toast.error(error.message);
     },
   });
+
+  const runAnalysis = (mode: AnalysisMode) => {
+    if (mode === "full_with_change" && !isPremium) {
+      toast.error("Change detection requires a Pro or Enterprise plan");
+      return;
+    }
+    generateAnalysisMutation.mutate(mode);
+  };
 
   if (isLoading) {
     return (
@@ -76,29 +100,71 @@ export default function Analysis() {
            <h1 className="text-3xl font-bold tracking-tight mb-2">Competitive Analysis</h1>
            <p className="text-muted-foreground">AI-powered analysis of your competitors' websites and positioning.</p>
         </div>
-        <Button 
-          onClick={() => generateAnalysisMutation.mutate()}
-          disabled={isGenerating || !hasCompetitors}
-          data-testid="button-run-analysis"
-          className="gap-2"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Analyzing...
-            </>
-          ) : hasData ? (
-            <>
-              <RefreshCw className="h-4 w-4" />
-              Refresh Analysis
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4" />
-              Run Analysis
-            </>
-          )}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button 
+              disabled={isGenerating || !hasCompetitors}
+              data-testid="button-run-analysis"
+              className="gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : hasData ? (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh Analysis
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Run Analysis
+                </>
+              )}
+              <ChevronDown className="h-4 w-4 ml-1" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
+            <DropdownMenuItem 
+              onClick={() => runAnalysis("quick")}
+              className="flex items-start gap-3 p-3 cursor-pointer"
+              data-testid="analysis-mode-quick"
+            >
+              <Zap className="h-5 w-5 text-yellow-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium">Quick Refresh</div>
+                <div className="text-xs text-muted-foreground">Use existing webpage data only. Fastest option.</div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => runAnalysis("full")}
+              className="flex items-start gap-3 p-3 cursor-pointer"
+              data-testid="analysis-mode-full"
+            >
+              <Globe className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium">Full Analysis</div>
+                <div className="text-xs text-muted-foreground">Re-crawl all competitor websites and run AI analysis.</div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => runAnalysis("full_with_change")}
+              className={`flex items-start gap-3 p-3 cursor-pointer ${!isPremium ? "opacity-50" : ""}`}
+              data-testid="analysis-mode-change"
+            >
+              <Sparkles className="h-5 w-5 text-purple-500 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-medium flex items-center gap-2">
+                  Full + Change Detection
+                  <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">Pro</Badge>
+                </div>
+                <div className="text-xs text-muted-foreground">Include social media and blog monitoring with change tracking.</div>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {isGenerating && (
@@ -125,15 +191,54 @@ export default function Analysis() {
               : "Click 'Run Analysis' to crawl competitor websites and generate AI-powered insights."}
           </p>
           {hasCompetitors && (
-            <Button 
-              onClick={() => generateAnalysisMutation.mutate()}
-              disabled={isGenerating}
-              data-testid="button-run-analysis-empty"
-              className="gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Run Analysis
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  disabled={isGenerating}
+                  data-testid="button-run-analysis-empty"
+                  className="gap-2"
+                >
+                  <Play className="h-4 w-4" />
+                  Run Analysis
+                  <ChevronDown className="h-4 w-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-72">
+                <DropdownMenuItem 
+                  onClick={() => runAnalysis("quick")}
+                  className="flex items-start gap-3 p-3 cursor-pointer"
+                >
+                  <Zap className="h-5 w-5 text-yellow-500 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-medium">Quick Refresh</div>
+                    <div className="text-xs text-muted-foreground">Use existing webpage data only.</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => runAnalysis("full")}
+                  className="flex items-start gap-3 p-3 cursor-pointer"
+                >
+                  <Globe className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-medium">Full Analysis</div>
+                    <div className="text-xs text-muted-foreground">Crawl websites and run AI analysis.</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => runAnalysis("full_with_change")}
+                  className={`flex items-start gap-3 p-3 cursor-pointer ${!isPremium ? "opacity-50" : ""}`}
+                >
+                  <Sparkles className="h-5 w-5 text-purple-500 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-medium flex items-center gap-2">
+                      Full + Change Detection
+                      <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">Pro</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">Include social media and blog monitoring.</div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </Card>
       ) : hasData && (

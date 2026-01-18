@@ -828,6 +828,16 @@ export async function registerRoutes(
       }
 
       const tenantDomain = user.email.split("@")[1];
+      const analysisType = req.body?.analysisType || "full";
+
+      // Check premium for full_with_change mode
+      if (analysisType === "full_with_change") {
+        const tenant = await storage.getTenantByDomain(tenantDomain);
+        const isPremium = tenant?.plan === "pro" || tenant?.plan === "enterprise";
+        if (!isPremium) {
+          return res.status(403).json({ error: "Change detection requires a Pro or Enterprise plan", upgradeRequired: true });
+        }
+      }
 
       // Get tenant-scoped competitors
       const userCompetitors = await storage.getCompetitorsByUserId(user.id);
@@ -854,17 +864,31 @@ export async function registerRoutes(
         ourPositioning += `\n\nAdditional context from positioning documents:\n${groundingContext.slice(0, 5000)}`;
       }
 
-      // Analyze each competitor (crawl fresh or use cached analysis)
+      // Analyze each competitor based on analysis type
       const analyses = [];
       for (const competitor of userCompetitors.slice(0, 5)) {
         try {
-          // Use cached analysis if available and recent
-          if (competitor.analysisData) {
-            analyses.push({ competitor: competitor.name, ...(competitor.analysisData as any) });
+          // Quick mode: Use cached analysis only
+          if (analysisType === "quick") {
+            if (competitor.analysisData) {
+              analyses.push({ competitor: competitor.name, ...(competitor.analysisData as any) });
+            }
             continue;
           }
 
-          // Otherwise crawl fresh
+          // Full mode: Re-crawl and analyze
+          // Full with change mode: Also include social/blog monitoring
+          if (analysisType === "full_with_change") {
+            // Trigger social and blog monitoring for this competitor
+            try {
+              await monitorCompetitorSocialMedia(competitor.id);
+              await monitorCompetitorWebsite(competitor.id);
+            } catch (monitorError) {
+              console.error(`Monitoring failed for ${competitor.name}:`, monitorError);
+            }
+          }
+
+          // Crawl website fresh
           const response = await fetch(competitor.url, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)",
