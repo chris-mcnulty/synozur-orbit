@@ -5527,7 +5527,8 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
         ctx.userId,
         ctx.tenantDomain,
         user?.email || "",
-        user?.name || ""
+        user?.name || "",
+        ctx.marketId
       );
 
       res.json({

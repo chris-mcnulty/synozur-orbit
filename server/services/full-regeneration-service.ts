@@ -24,7 +24,8 @@ export async function startFullRegeneration(
   userId: string,
   tenantDomain: string,
   userEmail: string,
-  userName: string
+  userName: string,
+  marketId?: string
 ): Promise<string> {
   const jobId = `regen_${tenantDomain}_${Date.now()}`;
   
@@ -38,7 +39,7 @@ export async function startFullRegeneration(
   
   activeJobs.set(jobId, progress);
   
-  runRegenerationInBackground(jobId, userId, tenantDomain, userEmail, userName);
+  runRegenerationInBackground(jobId, userId, tenantDomain, userEmail, userName, marketId);
   
   return jobId;
 }
@@ -48,7 +49,8 @@ async function runRegenerationInBackground(
   userId: string,
   tenantDomain: string,
   userEmail: string,
-  userName: string
+  userName: string,
+  marketId?: string
 ): Promise<void> {
   const progress = activeJobs.get(jobId)!;
   progress.status = "running";
@@ -73,9 +75,16 @@ async function runRegenerationInBackground(
     const user = await storage.getUser(userId);
     if (!user) throw new Error("User not found");
 
-    const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
-    const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
-    const groundingDocs = await storage.getGroundingDocumentsByTenant(tenantDomain);
+    // Get tenant to build complete context filter
+    const tenant = await storage.getTenantByDomain(tenantDomain);
+    if (!tenant) throw new Error("Tenant not found");
+    
+    // Build context filter for market-scoped queries
+    const contextFilter = { tenantId: tenant.id, tenantDomain, marketId: marketId || "" };
+    
+    const companyProfile = await storage.getCompanyProfileByContext(contextFilter);
+    const competitors = await storage.getCompetitorsByContext(contextFilter);
+    const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter);
     const groundingContext = groundingDocs
       .filter(doc => doc.extractedText)
       .map(doc => doc.extractedText)
@@ -145,6 +154,7 @@ async function runRegenerationInBackground(
         impact: rec.impact,
         userId: userId,
         tenantDomain,
+        marketId: marketId || null,
       });
     }
 
@@ -155,6 +165,7 @@ async function runRegenerationInBackground(
     await storage.createAnalysis({
       userId: userId,
       tenantDomain,
+      marketId: marketId || null,
       themes: analyses.map(a => ({
         theme: a.valueProposition,
         us: companyProfile ? "Based on profile" : "Medium",
@@ -234,6 +245,7 @@ Return ONLY valid JSON.`;
             await storage.createBattlecard({
               competitorId: competitor.id,
               tenantDomain,
+              marketId: marketId || null,
               createdBy: userId,
               strengths: battlecardContent.strengths,
               weaknesses: battlecardContent.weaknesses,
@@ -359,6 +371,7 @@ Make this practical and actionable for the team.`;
             type: "gtm_plan",
             companyProfileId: companyProfile.id,
             tenantDomain,
+            marketId: marketId || null,
             content: gtmContent,
             status: "generated",
             generatedBy: userId,
@@ -440,6 +453,7 @@ Make this practical and ready to use in marketing materials.`;
             type: "messaging_framework",
             companyProfileId: companyProfile.id,
             tenantDomain,
+            marketId: marketId || null,
             content: messagingContent,
             status: "generated",
             generatedBy: userId,

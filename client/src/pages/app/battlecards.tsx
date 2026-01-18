@@ -35,7 +35,8 @@ interface BattleCardData {
   id: string;
   competitorId: string;
   competitorName: string;
-  generatedAt: string;
+  lastGeneratedAt?: string;
+  createdAt: string;
   overview: {
     strengths: string[];
     weaknesses: string[];
@@ -313,7 +314,7 @@ export default function BattleCardsPage() {
                       </div>
                     </div>
                     <Badge variant="outline" className="text-xs">
-                      {new Date(card.generatedAt).toLocaleDateString()}
+                      {new Date(card.lastGeneratedAt || card.createdAt).toLocaleDateString()}
                     </Badge>
                   </div>
                 </CardHeader>
