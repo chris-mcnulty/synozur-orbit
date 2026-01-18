@@ -42,6 +42,7 @@ Preferred communication style: Simple, everyday language.
 - **Provisioning**: Self-service signup ONLY creates Standard User role. All privileged roles (Global Admin, Domain Admin, Consultant) must be manually assigned by existing Global Admins.
 - **Consultant Role**: Privileged cross-tenant read role for Synozur platform staff. Can only be assigned by Global Admin, never auto-provisioned during signup.
 - **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
+- **Entra ID User Provisioning**: Admins can search their organization's Entra ID directory via Microsoft Graph API and add users directly without requiring invitation acceptance. SSO-provisioned users are marked with `authProvider: "entra"` and optional welcome emails are sent via SendGrid.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, role hierarchy, tenant-specific plan/usage limits.
