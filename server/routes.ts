@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createHash } from "crypto";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
@@ -43,6 +45,33 @@ export async function registerRoutes(
   
   // Register Entra SSO routes
   registerEntraRoutes(app);
+  
+  // ==================== PUBLIC CONTENT ROUTES ====================
+  
+  // Serve markdown files as raw text (for changelog, backlog, etc.)
+  app.get("/api/content/:filename", (req, res) => {
+    const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];
+    const filename = req.params.filename;
+    
+    if (!allowedFiles.includes(filename)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    const filePath = join(process.cwd(), "public", filename);
+    
+    if (!existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.send(content);
+    } catch (error) {
+      console.error("Error reading file:", error);
+      res.status(500).json({ error: "Failed to read file" });
+    }
+  });
   
   // ==================== AUTH ROUTES ====================
   
