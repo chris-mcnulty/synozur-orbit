@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { createHash } from "crypto";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
@@ -5468,7 +5469,7 @@ Return only the description text, no quotes or formatting.`;
       }
 
       const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-      const ipHash = require('crypto').createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
+      const ipHash = createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
       const userAgent = req.headers['user-agent'] || '';
 
       await storage.createPageView({
