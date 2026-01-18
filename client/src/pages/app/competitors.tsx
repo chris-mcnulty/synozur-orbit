@@ -588,14 +588,71 @@ export default function Competitors() {
                     </Button>
                   </div>
                 </div>
-                {companyProfile.analysisData && (
-                  <div className="p-4 bg-muted/50 rounded-lg">
-                    <p className="text-sm font-medium mb-2">Analysis Summary</p>
+                {companyProfile.analysisData && typeof companyProfile.analysisData === 'object' && (
+                  <div className="p-4 bg-muted/50 rounded-lg space-y-4">
+                    <p className="text-sm font-medium text-primary">Analysis Summary</p>
                     <p className="text-sm text-muted-foreground">
-                      {typeof companyProfile.analysisData === 'object' && companyProfile.analysisData.summary
-                        ? companyProfile.analysisData.summary
-                        : "Analysis data available. View full analysis for details."}
+                      {companyProfile.analysisData.summary || "Analysis data available. View full analysis for details."}
                     </p>
+                    
+                    {(companyProfile.analysisData.targetAudience || companyProfile.analysisData.keyMessages || companyProfile.analysisData.keywords) && (
+                      <div className="pt-4 border-t border-border/50 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {companyProfile.analysisData.summary && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Brain className="w-4 h-4 text-primary" />
+                                Summary
+                              </div>
+                              <p className="text-sm text-muted-foreground">{companyProfile.analysisData.summary}</p>
+                            </div>
+                          )}
+                          
+                          {companyProfile.analysisData.targetAudience && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Target className="w-4 h-4 text-primary" />
+                                Target Audience
+                              </div>
+                              <p className="text-sm text-muted-foreground">{companyProfile.analysisData.targetAudience}</p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {companyProfile.analysisData.keyMessages && companyProfile.analysisData.keyMessages.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              <MessageSquare className="w-4 h-4 text-primary" />
+                              Key Messages
+                            </div>
+                            <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                              {companyProfile.analysisData.keyMessages.map((msg: string, i: number) => (
+                                <li key={i}>{msg}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {((companyProfile.analysisData.keywords && companyProfile.analysisData.keywords.length > 0) || companyProfile.analysisData.tone) && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              <Tags className="w-4 h-4 text-primary" />
+                              Keywords & Tone
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {companyProfile.analysisData.keywords?.map((keyword: string, i: number) => (
+                                <Badge key={i} variant="outline">{keyword}</Badge>
+                              ))}
+                              {companyProfile.analysisData.tone && (
+                                <Badge variant="secondary" className="bg-primary/10 text-primary">
+                                  {companyProfile.analysisData.tone}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
