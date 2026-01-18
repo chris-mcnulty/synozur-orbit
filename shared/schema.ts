@@ -793,3 +793,31 @@ export const insertExecutiveSummarySchema = createInsertSchema(executiveSummarie
 
 export type ExecutiveSummary = typeof executiveSummaries.$inferSelect;
 export type InsertExecutiveSummary = z.infer<typeof insertExecutiveSummarySchema>;
+
+// AI Usage tracking for monitoring API costs across tenants
+export const aiUsage = pgTable("ai_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain"), // null for system-level calls
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  provider: text("provider").notNull(), // openai, anthropic
+  model: text("model").notNull(), // gpt-4o, claude-3-5-sonnet, etc.
+  operation: text("operation").notNull(), // analyze_competitor, generate_battlecard, etc.
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  estimatedCost: text("estimated_cost"), // Stored as string to avoid floating point issues
+  durationMs: integer("duration_ms"), // How long the API call took
+  success: boolean("success").notNull().default(true),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"), // Additional context like competitor name, project id, etc.
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAiUsageSchema = createInsertSchema(aiUsage).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type AiUsage = typeof aiUsage.$inferSelect;
+export type InsertAiUsage = z.infer<typeof insertAiUsageSchema>;
