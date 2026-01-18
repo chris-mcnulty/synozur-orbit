@@ -286,9 +286,16 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
   if (keyPages.industries) pagesToCrawl.push({ url: keyPages.industries, type: "other" });
   if (keyPages.expertise) pagesToCrawl.push({ url: keyPages.expertise, type: "services" });
   
+  // Track crawled URLs to avoid duplicates
+  const crawledUrls = new Set<string>([homepage.finalUrl]);
+  const subPagesToDiscover: { parentUrl: string; parentType: CrawlResult["pageType"] }[] = [];
+  
   const additionalPages = await Promise.all(
     pagesToCrawl.map(({ url: pageUrl, type }) =>
       limit(async () => {
+        if (crawledUrls.has(pageUrl)) return null;
+        crawledUrls.add(pageUrl);
+        
         const page = await fetchPage(pageUrl);
         if (!page) return null;
         
@@ -304,6 +311,11 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
         if (!socialLinks.twitter && pageSocialLinks.twitter) socialLinks.twitter = pageSocialLinks.twitter;
         if (!socialLinks.facebook && pageSocialLinks.facebook) socialLinks.facebook = pageSocialLinks.facebook;
         
+        // For services/solutions pages, discover sub-pages
+        if (type === "services") {
+          subPagesToDiscover.push({ parentUrl: page.finalUrl, parentType: type });
+        }
+        
         return {
           url: page.finalUrl,
           pageType: type,
@@ -311,13 +323,65 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
           content: content.substring(0, 30000),
           wordCount: content.split(/\s+/).length,
           crawledAt,
+          html: page.html, // Keep HTML for sub-page discovery
         };
       })
     )
   );
   
   for (const page of additionalPages) {
-    if (page) pages.push(page);
+    if (page) {
+      const { html, ...pageData } = page;
+      pages.push(pageData);
+    }
+  }
+  
+  // Discover and crawl sub-pages from services/solutions sections (up to 10 sub-pages total)
+  const subPageUrls: string[] = [];
+  for (const { parentUrl } of subPagesToDiscover) {
+    const parentPage = additionalPages.find(p => p?.url === parentUrl);
+    if (parentPage && (parentPage as any).html) {
+      const subLinks = findInternalLinks((parentPage as any).html, parentUrl);
+      for (const subLink of subLinks) {
+        if (!crawledUrls.has(subLink) && 
+            !subPageUrls.includes(subLink) && 
+            subPageUrls.length < 10 &&
+            (subLink.includes("/service") || subLink.includes("/solution") || 
+             subLink.includes("/capabilit") || subLink.includes("/expertise") ||
+             subLink.includes("/technology") || subLink.includes("/what-we"))) {
+          subPageUrls.push(subLink);
+        }
+      }
+    }
+  }
+  
+  // Crawl discovered sub-pages
+  if (subPageUrls.length > 0) {
+    const subPages = await Promise.all(
+      subPageUrls.slice(0, 10).map((subUrl) =>
+        limit(async () => {
+          if (crawledUrls.has(subUrl)) return null;
+          crawledUrls.add(subUrl);
+          
+          const page = await fetchPage(subUrl);
+          if (!page) return null;
+          
+          const content = extractTextContent(page.html);
+          return {
+            url: page.finalUrl,
+            pageType: classifyPageType(page.finalUrl, page.html),
+            title: extractTitle(page.html),
+            content: content.substring(0, 20000),
+            wordCount: content.split(/\s+/).length,
+            crawledAt,
+          };
+        })
+      )
+    );
+    
+    for (const page of subPages) {
+      if (page) pages.push(page);
+    }
   }
   
   const totalWordCount = pages.reduce((sum, p) => sum + p.wordCount, 0);
