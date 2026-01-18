@@ -147,7 +147,12 @@ export default function About() {
           </p>
 
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-card p-8 rounded-xl border border-border text-left">
+            <a 
+              href="https://vega.synozur.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="bg-card p-8 rounded-xl border border-border text-left block hover:border-primary/50 transition-colors"
+            >
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Award className="w-5 h-5 text-primary" />
@@ -158,7 +163,7 @@ export default function About() {
                 Strategy and OKR platform that serves as the identity provider for the Synozur ecosystem. 
                 Align your team around strategic objectives and track progress.
               </p>
-            </div>
+            </a>
 
             <div className="bg-card p-8 rounded-xl border border-border text-left">
               <div className="flex items-center gap-3 mb-4">
