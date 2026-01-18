@@ -27,6 +27,7 @@ import UsersPage from "@/pages/app/users";
 import AdminPage from "@/pages/app/admin";
 import ProjectsPage from "@/pages/app/projects";
 import ProjectDetail from "@/pages/app/project-detail";
+import UserGuidePage from "@/pages/app/user-guide";
 
 function Router() {
   return (
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/app/projects" component={ProjectsPage} />
       <Route path="/app/projects/:id" component={ProjectDetail} />
       <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}
+      <Route path="/app/guide" component={UserGuidePage} />
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />
