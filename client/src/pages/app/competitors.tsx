@@ -171,7 +171,10 @@ export default function Competitors() {
         method: "POST",
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Failed to analyze company website");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to analyze company website");
+      }
       return response.json();
     },
     onSuccess: () => {
