@@ -321,7 +321,7 @@ export default function BattleCardsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Quick Comparison</p>
                     <div className="space-y-1.5">
-                      {card.comparison.slice(0, 3).map((item, i) => (
+                      {(card.comparison || []).slice(0, 3).map((item, i) => (
                         <div key={i} className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">{item.category}</span>
                           <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export default function BattleCardsPage() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      {card.salesChallenges.length} sales challenges
+                      {(card.salesChallenges || []).length} sales challenges
                     </span>
                     <Button variant="ghost" size="sm" className="h-7 text-xs">
                       View Full Card <ChevronRight className="w-3 h-3 ml-1" />

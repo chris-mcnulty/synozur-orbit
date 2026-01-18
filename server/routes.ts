@@ -6,6 +6,7 @@ import { join } from "path";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
+import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
@@ -34,6 +35,30 @@ function hasCrossTenantReadAccess(role: string): boolean {
 function hasAdminAccess(role: string): boolean {
   return role === "Global Admin" || role === "Domain Admin";
 }
+
+// Zod schemas for context/market endpoints
+const switchTenantSchema = z.object({
+  tenantId: z.string().uuid("Invalid tenant ID format"),
+});
+
+const switchMarketSchema = z.object({
+  marketId: z.string().uuid("Invalid market ID format"),
+});
+
+const createMarketSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100, "Name too long"),
+  description: z.string().max(500).optional(),
+});
+
+const updateMarketSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
+  status: z.enum(["active", "archived"]).optional(),
+});
+
+const grantConsultantAccessSchema = z.object({
+  consultantUserId: z.string().uuid("Invalid user ID format"),
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -2922,6 +2947,459 @@ Return ONLY valid JSON, no markdown or explanations.`;
       });
 
       res.status(201).json(tenant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== MARKET MANAGEMENT & CONTEXT SWITCHING ====================
+
+  // Get accessible tenants for current user (for tenant switcher)
+  app.get("/api/tenants/accessible", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      
+      res.json({
+        tenants: accessibleTenants,
+        activeTenantId: req.session.activeTenantId || null,
+        activeMarketId: req.session.activeMarketId || null,
+        canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Switch active tenant context (Global Admin and Consultant only)
+  app.post("/api/context/tenant", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const parsed = switchTenantSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasCrossTenantReadAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - only Global Admin and Consultants can switch tenants" });
+      }
+
+      const { tenantId } = parsed.data;
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      if (tenant.status !== "active") {
+        return res.status(400).json({ error: "Cannot switch to a suspended or inactive tenant" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      
+      if (!accessibleTenants.find(t => t.id === tenantId)) {
+        return res.status(403).json({ error: "Access denied - you don't have access to this tenant" });
+      }
+
+      const defaultMarket = await storage.getDefaultMarket(tenantId);
+      
+      req.session.activeTenantId = tenantId;
+      req.session.activeMarketId = defaultMarket?.id || null;
+      
+      res.json({
+        activeTenantId: tenantId,
+        activeMarketId: defaultMarket?.id || null,
+        message: "Tenant context switched successfully"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get markets for a tenant
+  app.get("/api/markets", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      if (!targetTenantId) {
+        return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === targetTenantId)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const tenant = await storage.getTenant(targetTenantId);
+      const marketsList = await storage.getMarketsByTenant(targetTenantId);
+      
+      res.json({
+        markets: marketsList,
+        activeMarketId: req.session.activeMarketId || null,
+        multiMarketEnabled: tenant?.multiMarketEnabled || false,
+        marketLimit: tenant?.marketLimit || 1
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new market (Enterprise tenants with multi-market enabled)
+  app.post("/api/markets", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      if (!targetTenantId) {
+        return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      const tenant = await storage.getTenant(targetTenantId);
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      if (!tenant.multiMarketEnabled) {
+        return res.status(403).json({ error: "Multi-market feature is not enabled for this tenant. Please upgrade to Enterprise plan." });
+      }
+
+      const existingMarkets = await storage.getMarketsByTenant(targetTenantId);
+      if (existingMarkets.length >= (tenant.marketLimit || 1)) {
+        return res.status(400).json({ error: `Market limit reached (${tenant.marketLimit}). Contact support to increase your limit.` });
+      }
+
+      const { name, description } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "Market name is required" });
+      }
+
+      const newMarket = await storage.createMarket({
+        tenantId: targetTenantId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        isDefault: false,
+        status: "active",
+        createdBy: user.id,
+      });
+
+      res.status(201).json(newMarket);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update a market
+  app.patch("/api/markets/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const market = await storage.getMarket(req.params.id);
+      if (!market) {
+        return res.status(404).json({ error: "Market not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === market.tenantId)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { name, description, status } = req.body;
+      const updates: any = {};
+      
+      if (name !== undefined) updates.name = name.trim();
+      if (description !== undefined) updates.description = description?.trim() || null;
+      if (status !== undefined && ["active", "archived"].includes(status)) {
+        updates.status = status;
+      }
+
+      const updatedMarket = await storage.updateMarket(req.params.id, updates);
+      res.json(updatedMarket);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Switch active market context
+  app.post("/api/context/market", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const parsed = switchMarketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const { marketId } = parsed.data;
+      const market = await storage.getMarket(marketId);
+      if (!market) {
+        return res.status(404).json({ error: "Market not found" });
+      }
+
+      if (market.status !== "active") {
+        return res.status(400).json({ error: "Cannot switch to an archived market" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === market.tenantId)) {
+        return res.status(403).json({ error: "Access denied - you don't have access to this tenant" });
+      }
+
+      req.session.activeTenantId = market.tenantId;
+      req.session.activeMarketId = marketId;
+      
+      res.json({
+        activeTenantId: market.tenantId,
+        activeMarketId: marketId,
+        message: "Market context switched successfully"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get current context (tenant + market)
+  app.get("/api/context", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      let activeTenantId = req.session.activeTenantId;
+      let activeMarketId = req.session.activeMarketId;
+      
+      if (!activeTenantId && userTenant) {
+        activeTenantId = userTenant.id;
+        req.session.activeTenantId = activeTenantId;
+      }
+      
+      if (activeTenantId && !activeMarketId) {
+        const defaultMarket = await storage.getDefaultMarket(activeTenantId);
+        if (defaultMarket) {
+          activeMarketId = defaultMarket.id;
+          req.session.activeMarketId = activeMarketId;
+        }
+      }
+      
+      const activeTenant = activeTenantId ? await storage.getTenant(activeTenantId) : null;
+      const activeMarket = activeMarketId ? await storage.getMarket(activeMarketId) : null;
+      
+      res.json({
+        activeTenantId,
+        activeMarketId,
+        activeTenant: activeTenant || null,
+        activeMarket: activeMarket || null,
+        canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== CONSULTANT ACCESS MANAGEMENT ====================
+
+  // Get consultant access grants for current tenant (admin only)
+  app.get("/api/tenant-access", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      if (!targetTenantId) {
+        return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      const grants = await storage.getConsultantAccessByTenant(targetTenantId);
+      
+      const enrichedGrants = await Promise.all(grants.map(async (grant) => {
+        const consultant = await storage.getUser(grant.userId);
+        const grantedByUser = await storage.getUser(grant.grantedBy);
+        return {
+          ...grant,
+          consultantEmail: consultant?.email,
+          consultantName: consultant?.name,
+          grantedByName: grantedByUser?.name
+        };
+      }));
+
+      res.json(enrichedGrants);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Grant consultant access to current tenant
+  app.post("/api/tenant-access", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const parsed = grantConsultantAccessSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const { consultantUserId } = parsed.data;
+      const consultant = await storage.getUser(consultantUserId);
+      if (!consultant) {
+        return res.status(404).json({ error: "Consultant user not found" });
+      }
+
+      if (consultant.role !== "Consultant") {
+        return res.status(400).json({ error: "User is not a Consultant. Only users with Consultant role can be granted cross-tenant access." });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      if (user.role === "Domain Admin" && req.session.activeTenantId && req.session.activeTenantId !== userTenant?.id) {
+        return res.status(403).json({ error: "Domain Admins can only grant access to their own tenant" });
+      }
+
+      const targetTenantId = (user.role === "Domain Admin") ? userTenant?.id : (req.session.activeTenantId || userTenant?.id);
+      if (!targetTenantId) {
+        return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      const existingAccess = await storage.getActiveConsultantAccess(consultantUserId, targetTenantId);
+      if (existingAccess) {
+        return res.status(400).json({ error: "Consultant already has active access to this tenant" });
+      }
+
+      const access = await storage.createConsultantAccess({
+        userId: consultantUserId,
+        tenantId: targetTenantId,
+        status: "active",
+        grantedBy: user.id,
+      });
+
+      res.status(201).json(access);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Revoke consultant access
+  app.delete("/api/tenant-access/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const access = await storage.getConsultantAccess(req.params.id);
+      if (!access) {
+        return res.status(404).json({ error: "Access grant not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === access.tenantId)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.revokeConsultantAccess(req.params.id);
+      res.json({ message: "Access revoked successfully" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

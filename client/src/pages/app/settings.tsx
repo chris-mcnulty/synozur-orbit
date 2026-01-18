@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -50,6 +50,19 @@ interface TenantSettings {
   entraEnabled: boolean;
 }
 
+interface ConsultantGrant {
+  id: string;
+  userId: string;
+  tenantId: string;
+  status: string;
+  grantedBy: string;
+  grantedAt: string;
+  revokedAt: string | null;
+  consultantEmail?: string;
+  consultantName?: string;
+  grantedByName?: string;
+}
+
 export default function Settings() {
   const { user } = useUser();
   const queryClient = useQueryClient();
@@ -84,6 +97,37 @@ export default function Settings() {
   const { data: invites = [], isLoading: invitesLoading } = useQuery<TenantInvite[]>({
     queryKey: ["/api/team/invites"],
     enabled: isAdmin,
+  });
+
+  const { data: consultantGrants = [], isLoading: grantsLoading } = useQuery<ConsultantGrant[]>({
+    queryKey: ["/api/tenant-access"],
+    queryFn: async () => {
+      const res = await fetch("/api/tenant-access", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAdmin,
+  });
+
+  const revokeConsultantAccessMutation = useMutation({
+    mutationFn: async (grantId: string) => {
+      const res = await fetch(`/api/tenant-access/${grantId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to revoke access");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant-access"] });
+      toast.success("Consultant access revoked");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
   });
 
   React.useEffect(() => {
@@ -681,6 +725,79 @@ export default function Settings() {
                 Save SSO Settings
               </Button>
             </CardFooter>
+          </Card>
+        )}
+
+        {isAdmin && (
+          <Card data-testid="card-consultant-access">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserCog className="h-5 w-5" />
+                Consultant Access
+              </CardTitle>
+              <CardDescription>Manage which Orbit consultants can access your organization's data.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {grantsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : consultantGrants.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <UserCog className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No consultants have access to your organization.</p>
+                  <p className="text-sm mt-1">Consultant access can be granted by Synozur platform administrators.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Consultant</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Granted By</TableHead>
+                      <TableHead>Granted At</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {consultantGrants.map((grant) => (
+                      <TableRow key={grant.id}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{grant.consultantName || "Unknown"}</div>
+                            <div className="text-xs text-muted-foreground">{grant.consultantEmail}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={grant.status === "active" ? "default" : "secondary"}
+                            className={grant.status === "active" ? "bg-green-500/20 text-green-500" : ""}
+                          >
+                            {grant.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{grant.grantedByName || "-"}</TableCell>
+                        <TableCell>{new Date(grant.grantedAt).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">
+                          {grant.status === "active" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => revokeConsultantAccessMutation.mutate(grant.id)}
+                              disabled={revokeConsultantAccessMutation.isPending}
+                              data-testid={`button-revoke-consultant-${grant.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
           </Card>
         )}
 

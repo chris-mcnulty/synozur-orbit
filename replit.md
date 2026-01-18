@@ -32,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas from Drizzle.
-- **Key Tables**: `users` (RBAC, tenant demographics), `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`.
+- **Key Tables**: `users` (RBAC, tenant demographics), `tenants`, `markets`, `consultantAccess`, `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`, `battlecards`, `competitorScores`, `socialMetrics`, `executiveSummaries`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
@@ -53,6 +53,8 @@ Preferred communication style: Simple, everyday language.
 - **Client Projects**: Proxy analysis for consulting firms with company vs company and product vs product analysis types.
 - **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
 - **Report Generation**: Branded PDF reports that can be scoped to baseline (company profile + all competitors) or specific projects. Project-scoped reports require project owner or Global Admin permissions.
+- **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) within a single organization. Each market contains its own baseline company, competitors, and projects. Enabled via `multiMarketEnabled` flag with configurable `marketLimit`.
+- **Cross-Tenant Access**: Global Admins can access all tenants. Consultants can access tenants they've been granted access to via `consultantAccess` table. Session stores `activeTenantId` and `activeMarketId` for context switching.
 
 ## External Dependencies
 

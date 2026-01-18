@@ -20,6 +20,8 @@ import {
   productBattlecards,
   longFormRecommendations,
   pageViews,
+  markets,
+  consultantAccess,
   type User, 
   type InsertUser,
   type Tenant,
@@ -68,6 +70,10 @@ import {
   type InsertSocialMetric,
   type ExecutiveSummary,
   type InsertExecutiveSummary,
+  type Market,
+  type InsertMarket,
+  type ConsultantAccess,
+  type InsertConsultantAccess,
   competitorScores,
   socialMetrics,
   executiveSummaries
@@ -243,6 +249,24 @@ export interface IStorage {
   // Executive summary methods
   getExecutiveSummary(projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined>;
   upsertExecutiveSummary(summary: InsertExecutiveSummary): Promise<ExecutiveSummary>;
+  
+  // Market methods (multi-market support for enterprise tenants)
+  getMarket(id: string): Promise<Market | undefined>;
+  getMarketsByTenant(tenantId: string): Promise<Market[]>;
+  getDefaultMarket(tenantId: string): Promise<Market | undefined>;
+  createMarket(market: InsertMarket): Promise<Market>;
+  updateMarket(id: string, data: Partial<Market>): Promise<Market>;
+  deleteMarket(id: string): Promise<void>;
+  validateMarketBelongsToTenant(marketId: string, tenantId: string): Promise<boolean>;
+  
+  // Consultant access methods (cross-tenant access management)
+  getConsultantAccess(id: string): Promise<ConsultantAccess | undefined>;
+  getConsultantAccessByUser(userId: string): Promise<ConsultantAccess[]>;
+  getConsultantAccessByTenant(tenantId: string): Promise<ConsultantAccess[]>;
+  getActiveConsultantAccess(userId: string, tenantId: string): Promise<ConsultantAccess | undefined>;
+  createConsultantAccess(access: InsertConsultantAccess): Promise<ConsultantAccess>;
+  revokeConsultantAccess(id: string): Promise<void>;
+  getAccessibleTenants(userId: string, userRole: string, userTenantDomain: string): Promise<Tenant[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1204,6 +1228,115 @@ export class DatabaseStorage implements IStorage {
       .values(summary)
       .returning();
     return result;
+  }
+
+  // Market methods
+  async getMarket(id: string): Promise<Market | undefined> {
+    const [market] = await db.select().from(markets).where(eq(markets.id, id));
+    return market || undefined;
+  }
+
+  async getMarketsByTenant(tenantId: string): Promise<Market[]> {
+    return await db.select().from(markets)
+      .where(eq(markets.tenantId, tenantId))
+      .orderBy(desc(markets.isDefault), markets.name);
+  }
+
+  async getDefaultMarket(tenantId: string): Promise<Market | undefined> {
+    const [market] = await db.select().from(markets)
+      .where(and(eq(markets.tenantId, tenantId), eq(markets.isDefault, true)));
+    return market || undefined;
+  }
+
+  async createMarket(market: InsertMarket): Promise<Market> {
+    const [result] = await db.insert(markets).values(market).returning();
+    return result;
+  }
+
+  async updateMarket(id: string, data: Partial<Market>): Promise<Market> {
+    const [result] = await db.update(markets)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(markets.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteMarket(id: string): Promise<void> {
+    await db.delete(markets).where(eq(markets.id, id));
+  }
+
+  async validateMarketBelongsToTenant(marketId: string, tenantId: string): Promise<boolean> {
+    const [result] = await db.select({ id: markets.id }).from(markets)
+      .where(and(eq(markets.id, marketId), eq(markets.tenantId, tenantId)));
+    return !!result;
+  }
+
+  // Consultant access methods
+  async getConsultantAccess(id: string): Promise<ConsultantAccess | undefined> {
+    const [access] = await db.select().from(consultantAccess)
+      .where(eq(consultantAccess.id, id));
+    return access || undefined;
+  }
+
+  async getConsultantAccessByUser(userId: string): Promise<ConsultantAccess[]> {
+    return await db.select().from(consultantAccess)
+      .where(and(eq(consultantAccess.userId, userId), eq(consultantAccess.status, "active")))
+      .orderBy(desc(consultantAccess.grantedAt));
+  }
+
+  async getConsultantAccessByTenant(tenantId: string): Promise<ConsultantAccess[]> {
+    return await db.select().from(consultantAccess)
+      .where(eq(consultantAccess.tenantId, tenantId))
+      .orderBy(desc(consultantAccess.grantedAt));
+  }
+
+  async getActiveConsultantAccess(userId: string, tenantId: string): Promise<ConsultantAccess | undefined> {
+    const [access] = await db.select().from(consultantAccess)
+      .where(and(
+        eq(consultantAccess.userId, userId),
+        eq(consultantAccess.tenantId, tenantId),
+        eq(consultantAccess.status, "active")
+      ));
+    return access || undefined;
+  }
+
+  async createConsultantAccess(access: InsertConsultantAccess): Promise<ConsultantAccess> {
+    const [result] = await db.insert(consultantAccess).values(access).returning();
+    return result;
+  }
+
+  async revokeConsultantAccess(id: string): Promise<void> {
+    await db.update(consultantAccess)
+      .set({ status: "revoked", revokedAt: new Date() })
+      .where(eq(consultantAccess.id, id));
+  }
+
+  async getAccessibleTenants(userId: string, userRole: string, userTenantDomain: string): Promise<Tenant[]> {
+    if (userRole === "Global Admin") {
+      return await this.getAllTenants();
+    }
+    
+    if (userRole === "Consultant") {
+      const grants = await this.getConsultantAccessByUser(userId);
+      const grantedTenantIds = grants.map(g => g.tenantId);
+      const userTenant = await this.getTenantByDomain(userTenantDomain);
+      
+      const accessibleTenants: Tenant[] = [];
+      if (userTenant) {
+        accessibleTenants.push(userTenant);
+      }
+      
+      for (const tenantId of grantedTenantIds) {
+        const tenant = await this.getTenant(tenantId);
+        if (tenant && !accessibleTenants.find(t => t.id === tenant.id)) {
+          accessibleTenants.push(tenant);
+        }
+      }
+      return accessibleTenants;
+    }
+    
+    const userTenant = await this.getTenantByDomain(userTenantDomain);
+    return userTenant ? [userTenant] : [];
   }
 }
 

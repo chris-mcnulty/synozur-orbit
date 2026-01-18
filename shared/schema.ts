@@ -72,6 +72,9 @@ export const tenants = pgTable("tenants", {
   entraTenantId: text("entra_tenant_id"), // Azure AD Tenant ID
   entraClientSecret: text("entra_client_secret"), // Azure AD App Registration Client Secret (encrypted)
   entraEnabled: boolean("entra_enabled").default(false), // Whether tenant-level Entra SSO is enabled
+  // Multi-market settings (Enterprise tier feature)
+  multiMarketEnabled: boolean("multi_market_enabled").default(false), // Whether tenant can create multiple markets
+  marketLimit: integer("market_limit").notNull().default(1), // Maximum number of markets allowed
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -81,6 +84,32 @@ export const domainBlocklist = pgTable("domain_blocklist", {
   domain: text("domain").notNull().unique(),
   reason: text("reason"), // e.g., "Personal email provider", "Generic domain"
   createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Markets - a "market" is a context containing a baseline company, competitors, and projects
+// Enterprise tenants can have multiple markets for different client work
+export const markets = pgTable("markets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").notNull().default(false),
+  status: text("status").notNull().default("active"), // active, archived
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Consultant access grants - allows consultants to access specific tenants
+export const consultantAccess = pgTable("consultant_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("active"), // active, revoked
+  grantedBy: varchar("granted_by").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -94,6 +123,7 @@ export const clientProjects = pgTable("client_projects", {
   status: text("status").notNull().default("active"), // active, completed, archived
   notifyOnUpdates: boolean("notify_on_updates").default(false), // Notify when competitor site/social updates detected
   tenantDomain: text("tenant_domain").notNull(), // owner tenant (e.g., synozur.com)
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -107,6 +137,7 @@ export const products = pgTable("products", {
   companyName: text("company_name"), // Company that makes this product
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   createdBy: varchar("created_by").notNull().references(() => users.id),
   crawlData: jsonb("crawl_data"), // Crawled product page data
   analysisData: jsonb("analysis_data"), // AI analysis of product
@@ -144,6 +175,7 @@ export const competitors = pgTable("competitors", {
   lastWebsiteMonitor: timestamp("last_website_monitor"), // Timestamp of last website change monitoring
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
   analysisData: jsonb("analysis_data"), // AI analysis results
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -159,6 +191,7 @@ export const activity = pgTable("activity", {
   impact: text("impact").notNull(),
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -177,6 +210,7 @@ export const recommendations = pgTable("recommendations", {
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }),
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -191,6 +225,7 @@ export const reports = pgTable("reports", {
   scope: text("scope").notNull().default("baseline"), // "baseline" | "project"
   projectId: varchar("project_id").references(() => clientProjects.id),
   tenantDomain: text("tenant_domain"),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   createdBy: varchar("created_by").references(() => users.id),
   fileUrl: text("file_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -200,6 +235,7 @@ export const analysis = pgTable("analysis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),
@@ -210,6 +246,7 @@ export const battlecards = pgTable("battlecards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   strengths: jsonb("strengths"), // Array of competitor strengths
   weaknesses: jsonb("weaknesses"), // Array of competitor weaknesses
   ourAdvantages: jsonb("our_advantages"), // How we beat this competitor
@@ -230,6 +267,7 @@ export const productBattlecards = pgTable("product_battlecards", {
   competitorProductId: varchar("competitor_product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => clientProjects.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   strengths: jsonb("strengths"), // Array of competitor product strengths
   weaknesses: jsonb("weaknesses"), // Array of competitor product weaknesses
   ourAdvantages: jsonb("our_advantages"), // How our product beats this competitor
@@ -253,6 +291,7 @@ export const longFormRecommendations = pgTable("long_form_recommendations", {
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
   companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   // The generated content (markdown format)
   content: text("content"),
   // Saved prompts/parameters for regeneration
@@ -338,6 +377,19 @@ export const insertDomainBlocklistSchema = createInsertSchema(domainBlocklist).o
   createdAt: true,
 });
 
+export const insertMarketSchema = createInsertSchema(markets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertConsultantAccessSchema = createInsertSchema(consultantAccess).omit({
+  id: true,
+  createdAt: true,
+  grantedAt: true,
+  revokedAt: true,
+});
+
 export const insertClientProjectSchema = createInsertSchema(clientProjects).omit({
   id: true,
   createdAt: true,
@@ -386,6 +438,10 @@ export type InsertTenantInvite = z.infer<typeof insertTenantInviteSchema>;
 export type TenantInvite = typeof tenantInvites.$inferSelect;
 export type InsertDomainBlocklist = z.infer<typeof insertDomainBlocklistSchema>;
 export type DomainBlocklist = typeof domainBlocklist.$inferSelect;
+export type InsertMarket = z.infer<typeof insertMarketSchema>;
+export type Market = typeof markets.$inferSelect;
+export type InsertConsultantAccess = z.infer<typeof insertConsultantAccessSchema>;
+export type ConsultantAccess = typeof consultantAccess.$inferSelect;
 export type InsertClientProject = z.infer<typeof insertClientProjectSchema>;
 export type ClientProject = typeof clientProjects.$inferSelect;
 export type InsertProduct = z.infer<typeof insertProductSchema>;
@@ -452,6 +508,7 @@ export const groundingDocuments = pgTable("grounding_documents", {
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(), // Email domain for tenant scoping
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -509,10 +566,12 @@ export type GlobalGroundingDocument = typeof globalGroundingDocuments.$inferSele
 export type InsertGlobalGroundingDocument = z.infer<typeof insertGlobalGroundingDocumentSchema>;
 
 // Company profiles table for baselining own website
+// In multi-market mode, each market has its own company profile (baseline)
 export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
-  tenantDomain: text("tenant_domain").notNull().unique(),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context - each market has its baseline
   companyName: text("company_name").notNull(),
   websiteUrl: text("website_url").notNull(),
   linkedInUrl: text("linkedin_url"),
@@ -549,6 +608,7 @@ export const assessments = pgTable("assessments", {
   description: text("description"),
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   // Snapshot of analysis at time of assessment
   companyProfileSnapshot: jsonb("company_profile_snapshot"),
   competitorsSnapshot: jsonb("competitors_snapshot").notNull(),
@@ -612,6 +672,7 @@ export const competitorScores = pgTable("competitor_scores", {
   competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   overallScore: integer("overall_score").notNull().default(0), // 0-100 composite score
   marketPresenceScore: integer("market_presence_score").default(0), // 0-100
   innovationScore: integer("innovation_score").default(0), // 0-100
@@ -654,6 +715,7 @@ export const socialMetrics = pgTable("social_metrics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   platform: text("platform").notNull(), // linkedin, instagram, twitter, blog
   period: text("period").notNull(), // weekly, daily snapshot identifier (e.g., "2026-W03")
   followers: integer("followers").default(0),
@@ -691,6 +753,7 @@ export const executiveSummaries = pgTable("executive_summaries", {
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
   companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   scope: text("scope").notNull().default("baseline"), // baseline or project
   summaryData: jsonb("summary_data").notNull(), // Aggregated executive summary payload
   topCompetitors: jsonb("top_competitors"), // Ranked list of top competitors with scores

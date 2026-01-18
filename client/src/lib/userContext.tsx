@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
-type UserRole = "Global Admin" | "Domain Admin" | "Standard User";
+type UserRole = "Global Admin" | "Domain Admin" | "Standard User" | "Consultant";
 
 interface User {
   id: string;
