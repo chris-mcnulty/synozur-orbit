@@ -5812,6 +5812,91 @@ Only return the JSON array, no other text.`;
     }
   });
 
+  // AI-suggest competitor companies for a baseline company
+  app.post("/api/company-profile/suggest-competitors", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!companyProfile) {
+        return res.status(400).json({ error: "Please set up your company profile first" });
+      }
+
+      // Get existing competitors to exclude from suggestions
+      const existingCompetitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      const existingNames = existingCompetitors.map(c => c.name.toLowerCase());
+      const existingUrls = existingCompetitors.map(c => {
+        try {
+          return new URL(c.url).hostname.replace(/^www\./, "");
+        } catch {
+          return "";
+        }
+      }).filter(Boolean);
+
+      const analysisData = companyProfile.analysisData as any || {};
+      
+      const prompt = `Analyze this company and suggest 5-8 competing companies in the market:
+
+Company: ${companyProfile.companyName}
+Website: ${companyProfile.websiteUrl}
+Industry: ${analysisData.industry || "Unknown"}
+Description: ${analysisData.companyDescription || analysisData.valueProposition || "No description available"}
+Key offerings: ${analysisData.keyOfferings?.join(", ") || "Not specified"}
+
+${existingNames.length > 0 ? `Already tracking these competitors (exclude from suggestions): ${existingNames.join(", ")}` : ""}
+
+Return a JSON array of suggested competitor companies with this structure:
+[
+  {
+    "name": "Competitor Company Name",
+    "url": "https://competitor-website.com",
+    "description": "Brief description of the company and what they do",
+    "rationale": "Why this company is a direct competitor"
+  }
+]
+
+Focus on direct competitors in the same market segment. Include well-known industry leaders and emerging challengers.
+Only return the JSON array, no other text.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      let suggestions: any[] = [];
+      try {
+        const responseText = message.content[0].type === "text" ? message.content[0].text : "";
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          // Filter out any that match existing competitors by URL
+          suggestions = parsed.filter((s: any) => {
+            try {
+              const hostname = new URL(s.url).hostname.replace(/^www\./, "");
+              return !existingUrls.includes(hostname);
+            } catch {
+              return true;
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Failed to parse AI competitor suggestions:", e);
+      }
+
+      res.json(suggestions);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Auto-generate product description from URL
   app.post("/api/products/auto-describe", async (req, res) => {
     try {

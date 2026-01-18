@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, Twitter, FolderKanban, Zap, Search, Crown } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, Twitter, FolderKanban, Zap, Search, Crown, Sparkles, Check, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -35,6 +35,10 @@ export default function Competitors() {
   });
 
   const [faviconErrors, setFaviconErrors] = useState<Set<string>>(new Set());
+  const [isSuggestDialogOpen, setIsSuggestDialogOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{ name: string; url: string; description: string; rationale: string }>>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
 
   const handleFaviconError = (competitorId: string) => {
     setFaviconErrors(prev => new Set(prev).add(competitorId));
@@ -297,6 +301,63 @@ export default function Competitors() {
     setIsProfileDialogOpen(true);
   };
 
+  const getSuggestions = async () => {
+    setIsLoadingSuggestions(true);
+    setSuggestions([]);
+    try {
+      const response = await fetch("/api/company-profile/suggest-competitors", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to get suggestions");
+      }
+      const data = await response.json();
+      setSuggestions(data);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
+  const addSuggestedCompetitor = async (suggestion: { name: string; url: string }) => {
+    setAddingSuggestion(suggestion.url);
+    try {
+      const response = await fetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: suggestion.name, url: suggestion.url }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to add competitor");
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      setSuggestions(prev => prev.filter(s => s.url !== suggestion.url));
+      toast({
+        title: "Competitor Added",
+        description: `${suggestion.name} has been added to your tracking list.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAddingSuggestion(null);
+    }
+  };
+
+  const openSuggestDialog = () => {
+    setIsSuggestDialogOpen(true);
+    getSuggestions();
+  };
+
   if (isLoading || isLoadingProfile) {
     return (
       <AppLayout>
@@ -314,12 +375,23 @@ export default function Competitors() {
           <h1 className="text-3xl font-bold tracking-tight mb-2">Competitors</h1>
           <p className="text-muted-foreground">Compare your company against the competition.</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
-              <Plus className="w-4 h-4 mr-2" /> Add Competitor
+        <div className="flex items-center gap-2">
+          {companyProfile && (
+            <Button 
+              variant="outline" 
+              onClick={openSuggestDialog}
+              disabled={!companyProfile}
+              data-testid="button-ai-suggest-competitors"
+            >
+              <Sparkles className="w-4 h-4 mr-2" /> AI Suggest
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
+                <Plus className="w-4 h-4 mr-2" /> Add Competitor
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Competitor</DialogTitle>
@@ -387,7 +459,101 @@ export default function Competitors() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
+
+      <Dialog open={isSuggestDialogOpen} onOpenChange={setIsSuggestDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              AI-Suggested Competitors
+            </DialogTitle>
+            <DialogDescription>
+              Based on your company profile, we've identified potential competitors you might want to track.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {isLoadingSuggestions ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <p className="text-muted-foreground">Analyzing your market and finding competitors...</p>
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+              <Search className="w-12 h-12 text-muted-foreground/50" />
+              <div>
+                <p className="font-medium">No new suggestions found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  You may already be tracking the major competitors in your market.
+                </p>
+              </div>
+              <Button variant="outline" onClick={getSuggestions} data-testid="button-try-again-suggestions">
+                <RefreshCw className="w-4 h-4 mr-2" /> Try Again
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
+                  className="border rounded-lg p-4 hover:bg-accent/50 transition-colors"
+                  data-testid={`suggestion-${index}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-medium truncate">{suggestion.name}</h4>
+                        <a
+                          href={suggestion.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-primary"
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`link-suggestion-${index}`}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                        {suggestion.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 italic">
+                        {suggestion.rationale}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => addSuggestedCompetitor(suggestion)}
+                      disabled={addingSuggestion === suggestion.url}
+                      data-testid={`button-add-suggestion-${index}`}
+                    >
+                      {addingSuggestion === suggestion.url ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4 mr-1" /> Add
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setIsSuggestDialogOpen(false)} data-testid="button-close-suggestions">
+              Close
+            </Button>
+            {suggestions.length > 0 && (
+              <Button variant="outline" onClick={getSuggestions} disabled={isLoadingSuggestions} data-testid="button-refresh-suggestions">
+                <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-8">
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-secondary/5 animate-in fade-in slide-in-from-bottom-6 duration-600">
