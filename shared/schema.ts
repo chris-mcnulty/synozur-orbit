@@ -812,11 +812,7 @@ export const aiUsage = pgTable("ai_usage", {
   errorMessage: text("error_message"),
   metadata: jsonb("metadata"), // Additional context like competitor name, project id, etc.
   createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => [
-  { name: "idx_ai_usage_created_at", columns: [table.createdAt] },
-  { name: "idx_ai_usage_tenant_domain", columns: [table.tenantDomain] },
-  { name: "idx_ai_usage_operation", columns: [table.operation] },
-]);
+});
 
 export const insertAiUsageSchema = createInsertSchema(aiUsage).omit({
   id: true,
