@@ -4156,6 +4156,397 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
     }
   });
 
+  // Generate project-level gap analysis
+  app.post("/api/projects/:projectId/recommendations/gap_analysis/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set" });
+      }
+
+      const baseline = await storage.getProduct(baselineProduct.productId);
+      const competitors = await Promise.all(
+        competitorProducts.map(pp => storage.getProduct(pp.productId))
+      );
+
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const prompt = `You are a competitive intelligence analyst. Analyze the positioning gaps for "${baseline?.name}" compared to its competitors.
+
+## Our Product
+Name: ${baseline?.name}
+Company: ${baseline?.companyName || "Unknown"}
+Description: ${baseline?.description || "No description"}
+
+## Competitors
+${competitors.filter(Boolean).map(c => `- ${c?.name} (${c?.companyName || "Unknown"}): ${c?.description || "No description"}`).join("\n")}
+
+## Battlecard Insights
+${battlecards.map(bc => `
+Competitor: ${competitors.find(c => c?.id === bc.competitorProductId)?.name || "Unknown"}
+- Their Strengths: ${(Array.isArray(bc.strengths) ? bc.strengths : []).join(", ")}
+- Their Weaknesses: ${(Array.isArray(bc.weaknesses) ? bc.weaknesses : []).join(", ")}
+- Our Advantages: ${(Array.isArray(bc.ourAdvantages) ? bc.ourAdvantages : []).join(", ")}
+`).join("\n")}
+
+Generate a comprehensive gap analysis in markdown format with these sections:
+
+# Gap Analysis: ${baseline?.name}
+
+## Executive Summary
+Brief overview of key positioning gaps identified
+
+## Messaging Gaps
+Areas where our messaging falls short compared to competitors
+
+## Feature/Capability Gaps
+Product features or capabilities where competitors have an edge
+
+## Market Positioning Gaps
+Areas where competitors have stronger market positioning
+
+## Pricing/Value Gaps
+Competitive pricing and value perception differences
+
+## Target Audience Gaps
+Segments where competitors are better positioned
+
+## Critical Gaps (High Priority)
+The most urgent gaps that need immediate attention
+
+## Opportunities
+Gaps in competitor offerings we can exploit
+
+Make this actionable and specific to the competitive landscape.`;
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("gap_analysis", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "gap_analysis",
+          projectId: req.params.projectId,
+          tenantDomain,
+          content,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Gap analysis generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate project-level recommendations
+  app.post("/api/projects/:projectId/recommendations/strategic_recommendations/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set" });
+      }
+
+      const baseline = await storage.getProduct(baselineProduct.productId);
+      const competitors = await Promise.all(
+        competitorProducts.map(pp => storage.getProduct(pp.productId))
+      );
+
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+      const gapAnalysis = await storage.getLongFormRecommendationByType("gap_analysis", req.params.projectId);
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const prompt = `You are a strategic business consultant. Generate actionable recommendations for "${baseline?.name}" based on its competitive landscape.
+
+## Our Product
+Name: ${baseline?.name}
+Company: ${baseline?.companyName || "Unknown"}
+Description: ${baseline?.description || "No description"}
+
+## Competitors
+${competitors.filter(Boolean).map(c => `- ${c?.name} (${c?.companyName || "Unknown"}): ${c?.description || "No description"}`).join("\n")}
+
+## Competitive Intelligence
+${battlecards.map(bc => `
+vs ${competitors.find(c => c?.id === bc.competitorProductId)?.name || "Unknown"}:
+- Their Strengths: ${(Array.isArray(bc.strengths) ? bc.strengths : []).slice(0, 3).join(", ")}
+- Our Advantages: ${(Array.isArray(bc.ourAdvantages) ? bc.ourAdvantages : []).slice(0, 3).join(", ")}
+`).join("\n")}
+
+${gapAnalysis?.content ? `## Gap Analysis Summary\n${gapAnalysis.content.slice(0, 2000)}` : ""}
+
+Generate strategic recommendations in markdown format:
+
+# Strategic Recommendations: ${baseline?.name}
+
+## Executive Summary
+Overview of recommended strategic actions
+
+## Immediate Actions (30 Days)
+Quick wins and urgent items to address
+
+## Short-Term Initiatives (90 Days)
+Projects to kick off in the next quarter
+
+## Long-Term Strategy (6-12 Months)
+Bigger strategic moves to consider
+
+## Messaging Recommendations
+How to improve competitive messaging
+
+## Product Recommendations
+Feature and capability priorities
+
+## Go-to-Market Recommendations
+Sales and marketing strategy adjustments
+
+## Competitive Defense Strategy
+How to protect against competitor moves
+
+## Success Metrics
+How to measure progress on these recommendations
+
+Make each recommendation specific, actionable, and tied to competitive insights.`;
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("strategic_recommendations", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "strategic_recommendations",
+          projectId: req.params.projectId,
+          tenantDomain,
+          content,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Strategic recommendations generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate project-level competitive summary
+  app.post("/api/projects/:projectId/recommendations/competitive_summary/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set" });
+      }
+
+      const baseline = await storage.getProduct(baselineProduct.productId);
+      const competitors = await Promise.all(
+        competitorProducts.map(pp => storage.getProduct(pp.productId))
+      );
+
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const prompt = `You are a competitive intelligence analyst. Create a comprehensive competitive summary report for "${baseline?.name}".
+
+## Our Product
+Name: ${baseline?.name}
+Company: ${baseline?.companyName || "Unknown"}
+Description: ${baseline?.description || "No description"}
+
+## Competitors Analyzed
+${competitors.filter(Boolean).map(c => `- ${c?.name} (${c?.companyName || "Unknown"}): ${c?.description || "No description"}`).join("\n")}
+
+## Battlecard Data
+${battlecards.map(bc => {
+  const comp = competitors.find(c => c?.id === bc.competitorProductId);
+  return `
+### ${comp?.name || "Unknown Competitor"}
+**Strengths:** ${(Array.isArray(bc.strengths) ? bc.strengths : []).join("; ")}
+**Weaknesses:** ${(Array.isArray(bc.weaknesses) ? bc.weaknesses : []).join("; ")}
+**Our Advantages:** ${(Array.isArray(bc.ourAdvantages) ? bc.ourAdvantages : []).join("; ")}
+**Key Differentiators:** ${(Array.isArray(bc.keyDifferentiators) ? bc.keyDifferentiators : []).map((d: any) => d.feature).join(", ")}
+`;
+}).join("\n")}
+
+Generate a consolidated competitive summary in markdown format:
+
+# Competitive Landscape Summary: ${baseline?.name}
+
+## Executive Overview
+High-level summary of competitive position
+
+## Market Positioning Map
+Where each player sits in the market
+
+## Competitor Profiles
+For each competitor:
+### [Competitor Name]
+- **Overview**: Brief description
+- **Target Market**: Who they serve
+- **Key Strengths**: Top 3 strengths
+- **Key Weaknesses**: Top 3 weaknesses  
+- **Threat Level**: Low/Medium/High and why
+- **Our Win Strategy**: How to beat them
+
+## Competitive Advantages Summary
+Our strongest differentiators across all competitors
+
+## Common Competitive Themes
+Patterns seen across multiple competitors
+
+## Risk Assessment
+Competitive threats to monitor
+
+## Win/Loss Insights
+Key factors in competitive deals
+
+## Recommended Actions
+Top priorities based on competitive landscape
+
+Make this a comprehensive reference document for sales and strategy teams.`;
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("competitive_summary", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "competitive_summary",
+          projectId: req.params.projectId,
+          tenantDomain,
+          content,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Competitive summary generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ===============================
   // BASELINE-LEVEL RECOMMENDATIONS
   // ===============================

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock } from "lucide-react";
+import { MarkdownContent } from "@/components/MarkdownViewer";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -203,6 +204,39 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
+  // Fetch Gap Analysis
+  const { data: gapAnalysis, isLoading: gapLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "gap_analysis"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/gap_analysis`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch gap analysis");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  // Fetch Strategic Recommendations
+  const { data: strategicRecs, isLoading: recsLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "strategic_recommendations"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/strategic_recommendations`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch recommendations");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
+  // Fetch Competitive Summary
+  const { data: competitiveSummary, isLoading: summaryLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "competitive_summary"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/competitive_summary`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch competitive summary");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
   // Initialize prompts from saved data when loaded
   React.useEffect(() => {
     if (gtmPlan?.savedPrompts) {
@@ -276,6 +310,90 @@ export default function ProjectDetail() {
       toast({
         title: "Messaging Framework Generated",
         description: "Your messaging and positioning framework has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateGapAnalysis = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/gap_analysis/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate gap analysis");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "gap_analysis"] });
+      toast({
+        title: "Gap Analysis Generated",
+        description: "Competitive positioning gaps have been identified.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateStrategicRecs = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/strategic_recommendations/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate recommendations");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "strategic_recommendations"] });
+      toast({
+        title: "Recommendations Generated",
+        description: "Strategic recommendations have been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateCompetitiveSummary = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/competitive_summary/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate competitive summary");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "competitive_summary"] });
+      toast({
+        title: "Competitive Summary Generated",
+        description: "Consolidated competitive insights report has been created.",
       });
     },
     onError: (error: Error) => {
@@ -694,10 +812,37 @@ export default function ProjectDetail() {
 
           {/* Main Tabs for Project Sections */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-            <TabsList className="grid w-full grid-cols-3 max-w-md">
+            <TabsList className="flex flex-wrap gap-1">
               <TabsTrigger value="overview" className="flex items-center gap-1">
                 <Package className="h-4 w-4" />
                 Overview
+              </TabsTrigger>
+              <TabsTrigger value="gaps" className="flex items-center gap-1">
+                <Sparkles className="h-4 w-4" />
+                Gaps
+                {gapAnalysis?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="recommendations" className="flex items-center gap-1">
+                <Star className="h-4 w-4" />
+                Recommendations
+                {strategicRecs?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="summary" className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                Summary
+                {competitiveSummary?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
               </TabsTrigger>
               <TabsTrigger value="gtm_plan" className="flex items-center gap-1">
                 <Rocket className="h-4 w-4" />
@@ -1337,6 +1482,186 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
           )}
+            </TabsContent>
+
+            {/* Gap Analysis Tab Content */}
+            <TabsContent value="gaps" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-primary" />
+                        Competitive Gap Analysis
+                      </CardTitle>
+                      <CardDescription>
+                        AI-identified positioning gaps against project competitors
+                      </CardDescription>
+                    </div>
+                    {gapAnalysis?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(gapAnalysis.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => generateGapAnalysis.mutate()} 
+                      disabled={generateGapAnalysis.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                      data-testid="button-generate-gaps"
+                    >
+                      {generateGapAnalysis.isPending ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</>
+                      ) : (
+                        <><Sparkles className="mr-2 h-4 w-4" /> {gapAnalysis?.status === "generated" ? "Regenerate" : "Generate"} Gap Analysis</>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {gapLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : gapAnalysis?.status === "generated" && gapAnalysis.content ? (
+                    <div className="border rounded-lg p-6 bg-muted/30">
+                      <MarkdownContent content={gapAnalysis.content} />
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Gap Analysis Yet</h3>
+                      <p className="text-muted-foreground">
+                        {projectProducts.some(pp => pp.role === "baseline") 
+                          ? "Click 'Generate Gap Analysis' to identify positioning gaps"
+                          : "Set a baseline product first to analyze gaps"}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Strategic Recommendations Tab Content */}
+            <TabsContent value="recommendations" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Star className="h-5 w-5 text-primary" />
+                        Strategic Recommendations
+                      </CardTitle>
+                      <CardDescription>
+                        Actionable suggestions based on competitive landscape
+                      </CardDescription>
+                    </div>
+                    {strategicRecs?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(strategicRecs.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => generateStrategicRecs.mutate()} 
+                      disabled={generateStrategicRecs.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                      data-testid="button-generate-recs"
+                    >
+                      {generateStrategicRecs.isPending ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                      ) : (
+                        <><Star className="mr-2 h-4 w-4" /> {strategicRecs?.status === "generated" ? "Regenerate" : "Generate"} Recommendations</>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {recsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : strategicRecs?.status === "generated" && strategicRecs.content ? (
+                    <div className="border rounded-lg p-6 bg-muted/30">
+                      <MarkdownContent content={strategicRecs.content} />
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Star className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Recommendations Yet</h3>
+                      <p className="text-muted-foreground">
+                        {projectProducts.some(pp => pp.role === "baseline") 
+                          ? "Click 'Generate Recommendations' to get strategic advice"
+                          : "Set a baseline product first to get recommendations"}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Competitive Summary Tab Content */}
+            <TabsContent value="summary" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        Competitive Summary Report
+                      </CardTitle>
+                      <CardDescription>
+                        Consolidated view of all competitor insights
+                      </CardDescription>
+                    </div>
+                    {competitiveSummary?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(competitiveSummary.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => generateCompetitiveSummary.mutate()} 
+                      disabled={generateCompetitiveSummary.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                      data-testid="button-generate-summary"
+                    >
+                      {generateCompetitiveSummary.isPending ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                      ) : (
+                        <><FileText className="mr-2 h-4 w-4" /> {competitiveSummary?.status === "generated" ? "Regenerate" : "Generate"} Summary</>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {summaryLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : competitiveSummary?.status === "generated" && competitiveSummary.content ? (
+                    <div className="border rounded-lg p-6 bg-muted/30">
+                      <MarkdownContent content={competitiveSummary.content} />
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Summary Yet</h3>
+                      <p className="text-muted-foreground">
+                        {projectProducts.some(pp => pp.role === "baseline") 
+                          ? "Click 'Generate Summary' to create a competitive overview"
+                          : "Set a baseline product first to create a summary"}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* GTM Plan Tab Content */}
