@@ -139,6 +139,7 @@ export interface IStorage {
   // Analysis methods
   getLatestAnalysis(): Promise<Analysis | undefined>;
   getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined>;
+  getLatestAnalysisByContext(ctx: ContextFilter): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
   
   // Grounding Document methods
@@ -531,6 +532,18 @@ export class DatabaseStorage implements IStorage {
   async getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined> {
     const [latestAnalysis] = await db.select().from(analysis)
       .where(eq(analysis.tenantDomain, tenantDomain))
+      .orderBy(desc(analysis.createdAt))
+      .limit(1);
+    return latestAnalysis || undefined;
+  }
+
+  async getLatestAnalysisByContext(ctx: ContextFilter): Promise<Analysis | undefined> {
+    const conditions = [eq(analysis.tenantDomain, ctx.tenantDomain)];
+    if (ctx.marketId) {
+      conditions.push(or(eq(analysis.marketId, ctx.marketId), isNull(analysis.marketId))!);
+    }
+    const [latestAnalysis] = await db.select().from(analysis)
+      .where(and(...conditions))
       .orderBy(desc(analysis.createdAt))
       .limit(1);
     return latestAnalysis || undefined;

@@ -1298,21 +1298,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.post("/api/activity", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Get user's tenant domain for tenant scoping
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
 
       const parsed = insertActivitySchema.safeParse({
         ...req.body,
-        userId: req.session.userId,
-        tenantDomain
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
@@ -1321,6 +1313,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const newActivity = await storage.createActivity(parsed.data);
       res.json(newActivity);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1342,21 +1337,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.post("/api/recommendations", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Get user's tenant domain for tenant scoping
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
 
       const parsed = insertRecommendationSchema.safeParse({
         ...req.body,
-        userId: req.session.userId,
-        tenantDomain
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
@@ -1365,6 +1352,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const recommendation = await storage.createRecommendation(parsed.data);
       res.json(recommendation);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1538,40 +1528,26 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.get("/api/analysis", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const tenantAnalysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const tenantAnalysis = await storage.getLatestAnalysisByContext(toContextFilter(ctx));
       res.json(tenantAnalysis || null);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/analysis", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Get user's tenant domain for tenant scoping
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
 
       const parsed = insertAnalysisSchema.safeParse({
         ...req.body,
-        userId: req.session.userId,
-        tenantDomain
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
@@ -1580,6 +1556,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const analysis = await storage.createAnalysis(parsed.data);
       res.json(analysis);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1588,17 +1567,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.get("/api/battlecards", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const battlecards = await storage.getBattlecardsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const battlecards = await storage.getBattlecardsByContext(toContextFilter(ctx));
       
       // Enrich with competitor names
       const enriched = await Promise.all(battlecards.map(async (bc) => {
@@ -1611,28 +1581,24 @@ Return ONLY valid JSON, no markdown or explanation.`;
       
       res.json(enriched);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.get("/api/battlecards/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const battlecard = await storage.getBattlecard(req.params.id);
       if (!battlecard) {
         return res.status(404).json({ error: "Battle card not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (battlecard.tenantDomain !== tenantDomain && !hasCrossTenantReadAccess(user.role)) {
+      // Validate battlecard belongs to current context
+      if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -1642,22 +1608,16 @@ Return ONLY valid JSON, no markdown or explanation.`;
         competitorName: competitor?.name || "Unknown Competitor",
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/battlecards/generate/:competitorId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
       const competitorId = req.params.competitorId;
 
       const competitor = await storage.getCompetitor(competitorId);
@@ -1665,15 +1625,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Check competitor ownership via the user who created it
-      const competitorOwner = await storage.getUser(competitor.userId);
-      const competitorTenant = competitorOwner?.email.split("@")[1];
-      if (competitorTenant !== tenantDomain && !hasCrossTenantReadAccess(user.role)) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       // Get company profile for comparison
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
 
       // Generate AI content for battle card
       const anthropic = new Anthropic({
@@ -1752,11 +1710,12 @@ Return ONLY valid JSON, no markdown or explanations.`;
       } else {
         battlecard = await storage.createBattlecard({
           competitorId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           ...battlecardContent,
           status: "published",
           lastGeneratedAt: new Date(),
-          createdBy: req.session.userId,
+          createdBy: ctx.userId,
         });
       }
 
@@ -1765,6 +1724,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
         competitorName: competitor.name,
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Battle card generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -1772,28 +1734,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
   app.delete("/api/battlecards/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const battlecard = await storage.getBattlecard(req.params.id);
       if (!battlecard) {
         return res.status(404).json({ error: "Battle card not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (battlecard.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate battlecard belongs to current context
+      if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteBattlecard(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1836,67 +1794,49 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
   app.get("/api/documents", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const documents = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const documents = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
       res.json(documents);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.get("/api/documents/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const document = await storage.getGroundingDocument(req.params.id);
       if (!document) {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (document.tenantDomain !== tenantDomain) {
+      // Validate document belongs to current context
+      if (!validateResourceContext(document, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(document);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/documents", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
       
       const parsed = insertGroundingDocumentSchema.safeParse({
         ...req.body,
-        userId: req.session.userId,
-        tenantDomain,
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
 
       if (!parsed.success) {
@@ -1919,34 +1859,33 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       res.json(document);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.delete("/api/documents/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const document = await storage.getGroundingDocument(req.params.id);
       if (!document) {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (document.tenantDomain !== tenantDomain) {
+      // Validate document belongs to current context
+      if (!validateResourceContext(document, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteGroundingDocument(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1954,17 +1893,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get grounding context for AI prompts
   app.get("/api/documents/context/ai", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const documents = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const documents = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
 
       const context = documentExtractionService.prepareGroundingContext(
         documents.map((d) => ({
@@ -1976,6 +1906,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       res.json({ context });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4122,28 +4055,24 @@ Return ONLY valid JSON, no markdown or explanation.`;
   // Get all long-form recommendations for a project
   app.get("/api/projects/:projectId/recommendations", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
       res.json(recommendations);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4151,22 +4080,15 @@ Return ONLY valid JSON, no markdown or explanation.`;
   // Get a specific recommendation by type for a project
   app.get("/api/projects/:projectId/recommendations/:type", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4189,6 +4111,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       
       res.json(recommendation);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4196,22 +4121,15 @@ Return ONLY valid JSON, no markdown or explanation.`;
   // Generate GTM plan for a project
   app.post("/api/projects/:projectId/recommendations/gtm_plan/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4319,15 +4237,19 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
         const created = await storage.createLongFormRecommendation({
           type: "gtm_plan",
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           savedPrompts,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("GTM plan generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -4336,22 +4258,15 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
   // Generate messaging framework for a project
   app.post("/api/projects/:projectId/recommendations/messaging_framework/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4455,22 +4370,26 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           savedPrompts,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "messaging_framework",
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           savedPrompts,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Messaging framework generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -4479,22 +4398,15 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
   // Generate project-level gap analysis
   app.post("/api/projects/:projectId/recommendations/gap_analysis/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4581,21 +4493,25 @@ Make this actionable and specific to the competitive landscape.`;
           content,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "gap_analysis",
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Gap analysis generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -4604,22 +4520,15 @@ Make this actionable and specific to the competitive landscape.`;
   // Generate project-level recommendations
   app.post("/api/projects/:projectId/recommendations/strategic_recommendations/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4711,21 +4620,25 @@ Make each recommendation specific, actionable, and tied to competitive insights.
           content,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "strategic_recommendations",
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Strategic recommendations generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -4734,22 +4647,15 @@ Make each recommendation specific, actionable, and tied to competitive insights.
   // Generate project-level competitive summary
   app.post("/api/projects/:projectId/recommendations/competitive_summary/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4847,21 +4753,25 @@ Make this a comprehensive reference document for sales and strategy teams.`;
           content,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "competitive_summary",
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Competitive summary generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -4874,22 +4784,15 @@ Make this a comprehensive reference document for sales and strategy teams.`;
   // Get project executive summary - unified view of all competitive intelligence
   app.get("/api/projects/:projectId/executive-summary", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin" && user.role !== "Consultant") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -5228,17 +5131,8 @@ Make this a comprehensive reference document for sales and strategy teams.`;
   // Get baseline GTM plan
   app.get("/api/baseline/recommendations/gtm_plan", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
         return res.json({
@@ -5269,6 +5163,9 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       
       res.json(recommendation);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -5276,17 +5173,8 @@ Make this a comprehensive reference document for sales and strategy teams.`;
   // Get baseline messaging framework
   app.get("/api/baseline/recommendations/messaging_framework", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
         return res.json({
@@ -5317,6 +5205,9 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       
       res.json(recommendation);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -5324,17 +5215,8 @@ Make this a comprehensive reference document for sales and strategy teams.`;
   // Generate baseline GTM plan
   app.post("/api/baseline/recommendations/gtm_plan/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
         return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
@@ -5344,7 +5226,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       const savedPrompts = { customGuidance };
 
       // Get competitors for context
-      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       
       let competitorContext = "";
       if (competitors.length > 0) {
@@ -5355,7 +5237,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       }
 
       // Get analysis data if available
-      const analysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      const analysis = await storage.getLatestAnalysisByContext(toContextFilter(ctx));
       let analysisContext = "";
       if (analysis) {
         if (analysis.gaps && Array.isArray(analysis.gaps)) {
@@ -5452,22 +5334,26 @@ Make this practical and actionable for the team.`;
           savedPrompts,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "gtm_plan",
           companyProfileId: companyProfile.id,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           savedPrompts,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Baseline GTM plan generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -5476,17 +5362,8 @@ Make this practical and actionable for the team.`;
   // Generate baseline messaging framework
   app.post("/api/baseline/recommendations/messaging_framework/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
         return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
@@ -5496,7 +5373,7 @@ Make this practical and actionable for the team.`;
       const savedPrompts = { customGuidance };
 
       // Get competitors for context
-      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       
       let competitorContext = "";
       if (competitors.length > 0) {
@@ -5507,7 +5384,7 @@ Make this practical and actionable for the team.`;
       }
 
       // Get analysis data if available
-      const analysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      const analysis = await storage.getLatestAnalysisByContext(toContextFilter(ctx));
       let analysisContext = "";
       if (analysis) {
         if (analysis.messaging && Array.isArray(analysis.messaging)) {
@@ -5601,22 +5478,26 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           savedPrompts,
           status: "generated",
           lastGeneratedAt: new Date(),
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(updated);
       } else {
         const created = await storage.createLongFormRecommendation({
           type: "messaging_framework",
           companyProfileId: companyProfile.id,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           content,
           savedPrompts,
           status: "generated",
-          generatedBy: req.session.userId,
+          generatedBy: ctx.userId,
         });
         res.json(created);
       }
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Baseline messaging framework generation error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -5627,34 +5508,26 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
   // Start full regeneration of all analysis (runs in background, emails when complete)
   app.post("/api/baseline/full-regenerate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
       
       // Check prerequisites
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       if (!companyProfile) {
         return res.status(400).json({ error: "Please set up your company profile first" });
       }
 
-      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       if (competitors.length === 0) {
         return res.status(400).json({ error: "Please add at least one competitor first" });
       }
 
       // Start the background regeneration job
       const jobId = await startFullRegeneration(
-        user.id,
-        tenantDomain,
-        user.email,
-        user.name
+        ctx.userId,
+        ctx.tenantDomain,
+        user?.email || "",
+        user?.name || ""
       );
 
       res.json({
@@ -5664,6 +5537,9 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
         estimatedMinutes: Math.ceil((competitors.length * 2) + 5),
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Full regeneration start error:", error);
       res.status(500).json({ error: error.message });
     }
