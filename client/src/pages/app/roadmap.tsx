@@ -66,9 +66,9 @@ const milestones: Milestone[] = [
         icon: <Shield className="h-4 w-4" />
       },
       {
-        id: "command-center",
-        title: "Command Center",
-        description: "Unified dashboard for holistic competitive intelligence",
+        id: "overview-dashboard",
+        title: "Unified Overview Dashboard",
+        description: "Consolidated dashboard for holistic competitive intelligence",
         status: "completed",
         category: "Core",
         icon: <BarChart3 className="h-4 w-4" />

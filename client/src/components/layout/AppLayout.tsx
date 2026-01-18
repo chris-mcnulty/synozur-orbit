@@ -130,7 +130,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
     const indicators: Record<string, NavIndicator> = {};
     
-    if (!companyProfile?.url) {
+    if (!companyProfile?.websiteUrl) {
       indicators["/app/company-profile"] = { type: "action" };
     }
     

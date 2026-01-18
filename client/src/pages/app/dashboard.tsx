@@ -795,7 +795,7 @@ export default function Dashboard() {
                             })
                           }
                         >
-                          <SelectTrigger className="w-24 h-7 text-xs">
+                          <SelectTrigger className="w-24 h-7 text-xs" data-testid={`select-assign-${rec.id}`}>
                             <SelectValue placeholder="Assign" />
                           </SelectTrigger>
                           <SelectContent>

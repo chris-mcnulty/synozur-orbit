@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Unified Overview page - consolidated Command Center and Overview into a single, visually rich dashboard at `/app`
+- Overview is now the home page hero when logging in
+- Added "Rebuild All" button to Overview for admins to refresh all competitive intelligence
+- Enhanced AI Insights section with action item assignment, accept, and dismiss controls
+
 ### Added
 - Backlog.md file with comprehensive MVP feature tracking
 
