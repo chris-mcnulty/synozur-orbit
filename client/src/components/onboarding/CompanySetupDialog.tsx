@@ -18,7 +18,15 @@ interface CompanyInfo {
   fetchSuccess: boolean;
 }
 
-export default function CompanySetupDialog({ open, onComplete }: { open: boolean; onComplete: () => void }) {
+interface CompanySetupDialogProps {
+  open: boolean;
+  onComplete: () => void;
+  canSkip?: boolean;
+  onSkip?: () => void;
+  marketName?: string;
+}
+
+export default function CompanySetupDialog({ open, onComplete, canSkip = false, onSkip, marketName }: CompanySetupDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
@@ -97,18 +105,29 @@ export default function CompanySetupDialog({ open, onComplete }: { open: boolean
     saveProfileMutation.mutate(formData);
   };
 
+  const handleClose = () => {
+    if (canSkip && onSkip) {
+      onSkip();
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-[500px]" hideCloseButton>
+    <Dialog open={open} onOpenChange={canSkip ? handleClose : undefined}>
+      <DialogContent className="sm:max-w-[500px]" hideCloseButton={!canSkip}>
         <DialogHeader>
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-primary/10">
               <Building2 className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <DialogTitle className="text-xl">Set Up Your Company</DialogTitle>
+              <DialogTitle className="text-xl">
+                {marketName ? `Set Up Baseline for ${marketName}` : "Set Up Your Company"}
+              </DialogTitle>
               <DialogDescription>
-                Let's get your company profile ready for competitive analysis
+                {marketName 
+                  ? `Set up the baseline company for the "${marketName}" market. You can skip this and add competitors directly.`
+                  : "Let's get your company profile ready for competitive analysis"
+                }
               </DialogDescription>
             </div>
           </div>
@@ -195,6 +214,16 @@ export default function CompanySetupDialog({ open, onComplete }: { open: boolean
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
+              {canSkip && onSkip && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  data-testid="button-skip-setup"
+                  onClick={onSkip}
+                >
+                  Skip for now
+                </Button>
+              )}
               <Button
                 type="submit"
                 data-testid="button-save-company"

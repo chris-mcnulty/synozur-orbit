@@ -107,6 +107,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
+  const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null; multiMarketEnabled: boolean }>({
+    queryKey: ["/api/markets"],
+    queryFn: async () => {
+      const response = await fetch("/api/markets", { credentials: "include" });
+      if (!response.ok) return { markets: [], activeMarketId: null, multiMarketEnabled: false };
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const activeMarket = marketsData?.markets?.find(m => m.id === marketsData.activeMarketId);
+  const isNonDefaultMarket = marketsData?.multiMarketEnabled && activeMarket && !activeMarket.isDefault;
+
   const getLastVisited = (path: string): number => {
     try {
       const stored = localStorage.getItem(`orbit_last_visited_${path.replace(/\//g, "_")}`);
@@ -411,7 +424,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         onComplete={() => {
           setOnboardingDismissed(true);
           refetchProfile();
-        }} 
+        }}
+        canSkip={!!isNonDefaultMarket}
+        onSkip={() => setOnboardingDismissed(true)}
+        marketName={activeMarket?.name}
       />
     </div>
   );
