@@ -4109,6 +4109,406 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
     }
   });
 
+  // ===============================
+  // BASELINE-LEVEL RECOMMENDATIONS
+  // ===============================
+
+  // Get baseline GTM plan
+  app.get("/api/baseline/recommendations/gtm_plan", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      if (!companyProfile) {
+        return res.json({
+          type: "gtm_plan",
+          status: "not_generated",
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null
+        });
+      }
+
+      const recommendation = await storage.getLongFormRecommendationByType(
+        "gtm_plan",
+        undefined,
+        companyProfile.id
+      );
+      
+      if (!recommendation) {
+        return res.json({
+          type: "gtm_plan",
+          companyProfileId: companyProfile.id,
+          status: "not_generated",
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null
+        });
+      }
+      
+      res.json(recommendation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get baseline messaging framework
+  app.get("/api/baseline/recommendations/messaging_framework", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      if (!companyProfile) {
+        return res.json({
+          type: "messaging_framework",
+          status: "not_generated",
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null
+        });
+      }
+
+      const recommendation = await storage.getLongFormRecommendationByType(
+        "messaging_framework",
+        undefined,
+        companyProfile.id
+      );
+      
+      if (!recommendation) {
+        return res.json({
+          type: "messaging_framework",
+          companyProfileId: companyProfile.id,
+          status: "not_generated",
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null
+        });
+      }
+      
+      res.json(recommendation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate baseline GTM plan
+  app.post("/api/baseline/recommendations/gtm_plan/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      if (!companyProfile) {
+        return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
+      }
+
+      const { customGuidance } = req.body;
+      const savedPrompts = { customGuidance };
+
+      // Get competitors for context
+      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      
+      let competitorContext = "";
+      if (competitors.length > 0) {
+        competitorContext = "\n\nCompetitors:";
+        for (const c of competitors) {
+          competitorContext += `\n- ${c.name} (${c.url})`;
+        }
+      }
+
+      // Get analysis data if available
+      const analysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      let analysisContext = "";
+      if (analysis) {
+        if (analysis.gaps && Array.isArray(analysis.gaps)) {
+          analysisContext += "\n\nIdentified Gaps:";
+          for (const gap of analysis.gaps.slice(0, 5)) {
+            analysisContext += `\n- ${gap.area}: ${gap.observation} (Impact: ${gap.impact})`;
+          }
+        }
+      }
+
+      const prompt = `You are an expert go-to-market strategist. Create a comprehensive GTM plan in markdown format.
+
+Company: ${companyProfile.companyName}
+Website: ${companyProfile.websiteUrl}
+Description: ${companyProfile.description || "N/A"}
+${competitorContext}
+${analysisContext}
+
+${customGuidance ? `Custom Guidance: ${customGuidance}` : ""}
+
+Create a detailed, actionable Go-To-Market plan with the following sections:
+
+# Go-To-Market Plan: ${companyProfile.companyName}
+
+## Executive Summary
+Brief overview of the GTM strategy
+
+## Target Market Analysis
+- Primary target segments
+- Market size and opportunity
+- Key buyer personas
+
+## Value Proposition
+- Core differentiation
+- Key benefits by persona
+- Competitive advantages
+
+## Positioning Strategy
+- Market positioning statement
+- Category definition
+- Competitive differentiation
+
+## Channel Strategy
+- Primary distribution channels
+- Partner ecosystem opportunities
+- Digital presence optimization
+
+## Marketing Strategy
+- Content marketing approach
+- Demand generation tactics
+- Brand awareness initiatives
+
+## Sales Strategy
+- Sales motion (product-led, sales-led, hybrid)
+- Sales process and stages
+- Key objection handling
+
+## Launch Plan
+- Phase 1: Foundation (30 days)
+- Phase 2: Growth (60 days)
+- Phase 3: Scale (90 days)
+
+## Success Metrics
+- Key performance indicators
+- Revenue targets
+- Customer acquisition goals
+
+## Resource Requirements
+- Team structure
+- Budget considerations
+- Technology stack
+
+Make this practical and actionable for the team.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          savedPrompts,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "gtm_plan",
+          companyProfileId: companyProfile.id,
+          tenantDomain,
+          content,
+          savedPrompts,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Baseline GTM plan generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate baseline messaging framework
+  app.post("/api/baseline/recommendations/messaging_framework/generate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      
+      if (!companyProfile) {
+        return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
+      }
+
+      const { customGuidance } = req.body;
+      const savedPrompts = { customGuidance };
+
+      // Get competitors for context
+      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      
+      let competitorContext = "";
+      if (competitors.length > 0) {
+        competitorContext = "\n\nCompetitors:";
+        for (const c of competitors) {
+          competitorContext += `\n- ${c.name} (${c.url})`;
+        }
+      }
+
+      // Get analysis data if available
+      const analysis = await storage.getLatestAnalysisByTenant(tenantDomain);
+      let analysisContext = "";
+      if (analysis) {
+        if (analysis.messaging && Array.isArray(analysis.messaging)) {
+          analysisContext += "\n\nCurrent Messaging Comparison:";
+          for (const m of analysis.messaging.slice(0, 5)) {
+            analysisContext += `\n- ${m.category}: "${m.us}" vs competitors`;
+          }
+        }
+        if (analysis.gaps && Array.isArray(analysis.gaps)) {
+          analysisContext += "\n\nIdentified Gaps:";
+          for (const gap of analysis.gaps.slice(0, 5)) {
+            analysisContext += `\n- ${gap.area}: ${gap.observation}`;
+          }
+        }
+      }
+
+      const prompt = `You are an expert brand strategist and messaging architect. Create a comprehensive Messaging & Positioning Framework in markdown format.
+
+Company: ${companyProfile.companyName}
+Website: ${companyProfile.websiteUrl}
+Description: ${companyProfile.description || "N/A"}
+${competitorContext}
+${analysisContext}
+
+${customGuidance ? `Custom Guidance: ${customGuidance}` : ""}
+
+Create a detailed messaging framework with the following sections:
+
+# Messaging & Positioning Framework: ${companyProfile.companyName}
+
+## Brand Positioning Statement
+A clear, concise positioning statement following the format:
+"For [target audience] who [need], [company] is the [category] that [key benefit] because [reason to believe]."
+
+## Core Value Proposition
+The primary value delivered to customers
+
+## Messaging Pillars
+3-5 key themes that support the positioning
+
+## Audience Segments & Tailored Messages
+For each key audience:
+- Who they are
+- Their pain points
+- Key messages that resonate
+- Proof points
+
+## Competitive Differentiation
+How the company stands apart from competitors
+
+## Tone of Voice Guidelines
+- Personality traits
+- Do's and Don'ts
+- Example phrases
+
+## Key Talking Points
+Elevator pitches of varying lengths:
+- 10-second version
+- 30-second version
+- 2-minute version
+
+## Tagline Options
+3-5 potential taglines
+
+## Proof Points & Evidence
+Statistics, case studies, testimonials to support claims
+
+## Messaging Do's and Don'ts
+Clear guidelines on messaging boundaries
+
+Make this practical and ready for use by sales, marketing, and leadership teams.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("messaging_framework", undefined, companyProfile.id);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          savedPrompts,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: req.session.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "messaging_framework",
+          companyProfileId: companyProfile.id,
+          tenantDomain,
+          content,
+          savedPrompts,
+          status: "generated",
+          generatedBy: req.session.userId,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Baseline messaging framework generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Download recommendation as markdown
   app.get("/api/recommendations/:id/download/markdown", async (req, res) => {
     try {
