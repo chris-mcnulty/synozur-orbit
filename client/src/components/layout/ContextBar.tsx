@@ -117,6 +117,9 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/grounding-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assessments"] });
     },
   });
 
@@ -132,6 +135,9 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/grounding-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assessments"] });
     },
   });
 
