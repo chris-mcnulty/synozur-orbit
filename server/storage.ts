@@ -115,6 +115,8 @@ export interface IStorage {
   getAllRecommendations(): Promise<Recommendation[]>;
   getRecommendationsByTenant(tenantDomain: string): Promise<Recommendation[]>;
   createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
+  getRecommendation(id: string): Promise<Recommendation | undefined>;
+  updateRecommendation(id: string, data: Partial<Recommendation>): Promise<Recommendation>;
   
   // Report methods
   getAllReports(): Promise<Report[]>;
@@ -433,6 +435,20 @@ export class DatabaseStorage implements IStorage {
       .values(insertRecommendation)
       .returning();
     return recommendation;
+  }
+
+  async getRecommendation(id: string): Promise<Recommendation | undefined> {
+    const [recommendation] = await db.select().from(recommendations).where(eq(recommendations.id, id));
+    return recommendation || undefined;
+  }
+
+  async updateRecommendation(id: string, data: Partial<Recommendation>): Promise<Recommendation> {
+    const [updated] = await db
+      .update(recommendations)
+      .set(data)
+      .where(eq(recommendations.id, id))
+      .returning();
+    return updated;
   }
 
   // Report methods

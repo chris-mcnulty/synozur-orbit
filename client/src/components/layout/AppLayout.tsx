@@ -22,7 +22,8 @@ import {
   FolderKanban,
   HelpCircle,
   Building2,
-  Swords
+  Swords,
+  Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -183,9 +184,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const navigation = [
     {
+      group: "Command",
+      items: [
+        { label: "Command Center", icon: Zap, href: "/app/command-center" },
+      ]
+    },
+    {
       group: "Setup",
       items: [
-        { label: "Overview", icon: LayoutDashboard, href: "/app" },
+        { label: "Overview", icon: LayoutDashboard, href: "/app/dashboard" },
         { label: "Company Baseline", icon: Building2, href: "/app/company-profile" },
         { label: "Competitors", icon: Target, href: "/app/competitors" },
         { label: "Documents", icon: BookOpen, href: "/app/documents" },

@@ -31,6 +31,7 @@ import ExecutiveSummary from "@/pages/app/executive-summary";
 import UserGuidePage from "@/pages/app/user-guide";
 import BattleCardsPage from "@/pages/app/battlecards";
 import UsagePage from "@/pages/app/usage";
+import CommandCenter from "@/pages/app/command-center";
 
 function Router() {
   return (
@@ -46,7 +47,8 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       
       {/* App Routes */}
-      <Route path="/app" component={Dashboard} />
+      <Route path="/app" component={CommandCenter} />
+      <Route path="/app/command-center" component={CommandCenter} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />
       <Route path="/app/company-profile" component={Competitors} />

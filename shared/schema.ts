@@ -168,6 +168,13 @@ export const recommendations = pgTable("recommendations", {
   description: text("description").notNull(),
   area: text("area").notNull(),
   impact: text("impact").notNull(),
+  status: text("status").notNull().default("pending"), // pending, accepted, dismissed
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  dismissedAt: timestamp("dismissed_at"),
+  acceptedAt: timestamp("accepted_at"),
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }),
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

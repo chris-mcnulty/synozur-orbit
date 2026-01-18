@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
@@ -6306,6 +6306,378 @@ Return only the description text, no quotes or formatting.`;
       triggerSocialMonitorNow();
       res.json({ success: true, message: "Social monitor job triggered" });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== COMMAND CENTER ROUTES ====================
+
+  // Get Command Center data - aggregated view across all projects
+  app.get("/api/command-center", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+
+      // Get all projects for this tenant
+      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+      
+      // Get all competitors for this tenant (including baseline)
+      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      
+      // Get all products for this tenant
+      const allProducts = await storage.getProductsByTenant(tenantDomain);
+      
+      // Get all recommendations (action items)
+      // Handle both new statuses (pending/accepted/dismissed) and legacy statuses (Open/In Progress)
+      const allRecommendations = await storage.getRecommendationsByTenant(tenantDomain);
+      const pendingActions = allRecommendations.filter(r => 
+        r.status === "pending" || r.status === "Open" || r.status === "In Progress" || !r.status
+      );
+      
+      // Get recent activity
+      const recentActivity = await storage.getActivityByTenant(tenantDomain);
+      
+      // Get tenant users for assignment dropdown
+      const tenantUsers = await storage.getUsersByDomain(tenantDomain);
+      
+      // Calculate aggregate health score (average of competitor scores where available)
+      let totalScore = 0;
+      let scoredCompetitors = 0;
+      const competitorScores: Array<{id: string; name: string; score: number; lastAnalysis: string | null}> = [];
+      
+      for (const competitor of allCompetitors) {
+        const analysisData = competitor.analysisData as any;
+        if (analysisData?.competitiveScore) {
+          totalScore += analysisData.competitiveScore;
+          scoredCompetitors++;
+          competitorScores.push({
+            id: competitor.id,
+            name: competitor.name,
+            score: analysisData.competitiveScore,
+            lastAnalysis: competitor.lastFullCrawl?.toISOString() || null
+          });
+        }
+      }
+      
+      const averageHealthScore = scoredCompetitors > 0 ? Math.round(totalScore / scoredCompetitors) : null;
+      
+      // Count items needing attention
+      const competitorsNeedingCrawl = allCompetitors.filter((c: Competitor) => {
+        if (!c.lastFullCrawl) return true;
+        const daysSinceCrawl = (Date.now() - new Date(c.lastFullCrawl).getTime()) / (1000 * 60 * 60 * 24);
+        return daysSinceCrawl > 7;
+      });
+      
+      const productsNeedingAnalysis = allProducts.filter(p => !p.analysisData);
+
+      res.json({
+        summary: {
+          totalProjects: projects.length,
+          activeProjects: projects.filter(p => p.status === "active").length,
+          totalCompetitors: allCompetitors.length,
+          totalProducts: allProducts.length,
+          pendingActions: pendingActions.length,
+          averageHealthScore,
+          competitorsNeedingCrawl: competitorsNeedingCrawl.length,
+          productsNeedingAnalysis: productsNeedingAnalysis.length,
+        },
+        actionItems: pendingActions.slice(0, 20).map(r => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          area: r.area,
+          impact: r.impact,
+          status: r.status,
+          assignedTo: r.assignedTo,
+          projectId: r.projectId,
+          competitorId: r.competitorId,
+          productId: r.productId,
+          createdAt: r.createdAt,
+        })),
+        recentActivity: recentActivity.slice(0, 10),
+        competitorScores: competitorScores.sort((a, b) => b.score - a.score).slice(0, 10),
+        projects: projects.map(p => ({
+          id: p.id,
+          name: p.name,
+          clientName: p.clientName,
+          status: p.status,
+          analysisType: p.analysisType,
+        })),
+        tenantUsers: tenantUsers.map((u: User) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Command center error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Rebuild All - refresh all competitive intelligence (Admin only)
+  app.post("/api/rebuild-all", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Only admins can trigger rebuild (expensive operation)
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+
+      // Get all competitors and products that need processing
+      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const allProducts = await storage.getProductsByTenant(tenantDomain);
+      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+
+      // Return immediately with job info - actual processing happens async
+      const jobId = `rebuild-${Date.now()}`;
+      
+      // Track progress
+      let processed = 0;
+      const total = allCompetitors.length + allProducts.length;
+
+      // Start async processing
+      (async () => {
+        const anthropic = new Anthropic({
+          apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+          baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+        });
+
+        // Process competitors - crawl and analyze
+        for (const competitor of allCompetitors) {
+          try {
+            // Skip if recently crawled (within 24 hours)
+            if (competitor.lastFullCrawl) {
+              const hoursSinceCrawl = (Date.now() - new Date(competitor.lastFullCrawl).getTime()) / (1000 * 60 * 60);
+              if (hoursSinceCrawl < 24) {
+                processed++;
+                continue;
+              }
+            }
+
+            // Perform multi-page crawl
+            const crawlResult = await crawlCompetitorWebsite(competitor.url);
+            
+            // Prepare content for analysis
+            const combinedContent = crawlResult.pages
+              .map((p: any) => `## ${p.pageType}\n${p.content}`)
+              .join("\n\n");
+
+            // AI Analysis
+            const analysisPrompt = `Analyze this company's website content and provide competitive intelligence:
+
+Company: ${competitor.name}
+Website: ${competitor.url}
+
+Content:
+${combinedContent.substring(0, 15000)}
+
+Provide analysis in this JSON format:
+{
+  "competitiveScore": <number 1-100>,
+  "strengths": ["strength1", "strength2", ...],
+  "weaknesses": ["weakness1", "weakness2", ...],
+  "valueProposition": "main value proposition",
+  "targetAudience": "target audience description",
+  "keyMessages": ["message1", "message2", ...],
+  "marketPosition": "market position description"
+}`;
+
+            const analysisResponse = await anthropic.messages.create({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 2000,
+              messages: [{ role: "user", content: analysisPrompt }],
+            });
+
+            const analysisText = analysisResponse.content[0].type === "text" 
+              ? analysisResponse.content[0].text : "";
+            
+            let analysisData = {};
+            try {
+              const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                analysisData = JSON.parse(jsonMatch[0]);
+              }
+            } catch (e) {
+              console.error("Failed to parse analysis:", e);
+            }
+
+            await storage.updateCompetitor(competitor.id, {
+              crawlData: crawlResult,
+              analysisData,
+              lastFullCrawl: new Date(),
+            });
+
+          } catch (error) {
+            console.error(`Error processing competitor ${competitor.name}:`, error);
+          }
+          processed++;
+        }
+
+        // Process products - analyze if needed
+        for (const product of allProducts) {
+          try {
+            if (product.analysisData) {
+              processed++;
+              continue; // Already analyzed
+            }
+
+            if (!product.url) {
+              processed++;
+              continue; // No URL to crawl
+            }
+
+            // Crawl product page
+            const crawlResult = await crawlCompetitorWebsite(product.url);
+            
+            const combinedContent = crawlResult.pages
+              .map((p: any) => `## ${p.pageType}\n${p.content}`)
+              .join("\n\n");
+
+            // AI Analysis for product
+            const analysisPrompt = `Analyze this product page and provide competitive intelligence:
+
+Product: ${product.name}
+Company: ${product.companyName || "Unknown"}
+URL: ${product.url}
+
+Content:
+${combinedContent.substring(0, 15000)}
+
+Provide analysis in this JSON format:
+{
+  "competitiveScore": <number 1-100>,
+  "strengths": ["strength1", "strength2", ...],
+  "weaknesses": ["weakness1", "weakness2", ...],
+  "valueProposition": "main value proposition",
+  "targetAudience": "target audience description",
+  "keyMessages": ["message1", "message2", ...],
+  "features": ["feature1", "feature2", ...],
+  "pricing": "pricing info if found"
+}`;
+
+            const analysisResponse = await anthropic.messages.create({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 2000,
+              messages: [{ role: "user", content: analysisPrompt }],
+            });
+
+            const analysisText = analysisResponse.content[0].type === "text" 
+              ? analysisResponse.content[0].text : "";
+            
+            let analysisData = {};
+            try {
+              const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                analysisData = JSON.parse(jsonMatch[0]);
+              }
+            } catch (e) {
+              console.error("Failed to parse product analysis:", e);
+            }
+
+            await storage.updateProduct(product.id, {
+              crawlData: crawlResult,
+              analysisData,
+            });
+
+          } catch (error) {
+            console.error(`Error processing product ${product.name}:`, error);
+          }
+          processed++;
+        }
+
+        console.log(`Rebuild all completed: ${processed}/${total} items processed`);
+      })();
+
+      res.json({
+        success: true,
+        jobId,
+        message: "Rebuild started",
+        totalItems: total,
+        competitors: allCompetitors.length,
+        products: allProducts.length,
+        projects: projects.length,
+      });
+    } catch (error: any) {
+      console.error("Rebuild all error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update recommendation status (accept/dismiss/assign)
+  app.patch("/api/recommendations/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { status, assignedTo } = req.body;
+      const tenantDomain = user.email.split("@")[1];
+
+      // Validate status value
+      const allowedStatuses = ["pending", "accepted", "dismissed"];
+      if (status && !allowedStatuses.includes(status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${allowedStatuses.join(", ")}` });
+      }
+
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Validate assignedTo belongs to same tenant
+      if (assignedTo) {
+        const assignee = await storage.getUser(assignedTo);
+        if (!assignee) {
+          return res.status(400).json({ error: "Assigned user not found" });
+        }
+        const assigneeDomain = assignee.email.split("@")[1];
+        if (assigneeDomain !== tenantDomain && user.role !== "Global Admin") {
+          return res.status(400).json({ error: "Cannot assign to user outside your organization" });
+        }
+      }
+
+      const updates: any = {};
+      if (status) {
+        updates.status = status;
+        if (status === "accepted") updates.acceptedAt = new Date();
+        if (status === "dismissed") updates.dismissedAt = new Date();
+      }
+      if (assignedTo !== undefined) {
+        updates.assignedTo = assignedTo;
+      }
+
+      const updated = await storage.updateRecommendation(req.params.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update recommendation error:", error);
       res.status(500).json({ error: error.message });
     }
   });
