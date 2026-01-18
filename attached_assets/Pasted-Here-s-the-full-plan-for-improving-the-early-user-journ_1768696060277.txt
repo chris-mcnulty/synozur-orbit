@@ -1,0 +1,110 @@
+Here's the full plan for improving the early user journey and navigation:
+
+User Journey & Navigation Improvement Plan
+Problem Summary
+New users don't know where to start after account creation
+Menu sections don't indicate which need attention or have new content
+Battle Cards are buried and hard to find
+No comprehensive "master report" that pulls everything together
+Workflow isn't clear - users don't know the logical order of steps
+Phase 1: Onboarding Checklist (Dashboard)
+Add a prominent "Getting Started" card to the dashboard showing setup progress:
+
+Step	Status	Action
+Set up company profile	✓ Complete	View
+Add first competitor	○ Pending	Add Competitor
+Run first analysis	○ Pending	Run Analysis
+Generate a battle card	○ Pending	Create Battle Card
+Create your first report	○ Pending	Generate Report
+Checklist persists until all steps complete (then minimizes/hides)
+Each step has a direct CTA button
+Shows completion percentage
+Phase 2: Navigation Attention Indicators
+Add visual signals to sidebar menu items:
+
+Red dot = "Action needed" (missing required data)
+Competitors: shows if 0 competitors added
+Analysis: shows if no analysis has been run
+Blue dot = "New content since last visit"
+Recommendations: new AI recommendations available
+Reports: new reports generated
+Count badge = Number of items needing review
+"3" next to Recommendations = 3 pending items
+This requires tracking:
+
+Last-visited timestamp per section per user
+Last-updated timestamp on key data
+Phase 3: Reorganized Navigation Structure
+Current structure:
+
+Intelligence
+├─ Overview
+├─ Competitors
+├─ Analysis
+├─ Recommendations
+├─ Activity
+├─ Reports
+├─ Documents
+├─ Assessments
+└─ Projects
+Proposed structure:
+
+SETUP
+├─ Company Baseline
+├─ Competitors
+└─ Documents
+INSIGHTS
+├─ Analysis
+├─ Recommendations
+└─ Battle Cards ⭐ (NEW - elevated to primary nav)
+OUTPUTS
+├─ Reports
+├─ Projects
+└─ Assessments
+SYSTEM
+├─ Activity
+├─ User Management
+├─ Settings
+└─ Admin (if Global Admin)
+Groups sections by workflow stage so users know the logical flow.
+
+Phase 4: Battle Cards Prominence
+Dedicated menu item under Insights (not buried in Competitors)
+Dashboard widget showing:
+Quick "Generate Battle Card" button
+Preview of 2-3 recent battle cards
+Link to full battle cards page
+Quick action button in header alongside "New Analysis"
+Phase 5: Master (Capstone) Report
+A new report type that aggregates everything with toggles:
+
+Report Builder UI:
+
+┌─────────────────────────────────────────────────┐
+│  CAPSTONE REPORT BUILDER                        │
+├─────────────────────────────────────────────────┤
+│  Include Sections:                              │
+│  [✓] Executive Summary                          │
+│  [✓] Company Baseline Profile                   │
+│  [✓] Competitor Profiles (3 competitors)        │
+│  [✓] Gap Analysis                               │
+│  [✓] Recommendations                            │
+│  [✓] Battle Cards                               │
+│  [ ] Activity Log                               │
+│                                                 │
+│  Include Projects:                              │
+│  [✓] All Projects                               │
+│  [ ] Select specific: [dropdown]                │
+│                                                 │
+│  [Generate Full Report]                         │
+└─────────────────────────────────────────────────┘
+Saves section preferences for future reports
+Generates branded PDF with all selected content
+Shows estimated page count based on selections
+Implementation Priority
+Priority	Feature	Effort	Impact
+1	Onboarding checklist on dashboard	Medium	High
+2	Battle Cards as dedicated nav item	Low	High
+3	Navigation attention indicators	Medium	High
+4	Reorganized nav groups	Low	Medium
+5	Master Report builder	High	High

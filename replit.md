@@ -39,8 +39,8 @@ Preferred communication style: Simple, everyday language.
 - **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO.
 - **Fallback**: Traditional email/password login for non-SSO users.
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
-- **Provisioning**: Self-service signup only creates Standard User or Consultant (synozur.com domain) roles. Global Admin and Domain Admin must be manually assigned by existing admins.
-- **Consultant Role**: Special role for Synozur platform staff with intended cross-tenant read access (full implementation pending).
+- **Provisioning**: Self-service signup ONLY creates Standard User role. All privileged roles (Global Admin, Domain Admin, Consultant) must be manually assigned by existing Global Admins.
+- **Consultant Role**: Privileged cross-tenant read role for Synozur platform staff. Can only be assigned by Global Admin, never auto-provisioned during signup.
 - **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
 
 ### Core Features
@@ -82,6 +82,28 @@ Preferred communication style: Simple, everyday language.
 - `SESSION_SECRET`
 - AI provider keys (optional)
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
+
+## Standing Orders
+
+### Changelog & Backlog Maintenance
+After completing significant features or bug fixes, update the following files:
+
+1. **changelog.md** - Add entries under `[Unreleased]` section:
+   - Group by: Added, Changed, Fixed, Security, Deprecated, Removed
+   - Write from user perspective, not technical details
+   - Include date when releasing versions
+
+2. **backlog.md** - Update feature status:
+   - Mark completed items with `[x]`
+   - Update status descriptions for partial progress
+   - Add new items under appropriate priority level
+   - Move items between priorities as needed
+
+3. **Sync to public folder** - After updates, copy files:
+   ```bash
+   cp changelog.md public/changelog.md && cp backlog.md public/backlog.md
+   ```
+   This ensures the About page viewers show current content.
 
 ## Backlog
 

@@ -67,10 +67,11 @@ export async function registerRoutes(
       }
 
       // Determine role based on business logic
-      // SECURITY: Self-service signup NEVER grants admin roles
-      // Only Standard User or Consultant (for Synozur platform staff) are allowed
+      // SECURITY: Self-service signup ONLY creates Standard User
+      // Consultant is a privileged cross-tenant role assigned only by Global Admin
+      // Domain Admin and Global Admin roles must be manually assigned by existing admins
       const domain = email.split("@")[1].toLowerCase();
-      let role = domain === "synozur.com" ? "Consultant" : "Standard User";
+      let role = "Standard User";
       
       // Check if domain is blocked from auto-provisioning
       const existingTenantForBlock = await storage.getTenantByDomain(domain);

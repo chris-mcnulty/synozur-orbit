@@ -162,9 +162,9 @@ export function registerEntraRoutes(app: Express) {
         return res.redirect("/auth/signin?error=domain_blocked");
       }
 
-      // SECURITY: Self-service SSO NEVER grants admin roles
-      // Only Standard User or Consultant (for Synozur platform staff) are allowed
-      const role = domain === "synozur.com" ? "Consultant" : "Standard User";
+      // SECURITY: Self-service SSO ONLY creates Standard User
+      // Consultant is a privileged cross-tenant role assigned only by Global Admin
+      const role = "Standard User";
 
       const randomPassword = await bcrypt.hash(Math.random().toString(36), 10);
       
@@ -262,9 +262,9 @@ export function registerEntraRoutes(app: Express) {
           authProvider: entraId ? "entra" : user.authProvider,
         });
       } else {
-        // SECURITY: Self-service SSO NEVER grants admin roles
-        // Only Standard User or Consultant (for Synozur platform staff) are allowed
-        const role = domain === "synozur.com" ? "Consultant" : "Standard User";
+        // SECURITY: Self-service SSO ONLY creates Standard User
+        // Consultant is a privileged cross-tenant role assigned only by Global Admin
+        const role = "Standard User";
 
         const randomPassword = await bcrypt.hash(Math.random().toString(36), 10);
         

@@ -1,7 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
-import { ArrowRight, Target, Users, Lightbulb, Shield, Award, Globe, FileText, Map } from "lucide-react";
+import { ArrowRight, Target, Users, Lightbulb, Shield, Award, Globe, FileText, Map, ListTodo } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import MarkdownViewer from "@/components/MarkdownViewer";
 
 export default function About() {
   return (
@@ -173,47 +176,71 @@ export default function About() {
         </div>
       </section>
 
-      {/* Changelog & Roadmap Section */}
+      {/* Changelog & Backlog Section */}
       <section className="py-16 px-6">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-6 text-center">Stay Updated</h2>
-          <p className="text-muted-foreground mb-12 text-center max-w-2xl mx-auto">
-            Track our progress and see what's coming next for Orbit.
+          <p className="text-muted-foreground mb-8 text-center max-w-2xl mx-auto">
+            Track our progress, see recent updates, and what's coming next for Orbit.
           </p>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <Link href="/changelog" className="block group">
-              <div className="bg-card p-8 rounded-xl border border-border hover:border-primary/50 transition-colors h-full">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                    <FileText className="w-5 h-5 text-primary" />
+          <Tabs defaultValue="changelog" className="w-full">
+            <Card className="border-border">
+              <CardHeader className="border-b border-border pb-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="changelog" className="flex items-center gap-2" data-testid="tab-changelog">
+                    <FileText size={16} />
+                    Changelog
+                  </TabsTrigger>
+                  <TabsTrigger value="backlog" className="flex items-center gap-2" data-testid="tab-backlog">
+                    <ListTodo size={16} />
+                    Backlog
+                  </TabsTrigger>
+                  <TabsTrigger value="roadmap" className="flex items-center gap-2" data-testid="tab-roadmap">
+                    <Map size={16} />
+                    Roadmap
+                  </TabsTrigger>
+                </TabsList>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <TabsContent value="changelog" className="mt-0">
+                  <div className="mb-4">
+                    <p className="text-sm text-muted-foreground">
+                      A detailed history of all updates, improvements, and new features.
+                    </p>
                   </div>
-                  <h3 className="font-bold text-lg">Changelog</h3>
-                </div>
-                <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-                  A detailed history of all updates, improvements, and new features we've shipped.
-                </p>
-                <span className="text-primary text-sm font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
-                  View changelog <ArrowRight size={14} />
-                </span>
-              </div>
-            </Link>
+                  <MarkdownViewer url="/changelog.md" maxHeight="500px" />
+                </TabsContent>
+                <TabsContent value="backlog" className="mt-0">
+                  <div className="mb-4">
+                    <p className="text-sm text-muted-foreground">
+                      Features and improvements we're tracking for future releases.
+                    </p>
+                  </div>
+                  <MarkdownViewer url="/backlog.md" maxHeight="500px" />
+                </TabsContent>
+                <TabsContent value="roadmap" className="mt-0">
+                  <div className="mb-4">
+                    <p className="text-sm text-muted-foreground">
+                      Our product vision and planned milestones.
+                    </p>
+                  </div>
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Map className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Detailed roadmap coming soon.</p>
+                    <p className="text-xs mt-2">Check the backlog tab for upcoming features.</p>
+                  </div>
+                </TabsContent>
+              </CardContent>
+            </Card>
+          </Tabs>
 
-            <Link href="/roadmap" className="block group">
-              <div className="bg-card p-8 rounded-xl border border-border hover:border-primary/50 transition-colors h-full">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                    <Map className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-bold text-lg">Product Roadmap</h3>
-                </div>
-                <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-                  See what we're working on and what's coming next for Orbit.
-                </p>
-                <span className="text-primary text-sm font-medium inline-flex items-center gap-1 group-hover:gap-2 transition-all">
-                  View roadmap <ArrowRight size={14} />
-                </span>
-              </div>
+          <div className="mt-6 text-center">
+            <Link 
+              href="/changelog" 
+              className="text-primary hover:underline text-sm inline-flex items-center gap-1"
+            >
+              View full changelog page <ArrowRight size={14} />
             </Link>
           </div>
         </div>
