@@ -251,9 +251,16 @@ export async function monitorCompetitorSocialMedia(
         if (!summary.toLowerCase().includes("no significant")) {
           await storage.createActivity({
             type: "social_update",
+            sourceType: "competitor",
             competitorId: competitor.id,
             competitorName: competitor.name,
-            description: `LinkedIn Update: ${summary}`,
+            description: `LinkedIn profile updated (${changeScore}% change detected)`,
+            summary,
+            details: {
+              platform: "linkedin",
+              changeScore,
+              url: competitor.linkedInUrl,
+            },
             date: now.toISOString(),
             impact: changeScore > 70 ? "High" : "Medium",
             userId: userId || competitor.userId,
@@ -319,9 +326,16 @@ export async function monitorCompetitorSocialMedia(
         if (!summary.toLowerCase().includes("no significant")) {
           await storage.createActivity({
             type: "social_update",
+            sourceType: "competitor",
             competitorId: competitor.id,
             competitorName: competitor.name,
-            description: `Instagram Update: ${summary}`,
+            description: `Instagram profile updated (${changeScore}% change detected)`,
+            summary,
+            details: {
+              platform: "instagram",
+              changeScore,
+              url: competitor.instagramUrl,
+            },
             date: now.toISOString(),
             impact: changeScore > 70 ? "High" : "Medium",
             userId: userId || competitor.userId,

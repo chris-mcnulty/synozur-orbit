@@ -146,9 +146,16 @@ export async function monitorCompetitorWebsite(
       if (isRealChange && userId && tenantDomain) {
         await storage.createActivity({
           type: "website_update",
+          sourceType: "competitor",
           competitorId: competitor.id,
           competitorName: competitor.name,
-          description: summary,
+          description: `Website content changed (${changeScore}% change detected)`,
+          summary,
+          details: {
+            changeScore,
+            pagesMonitored: crawlResult.pages.length,
+            crawledAt: crawlResult.crawledAt,
+          },
           date: now.toISOString().split("T")[0],
           impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
           userId,
