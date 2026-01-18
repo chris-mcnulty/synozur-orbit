@@ -3,6 +3,7 @@ import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePageTracking } from "@/hooks/use-page-tracking";
 
 const capabilities = [
   {
@@ -43,6 +44,7 @@ const capabilities = [
 ];
 
 export default function Landing() {
+  usePageTracking("/");
   const [activeCapability, setActiveCapability] = useState("intelligence");
   const currentCapability = capabilities.find(c => c.id === activeCapability) || capabilities[0];
 

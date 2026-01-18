@@ -9,8 +9,10 @@ import { useUser } from "@/lib/userContext";
 import { COMPANY_SIZES, JOB_ROLES, INDUSTRIES, COUNTRIES } from "@/lib/constants";
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { usePageTracking } from "@/hooks/use-page-tracking";
 
 export default function SignUp() {
+  usePageTracking("/auth/signup");
   const [, setLocation] = useLocation();
   const { register } = useUser();
   const [formData, setFormData] = useState({

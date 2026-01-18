@@ -4992,5 +4992,65 @@ Return only the description text, no quotes or formatting.`;
     }
   });
 
+  // ==================== ANALYTICS ROUTES ====================
+
+  app.post("/api/analytics/page-view", async (req, res) => {
+    try {
+      const { path, sessionId, referrer, utmSource, utmMedium, utmCampaign } = req.body;
+      
+      if (!path || !sessionId) {
+        return res.status(400).json({ error: "path and sessionId are required" });
+      }
+
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const ipHash = require('crypto').createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
+      const userAgent = req.headers['user-agent'] || '';
+
+      await storage.createPageView({
+        path,
+        sessionId,
+        ipHash,
+        userAgent,
+        referrer: referrer || null,
+        utmSource: utmSource || null,
+        utmMedium: utmMedium || null,
+        utmCampaign: utmCampaign || null,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Page view tracking error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/analytics/usage", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const days = parseInt(req.query.days as string) || 7;
+      const stats = await storage.getPageViewStats(days);
+      
+      const conversionRate = stats.totalViews > 0 
+        ? (stats.signupPageViews / stats.totalViews) * 100 
+        : 0;
+
+      res.json({
+        ...stats,
+        conversionRate,
+      });
+    } catch (error: any) {
+      console.error("Usage stats error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

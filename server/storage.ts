@@ -19,6 +19,7 @@ import {
   battlecards,
   productBattlecards,
   longFormRecommendations,
+  pageViews,
   type User, 
   type InsertUser,
   type Tenant,
@@ -58,10 +59,12 @@ import {
   type ProductBattlecard,
   type InsertProductBattlecard,
   type LongFormRecommendation,
-  type InsertLongFormRecommendation
+  type InsertLongFormRecommendation,
+  type PageView,
+  type InsertPageView
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -954,6 +957,108 @@ export class DatabaseStorage implements IStorage {
 
   async deleteLongFormRecommendation(id: string): Promise<void> {
     await db.delete(longFormRecommendations).where(eq(longFormRecommendations.id, id));
+  }
+
+  // Page view analytics methods
+  async createPageView(pageView: InsertPageView): Promise<PageView> {
+    const [result] = await db
+      .insert(pageViews)
+      .values(pageView)
+      .returning();
+    return result;
+  }
+
+  async getPageViewStats(days: number): Promise<{
+    totalViews: number;
+    uniqueVisitors: number;
+    signupPageViews: number;
+    dailyViews: Array<{ date: string; views: number; uniqueVisitors: number; signupViews: number }>;
+    referrers: Array<{ referrer: string; count: number }>;
+    utmCampaigns: Array<{ campaign: string; source: string; medium: string; count: number }>;
+  }> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    const allViews = await db.select().from(pageViews).where(gte(pageViews.createdAt, startDate));
+    
+    const totalViews = allViews.length;
+    const uniqueSessionIds = new Set(allViews.map(v => v.sessionId));
+    const uniqueVisitors = uniqueSessionIds.size;
+    const signupPageViews = allViews.filter(v => v.path === "/auth/signup").length;
+
+    const dailyMap = new Map<string, { views: number; sessions: Set<string>; signupViews: number }>();
+    
+    for (let i = 0; i < days; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      dailyMap.set(dateStr, { views: 0, sessions: new Set(), signupViews: 0 });
+    }
+
+    allViews.forEach(view => {
+      const dateStr = view.createdAt.toISOString().split('T')[0];
+      if (dailyMap.has(dateStr)) {
+        const day = dailyMap.get(dateStr)!;
+        day.views++;
+        day.sessions.add(view.sessionId);
+        if (view.path === "/auth/signup") day.signupViews++;
+      }
+    });
+
+    const dailyViews = Array.from(dailyMap.entries())
+      .map(([date, data]) => ({
+        date,
+        views: data.views,
+        uniqueVisitors: data.sessions.size,
+        signupViews: data.signupViews,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const referrerMap = new Map<string, number>();
+    allViews.forEach(view => {
+      const ref = view.referrer || "Direct";
+      referrerMap.set(ref, (referrerMap.get(ref) || 0) + 1);
+    });
+    const referrers = Array.from(referrerMap.entries())
+      .map(([referrer, count]) => ({ referrer, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const utmMap = new Map<string, { source: string; medium: string; count: number }>();
+    allViews.forEach(view => {
+      if (view.utmCampaign || view.utmSource) {
+        const key = `${view.utmCampaign || "none"}_${view.utmSource || "none"}_${view.utmMedium || "none"}`;
+        const existing = utmMap.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          utmMap.set(key, {
+            source: view.utmSource || "",
+            medium: view.utmMedium || "",
+            count: 1,
+          });
+        }
+      }
+    });
+    const utmCampaigns = Array.from(utmMap.entries())
+      .map(([key, data]) => ({
+        campaign: key.split("_")[0] === "none" ? "" : key.split("_")[0],
+        source: data.source,
+        medium: data.medium,
+        count: data.count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    return {
+      totalViews,
+      uniqueVisitors,
+      signupPageViews,
+      dailyViews,
+      referrers,
+      utmCampaigns,
+    };
   }
 }
 
