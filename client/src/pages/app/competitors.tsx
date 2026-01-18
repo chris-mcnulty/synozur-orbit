@@ -134,7 +134,7 @@ export default function Competitors() {
   });
 
   const saveProfile = useMutation({
-    mutationFn: async (data: { companyName: string; websiteUrl: string; description: string }) => {
+    mutationFn: async (data: { companyName: string; websiteUrl: string; linkedInUrl: string; instagramUrl: string; twitterUrl: string; description: string }) => {
       const response = await fetch("/api/company-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

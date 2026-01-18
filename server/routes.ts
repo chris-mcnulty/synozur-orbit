@@ -2232,7 +2232,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl } = parsed.data;
+      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl } = parsed.data;
       
       // Plan-gating: Trial/Free plans can only baseline their own domain
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
@@ -2258,6 +2258,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           websiteUrl,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
+          twitterUrl: twitterUrl || null,
           description,
         });
         res.json(updated);
@@ -2270,6 +2271,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           websiteUrl,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
+          twitterUrl: twitterUrl || null,
           description,
         });
         res.json(profile);

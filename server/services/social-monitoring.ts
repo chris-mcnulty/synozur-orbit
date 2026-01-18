@@ -158,7 +158,8 @@ async function fetchSocialPageContent(url: string): Promise<{ content: string | 
       return { content: null, rawHtml: null, blocked: true };
     }
     
-    const platform = url.includes("linkedin") ? "linkedin" : "instagram";
+    const platform = url.includes("linkedin") ? "linkedin" : 
+                     (url.includes("twitter") || url.includes("x.com")) ? "twitter" : "instagram";
     const content = extractKeySignals(html, platform);
     
     return { content, rawHtml: html, blocked: false };
