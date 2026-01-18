@@ -576,3 +576,25 @@ export const insertAssessmentSchema = createInsertSchema(assessments).omit({
 
 export type Assessment = typeof assessments.$inferSelect;
 export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
+
+// Page views for traffic analytics
+export const pageViews = pgTable("page_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  path: text("path").notNull(), // e.g., "/", "/auth/signup"
+  sessionId: text("session_id").notNull(), // anonymous session tracking
+  ipHash: text("ip_hash"), // hashed IP for unique visitor counting
+  userAgent: text("user_agent"),
+  referrer: text("referrer"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPageViewSchema = createInsertSchema(pageViews).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type PageView = typeof pageViews.$inferSelect;
+export type InsertPageView = z.infer<typeof insertPageViewSchema>;

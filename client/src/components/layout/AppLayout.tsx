@@ -212,7 +212,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "System",
       items: [
         { label: "User Management", icon: Users, href: "/app/users" },
-        { label: "Usage & Traffic", icon: LineChart, href: "/app/settings#plan-usage" },
+        { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },
         ...(user?.role === "Global Admin" ? [{ label: "Admin Dashboard", icon: Crown, href: "/app/admin" }] : []),
       ]
