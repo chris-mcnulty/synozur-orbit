@@ -3,6 +3,7 @@ import { BookOpen, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import AppLayout from "@/components/layout/AppLayout";
 
 export default function UserGuidePage() {
   const [content, setContent] = useState<string>("");
@@ -158,38 +159,40 @@ export default function UserGuidePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-primary/10">
-          <BookOpen className="w-6 h-6 text-primary" />
+    <AppLayout>
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <BookOpen className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">User Guide</h1>
+            <p className="text-muted-foreground text-sm">Learn how to get the most out of Orbit</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">User Guide</h1>
-          <p className="text-muted-foreground text-sm">Learn how to get the most out of Orbit</p>
-        </div>
-      </div>
 
-      <Card>
-        <CardHeader className="border-b border-border">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <BookOpen size={18} className="text-primary" />
-            Orbit Documentation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-280px)]">
-            <div className="p-6 max-w-none prose-invert">
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-pulse text-muted-foreground">Loading guide...</div>
-                </div>
-              ) : (
-                <div className="space-y-0">{renderMarkdown(content)}</div>
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
-    </div>
+        <Card>
+          <CardHeader className="border-b border-border">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <BookOpen size={18} className="text-primary" />
+              Orbit Documentation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ScrollArea className="h-[calc(100vh-280px)]">
+              <div className="p-6 max-w-none prose-invert">
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-pulse text-muted-foreground">Loading guide...</div>
+                  </div>
+                ) : (
+                  <div className="space-y-0">{renderMarkdown(content)}</div>
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+    </AppLayout>
   );
 }
