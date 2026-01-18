@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, ArrowUp, ArrowDown, Minus, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, RefreshCw, Loader2, BarChart3, Users, Swords, FileText, Sparkles, Share2, Linkedin, Instagram } from "lucide-react";
 import { MarkdownContent } from "@/components/MarkdownViewer";
+import { formatDateTime } from "@/lib/utils";
 
 interface ExecutiveSummaryData {
   project: {
@@ -697,7 +698,7 @@ export default function ExecutiveSummary() {
       </Tabs>
 
       <div className="text-xs text-muted-foreground text-right">
-        Last updated: {new Date(summary.lastUpdated).toLocaleString()}
+        Last updated: {formatDateTime(summary.lastUpdated)}
       </div>
     </div>
   );

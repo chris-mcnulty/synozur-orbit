@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { JOB_ROLES, INDUSTRIES, COMPANY_SIZES, COUNTRIES } from "@/lib/constants";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import type { Assessment } from "@shared/schema";
 
 export default function Assessments() {
@@ -318,7 +319,7 @@ export default function Assessments() {
                     <CardTitle className="text-lg">{assessment.name}</CardTitle>
                     <CardDescription className="flex items-center gap-2 mt-1">
                       <Calendar className="h-3 w-3" />
-                      {new Date(assessment.createdAt).toLocaleDateString()}
+                      {formatDate(assessment.createdAt)}
                     </CardDescription>
                   </div>
                   {assessment.isProxy && (
@@ -384,7 +385,7 @@ export default function Assessments() {
           <DialogHeader>
             <DialogTitle>{selectedAssessment?.name}</DialogTitle>
             <DialogDescription>
-              Created on {selectedAssessment && new Date(selectedAssessment.createdAt).toLocaleString()}
+              Created on {selectedAssessment && formatDateTime(selectedAssessment.createdAt)}
             </DialogDescription>
           </DialogHeader>
           {selectedAssessment && (
