@@ -8,6 +8,14 @@ Orbit is an AI-driven marketing intelligence platform designed for The Synozur A
 
 Preferred communication style: Simple, everyday language.
 
+## Reference Projects
+
+### Orion - Synozur Maturity Model Platform
+- **Repository**: https://github.com/chris-mcnulty/synozur-maturitymodeler
+- **Purpose**: Digital maturity modeling AI platform by Synozur
+- **Use As Reference For**: UI/UX patterns, feature implementations, admin dashboards, AI usage tracking
+- **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
+
 ## System Architecture
 
 ### Frontend
@@ -32,7 +40,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas from Drizzle.
-- **Key Tables**: `users` (RBAC, tenant demographics), `tenants`, `markets`, `consultantAccess`, `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`, `battlecards`, `competitorScores`, `socialMetrics`, `executiveSummaries`.
+- **Key Tables**: `users` (RBAC, tenant demographics), `tenants`, `markets`, `consultantAccess`, `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`, `battlecards`, `competitorScores`, `socialMetrics`, `executiveSummaries`, `aiUsage`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
@@ -116,7 +124,7 @@ After completing significant features or bug fixes, update the following files:
 ### Standard Priority
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
 - **Battlecard PDF export**: Export battlecards as branded PDF documents
-- **AI usage tracker**: System-level tracking of AI API usage (tokens, requests, costs) across all tenants with admin dashboard visibility
+- **Wire AI usage logging**: Connect logAiUsage() calls to all AI service entry points (competitor analysis, battlecard generation, executive summaries, etc.) to populate the usage tracking dashboard
 - **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
 - **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID
 - **Per-tenant branding**: Custom logos and colors per tenant

@@ -22,6 +22,7 @@ import {
   pageViews,
   markets,
   consultantAccess,
+  aiUsage,
   type User, 
   type InsertUser,
   type Tenant,
@@ -74,6 +75,8 @@ import {
   type InsertMarket,
   type ConsultantAccess,
   type InsertConsultantAccess,
+  type AiUsage,
+  type InsertAiUsage,
   competitorScores,
   socialMetrics,
   executiveSummaries
@@ -296,6 +299,16 @@ export interface IStorage {
   getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
   getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]>;
   getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]>;
+  
+  // AI usage tracking methods
+  logAiUsage(usage: InsertAiUsage): Promise<AiUsage>;
+  getAiUsageStats(): Promise<{
+    totalRequests: number;
+    totalEstimatedCost: number;
+    requestsByOperation: Record<string, number>;
+    dailyUsage: Record<string, number>;
+    recentLogs: AiUsage[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1750,6 +1763,56 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(battlecards.createdAt));
+  }
+
+  async logAiUsage(usage: InsertAiUsage): Promise<AiUsage> {
+    const [logged] = await db.insert(aiUsage).values(usage).returning();
+    return logged;
+  }
+
+  async getAiUsageStats(): Promise<{
+    totalRequests: number;
+    totalEstimatedCost: number;
+    requestsByOperation: Record<string, number>;
+    dailyUsage: Record<string, number>;
+    recentLogs: AiUsage[];
+  }> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const allLogs = await db.select().from(aiUsage)
+      .where(gte(aiUsage.createdAt, thirtyDaysAgo))
+      .orderBy(desc(aiUsage.createdAt));
+    
+    const totalRequests = allLogs.length;
+    
+    let totalEstimatedCost = 0;
+    allLogs.forEach(log => {
+      if (log.estimatedCost) {
+        totalEstimatedCost += parseFloat(log.estimatedCost);
+      }
+    });
+    
+    const requestsByOperation: Record<string, number> = {};
+    allLogs.forEach(log => {
+      requestsByOperation[log.operation] = (requestsByOperation[log.operation] || 0) + 1;
+    });
+    
+    const dailyUsage: Record<string, number> = {};
+    allLogs.forEach(log => {
+      const dateKey = log.createdAt.toISOString().split('T')[0];
+      dailyUsage[dateKey] = (dailyUsage[dateKey] || 0) + 1;
+    });
+    
+    const recentLogs = allLogs.slice(0, 20);
+    
+    return {
+      totalRequests,
+      totalEstimatedCost,
+      requestsByOperation,
+      dailyUsage,
+      recentLogs,
+    };
   }
 }
 

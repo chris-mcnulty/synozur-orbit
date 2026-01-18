@@ -3373,6 +3373,26 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // ==================== AI USAGE TRACKING (Global Admin only) ====================
+  
+  app.get("/api/admin/ai/usage", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const stats = await storage.getAiUsageStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== CLIENT PROJECTS (Pro/Enterprise only) ====================
   
   // Get all client projects for current tenant

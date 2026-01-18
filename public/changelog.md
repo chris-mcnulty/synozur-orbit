@@ -9,14 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- AI Usage Tracker - Global Admin dashboard to monitor AI API usage across all tenants
+  - Statistics cards showing total requests, estimated costs, average daily usage, and most-used operations
+  - Daily usage bar chart (last 14 days) and pie chart showing usage by operation type
+  - Recent activity table with operation details, model names, and tenant attribution
+  - Database table for tracking all AI API calls (provider, model, tokens, costs)
+- Backlog.md file with comprehensive MVP feature tracking
+
 ### Changed
 - Unified Overview page - consolidated Command Center and Overview into a single, visually rich dashboard at `/app`
 - Overview is now the home page hero when logging in
 - Added "Rebuild All" button to Overview for admins to refresh all competitive intelligence
 - Enhanced AI Insights section with action item assignment, accept, and dismiss controls
-
-### Added
-- Backlog.md file with comprehensive MVP feature tracking
 
 ---
 
