@@ -45,6 +45,7 @@ function toContextFilter(ctx: RequestContext): ContextFilter {
     tenantId: ctx.tenantId,
     marketId: ctx.marketId,
     tenantDomain: ctx.tenantDomain,
+    isDefaultMarket: ctx.isDefaultMarket,
   };
 }
 
@@ -57,8 +58,12 @@ function validateResourceContext(
   if (resource.tenantDomain && resource.tenantDomain !== ctx.tenantDomain) {
     return false;
   }
-  // If resource has a marketId, it must match (or be null for legacy data)
+  // If resource has a marketId, it must match the current market
   if (resource.marketId && resource.marketId !== ctx.marketId) {
+    return false;
+  }
+  // If resource has null marketId, only allow in default market (legacy data)
+  if (!resource.marketId && !ctx.isDefaultMarket) {
     return false;
   }
   return true;

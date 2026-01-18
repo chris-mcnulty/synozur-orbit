@@ -7,6 +7,7 @@ export interface RequestContext {
   marketId: string;
   userRole: string;
   tenantDomain: string;
+  isDefaultMarket: boolean;
 }
 
 export class ContextError extends Error {
@@ -74,12 +75,17 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
 
   const finalTenant = await storage.getTenant(activeTenantId);
   
+  // Determine if current market is the default market
+  const defaultMarket = await storage.getDefaultMarket(activeTenantId);
+  const isDefaultMarket = defaultMarket?.id === activeMarketId;
+  
   return {
     userId,
     tenantId: activeTenantId,
     marketId: activeMarketId || "",
     userRole: user.role,
     tenantDomain: finalTenant?.domain || userDomain,
+    isDefaultMarket,
   };
 }
 
