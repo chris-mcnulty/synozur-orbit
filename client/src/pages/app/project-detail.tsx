@@ -237,6 +237,42 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
+  // Fetch Messaging Comparison data
+  interface MessagingData {
+    summary: string | null;
+    valueProposition: string | null;
+    targetAudience: string | null;
+    keyMessages: string[];
+    differentiators: string[];
+    toneAndStyle: string | null;
+  }
+  interface MessagingComparison {
+    baseline: {
+      id: string;
+      name: string;
+      companyName: string;
+      messaging: MessagingData;
+    } | null;
+    competitors: Array<{
+      id: string;
+      name: string;
+      companyName: string;
+      messaging: MessagingData;
+      hasAnalysis: boolean;
+    }>;
+    totalCompetitors: number;
+    analyzedCompetitors: number;
+  }
+  const { data: messagingComparison, isLoading: comparisonLoading } = useQuery<MessagingComparison>({
+    queryKey: ["/api/projects", id, "messaging-comparison"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/messaging-comparison`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch messaging comparison");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
   // Initialize prompts from saved data when loaded
   React.useEffect(() => {
     if (gtmPlan?.savedPrompts) {
@@ -1812,17 +1848,7 @@ export default function ProjectDetail() {
                         </Button>
                       </div>
                       <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                        <div dangerouslySetInnerHTML={{ 
-                          __html: gtmPlan.content
-                            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                            .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                            .replace(/^- (.*$)/gim, '<li>$1</li>')
-                            .replace(/\n\n/gim, '</p><p>')
-                            .replace(/\n/gim, '<br/>')
-                        }} />
+                        <MarkdownContent content={gtmPlan.content} />
                       </div>
                     </div>
                   ) : (
@@ -1968,17 +1994,7 @@ export default function ProjectDetail() {
                         </Button>
                       </div>
                       <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                        <div dangerouslySetInnerHTML={{ 
-                          __html: messagingFramework.content
-                            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                            .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                            .replace(/^- (.*$)/gim, '<li>$1</li>')
-                            .replace(/\n\n/gim, '</p><p>')
-                            .replace(/\n/gim, '<br/>')
-                        }} />
+                        <MarkdownContent content={messagingFramework.content} />
                       </div>
                     </div>
                   ) : (
@@ -1988,6 +2004,155 @@ export default function ProjectDetail() {
                       <p className="text-muted-foreground mb-4">
                         Fill in the guidance above and click generate to create your messaging framework.
                       </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Side-by-Side Messaging Comparison */}
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Swords className="h-5 w-5 text-primary" />
+                    Side-by-Side Messaging Comparison
+                  </CardTitle>
+                  <CardDescription>
+                    Compare your messaging against each competitor
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {comparisonLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !messagingComparison?.baseline ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Baseline Product</h3>
+                      <p className="text-muted-foreground">
+                        Add a baseline product to compare messaging against competitors.
+                      </p>
+                    </div>
+                  ) : messagingComparison.competitors.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Building className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Competitors Added</h3>
+                      <p className="text-muted-foreground">
+                        Add competitor products to see side-by-side messaging comparison.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="text-sm text-muted-foreground mb-4">
+                        {messagingComparison.analyzedCompetitors} of {messagingComparison.totalCompetitors} competitors analyzed
+                      </div>
+                      
+                      {messagingComparison.competitors.map((competitor) => (
+                        <div key={competitor.id} className="border rounded-lg overflow-hidden" data-testid={`comparison-${competitor.id}`}>
+                          <div className="bg-muted/30 px-4 py-3 border-b">
+                            <h4 className="font-semibold flex items-center gap-2">
+                              {messagingComparison.baseline?.name} vs {competitor.name}
+                              {!competitor.hasAnalysis && (
+                                <Badge variant="outline" className="text-xs">Not analyzed</Badge>
+                              )}
+                            </h4>
+                          </div>
+                          
+                          <div className="grid md:grid-cols-2 divide-x divide-border">
+                            {/* Your Product Column */}
+                            <div className="p-4 space-y-4">
+                              <div className="flex items-center gap-2 text-primary font-medium mb-3">
+                                <Star className="h-4 w-4" />
+                                {messagingComparison.baseline?.name}
+                              </div>
+                              
+                              {messagingComparison.baseline?.messaging.valueProposition && (
+                                <div>
+                                  <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Value Proposition</h5>
+                                  <p className="text-sm">{messagingComparison.baseline.messaging.valueProposition}</p>
+                                </div>
+                              )}
+                              
+                              {messagingComparison.baseline?.messaging.targetAudience && (
+                                <div>
+                                  <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Target Audience</h5>
+                                  <p className="text-sm">{messagingComparison.baseline.messaging.targetAudience}</p>
+                                </div>
+                              )}
+                              
+                              {messagingComparison.baseline?.messaging.keyMessages && messagingComparison.baseline.messaging.keyMessages.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Key Messages</h5>
+                                  <ul className="text-sm space-y-1">
+                                    {messagingComparison.baseline.messaging.keyMessages.map((msg, i) => (
+                                      <li key={i} className="flex items-start gap-2">
+                                        <Check className="h-3 w-3 mt-1 text-primary flex-shrink-0" />
+                                        {msg}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              
+                              {(!messagingComparison.baseline?.messaging.valueProposition && 
+                                !messagingComparison.baseline?.messaging.targetAudience &&
+                                (!messagingComparison.baseline?.messaging.keyMessages || messagingComparison.baseline.messaging.keyMessages.length === 0)) && (
+                                <p className="text-sm text-muted-foreground italic">No analysis data available. Run analysis to populate.</p>
+                              )}
+                            </div>
+                            
+                            {/* Competitor Column */}
+                            <div className="p-4 space-y-4 bg-muted/10">
+                              <div className="flex items-center gap-2 font-medium mb-3">
+                                <Building className="h-4 w-4" />
+                                {competitor.name}
+                              </div>
+                              
+                              {competitor.hasAnalysis ? (
+                                <>
+                                  {competitor.messaging.valueProposition && (
+                                    <div>
+                                      <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Value Proposition</h5>
+                                      <p className="text-sm">{competitor.messaging.valueProposition}</p>
+                                    </div>
+                                  )}
+                                  
+                                  {competitor.messaging.targetAudience && (
+                                    <div>
+                                      <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Target Audience</h5>
+                                      <p className="text-sm">{competitor.messaging.targetAudience}</p>
+                                    </div>
+                                  )}
+                                  
+                                  {competitor.messaging.keyMessages && competitor.messaging.keyMessages.length > 0 && (
+                                    <div>
+                                      <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Key Messages</h5>
+                                      <ul className="text-sm space-y-1">
+                                        {competitor.messaging.keyMessages.map((msg, i) => (
+                                          <li key={i} className="flex items-start gap-2">
+                                            <X className="h-3 w-3 mt-1 text-muted-foreground flex-shrink-0" />
+                                            {msg}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  
+                                  {(!competitor.messaging.valueProposition && 
+                                    !competitor.messaging.targetAudience &&
+                                    (!competitor.messaging.keyMessages || competitor.messaging.keyMessages.length === 0)) && (
+                                    <p className="text-sm text-muted-foreground italic">Analysis exists but no messaging data extracted.</p>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="text-sm text-muted-foreground italic">
+                                  Not analyzed yet. Generate a battlecard or run analysis to see messaging.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </CardContent>

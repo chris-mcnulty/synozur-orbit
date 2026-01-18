@@ -4732,6 +4732,79 @@ Make this a comprehensive reference document for sales and strategy teams.`;
     }
   });
 
+  // Get side-by-side messaging comparison
+  app.get("/api/projects/:projectId/messaging-comparison", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && !hasCrossTenantReadAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      // Extract messaging data from baseline
+      const baselineAnalysis = baselineProduct?.product?.analysisData as any;
+      const baseline = baselineProduct ? {
+        id: baselineProduct.productId,
+        name: baselineProduct.product?.name || "Your Product",
+        companyName: baselineProduct.product?.companyName || "Your Company",
+        messaging: {
+          summary: baselineAnalysis?.summary || null,
+          valueProposition: baselineAnalysis?.valueProposition || null,
+          targetAudience: baselineAnalysis?.targetAudience || null,
+          keyMessages: baselineAnalysis?.keyMessages || [],
+          differentiators: baselineAnalysis?.differentiators || [],
+          toneAndStyle: baselineAnalysis?.toneAndStyle || null,
+        }
+      } : null;
+
+      // Extract messaging data from competitors
+      const competitors = competitorProducts.map(cp => {
+        const analysis = cp.product?.analysisData as any;
+        return {
+          id: cp.productId,
+          name: cp.product?.name || "Unknown",
+          companyName: cp.product?.companyName || "Unknown",
+          messaging: {
+            summary: analysis?.summary || null,
+            valueProposition: analysis?.valueProposition || null,
+            targetAudience: analysis?.targetAudience || null,
+            keyMessages: analysis?.keyMessages || [],
+            differentiators: analysis?.differentiators || [],
+            toneAndStyle: analysis?.toneAndStyle || null,
+          },
+          hasAnalysis: !!analysis,
+        };
+      });
+
+      res.json({
+        baseline,
+        competitors,
+        totalCompetitors: competitorProducts.length,
+        analyzedCompetitors: competitors.filter(c => c.hasAnalysis).length,
+      });
+    } catch (error: any) {
+      console.error("Messaging comparison error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Calculate and update competitor scores
   app.post("/api/projects/:projectId/calculate-scores", async (req, res) => {
     try {
