@@ -5141,6 +5141,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
           competitorId: product.competitorId,
           projectId: req.params.projectId,
           tenantDomain,
+          marketId: project.marketId || null,
           overallScore,
           marketPresenceScore,
           innovationScore,

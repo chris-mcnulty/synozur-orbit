@@ -249,15 +249,18 @@ export interface IStorage {
   getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined>;
   getCompetitorScoresByProject(projectId: string): Promise<CompetitorScore[]>;
   getCompetitorScoresByTenant(tenantDomain: string): Promise<CompetitorScore[]>;
+  getCompetitorScoresByContext(ctx: ContextFilter): Promise<CompetitorScore[]>;
   upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore>;
   
   // Social metrics methods
   getSocialMetrics(competitorId: string, platform?: string): Promise<SocialMetric[]>;
   getSocialMetricsByTenant(tenantDomain: string): Promise<SocialMetric[]>;
+  getSocialMetricsByContext(ctx: ContextFilter): Promise<SocialMetric[]>;
   createSocialMetric(metric: InsertSocialMetric): Promise<SocialMetric>;
   
   // Executive summary methods
   getExecutiveSummary(projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined>;
+  getExecutiveSummaryByContext(ctx: ContextFilter, projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined>;
   upsertExecutiveSummary(summary: InsertExecutiveSummary): Promise<ExecutiveSummary>;
   
   // Market methods (multi-market support for enterprise tenants)
@@ -1259,6 +1262,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(competitorScores.overallScore));
   }
 
+  async getCompetitorScoresByContext(ctx: ContextFilter): Promise<CompetitorScore[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(competitorScores.marketId, ctx.marketId), isNull(competitorScores.marketId))
+      : eq(competitorScores.marketId, ctx.marketId);
+    
+    return await db.select().from(competitorScores)
+      .where(
+        and(
+          eq(competitorScores.tenantDomain, ctx.tenantDomain),
+          marketCondition
+        )
+      )
+      .orderBy(desc(competitorScores.overallScore));
+  }
+
   async upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore> {
     const existing = await this.getCompetitorScore(score.competitorId, score.projectId ?? undefined);
     if (existing) {
@@ -1297,6 +1315,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(socialMetrics.capturedAt));
   }
 
+  async getSocialMetricsByContext(ctx: ContextFilter): Promise<SocialMetric[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(socialMetrics.marketId, ctx.marketId), isNull(socialMetrics.marketId))
+      : eq(socialMetrics.marketId, ctx.marketId);
+    
+    return await db.select().from(socialMetrics)
+      .where(
+        and(
+          eq(socialMetrics.tenantDomain, ctx.tenantDomain),
+          marketCondition
+        )
+      )
+      .orderBy(desc(socialMetrics.capturedAt));
+  }
+
   async createSocialMetric(metric: InsertSocialMetric): Promise<SocialMetric> {
     const [result] = await db
       .insert(socialMetrics)
@@ -1318,6 +1351,28 @@ export class DatabaseStorage implements IStorage {
       return summary || undefined;
     }
     return undefined;
+  }
+
+  async getExecutiveSummaryByContext(ctx: ContextFilter, projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(executiveSummaries.marketId, ctx.marketId), isNull(executiveSummaries.marketId))
+      : eq(executiveSummaries.marketId, ctx.marketId);
+    
+    const conditions = [
+      eq(executiveSummaries.tenantDomain, ctx.tenantDomain),
+      marketCondition
+    ];
+    
+    if (projectId) {
+      conditions.push(eq(executiveSummaries.projectId, projectId));
+    }
+    if (companyProfileId) {
+      conditions.push(eq(executiveSummaries.companyProfileId, companyProfileId));
+    }
+    
+    const [summary] = await db.select().from(executiveSummaries)
+      .where(and(...conditions));
+    return summary || undefined;
   }
 
   async upsertExecutiveSummary(summary: InsertExecutiveSummary): Promise<ExecutiveSummary> {
