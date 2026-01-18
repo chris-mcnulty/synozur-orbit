@@ -186,15 +186,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const navigation = [
     {
-      group: "Command",
+      group: "Home",
       items: [
-        { label: "Command Center", icon: Zap, href: "/app/command-center" },
+        { label: "Overview", icon: LayoutDashboard, href: "/app" },
       ]
     },
     {
       group: "Setup",
       items: [
-        { label: "Overview", icon: LayoutDashboard, href: "/app/dashboard" },
         { label: "Company Baseline", icon: Building2, href: "/app/company-profile" },
         { label: "Competitors", icon: Target, href: "/app/competitors" },
         { label: "Documents", icon: BookOpen, href: "/app/documents" },

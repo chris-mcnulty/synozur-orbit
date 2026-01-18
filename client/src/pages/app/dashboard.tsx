@@ -229,9 +229,9 @@ export default function Dashboard() {
       <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-1">Command Center</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">Overview</h1>
             <p className="text-muted-foreground">
-              Welcome back, {user?.name?.split(" ")[0] || "there"}. Here's your competitive intelligence overview.
+              Welcome back, {user?.name?.split(" ")[0] || "there"}. Here's your competitive intelligence at a glance.
             </p>
           </div>
           <div className="flex gap-2">
