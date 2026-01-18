@@ -568,7 +568,7 @@ export default function Settings() {
           </Card>
         )}
 
-        <Card data-testid="card-plan">
+        <Card id="plan-usage" data-testid="card-plan">
           <CardHeader>
             <div className="flex justify-between items-start">
               <div>

@@ -60,7 +60,6 @@ function Router() {
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/projects" component={ProjectsPage} />
       <Route path="/app/projects/:id" component={ProjectDetail} />
-      <Route path="/app/usage" component={Settings} /> {/* Reuse Settings as placeholder */}
       <Route path="/app/guide" component={UserGuidePage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />
       
