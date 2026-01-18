@@ -57,10 +57,11 @@
 - [x] Team invitation emails
 - [x] Password reset emails
 - [x] Vega-inspired email styling (purple gradients, dark mode, Synozur branding)
-- [ ] Trial nudge cadence emails (welcome, mid-trial, end warning, expiration) - BACKLOGGED pending copy/links
+- [x] Trial nudge cadence emails (60-day trial with reminders at days 7, 30, 46, 53, 57, 59, 60)
 - [ ] Weekly competitor update digest
 - [ ] Alert emails for significant changes
-**Effort**: Medium (remaining: trial cadence emails, digests)
+- [ ] Centralized email text management system (move all email copy to single location for easier maintenance)
+**Effort**: Medium (remaining: digests, centralized copy management)
 
 ### 2.2 Dark/Light Mode Toggle
 **Status**: Dark mode default, no toggle
