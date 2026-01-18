@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Plus, Clock, Building2, Briefcase } from "lucide-react";
+import { Download, FileText, Plus, Clock, Building2, Briefcase, BookOpen, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -23,14 +23,42 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+
+type ReportSections = {
+  executiveSummary: boolean;
+  companyBaseline: boolean;
+  competitorProfiles: boolean;
+  gapAnalysis: boolean;
+  recommendations: boolean;
+  battleCards: boolean;
+  activityLog: boolean;
+};
+
+const defaultSections: ReportSections = {
+  executiveSummary: true,
+  companyBaseline: true,
+  competitorProfiles: true,
+  gapAnalysis: true,
+  recommendations: true,
+  battleCards: true,
+  activityLog: false,
+};
 
 export default function Reports() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCapstoneDialogOpen, setIsCapstoneDialogOpen] = useState(false);
   const [scope, setScope] = useState<"baseline" | "project">("baseline");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [reportName, setReportName] = useState("");
+  const [sections, setSections] = useState<ReportSections>(defaultSections);
+  const [includeAllProjects, setIncludeAllProjects] = useState(true);
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
 
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["/api/reports"],
@@ -181,10 +209,60 @@ export default function Reports() {
            <h1 className="text-3xl font-bold tracking-tight mb-2">Reports</h1>
            <p className="text-muted-foreground">Generate and download branded competitive intelligence reports.</p>
         </div>
-        <Button onClick={handleOpenDialog} data-testid="button-generate-report">
-            <Plus className="w-4 h-4 mr-2" /> Generate New Report
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setIsCapstoneDialogOpen(true)} data-testid="button-capstone-report">
+            <BookOpen className="w-4 h-4 mr-2" /> Capstone Report
+          </Button>
+          <Button onClick={handleOpenDialog} data-testid="button-generate-report">
+            <Plus className="w-4 h-4 mr-2" /> Quick Report
+          </Button>
+        </div>
       </div>
+
+      <Card className="mb-6 border-primary/20 bg-gradient-to-r from-primary/5 to-secondary/5">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <BookOpen className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Capstone Report Builder</CardTitle>
+              <CardDescription>Create a comprehensive report with customizable sections</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {[
+              { key: "executiveSummary", label: "Executive Summary", icon: Sparkles },
+              { key: "companyBaseline", label: "Company Profile", icon: Building2 },
+              { key: "competitorProfiles", label: "Competitors", icon: Target },
+              { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
+              { key: "recommendations", label: "Recommendations", icon: Lightbulb },
+              { key: "battleCards", label: "Battle Cards", icon: Swords },
+              { key: "activityLog", label: "Activity Log", icon: Activity },
+            ].map(({ key, label, icon: Icon }) => (
+              <Badge 
+                key={key} 
+                variant={sections[key as keyof ReportSections] ? "default" : "outline"}
+                className={cn(
+                  "cursor-pointer transition-all",
+                  sections[key as keyof ReportSections] 
+                    ? "bg-primary/90 hover:bg-primary" 
+                    : "hover:bg-primary/10"
+                )}
+                onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
+              >
+                <Icon className="w-3 h-3 mr-1" />
+                {label}
+              </Badge>
+            ))}
+          </div>
+          <Button onClick={() => setIsCapstoneDialogOpen(true)} className="w-full sm:w-auto">
+            <BookOpen className="w-4 h-4 mr-2" /> Build Capstone Report
+          </Button>
+        </CardContent>
+      </Card>
 
       {reports.length === 0 ? (
         <Card className="p-12 text-center">
@@ -335,6 +413,203 @@ export default function Reports() {
               data-testid="button-confirm-generate"
             >
               {isGenerating ? "Generating..." : "Generate & Download"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCapstoneDialogOpen} onOpenChange={setIsCapstoneDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-primary" />
+              Capstone Report Builder
+            </DialogTitle>
+            <DialogDescription>
+              Build a comprehensive report by selecting the sections you want to include.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="capstone-name">Report Name</Label>
+              <Input
+                id="capstone-name"
+                placeholder="e.g., Q1 2025 Comprehensive Competitive Analysis"
+                value={reportName}
+                onChange={(e) => setReportName(e.target.value)}
+                data-testid="input-capstone-name"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label>Include Sections</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { key: "executiveSummary", label: "Executive Summary", description: "AI-generated overview of findings", icon: Sparkles },
+                  { key: "companyBaseline", label: "Company Baseline Profile", description: "Your company's positioning", icon: Building2 },
+                  { key: "competitorProfiles", label: "Competitor Profiles", description: "Detailed competitor analysis", icon: Target },
+                  { key: "gapAnalysis", label: "Gap Analysis", description: "Messaging and positioning gaps", icon: BarChart2 },
+                  { key: "recommendations", label: "Recommendations", description: "AI-driven action items", icon: Lightbulb },
+                  { key: "battleCards", label: "Battle Cards", description: "Sales enablement cards", icon: Swords },
+                  { key: "activityLog", label: "Activity Log", description: "Recent competitor changes", icon: Activity },
+                ].map(({ key, label, description, icon: Icon }) => (
+                  <div 
+                    key={key}
+                    className={cn(
+                      "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                      sections[key as keyof ReportSections] 
+                        ? "border-primary bg-primary/5" 
+                        : "border-border hover:border-primary/50"
+                    )}
+                    onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
+                  >
+                    <Checkbox 
+                      checked={sections[key as keyof ReportSections]} 
+                      onCheckedChange={(checked) => setSections(s => ({ ...s, [key]: !!checked }))}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4 text-primary" />
+                        <span className="font-medium text-sm">{label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <Label>Include Projects</Label>
+              <div className="space-y-2">
+                <div 
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                    includeAllProjects ? "border-primary bg-primary/5" : "border-border"
+                  )}
+                  onClick={() => setIncludeAllProjects(true)}
+                >
+                  <Checkbox checked={includeAllProjects} onCheckedChange={() => setIncludeAllProjects(true)} />
+                  <div>
+                    <span className="font-medium text-sm">All Projects</span>
+                    <p className="text-xs text-muted-foreground">Include all client projects in the report</p>
+                  </div>
+                </div>
+                <div 
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                    !includeAllProjects ? "border-primary bg-primary/5" : "border-border"
+                  )}
+                  onClick={() => setIncludeAllProjects(false)}
+                >
+                  <Checkbox checked={!includeAllProjects} onCheckedChange={() => setIncludeAllProjects(false)} />
+                  <div className="flex-1">
+                    <span className="font-medium text-sm">Select Specific Projects</span>
+                    {!includeAllProjects && projects.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {projects.map((project: any) => (
+                          <div 
+                            key={project.id} 
+                            className="flex items-center gap-2 text-sm"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Checkbox 
+                              checked={selectedProjects.includes(project.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedProjects([...selectedProjects, project.id]);
+                                } else {
+                                  setSelectedProjects(selectedProjects.filter(id => id !== project.id));
+                                }
+                              }}
+                            />
+                            <span>{project.clientName || project.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Estimated pages:</span>
+                <span className="font-medium">
+                  {Object.values(sections).filter(Boolean).length * 2 + 2} - {Object.values(sections).filter(Boolean).length * 4 + 4}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCapstoneDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                setIsGenerating(true);
+                try {
+                  const response = await fetch("/api/reports/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                      name: reportName || "Capstone Competitive Analysis",
+                      scope: "baseline",
+                      sections,
+                      includeProjects: includeAllProjects ? "all" : selectedProjects,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || "Failed to generate report");
+                  }
+
+                  const blob = await response.blob();
+                  const fileName = `${(reportName || "Capstone_Analysis").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+                  
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+
+                  queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+                  toast({
+                    title: "Capstone Report Generated",
+                    description: "Your comprehensive report has been downloaded successfully.",
+                  });
+                  setIsCapstoneDialogOpen(false);
+                  setReportName("");
+                  setSections(defaultSections);
+                } catch (error: any) {
+                  toast({
+                    title: "Error",
+                    description: error.message,
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsGenerating(false);
+                }
+              }}
+              disabled={isGenerating || Object.values(sections).every(v => !v)}
+            >
+              {isGenerating ? "Generating..." : (
+                <>
+                  <BookOpen className="w-4 h-4 mr-2" />
+                  Generate Capstone Report
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

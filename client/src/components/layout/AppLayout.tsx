@@ -94,6 +94,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
+  const { data: reports = [] } = useQuery({
+    queryKey: ["/api/reports"],
+    queryFn: async () => {
+      const response = await fetch("/api/reports", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const getLastVisited = (path: string): number => {
+    try {
+      const stored = localStorage.getItem(`orbit_last_visited_${path.replace(/\//g, "_")}`);
+      return stored ? parseInt(stored, 10) : 0;
+    } catch { return 0; }
+  };
+
+  const hasNewContent = (path: string, items: any[]): boolean => {
+    const lastVisited = getLastVisited(path);
+    if (lastVisited === 0 || items.length === 0) return false;
+    return items.some((item: any) => {
+      const itemDate = new Date(item.createdAt || item.updatedAt || 0).getTime();
+      return itemDate > lastVisited;
+    });
+  };
+
+  useEffect(() => {
+    const path = location;
+    localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
+  }, [location]);
+
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
     const indicators: Record<string, NavIndicator> = {};
     
@@ -112,15 +143,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pendingRecs = recommendations.filter((r: any) => r.status === "Open" || r.status === "In Progress");
     if (pendingRecs.length > 0) {
       indicators["/app/recommendations"] = { type: "count", count: pendingRecs.length };
+    } else if (hasNewContent("/app/recommendations", recommendations)) {
+      indicators["/app/recommendations"] = { type: "new" };
     }
     
     const highImpactActivity = activityData.filter((a: any) => a.impact === "High");
     if (highImpactActivity.length > 0) {
       indicators["/app/activity"] = { type: "count", count: highImpactActivity.length };
+    } else if (hasNewContent("/app/activity", activityData)) {
+      indicators["/app/activity"] = { type: "new" };
+    }
+
+    if (hasNewContent("/app/reports", reports)) {
+      indicators["/app/reports"] = { type: "new" };
     }
     
     return indicators;
-  }, [companyProfile, competitors, analysis, recommendations, activityData]);
+  }, [companyProfile, competitors, analysis, recommendations, activityData, reports]);
   
   const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user;
   
@@ -258,6 +297,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
                           {indicator?.type === "action" && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                          )}
+                          {indicator?.type === "new" && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
                           )}
                         </div>
                         <span className="flex-1">{item.label}</span>
