@@ -250,6 +250,7 @@ export const battlecards = pgTable("battlecards", {
   strengths: jsonb("strengths"), // Array of competitor strengths
   weaknesses: jsonb("weaknesses"), // Array of competitor weaknesses
   ourAdvantages: jsonb("our_advantages"), // How we beat this competitor
+  comparison: jsonb("comparison"), // Harvey ball feature comparison: [{category, us, them, notes}]
   objections: jsonb("objections"), // Common objections and responses: [{objection, response}]
   talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
   quickStats: jsonb("quick_stats"), // {pricing, marketPosition, targetAudience, keyProducts}

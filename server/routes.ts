@@ -1660,6 +1660,9 @@ Generate a comprehensive battle card in the following JSON format:
   "strengths": ["Array of 3-5 competitor strengths"],
   "weaknesses": ["Array of 3-5 competitor weaknesses"],
   "ourAdvantages": ["Array of 4-6 key advantages we have over this competitor"],
+  "comparison": [
+    {"category": "Feature category name", "us": "full|three-quarter|half|quarter|empty", "them": "full|three-quarter|half|quarter|empty", "notes": "Brief explanation of the comparison"}
+  ],
   "objections": [
     {"objection": "Common objection customers raise about us vs competitor", "response": "How to respond effectively"}
   ],
@@ -1673,6 +1676,13 @@ Generate a comprehensive battle card in the following JSON format:
     "keyProducts": "Their main products/services"
   }
 }
+
+For the "comparison" array, include 4-6 key feature categories and rate each using Harvey balls:
+- "full" = Excellent/Complete capability
+- "three-quarter" = Strong capability
+- "half" = Adequate/Partial capability  
+- "quarter" = Weak capability
+- "empty" = No capability
 
 Return ONLY valid JSON, no markdown or explanations.`;
 

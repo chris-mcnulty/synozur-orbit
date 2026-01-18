@@ -37,22 +37,15 @@ interface BattleCardData {
   competitorName: string;
   lastGeneratedAt?: string;
   createdAt: string;
-  overview: {
-    strengths: string[];
-    weaknesses: string[];
-    positioning: string;
-  };
-  comparison: {
-    category: string;
-    us: HarveyBall;
-    them: HarveyBall;
-    notes: string;
-  }[];
-  salesChallenges: {
-    question: string;
-    response: string;
-  }[];
-  winTips: string[];
+  strengths?: string[];
+  weaknesses?: string[];
+  ourAdvantages?: string[];
+  comparison?: { category: string; us: HarveyBall; them: HarveyBall; notes?: string }[];
+  objections?: { objection: string; response: string }[];
+  talkTracks?: { scenario: string; script: string }[];
+  quickStats?: { pricing?: string; marketPosition?: string; targetAudience?: string; keyProducts?: string };
+  customNotes?: string;
+  status: string;
 }
 
 const HarveyBallIcon = ({ value, className = "" }: { value: HarveyBall; className?: string }) => {
@@ -60,25 +53,15 @@ const HarveyBallIcon = ({ value, className = "" }: { value: HarveyBall; classNam
   
   switch (value) {
     case "full":
-      return (
-        <div className={cn(baseClass, "rounded-full bg-primary")} />
-      );
+      return <div className={cn(baseClass, "rounded-full bg-primary")} />;
     case "three-quarter":
-      return (
-        <div className={cn(baseClass, "rounded-full bg-primary/75 border-2 border-primary")} />
-      );
+      return <div className={cn(baseClass, "rounded-full bg-primary/75 border-2 border-primary")} />;
     case "half":
-      return (
-        <div className={cn(baseClass, "rounded-full bg-gradient-to-r from-primary from-50% to-muted to-50%")} />
-      );
+      return <div className={cn(baseClass, "rounded-full bg-gradient-to-r from-primary from-50% to-muted to-50%")} />;
     case "quarter":
-      return (
-        <div className={cn(baseClass, "rounded-full bg-primary/25 border-2 border-primary/50")} />
-      );
+      return <div className={cn(baseClass, "rounded-full bg-primary/25 border-2 border-primary/50")} />;
     case "empty":
-      return (
-        <div className={cn(baseClass, "rounded-full border-2 border-muted-foreground/30")} />
-      );
+      return <div className={cn(baseClass, "rounded-full border-2 border-muted-foreground/30")} />;
   }
 };
 
@@ -338,7 +321,7 @@ export default function BattleCardsPage() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      {(card.salesChallenges || []).length} sales challenges
+                      {(card.objections || []).length} objection{(card.objections || []).length !== 1 ? 's' : ''}
                     </span>
                     <Button 
                       variant="ghost" 
@@ -367,24 +350,6 @@ export default function BattleCardsPage() {
           </div>
         )}
 
-        {battleCards.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Harvey Ball Legend</CardTitle>
-              <CardDescription>Understanding the comparison scores</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-6">
-                {(["full", "three-quarter", "half", "quarter", "empty"] as HarveyBall[]).map((value) => (
-                  <div key={value} className="flex items-center gap-2">
-                    <HarveyBallIcon value={value} />
-                    <span className="text-sm text-muted-foreground">{harveyBallToLabel(value)}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       <Dialog open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
@@ -401,113 +366,183 @@ export default function BattleCardsPage() {
           
           <ScrollArea className="flex-1 pr-4">
             <div className="space-y-6 py-4">
-              {selectedCard?.overview && (
+              {(selectedCard?.strengths?.length || selectedCard?.weaknesses?.length) ? (
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Overview</h3>
-                  
-                  {selectedCard.overview.positioning && (
-                    <div className="p-4 rounded-lg bg-muted/50">
-                      <p className="text-sm">{selectedCard.overview.positioning}</p>
-                    </div>
-                  )}
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Competitor Overview</h3>
                   
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-green-500">
-                        <CheckCircle className="w-4 h-4" />
-                        <span className="font-medium text-sm">Their Strengths</span>
-                      </div>
-                      <ul className="space-y-1 pl-6">
-                        {(selectedCard.overview.strengths || []).map((s, i) => (
-                          <li key={i} className="text-sm text-muted-foreground list-disc">{s}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-red-500">
-                        <XCircle className="w-4 h-4" />
-                        <span className="font-medium text-sm">Their Weaknesses</span>
-                      </div>
-                      <ul className="space-y-1 pl-6">
-                        {(selectedCard.overview.weaknesses || []).map((w, i) => (
-                          <li key={i} className="text-sm text-muted-foreground list-disc">{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <Separator />
-
-              {selectedCard?.comparison && selectedCard.comparison.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                    Feature Comparison
-                  </h3>
-                  <div className="space-y-3">
-                    {selectedCard.comparison.map((item, i) => (
-                      <div key={i} className="p-3 rounded-lg bg-muted/30">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">{item.category}</span>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">Us:</span>
-                              <HarveyBallIcon value={item.us} />
-                              <span className="text-xs">{harveyBallToLabel(item.us)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">Them:</span>
-                              <HarveyBallIcon value={item.them} />
-                              <span className="text-xs">{harveyBallToLabel(item.them)}</span>
-                            </div>
-                          </div>
+                    {selectedCard?.strengths && selectedCard.strengths.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-green-500">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="font-medium text-sm">Their Strengths</span>
                         </div>
-                        {item.notes && (
-                          <p className="text-xs text-muted-foreground">{item.notes}</p>
-                        )}
+                        <ul className="space-y-1 pl-6">
+                          {selectedCard.strengths.map((s, i) => (
+                            <li key={i} className="text-sm text-muted-foreground list-disc">{s}</li>
+                          ))}
+                        </ul>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <Separator />
-
-              {selectedCard?.salesChallenges && selectedCard.salesChallenges.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                    Sales Challenges & Responses
-                  </h3>
-                  <div className="space-y-3">
-                    {selectedCard.salesChallenges.map((challenge, i) => (
-                      <div key={i} className="p-3 rounded-lg bg-muted/30">
-                        <div className="flex items-start gap-2 mb-2">
-                          <Target className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                          <p className="text-sm font-medium">{challenge.question}</p>
+                    )}
+                    {selectedCard?.weaknesses && selectedCard.weaknesses.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-red-500">
+                          <XCircle className="w-4 h-4" />
+                          <span className="font-medium text-sm">Their Weaknesses</span>
                         </div>
-                        <p className="text-sm text-muted-foreground pl-6">{challenge.response}</p>
+                        <ul className="space-y-1 pl-6">
+                          {selectedCard.weaknesses.map((w, i) => (
+                            <li key={i} className="text-sm text-muted-foreground list-disc">{w}</li>
+                          ))}
+                        </ul>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
-              {selectedCard?.winTips && selectedCard.winTips.length > 0 && (
+              {selectedCard?.ourAdvantages && selectedCard.ourAdvantages.length > 0 && (
                 <>
                   <Separator />
                   <div className="space-y-4">
                     <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                      Tips to Win
+                      Our Advantages
                     </h3>
                     <ul className="space-y-2">
-                      {selectedCard.winTips.map((tip, i) => (
+                      {selectedCard.ourAdvantages.map((advantage, i) => (
                         <li key={i} className="flex items-start gap-2">
                           <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                          <span className="text-sm">{tip}</span>
+                          <span className="text-sm">{advantage}</span>
                         </li>
                       ))}
                     </ul>
+                  </div>
+                </>
+              )}
+
+              {selectedCard?.comparison && selectedCard.comparison.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Feature Comparison
+                    </h3>
+                    <div className="space-y-3">
+                      {selectedCard.comparison.map((item, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{item.category}</span>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Us:</span>
+                                <HarveyBallIcon value={item.us} className="w-4 h-4" />
+                                <span className="text-xs">{harveyBallToLabel(item.us)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Them:</span>
+                                <HarveyBallIcon value={item.them} className="w-4 h-4" />
+                                <span className="text-xs">{harveyBallToLabel(item.them)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {item.notes && (
+                            <p className="text-xs text-muted-foreground">{item.notes}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedCard?.objections && selectedCard.objections.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Common Objections & Responses
+                    </h3>
+                    <div className="space-y-3">
+                      {selectedCard.objections.map((obj, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-muted/30">
+                          <div className="flex items-start gap-2 mb-2">
+                            <Target className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                            <p className="text-sm font-medium">{obj.objection}</p>
+                          </div>
+                          <p className="text-sm text-muted-foreground pl-6">{obj.response}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedCard?.talkTracks && selectedCard.talkTracks.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Talk Tracks
+                    </h3>
+                    <div className="space-y-3">
+                      {selectedCard.talkTracks.map((track, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-sm font-medium mb-2">{track.scenario}</p>
+                          <p className="text-sm text-muted-foreground">{track.script}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedCard?.quickStats && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Quick Stats
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {selectedCard.quickStats.pricing && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Pricing</p>
+                          <p className="text-sm font-medium">{selectedCard.quickStats.pricing}</p>
+                        </div>
+                      )}
+                      {selectedCard.quickStats.marketPosition && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Market Position</p>
+                          <p className="text-sm font-medium">{selectedCard.quickStats.marketPosition}</p>
+                        </div>
+                      )}
+                      {selectedCard.quickStats.targetAudience && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Target Audience</p>
+                          <p className="text-sm font-medium">{selectedCard.quickStats.targetAudience}</p>
+                        </div>
+                      )}
+                      {selectedCard.quickStats.keyProducts && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Key Products</p>
+                          <p className="text-sm font-medium">{selectedCard.quickStats.keyProducts}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedCard?.customNotes && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                      Notes
+                    </h3>
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <p className="text-sm whitespace-pre-wrap">{selectedCard.customNotes}</p>
+                    </div>
                   </div>
                 </>
               )}
