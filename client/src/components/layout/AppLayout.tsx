@@ -221,6 +221,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Help",
       items: [
         { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
+        { label: "About & Changelog", icon: FileText, href: "/about" },
       ]
     }
   ];
