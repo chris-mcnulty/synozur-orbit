@@ -55,6 +55,9 @@ export const tenants = pgTable("tenants", {
   name: text("name").notNull(),
   plan: text("plan").notNull().default("trial"), // trial, free, pro, enterprise
   status: text("status").notNull().default("active"),
+  trialStartDate: timestamp("trial_start_date"), // When trial period began
+  trialEndsAt: timestamp("trial_ends_at"), // When trial period expires (60 days from start)
+  lastTrialReminderSent: text("last_trial_reminder_sent"), // Track which reminder was last sent: day7, day30, day46, day53, day57, day59, day60
   userCount: integer("user_count").notNull().default(0),
   competitorLimit: integer("competitor_limit").notNull().default(3),
   analysisLimit: integer("analysis_limit").notNull().default(5),

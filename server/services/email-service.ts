@@ -509,3 +509,233 @@ export async function sendPasswordResetEmail(
     text: `Hi ${name}, Reset your Orbit password: ${resetLink}. This link expires in 1 hour.`
   });
 }
+
+// Trial Reminder Email Templates
+// 60-day trial with reminders at: day 7, day 30, day 46 (14 left), day 53 (7 left), day 57 (3 left), day 59 (1 left), day 60 (expired)
+
+export type TrialReminderType = 'day7' | 'day30' | 'day46' | 'day53' | 'day57' | 'day59' | 'day60';
+
+interface TrialReminderParams {
+  email: string;
+  name: string;
+  companyName: string;
+  daysRemaining: number;
+  baseUrl: string;
+}
+
+export async function sendTrialReminderEmail(
+  params: TrialReminderParams,
+  reminderType: TrialReminderType
+): Promise<boolean> {
+  const { email, name, companyName, daysRemaining, baseUrl } = params;
+  const loginLink = `${baseUrl}/auth`;
+  const contactEmail = 'contactus@synozur.com';
+  
+  let subject: string;
+  let heading: string;
+  let bodyContent: string;
+  let includeContactCta: boolean = false;
+  
+  switch (reminderType) {
+    case 'day7':
+      subject = `How's your first week with Orbit, ${name}?`;
+      heading = `Your First Week with Orbit`;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>You've been exploring Orbit for a week now! We hope you're discovering valuable insights about your competitive landscape.</p>
+        
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Quick tips to get more value:</p>
+        
+        <div class="feature-list">
+          <div class="feature">
+            <div class="feature-title">Add more competitors</div>
+            <p class="feature-desc">The more competitors you track, the richer your competitive intelligence becomes.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Upload positioning documents</div>
+            <p class="feature-desc">Add your brand guidelines or pitch decks to get AI-powered gap analysis.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Generate a report</div>
+            <p class="feature-desc">Create a branded PDF report to share insights with your team or leadership.</p>
+          </div>
+        </div>
+        
+        <p style="margin-top: 24px;">You have <span class="highlight">${daysRemaining} days</span> remaining in your trial. Make the most of it!</p>
+      `;
+      break;
+      
+    case 'day30':
+      subject = `You're halfway through your Orbit trial, ${name}`;
+      heading = `Halfway Through Your Trial`;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>You've reached the midpoint of your 60-day Orbit trial! By now, you should have a solid understanding of how your competitive landscape looks.</p>
+        
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Have you tried these features yet?</p>
+        
+        <div class="feature-list">
+          <div class="feature">
+            <div class="feature-title">AI Battle Cards</div>
+            <p class="feature-desc">Generate competitive battle cards with key differentiators and talk tracks for your sales team.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Change Monitoring</div>
+            <p class="feature-desc">Track when competitors update their websites or social media presence.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Side-by-Side Comparison</div>
+            <p class="feature-desc">See how your messaging stacks up against each competitor.</p>
+          </div>
+        </div>
+        
+        <p style="margin-top: 24px;">You have <span class="highlight">${daysRemaining} days</span> remaining to explore everything Orbit has to offer.</p>
+      `;
+      break;
+      
+    case 'day46':
+      subject = `14 days left in your Orbit trial`;
+      heading = `Your Trial Ends in 14 Days`;
+      includeContactCta = true;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>Your Orbit trial for <span class="highlight">${companyName}</span> will end in <span class="highlight">14 days</span>. After your trial expires, your account will transition to our Free tier with limited functionality.</p>
+        
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">What happens after your trial?</p>
+        
+        <div class="feature-list">
+          <div class="feature">
+            <div class="feature-title">Free Tier Limitations</div>
+            <p class="feature-desc">You'll be limited to 1 competitor and 1 analysis. Premium features like battle cards and change monitoring will be unavailable.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Your Data is Safe</div>
+            <p class="feature-desc">All your existing analysis, reports, and competitor data will remain accessible.</p>
+          </div>
+        </div>
+      `;
+      break;
+      
+    case 'day53':
+      subject = `7 days left - Your Orbit trial is ending soon`;
+      heading = `Only 7 Days Left`;
+      includeContactCta = true;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>Your Orbit trial for <span class="highlight">${companyName}</span> expires in just <span class="highlight">7 days</span>. This is a great time to generate any reports or battle cards you'd like to keep.</p>
+        
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Before your trial ends:</p>
+        
+        <div class="feature-list">
+          <div class="feature">
+            <div class="feature-title">Download your reports</div>
+            <p class="feature-desc">Generate and save PDF reports for your records before transitioning to the Free tier.</p>
+          </div>
+          
+          <div class="feature">
+            <div class="feature-title">Review your insights</div>
+            <p class="feature-desc">Take note of key recommendations and action items from your competitive analysis.</p>
+          </div>
+        </div>
+      `;
+      break;
+      
+    case 'day57':
+      subject = `3 days left - Your Orbit trial is almost over`;
+      heading = `3 Days Remaining`;
+      includeContactCta = true;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>Your Orbit trial for <span class="highlight">${companyName}</span> ends in <span class="highlight">3 days</span>. After that, your account will automatically transition to the Free tier.</p>
+        
+        <p style="margin-top: 24px;">If you've found value in Orbit's competitive intelligence capabilities, we'd love to continue working with you.</p>
+      `;
+      break;
+      
+    case 'day59':
+      subject = `Tomorrow: Your Orbit trial expires`;
+      heading = `Your Trial Ends Tomorrow`;
+      includeContactCta = true;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>This is your final reminder: Your Orbit trial for <span class="highlight">${companyName}</span> expires <span class="highlight">tomorrow</span>.</p>
+        
+        <p style="margin-top: 24px;">After your trial ends, you'll still have access to Orbit on our Free tier, but with limited functionality (1 competitor, 1 analysis).</p>
+        
+        <p style="margin-top: 24px;">If you want to continue using all of Orbit's features, reach out to us today.</p>
+      `;
+      break;
+      
+    case 'day60':
+      subject = `Thank you for trying Orbit`;
+      heading = `Thank You for Trying Orbit`;
+      includeContactCta = true;
+      bodyContent = `
+        <p>Hi <span class="highlight">${name}</span>,</p>
+        
+        <p>Your 60-day Orbit trial for <span class="highlight">${companyName}</span> has ended. We hope you found valuable insights about your competitive landscape during your trial.</p>
+        
+        <p style="margin-top: 24px;">Your account has been transitioned to our <span class="highlight">Free tier</span>. You can still access Orbit with limited functionality:</p>
+        
+        <div class="feature-list">
+          <div class="feature">
+            <div class="feature-title">Free Tier Access</div>
+            <p class="feature-desc">Track 1 competitor with basic analysis capabilities. Your existing data remains accessible.</p>
+          </div>
+        </div>
+        
+        <p style="margin-top: 24px;">We'd love to hear about your experience and how we can better serve your competitive intelligence needs.</p>
+      `;
+      break;
+  }
+  
+  const contactCtaHtml = includeContactCta ? `
+    <div class="divider"></div>
+    
+    <p style="color: #ffffff; font-weight: 500;">Continue with Orbit</p>
+    
+    <p>If you'd like to continue using Orbit's full competitive intelligence capabilities, we'd be happy to discuss how we can support your organization. Establish a client relationship with Synozur to maintain access to all features.</p>
+    
+    <p style="margin-top: 16px;">
+      <strong>Contact us:</strong> <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>
+    </p>
+  ` : '';
+  
+  const content = `
+    <h1>${heading}</h1>
+    
+    ${bodyContent}
+    
+    ${contactCtaHtml}
+    
+    <div class="button-container">
+      <a href="${loginLink}" class="button">Log in to Orbit</a>
+    </div>
+    
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you have any questions, contact us at <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>.</p>
+  `;
+  
+  const plainTextContact = includeContactCta 
+    ? `\n\nTo continue using Orbit's full features, establish a client relationship with Synozur. Contact us at ${contactEmail}.`
+    : '';
+  
+  const text = `Hi ${name},\n\n${heading}\n\nYou have ${daysRemaining} days remaining in your Orbit trial for ${companyName}.${plainTextContact}\n\nLog in: ${loginLink}\n\nContact: ${contactEmail}`;
+
+  return sendEmail({
+    to: email,
+    subject,
+    html: wrapEmailContent(content),
+    text
+  });
+}

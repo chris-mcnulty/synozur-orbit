@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- 60-Day Trial System with automated reminder emails
+  - New tenants automatically start with a 60-day trial period
+  - Reminder emails at key milestones: day 7, 30, 46 (14 left), 53 (7 left), 57 (3 left), 59 (1 left), and day 60 (expired)
+  - Final 14 days emails include contact information (contactus@synozur.com) for establishing a client relationship
+  - Automatic plan reversion to Free tier when trial expires (1 competitor, 1 analysis limit)
+  - Scheduled job runs every 6 hours to check and send trial reminders
 - AI Usage Tracker - Global Admin dashboard to monitor AI API usage across all tenants
   - Statistics cards showing total requests, estimated costs, average daily usage, and most-used operations
   - Daily usage bar chart (last 14 days) and pie chart showing usage by operation type

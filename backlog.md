@@ -112,15 +112,17 @@
 - [ ] Thumbs up/down on recommendations
 - [ ] AI learning from feedback
 
-### 3.4 Trial & Feature Gating System
-**Status**: Schema exists, no enforcement
-**Spec Requirement**: "14-day free trial, then Free tier with limited functionality"
-- [ ] Add `trialStartDate` and `trialEndsAt` to tenants
-- [ ] Implement trial countdown and expiration logic
-- [ ] Feature gating middleware on API routes
-- [ ] UI upgrade prompts when hitting limits (3 competitors, 5 analyses)
-- [ ] Free tier: basic analysis only, no AI recommendations
-**Effort**: Medium
+### 3.4 Trial & Feature Gating System ✅
+**Status**: Trial system implemented (60-day trial with email reminders)
+**Spec Requirement**: "60-day trial, then Free tier with limited functionality"
+- [x] Add `trialStartDate` and `trialEndsAt` to tenants (60-day trial period)
+- [x] Implement trial countdown and expiration logic
+- [x] Automatic plan reversion to Free tier when trial expires
+- [x] Trial reminder emails (day 7, 30, 46, 53, 57, 59, 60) with contact CTA in final 14 days
+- [x] Scheduled job to check trial status and send reminders every 6 hours
+- [ ] Feature gating middleware on API routes (backlogged)
+- [ ] UI upgrade prompts when hitting limits (backlogged)
+**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
 
 ### 3.5 Global Company Directory
 **Status**: Not implemented

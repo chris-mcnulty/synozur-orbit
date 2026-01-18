@@ -194,11 +194,17 @@ export async function registerRoutes(
       // Create tenant for this domain if it doesn't exist (after user creation to ensure consistency)
       const existingTenant = await storage.getTenantByDomain(domain);
       if (!existingTenant) {
+        const trialStartDate = new Date();
+        const trialEndsAt = new Date(trialStartDate);
+        trialEndsAt.setDate(trialEndsAt.getDate() + 60);
+        
         await storage.createTenant({
           domain,
           name: company,
           plan: "trial",
           status: "active",
+          trialStartDate,
+          trialEndsAt,
           userCount: 0,
           competitorLimit: 3,
           analysisLimit: 5,
@@ -2629,29 +2635,49 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(403).json({ error: "Access denied - Global Admin only" });
       }
 
-      const { domain, name, plan, status, competitorLimit, analysisLimit, adminUserLimit, readWriteUserLimit, readOnlyUserLimit } = req.body;
+      const { 
+        domain, name, plan, status, 
+        competitorLimit, analysisLimit, 
+        adminUserLimit, readWriteUserLimit, readOnlyUserLimit,
+        primaryColor, secondaryColor 
+      } = req.body;
 
-      if (!domain || !domain.includes(".")) {
+      if (!domain || typeof domain !== "string" || !domain.includes(".")) {
         return res.status(400).json({ error: "Valid domain is required (e.g., company.com)" });
       }
+      
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "Company name is required" });
+      }
 
+      const normalizedDomain = domain.toLowerCase().trim();
+      
       // Check if tenant already exists
-      const existingTenant = await storage.getTenantByDomain(domain.toLowerCase());
+      const existingTenant = await storage.getTenantByDomain(normalizedDomain);
       if (existingTenant) {
         return res.status(400).json({ error: "Tenant with this domain already exists" });
       }
 
+      const effectivePlan = plan || "trial";
+      const trialDates = effectivePlan === "trial" ? {
+        trialStartDate: new Date(),
+        trialEndsAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+      } : {};
+      
       const newTenant = await storage.createTenant({
-        domain: domain.toLowerCase(),
-        name: name || domain,
-        plan: plan || "trial",
+        domain: normalizedDomain,
+        name: name.trim(),
+        plan: effectivePlan,
         status: status || "active",
+        ...trialDates,
         userCount: 0,
         competitorLimit: competitorLimit ?? 3,
         analysisLimit: analysisLimit ?? 5,
         adminUserLimit: adminUserLimit ?? 1,
         readWriteUserLimit: readWriteUserLimit ?? 2,
         readOnlyUserLimit: readOnlyUserLimit ?? 5,
+        primaryColor: primaryColor || "#810FFB",
+        secondaryColor: secondaryColor || "#E60CB3",
       });
 
       res.status(201).json(newTenant);
@@ -2782,54 +2808,6 @@ Return ONLY valid JSON, no markdown or explanations.`;
         const { password: _, ...userWithoutPassword } = u;
         return userWithoutPassword;
       }));
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Create tenant manually (Global Admin only)
-  app.post("/api/tenants", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
-      }
-
-      const { domain, name, plan, competitorLimit, analysisLimit, primaryColor, secondaryColor } = req.body;
-      
-      if (!domain || typeof domain !== "string" || !domain.includes(".")) {
-        return res.status(400).json({ error: "Valid domain is required (e.g., 'acme.com')" });
-      }
-      
-      if (!name || typeof name !== "string" || !name.trim()) {
-        return res.status(400).json({ error: "Company name is required" });
-      }
-
-      const normalizedDomain = domain.toLowerCase().trim();
-      
-      // Check if tenant already exists
-      const existing = await storage.getTenantByDomain(normalizedDomain);
-      if (existing) {
-        return res.status(400).json({ error: "Tenant already exists for this domain" });
-      }
-
-      const tenant = await storage.createTenant({
-        domain: normalizedDomain,
-        name: name.trim(),
-        plan: plan || "trial",
-        status: "active",
-        userCount: 0,
-        competitorLimit: competitorLimit || 3,
-        analysisLimit: analysisLimit || 5,
-        primaryColor: primaryColor || "#810FFB",
-        secondaryColor: secondaryColor || "#E60CB3",
-      });
-
-      res.status(201).json(tenant);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

@@ -288,11 +288,17 @@ export function registerEntraRoutes(app: Express) {
 
       const existingTenant = await storage.getTenantByDomain(domain);
       if (!existingTenant) {
+        const trialStartDate = new Date();
+        const trialEndsAt = new Date(trialStartDate);
+        trialEndsAt.setDate(trialEndsAt.getDate() + 60);
+        
         await storage.createTenant({
           domain,
           name: company || domain,
           plan: "trial",
           status: "active",
+          trialStartDate,
+          trialEndsAt,
           userCount: 1,
           competitorLimit: 3,
           analysisLimit: 5,

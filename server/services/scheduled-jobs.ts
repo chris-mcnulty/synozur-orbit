@@ -4,6 +4,7 @@ import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
+import { processTrialReminders } from "./trial-service";
 
 interface JobStatus {
   lastRun: Date | null;
@@ -15,6 +16,7 @@ const jobStatus: Record<string, JobStatus> = {
   websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
   websiteMonitor: { lastRun: null, isRunning: false, nextRun: null },
+  trialReminder: { lastRun: null, isRunning: false, nextRun: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -281,9 +283,36 @@ async function runWebsiteMonitorJob(): Promise<void> {
   }
 }
 
+async function runTrialReminderJob(): Promise<void> {
+  if (jobStatus.trialReminder.isRunning) {
+    console.log("[Scheduled Job] Trial reminder already running, skipping...");
+    return;
+  }
+
+  jobStatus.trialReminder.isRunning = true;
+  console.log("[Scheduled Job] Starting trial reminder job...");
+
+  try {
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.REPLIT_DEPLOYMENT_URL 
+        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+        : 'https://orbit.synozur.com';
+    
+    const result = await processTrialReminders(baseUrl);
+    console.log(`[Scheduled Job] Trial reminder job completed: ${result.processed} processed, ${result.errors} errors`);
+  } catch (error) {
+    console.error("[Scheduled Job] Trial reminder job failed:", error);
+  } finally {
+    jobStatus.trialReminder.isRunning = false;
+    jobStatus.trialReminder.lastRun = new Date();
+  }
+}
+
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
+let trialReminderInterval: NodeJS.Timeout | null = null;
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
@@ -291,6 +320,7 @@ export function startScheduledJobs(): void {
   if (websiteCrawlInterval) clearInterval(websiteCrawlInterval);
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
   if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
+  if (trialReminderInterval) clearInterval(trialReminderInterval);
 
   websiteCrawlInterval = setInterval(() => {
     runWebsiteCrawlJob();
@@ -304,6 +334,10 @@ export function startScheduledJobs(): void {
     runWebsiteMonitorJob();
   }, 60 * 60 * 1000);
 
+  trialReminderInterval = setInterval(() => {
+    runTrialReminderJob();
+  }, 6 * 60 * 60 * 1000);
+
   setTimeout(() => {
     runWebsiteCrawlJob();
   }, 30 * 1000);
@@ -316,7 +350,11 @@ export function startScheduledJobs(): void {
     runWebsiteMonitorJob();
   }, 90 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, and website change monitor will run hourly");
+  setTimeout(() => {
+    runTrialReminderJob();
+  }, 120 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website change monitor (hourly), trial reminders (every 6 hours)");
 }
 
 export function stopScheduledJobs(): void {
@@ -331,6 +369,10 @@ export function stopScheduledJobs(): void {
   if (websiteMonitorInterval) {
     clearInterval(websiteMonitorInterval);
     websiteMonitorInterval = null;
+  }
+  if (trialReminderInterval) {
+    clearInterval(trialReminderInterval);
+    trialReminderInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }

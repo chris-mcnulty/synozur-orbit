@@ -54,7 +54,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, role hierarchy, tenant-specific plan/usage limits.
-- **Service Plans**: Trial (default for new accounts: 3 competitors, 5 analyses), Free (1 competitor, 1 analysis), Pro, Enterprise. Plans configurable per-tenant with user role limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit).
+- **Service Plans**: Trial (default for new accounts: 60-day trial, 3 competitors, 5 analyses), Free (1 competitor, 1 analysis), Pro, Enterprise. Plans configurable per-tenant with user role limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit).
+- **Trial System**: 60-day trial with automated email reminders at days 7, 30, 46, 53, 57, 59, and 60. Final 14 days include contact CTA (contactus@synozur.com). Auto-revert to Free plan on expiration. Scheduled job runs every 6 hours.
 - **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining.
 - **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
