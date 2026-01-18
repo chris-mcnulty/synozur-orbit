@@ -115,6 +115,8 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     },
   });
 
@@ -128,6 +130,8 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     },
   });
 
