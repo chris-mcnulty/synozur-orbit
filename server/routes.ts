@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { createHash } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { storage } from "./storage";
+import { storage, type ContextFilter } from "./storage";
+import { getRequestContext, type RequestContext, ContextError } from "./context";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { z } from "zod";
@@ -34,6 +35,15 @@ function hasCrossTenantReadAccess(role: string): boolean {
 // Consultant does NOT have admin privileges
 function hasAdminAccess(role: string): boolean {
   return role === "Global Admin" || role === "Domain Admin";
+}
+
+// Helper to convert RequestContext to ContextFilter for storage methods
+function toContextFilter(ctx: RequestContext): ContextFilter {
+  return {
+    tenantId: ctx.tenantId,
+    marketId: ctx.marketId,
+    tenantDomain: ctx.tenantDomain,
+  };
 }
 
 // Zod schemas for context/market endpoints
@@ -1313,20 +1323,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.get("/api/activity", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Get user's tenant domain for tenant scoping
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
-
-      const activities = await storage.getActivityByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const activities = await storage.getActivityByContext(toContextFilter(ctx));
       res.json(activities);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1364,20 +1367,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.get("/api/recommendations", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Get user's tenant domain for tenant scoping
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
-
-      const recommendations = await storage.getRecommendationsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const recommendations = await storage.getRecommendationsByContext(toContextFilter(ctx));
       res.json(recommendations);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1415,19 +1411,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.get("/api/reports", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const reports = await storage.getReportsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const reports = await storage.getReportsByContext(toContextFilter(ctx));
       res.json(reports);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2967,11 +2957,17 @@ Return ONLY valid JSON, no markdown or explanations.`;
       }
 
       const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      if (!userTenant) {
+        return res.status(404).json({ error: "No tenant found for your organization. Please contact your administrator." });
+      }
+      
       const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
       
       res.json({
         tenants: accessibleTenants,
-        activeTenantId: req.session.activeTenantId || null,
+        activeTenantId: req.session.activeTenantId || userTenant.id,
         activeMarketId: req.session.activeMarketId || null,
         canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
       });
@@ -3021,7 +3017,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const defaultMarket = await storage.getDefaultMarket(tenantId);
       
       req.session.activeTenantId = tenantId;
-      req.session.activeMarketId = defaultMarket?.id || null;
+      req.session.activeMarketId = defaultMarket?.id || undefined;
       
       res.json({
         activeTenantId: tenantId,
@@ -6793,38 +6789,30 @@ Return only the description text, no quotes or formatting.`;
   // Get Command Center data - aggregated view across all projects
   app.get("/api/command-center", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
+      const ctxFilter = toContextFilter(ctx);
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-
-      // Get all projects for this tenant
-      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+      // Get all projects for this tenant/market context
+      const projects = await storage.getClientProjectsByContext(ctxFilter);
       
-      // Get all competitors for this tenant (including baseline)
-      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      // Get all competitors for this tenant/market context (including baseline)
+      const allCompetitors = await storage.getCompetitorsByContext(ctxFilter);
       
-      // Get all products for this tenant
-      const allProducts = await storage.getProductsByTenant(tenantDomain);
+      // Get all products for this tenant/market context
+      const allProducts = await storage.getProductsByContext(ctxFilter);
       
       // Get all recommendations (action items)
       // Handle both new statuses (pending/accepted/dismissed) and legacy statuses (Open/In Progress)
-      const allRecommendations = await storage.getRecommendationsByTenant(tenantDomain);
+      const allRecommendations = await storage.getRecommendationsByContext(ctxFilter);
       const pendingActions = allRecommendations.filter(r => 
         r.status === "pending" || r.status === "Open" || r.status === "In Progress" || !r.status
       );
       
       // Get recent activity
-      const recentActivity = await storage.getActivityByTenant(tenantDomain);
+      const recentActivity = await storage.getActivityByContext(ctxFilter);
       
       // Get tenant users for assignment dropdown
-      const tenantUsers = await storage.getUsersByDomain(tenantDomain);
+      const tenantUsers = await storage.getUsersByDomain(ctx.tenantDomain);
       
       // Calculate aggregate health score (average of competitor scores where available)
       let totalScore = 0;
@@ -6896,6 +6884,9 @@ Return only the description text, no quotes or formatting.`;
         })),
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Command center error:", error);
       res.status(500).json({ error: error.message });
     }

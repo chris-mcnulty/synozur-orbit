@@ -79,7 +79,13 @@ import {
   executiveSummaries
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count, countDistinct } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
+
+export interface ContextFilter {
+  tenantId: string;
+  marketId: string;
+  tenantDomain: string;
+}
 
 export interface IStorage {
   // User methods
@@ -267,6 +273,22 @@ export interface IStorage {
   createConsultantAccess(access: InsertConsultantAccess): Promise<ConsultantAccess>;
   revokeConsultantAccess(id: string): Promise<void>;
   getAccessibleTenants(userId: string, userRole: string, userTenantDomain: string): Promise<Tenant[]>;
+  
+  // Context-aware methods (filter by tenant and market)
+  getCompetitorsByContext(ctx: ContextFilter): Promise<Competitor[]>;
+  getCompetitorByIdWithContext(id: string, ctx: ContextFilter): Promise<Competitor | undefined>;
+  getCompanyProfileByContext(ctx: ContextFilter): Promise<CompanyProfile | undefined>;
+  getClientProjectsByContext(ctx: ContextFilter): Promise<ClientProject[]>;
+  getClientProjectByIdWithContext(id: string, ctx: ContextFilter): Promise<ClientProject | undefined>;
+  getProductsByContext(ctx: ContextFilter): Promise<Product[]>;
+  getAssessmentsByContext(ctx: ContextFilter): Promise<Assessment[]>;
+  getAssessmentByIdWithContext(id: string, ctx: ContextFilter): Promise<Assessment | undefined>;
+  getReportsByContext(ctx: ContextFilter): Promise<Report[]>;
+  getReportByIdWithContext(id: string, ctx: ContextFilter): Promise<Report | undefined>;
+  getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]>;
+  getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
+  getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]>;
+  getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1337,6 +1359,174 @@ export class DatabaseStorage implements IStorage {
     
     const userTenant = await this.getTenantByDomain(userTenantDomain);
     return userTenant ? [userTenant] : [];
+  }
+
+  // Context-aware methods - filter by tenant domain AND market ID
+  async getCompetitorsByContext(ctx: ContextFilter): Promise<Competitor[]> {
+    const domainUsers = await this.getUsersByDomain(ctx.tenantDomain);
+    const userIds = domainUsers.map(u => u.id);
+    if (userIds.length === 0) return [];
+    
+    const allCompetitors = await db.select().from(competitors)
+      .where(
+        and(
+          or(eq(competitors.marketId, ctx.marketId), isNull(competitors.marketId)),
+          isNull(competitors.projectId)
+        )
+      )
+      .orderBy(desc(competitors.createdAt));
+    
+    return allCompetitors.filter(c => userIds.includes(c.userId));
+  }
+
+  async getCompetitorByIdWithContext(id: string, ctx: ContextFilter): Promise<Competitor | undefined> {
+    const [competitor] = await db.select().from(competitors).where(eq(competitors.id, id));
+    if (!competitor) return undefined;
+    
+    const user = await this.getUser(competitor.userId);
+    if (!user) return undefined;
+    
+    const userDomain = user.email.split("@")[1];
+    if (userDomain !== ctx.tenantDomain) return undefined;
+    
+    if (competitor.marketId && competitor.marketId !== ctx.marketId) return undefined;
+    
+    return competitor;
+  }
+
+  async getCompanyProfileByContext(ctx: ContextFilter): Promise<CompanyProfile | undefined> {
+    const [profile] = await db.select().from(companyProfiles)
+      .where(
+        and(
+          eq(companyProfiles.tenantDomain, ctx.tenantDomain),
+          or(eq(companyProfiles.marketId, ctx.marketId), isNull(companyProfiles.marketId))
+        )
+      );
+    return profile || undefined;
+  }
+
+  async getClientProjectsByContext(ctx: ContextFilter): Promise<ClientProject[]> {
+    return await db.select().from(clientProjects)
+      .where(
+        and(
+          eq(clientProjects.tenantDomain, ctx.tenantDomain),
+          or(eq(clientProjects.marketId, ctx.marketId), isNull(clientProjects.marketId))
+        )
+      )
+      .orderBy(desc(clientProjects.createdAt));
+  }
+
+  async getClientProjectByIdWithContext(id: string, ctx: ContextFilter): Promise<ClientProject | undefined> {
+    const [project] = await db.select().from(clientProjects)
+      .where(
+        and(
+          eq(clientProjects.id, id),
+          eq(clientProjects.tenantDomain, ctx.tenantDomain),
+          or(eq(clientProjects.marketId, ctx.marketId), isNull(clientProjects.marketId))
+        )
+      );
+    return project || undefined;
+  }
+
+  async getProductsByContext(ctx: ContextFilter): Promise<Product[]> {
+    return await db.select().from(products)
+      .where(
+        and(
+          eq(products.tenantDomain, ctx.tenantDomain),
+          or(eq(products.marketId, ctx.marketId), isNull(products.marketId))
+        )
+      )
+      .orderBy(desc(products.createdAt));
+  }
+
+  async getAssessmentsByContext(ctx: ContextFilter): Promise<Assessment[]> {
+    return await db.select().from(assessments)
+      .where(
+        and(
+          eq(assessments.tenantDomain, ctx.tenantDomain),
+          or(eq(assessments.marketId, ctx.marketId), isNull(assessments.marketId))
+        )
+      )
+      .orderBy(desc(assessments.createdAt));
+  }
+
+  async getAssessmentByIdWithContext(id: string, ctx: ContextFilter): Promise<Assessment | undefined> {
+    const [assessment] = await db.select().from(assessments)
+      .where(
+        and(
+          eq(assessments.id, id),
+          eq(assessments.tenantDomain, ctx.tenantDomain),
+          or(eq(assessments.marketId, ctx.marketId), isNull(assessments.marketId))
+        )
+      );
+    return assessment || undefined;
+  }
+
+  async getReportsByContext(ctx: ContextFilter): Promise<Report[]> {
+    return await db.select().from(reports)
+      .where(
+        and(
+          eq(reports.tenantDomain, ctx.tenantDomain),
+          or(eq(reports.marketId, ctx.marketId), isNull(reports.marketId))
+        )
+      )
+      .orderBy(desc(reports.createdAt));
+  }
+
+  async getReportByIdWithContext(id: string, ctx: ContextFilter): Promise<Report | undefined> {
+    const [report] = await db.select().from(reports)
+      .where(
+        and(
+          eq(reports.id, id),
+          eq(reports.tenantDomain, ctx.tenantDomain),
+          or(eq(reports.marketId, ctx.marketId), isNull(reports.marketId))
+        )
+      );
+    return report || undefined;
+  }
+
+  async getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]> {
+    return await db.select().from(recommendations)
+      .where(
+        and(
+          eq(recommendations.tenantDomain, ctx.tenantDomain),
+          or(eq(recommendations.marketId, ctx.marketId), isNull(recommendations.marketId))
+        )
+      )
+      .orderBy(desc(recommendations.createdAt));
+  }
+
+  async getActivityByContext(ctx: ContextFilter): Promise<Activity[]> {
+    return await db.select().from(activity)
+      .where(
+        and(
+          eq(activity.tenantDomain, ctx.tenantDomain),
+          or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
+        )
+      )
+      .orderBy(desc(activity.createdAt));
+  }
+
+  async getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]> {
+    return await db.select().from(groundingDocuments)
+      .where(
+        and(
+          eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
+          or(eq(groundingDocuments.marketId, ctx.marketId), isNull(groundingDocuments.marketId))
+        )
+      )
+      .orderBy(desc(groundingDocuments.createdAt));
+  }
+
+  async getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]> {
+    return await db.select().from(battlecards)
+      .where(
+        and(
+          eq(battlecards.tenantDomain, ctx.tenantDomain),
+          or(eq(battlecards.marketId, ctx.marketId), isNull(battlecards.marketId))
+        )
+      )
+      .orderBy(desc(battlecards.createdAt));
   }
 }
 
