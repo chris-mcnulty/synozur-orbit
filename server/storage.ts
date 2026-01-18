@@ -772,6 +772,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
+    // Nullify references in tables with nullable user foreign keys
+    await db.update(recommendations).set({ userId: null, assignedTo: null }).where(or(eq(recommendations.userId, id), eq(recommendations.assignedTo, id)));
+    await db.update(analysis).set({ userId: null }).where(eq(analysis.userId, id));
+    await db.update(competitors).set({ userId: null }).where(eq(competitors.userId, id));
+    await db.update(companyProfiles).set({ createdBy: null }).where(eq(companyProfiles.createdBy, id));
+    await db.update(domainBlocklist).set({ createdBy: null }).where(eq(domainBlocklist.createdBy, id));
+    await db.update(longFormRecommendations).set({ generatedBy: null }).where(eq(longFormRecommendations.generatedBy, id));
+    
+    // Delete records that are owned by this user (and don't cascade automatically)
+    await db.delete(activity).where(eq(activity.userId, id));
+    await db.delete(groundingDocuments).where(eq(groundingDocuments.uploadedBy, id));
+    await db.delete(competitorScores).where(eq(competitorScores.userId, id));
+    await db.delete(socialMetrics).where(eq(socialMetrics.userId, id));
+    await db.delete(executiveSummaries).where(eq(executiveSummaries.userId, id));
+    await db.delete(tenantInvites).where(eq(tenantInvites.invitedBy, id));
+    await db.delete(assessments).where(eq(assessments.createdBy, id));
+    await db.delete(battlecards).where(eq(battlecards.createdBy, id));
+    await db.delete(productBattlecards).where(eq(productBattlecards.createdBy, id));
+    await db.delete(markets).where(eq(markets.createdBy, id));
+    await db.delete(clientProjects).where(eq(clientProjects.ownerUserId, id));
+    await db.delete(consultantAccess).where(eq(consultantAccess.grantedBy, id));
+    
+    // Now delete the user (consultantAccess.userId will cascade automatically)
     await db.delete(users).where(eq(users.id, id));
   }
 
