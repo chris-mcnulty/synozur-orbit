@@ -10,7 +10,7 @@ export default function UserGuidePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/user_guide.md")
+    fetch("/api/content/user_guide.md")
       .then((res) => res.text())
       .then((text) => {
         setContent(text);
