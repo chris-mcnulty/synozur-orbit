@@ -6164,6 +6164,166 @@ Return only the description text, no quotes or formatting.`;
     }
   });
 
+  // ==================== TENANT ADMIN - ENTRA ID USER PROVISIONING ====================
+
+  // Search Entra ID users from Microsoft Graph API
+  app.get("/api/team/entra/search", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.status(400).json({ error: "Search query must be at least 2 characters" });
+      }
+
+      const { searchEntraUsers, isEntraConfigured } = await import("./services/entra-graph-service");
+      
+      if (!isEntraConfigured()) {
+        return res.status(503).json({ error: "Entra ID is not configured" });
+      }
+
+      const result = await searchEntraUsers(query);
+      
+      if (result.error) {
+        return res.status(500).json({ error: result.error });
+      }
+
+      res.json(result.users);
+    } catch (error: any) {
+      console.error("Entra search error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Check if Entra ID is configured (admin only)
+  app.get("/api/team/entra/status", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const { isEntraConfigured } = await import("./services/entra-graph-service");
+      res.json({ configured: isEntraConfigured() });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Provision user directly from Entra ID
+  app.post("/api/team/entra/provision", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const { entraUserId, email, displayName, jobTitle, role, sendWelcomeEmail } = req.body;
+
+      if (!email || !displayName) {
+        return res.status(400).json({ error: "Email and display name are required" });
+      }
+
+      const validRoles = ["Standard User", "Domain Admin"];
+      if (role && !validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role. Must be 'Standard User' or 'Domain Admin'" });
+      }
+
+      // Validate domain access
+      const currentDomain = currentUser.email.split("@")[1];
+      const newUserDomain = email.split("@")[1];
+      if (currentDomain !== newUserDomain && currentUser.role !== "Global Admin") {
+        return res.status(400).json({ error: `User must have an @${currentDomain} email address` });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists with this email" });
+      }
+
+      // Get tenant info based on new user's domain (not current user's domain for cross-tenant provisioning)
+      const tenant = await storage.getTenantByDomain(newUserDomain);
+      if (!tenant) {
+        return res.status(400).json({ error: `No tenant found for domain @${newUserDomain}. The tenant must be created first.` });
+      }
+
+      // Create user with SSO marker (no password needed for Entra users)
+      const avatar = displayName.charAt(0).toUpperCase();
+      const newUser = await storage.createUser({
+        email,
+        password: "__SSO_USER__", // Marker for SSO-only users (never used for login)
+        name: displayName,
+        role: role || "Standard User",
+        company: tenant.name,
+        companySize: "",
+        jobTitle: jobTitle || "",
+        industry: "",
+        country: "",
+        avatar,
+        emailVerified: true, // SSO users are pre-verified
+        status: "active",
+        entraId: entraUserId || null,
+        authProvider: "entra", // Mark as SSO user
+      });
+
+      // Update tenant user count
+      await storage.updateTenant(tenant.id, { 
+        userCount: (tenant.userCount || 0) + 1 
+      });
+
+      // Send welcome email if requested
+      if (sendWelcomeEmail) {
+        const { sendUserProvisionedWelcomeEmail } = await import("./services/email-service");
+        const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+          : "https://orbit.synozur.com";
+        
+        await sendUserProvisionedWelcomeEmail(
+          email,
+          displayName,
+          tenant.name,
+          role || "Standard User",
+          currentUser.name,
+          baseUrl
+        );
+      }
+
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("Entra provision error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== TENANT ADMIN - INVITATIONS ====================
 
   // Get pending invites for current tenant

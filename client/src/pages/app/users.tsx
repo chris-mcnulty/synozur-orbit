@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail } from "lucide-react";
+import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
+
+interface EntraUser {
+  id: string;
+  displayName: string;
+  mail: string | null;
+  userPrincipalName: string;
+  jobTitle: string | null;
+  department: string | null;
+}
 
 export default function UsersPage() {
   const { user: currentUser } = useUser();
@@ -51,6 +61,14 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newRole, setNewRole] = useState("Standard User");
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  
+  const [entraOpen, setEntraOpen] = useState(false);
+  const [entraSearchQuery, setEntraSearchQuery] = useState("");
+  const [entraSearchResults, setEntraSearchResults] = useState<EntraUser[]>([]);
+  const [selectedEntraUser, setSelectedEntraUser] = useState<EntraUser | null>(null);
+  const [entraRole, setEntraRole] = useState("Standard User");
+  const [sendWelcomeEmail, setSendWelcomeEmail] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
 
   const { data: users = [], isLoading, error } = useQuery({
     queryKey: ["/api/users"],
@@ -165,6 +183,86 @@ export default function UsersPage() {
     },
   });
 
+  const { data: entraStatus } = useQuery({
+    queryKey: ["/api/team/entra/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/team/entra/status", { credentials: "include" });
+      if (!res.ok) return { configured: false };
+      return res.json();
+    },
+  });
+
+  const searchEntraUsers = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setEntraSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/team/entra/search?q=${encodeURIComponent(query)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Search failed");
+      }
+      const users = await res.json();
+      setEntraSearchResults(users);
+    } catch (error: any) {
+      toast.error(error.message);
+      setEntraSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (entraSearchQuery.length >= 2) {
+        searchEntraUsers(entraSearchQuery);
+      } else {
+        setEntraSearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [entraSearchQuery, searchEntraUsers]);
+
+  const provisionEntraUserMutation = useMutation({
+    mutationFn: async (entraUser: EntraUser) => {
+      const res = await fetch("/api/team/entra/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          entraUserId: entraUser.id,
+          email: entraUser.mail || entraUser.userPrincipalName,
+          displayName: entraUser.displayName,
+          jobTitle: entraUser.jobTitle,
+          role: entraRole,
+          sendWelcomeEmail,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to provision user");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setEntraOpen(false);
+      setEntraSearchQuery("");
+      setEntraSearchResults([]);
+      setSelectedEntraUser(null);
+      setEntraRole("Standard User");
+      setSendWelcomeEmail(true);
+      toast.success("User added successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case "Global Admin":
@@ -215,59 +313,70 @@ export default function UsersPage() {
            <h1 className="text-3xl font-bold tracking-tight mb-2">User Management</h1>
            <p className="text-muted-foreground">Manage access and roles for your workspace.</p>
         </div>
-        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-invite-user">
-              <Plus className="w-4 h-4 mr-2" /> Invite User
+        <div className="flex gap-2">
+          {entraStatus?.configured && (
+            <Button 
+              variant="outline" 
+              onClick={() => setEntraOpen(true)}
+              data-testid="button-add-from-entra"
+            >
+              <Building2 className="w-4 h-4 mr-2" /> Add from Entra ID
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite Team Member</DialogTitle>
-              <DialogDescription>
-                Send an invitation to add a new member to your team.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Email Address</Label>
-                <Input
-                  type="email"
-                  placeholder="colleague@company.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  data-testid="input-invite-email"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={inviteRole} onValueChange={setInviteRole}>
-                  <SelectTrigger data-testid="select-invite-role">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Standard User">Standard User</SelectItem>
-                    <SelectItem value="Domain Admin">Domain Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setInviteOpen(false)}>
-                Cancel
+          )}
+          <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-invite-user">
+                <Plus className="w-4 h-4 mr-2" /> Invite User
               </Button>
-              <Button
-                onClick={() => sendInviteMutation.mutate()}
-                disabled={!inviteEmail || sendInviteMutation.isPending}
-                data-testid="button-send-invite"
-              >
-                {sendInviteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                <Mail className="h-4 w-4 mr-2" />
-                Send Invite
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Invite Team Member</DialogTitle>
+                <DialogDescription>
+                  Send an invitation to add a new member to your team.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input
+                    type="email"
+                    placeholder="colleague@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    data-testid="input-invite-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger data-testid="select-invite-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Standard User">Standard User</SelectItem>
+                      <SelectItem value="Domain Admin">Domain Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setInviteOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => sendInviteMutation.mutate()}
+                  disabled={!inviteEmail || sendInviteMutation.isPending}
+                  data-testid="button-send-invite"
+                >
+                  {sendInviteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send Invite
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -447,6 +556,157 @@ export default function UsersPage() {
             >
               {removeUserMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Remove User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={entraOpen} onOpenChange={(open) => {
+        setEntraOpen(open);
+        if (!open) {
+          setEntraSearchQuery("");
+          setEntraSearchResults([]);
+          setSelectedEntraUser(null);
+          setEntraRole("Standard User");
+          setSendWelcomeEmail(true);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add User from Entra ID</DialogTitle>
+            <DialogDescription>
+              Search your organization's directory and add users directly.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or email..."
+                value={entraSearchQuery}
+                onChange={(e) => setEntraSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-entra-search"
+              />
+            </div>
+
+            {isSearching && (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {!isSearching && entraSearchResults.length > 0 && (
+              <div className="border rounded-lg max-h-60 overflow-y-auto">
+                {entraSearchResults.map((entraUser) => (
+                  <div
+                    key={entraUser.id}
+                    className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors ${
+                      selectedEntraUser?.id === entraUser.id ? "bg-primary/10 border-l-2 border-primary" : ""
+                    }`}
+                    onClick={() => setSelectedEntraUser(entraUser)}
+                    data-testid={`entra-user-${entraUser.id}`}
+                  >
+                    <Avatar>
+                      <AvatarFallback className="bg-primary/10 text-primary">
+                        {entraUser.displayName?.charAt(0) || "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{entraUser.displayName}</div>
+                      <div className="text-sm text-muted-foreground truncate">
+                        {entraUser.mail || entraUser.userPrincipalName}
+                      </div>
+                      {entraUser.jobTitle && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {entraUser.jobTitle}{entraUser.department && ` • ${entraUser.department}`}
+                        </div>
+                      )}
+                    </div>
+                    {selectedEntraUser?.id === entraUser.id && (
+                      <Badge variant="secondary">Selected</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!isSearching && entraSearchQuery.length >= 2 && entraSearchResults.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground">
+                No users found matching "{entraSearchQuery}"
+              </div>
+            )}
+
+            {entraSearchQuery.length > 0 && entraSearchQuery.length < 2 && (
+              <div className="text-center py-2 text-sm text-muted-foreground">
+                Type at least 2 characters to search
+              </div>
+            )}
+
+            {selectedEntraUser && (
+              <div className="space-y-4 border-t pt-4">
+                <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+                  <Avatar>
+                    <AvatarFallback className="bg-primary/10 text-primary">
+                      {selectedEntraUser.displayName?.charAt(0) || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="font-medium">{selectedEntraUser.displayName}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {selectedEntraUser.mail || selectedEntraUser.userPrincipalName}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Role</Label>
+                    <Select value={entraRole} onValueChange={setEntraRole}>
+                      <SelectTrigger data-testid="select-entra-role">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Standard User">Standard User</SelectItem>
+                        <SelectItem value="Domain Admin">Domain Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Welcome Email</Label>
+                    <div className="flex items-center gap-2 h-10">
+                      <Switch
+                        checked={sendWelcomeEmail}
+                        onCheckedChange={setSendWelcomeEmail}
+                        data-testid="switch-welcome-email"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {sendWelcomeEmail ? "Send welcome email" : "Skip email"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEntraOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedEntraUser) {
+                  provisionEntraUserMutation.mutate(selectedEntraUser);
+                }
+              }}
+              disabled={!selectedEntraUser || provisionEntraUserMutation.isPending}
+              data-testid="button-add-entra-user"
+            >
+              {provisionEntraUserMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add User
             </Button>
           </DialogFooter>
         </DialogContent>

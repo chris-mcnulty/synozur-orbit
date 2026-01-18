@@ -385,6 +385,94 @@ export async function sendTeamInviteEmail(
   });
 }
 
+export async function sendUserProvisionedWelcomeEmail(
+  email: string, 
+  name: string, 
+  companyName: string,
+  role: string,
+  addedByName: string,
+  baseUrl: string
+): Promise<boolean> {
+  const loginLink = `${baseUrl}/auth/signin`;
+  const guideLink = `${baseUrl}/app/guide`;
+  
+  const content = `
+    <h1>Welcome to Orbit!</h1>
+    
+    <p>Hi <span class="highlight">${name}</span>,</p>
+    
+    <p><span class="highlight">${addedByName}</span> has added you to <span class="highlight">${companyName}</span>'s team on Orbit, our AI-powered competitive intelligence platform. Your role has been set to <span class="highlight">${role}</span>.</p>
+    
+    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Getting Started</p>
+    
+    <p>Since your organization uses Microsoft Entra ID for sign-in, you can access Orbit using your work account. Simply click the button below and sign in with your Microsoft credentials:</p>
+    
+    <div class="button-container">
+      <a href="${loginLink}" class="button">Sign In to Orbit</a>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <p style="color: #ffffff; font-weight: 500;">What can you do in Orbit?</p>
+    
+    <div class="feature-list">
+      <div class="feature">
+        <div class="feature-title">Track Competitors</div>
+        <p class="feature-desc">Monitor competitor websites, social media presence, and messaging strategies in real-time.</p>
+      </div>
+      
+      <div class="feature">
+        <div class="feature-title">AI-Powered Analysis</div>
+        <p class="feature-desc">Get intelligent recommendations and gap analysis powered by Claude AI to strengthen your positioning.</p>
+      </div>
+      
+      <div class="feature">
+        <div class="feature-title">Battle Cards</div>
+        <p class="feature-desc">Access dynamically generated competitive battle cards with key differentiators and talk tracks.</p>
+      </div>
+      
+      <div class="feature">
+        <div class="feature-title">Generate Reports</div>
+        <p class="feature-desc">Create branded PDF reports for stakeholders, leadership, and sales teams.</p>
+      </div>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <p><strong>Need help?</strong> Check out our <a href="${guideLink}" class="link" style="font-size: 15px;">User Guide</a> for step-by-step instructions on using Orbit effectively.</p>
+    
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you have any questions, reach out to your administrator or contact support.</p>
+  `;
+
+  const text = `
+Hi ${name},
+
+${addedByName} has added you to ${companyName}'s team on Orbit, our AI-powered competitive intelligence platform. Your role has been set to ${role}.
+
+Getting Started:
+Since your organization uses Microsoft Entra ID for sign-in, you can access Orbit using your work account. Simply visit ${loginLink} and sign in with your Microsoft credentials.
+
+What can you do in Orbit?
+- Track Competitors: Monitor competitor websites, social media presence, and messaging strategies.
+- AI-Powered Analysis: Get intelligent recommendations and gap analysis powered by Claude AI.
+- Battle Cards: Access dynamically generated competitive battle cards with key differentiators.
+- Generate Reports: Create branded PDF reports for stakeholders and leadership.
+
+Need help? Check out our User Guide at ${guideLink}
+
+If you have any questions, reach out to your administrator or contact support.
+
+© ${new Date().getFullYear()} The Synozur Alliance, LLC. All rights reserved.
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `You've been added to ${companyName} on Orbit`,
+    html: wrapEmailContent(content),
+    text
+  });
+}
+
 export async function sendPasswordResetEmail(
   email: string, 
   name: string, 
