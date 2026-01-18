@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { 
-  Map, CheckCircle2, Clock, Rocket, Star, 
-  Shield, BarChart3, Users, Zap, Target, Globe
+  Map, CheckCircle2, Clock, Rocket, Star, Info,
+  Shield, BarChart3, Users, Zap, Target, Globe,
+  FileText, ListTodo
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/layout/AppLayout";
+import MarkdownViewer from "@/components/MarkdownViewer";
 
 interface RoadmapItem {
   id: string;
@@ -210,8 +212,8 @@ const getCategoryColor = (category: string) => {
   }
 };
 
-export default function RoadmapPage() {
-  const [activeTab, setActiveTab] = useState("timeline");
+export default function AboutPage() {
+  const [activeTab, setActiveTab] = useState("roadmap");
 
   const allItems = milestones.flatMap(m => m.items);
   const completedCount = allItems.filter(i => i.status === "completed").length;
@@ -224,36 +226,47 @@ export default function RoadmapPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
-              <Map className="w-6 h-6 text-primary" />
+              <Info className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-page-title">Product Roadmap</h1>
-              <p className="text-muted-foreground text-sm">Orbit's planned features and milestones</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-green-500" />
-              <span>{completedCount} Completed</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500" />
-              <span>{inProgressCount} In Progress</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-yellow-500" />
-              <span>{plannedCount} Planned</span>
+              <h1 className="text-2xl font-bold" data-testid="text-page-title">About Orbit</h1>
+              <p className="text-muted-foreground text-sm">Product information, roadmap, and updates</p>
             </div>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="timeline" data-testid="tab-timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="by-category" data-testid="tab-category">By Category</TabsTrigger>
+            <TabsTrigger value="roadmap" className="flex items-center gap-2" data-testid="tab-roadmap">
+              <Map className="w-4 h-4" />
+              Roadmap
+            </TabsTrigger>
+            <TabsTrigger value="changelog" className="flex items-center gap-2" data-testid="tab-changelog">
+              <FileText className="w-4 h-4" />
+              Changelog
+            </TabsTrigger>
+            <TabsTrigger value="backlog" className="flex items-center gap-2" data-testid="tab-backlog">
+              <ListTodo className="w-4 h-4" />
+              Backlog
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="timeline" className="mt-6">
+          <TabsContent value="roadmap" className="mt-6">
+            <div className="flex items-center gap-4 text-sm mb-6">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-green-500" />
+                <span>{completedCount} Completed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <span>{inProgressCount} In Progress</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <span>{plannedCount} Planned</span>
+              </div>
+            </div>
+
             <div className="space-y-8">
               {milestones.map((milestone, index) => (
                 <div key={milestone.id} className="relative">
@@ -319,42 +332,38 @@ export default function RoadmapPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="by-category" className="mt-6">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {["Core", "AI", "Security", "Platform", "Reporting"].map(category => {
-                const categoryItems = allItems.filter(i => i.category === category);
-                if (categoryItems.length === 0) return null;
-                
-                return (
-                  <Card key={category}>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Badge className={getCategoryColor(category)}>{category}</Badge>
-                        <span className="text-muted-foreground text-sm font-normal">
-                          ({categoryItems.filter(i => i.status === "completed").length}/{categoryItems.length})
-                        </span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {categoryItems.map(item => (
-                        <div 
-                          key={item.id}
-                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-card/50"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {item.icon}
-                            <span className="text-sm truncate">{item.title}</span>
-                          </div>
-                          <Badge variant="outline" className={`shrink-0 text-xs ${getStatusColor(item.status)}`}>
-                            {getStatusLabel(item.status)}
-                          </Badge>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+          <TabsContent value="changelog" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Changelog
+                </CardTitle>
+                <CardDescription>
+                  A detailed history of all updates, improvements, and new features.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MarkdownViewer url="/api/content/changelog.md" maxHeight="600px" />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="backlog" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ListTodo className="w-5 h-5" />
+                  Backlog
+                </CardTitle>
+                <CardDescription>
+                  Features and improvements we're tracking for future releases.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MarkdownViewer url="/api/content/backlog.md" maxHeight="600px" />
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

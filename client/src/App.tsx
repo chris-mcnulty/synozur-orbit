@@ -31,7 +31,8 @@ import ExecutiveSummary from "@/pages/app/executive-summary";
 import UserGuidePage from "@/pages/app/user-guide";
 import BattleCardsPage from "@/pages/app/battlecards";
 import UsagePage from "@/pages/app/usage";
-import AppRoadmap from "@/pages/app/roadmap";
+import AppAbout from "@/pages/app/about";
+import DataSourcesPage from "@/pages/app/data-sources";
 
 function Router() {
   return (
@@ -66,7 +67,8 @@ function Router() {
       <Route path="/app/projects/:projectId/executive-summary" component={ExecutiveSummary} />
       <Route path="/app/projects/:id" component={ProjectDetail} />
       <Route path="/app/guide" component={UserGuidePage} />
-      <Route path="/app/roadmap" component={AppRoadmap} />
+      <Route path="/app/about" component={AppAbout} />
+      <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />
       <Route path="/app/usage" component={UsagePage} />
       

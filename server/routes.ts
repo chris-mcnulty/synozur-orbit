@@ -23,6 +23,7 @@ import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from ".
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
+import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 
 // Helper: Check if user has cross-tenant READ access
 // Global Admin and Consultant roles can read across tenants
@@ -6966,6 +6967,97 @@ Provide analysis in this JSON format:
       res.json(updated);
     } catch (error: any) {
       console.error("Update recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== DATA SOURCES / NEWS ROUTES ====================
+
+  app.get("/api/data-sources/news", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const allCompetitors = await storage.getCompetitorsByUserId(req.session.userId!);
+      const competitors = allCompetitors.filter(c => validateResourceContext(c, ctx));
+      
+      const cachedResults: NewsMonitoringResult[] = [];
+      for (const competitor of competitors.slice(0, 5)) {
+        cachedResults.push({
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          mentions: [],
+          totalMentions: 0,
+          status: "success",
+          message: "Use refresh to fetch latest news",
+          fetchedAt: new Date().toISOString(),
+        });
+      }
+      
+      res.json({ results: cachedResults });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("News fetch error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/data-sources/news/refresh", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (tenant?.plan === "free") {
+        return res.status(403).json({ error: "News monitoring is a premium feature. Please upgrade your plan." });
+      }
+      
+      const allCompetitors = await storage.getCompetitorsByUserId(req.session.userId!);
+      const competitors = allCompetitors.filter(c => validateResourceContext(c, ctx));
+      
+      const competitorData = competitors.slice(0, 5).map((c: Competitor) => ({
+        id: c.id,
+        name: c.name,
+        websiteUrl: c.url || undefined,
+      }));
+      
+      const results = await monitorMultipleCompetitorsNews(competitorData);
+      
+      res.json({ results, fetchedAt: new Date().toISOString() });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("News refresh error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/data-sources/news/:competitorId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const competitor = await storage.getCompetitor(req.params.competitorId);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+      
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const result = await monitorCompetitorNews(
+        competitor.id,
+        competitor.name,
+        competitor.url || undefined
+      );
+      
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Competitor news fetch error:", error);
       res.status(500).json({ error: error.message });
     }
   });
