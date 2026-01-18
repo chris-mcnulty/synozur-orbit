@@ -5,16 +5,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip as TooltipPrimitive, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
-  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords
+  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
+  RefreshCw, Loader2, CheckCircle, XCircle, User
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
+import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+
+const hasAdminAccess = (role: string) => 
+  role === "Global Admin" || role === "Domain Admin";
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -38,10 +45,15 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 export default function Dashboard() {
   const { user } = useUser();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const [checklistDismissed, setChecklistDismissed] = useState(() => {
     return localStorage.getItem("orbit_onboarding_dismissed") === "true";
   });
+  const [isRebuilding, setIsRebuilding] = useState(false);
+
+  const isAdmin = user ? hasAdminAccess(user.role) : false;
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -127,6 +139,73 @@ export default function Dashboard() {
       const response = await fetch("/api/dashboard/scores", { credentials: "include" });
       if (!response.ok) return null;
       return response.json();
+    },
+  });
+
+  const { data: tenantUsers = [] } = useQuery<{ id: string; name: string; email: string }[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const response = await fetch("/api/users", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const rebuildAll = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/rebuild-all", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to start rebuild");
+      }
+      return res.json();
+    },
+    onSuccess: (result) => {
+      setIsRebuilding(true);
+      toast({
+        title: "Rebuild Started",
+        description: `Processing ${result.totalItems} items (${result.competitors} competitors, ${result.products} products)`,
+      });
+      setTimeout(() => {
+        setIsRebuilding(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/scores"] });
+        toast({
+          title: "Rebuild Complete",
+          description: "All competitive intelligence has been refreshed.",
+        });
+      }, 30000);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateRecommendation = useMutation({
+    mutationFn: async ({ id, status, assignedTo }: { id: string; status?: string; assignedTo?: string | null }) => {
+      const res = await fetch(`/api/recommendations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, assignedTo }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      toast({ title: "Updated", description: "Action item updated successfully." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update action item.", variant: "destructive" });
     },
   });
 
@@ -235,6 +314,39 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex gap-2">
+            {isAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => rebuildAll.mutate()}
+                disabled={isRebuilding || rebuildAll.isPending}
+                data-testid="button-rebuild-all"
+              >
+                {isRebuilding || rebuildAll.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Rebuilding...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Rebuild All
+                  </>
+                )}
+              </Button>
+            ) : (
+              <TooltipPrimitive>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" disabled data-testid="button-rebuild-all-disabled">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Rebuild All
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Admin access required</p>
+                </TooltipContent>
+              </TooltipPrimitive>
+            )}
             <Link href="/app/reports">
               <Button variant="outline" size="sm" data-testid="button-view-reports">
                 <FileText className="w-4 h-4 mr-2" /> Reports
@@ -650,21 +762,69 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {recommendations.slice(0, 3).map((rec: any) => (
+                {recommendations.slice(0, 4).map((rec: any) => (
                   <div key={rec.id} className="p-3 rounded-lg border border-border hover:border-primary/30 transition-colors" data-testid={`insight-${rec.id}`}>
-                    <div className="flex items-start gap-3">
-                      <div className="p-1.5 rounded-full bg-primary/10 text-primary shrink-0">
-                        <Target className="w-3 h-3" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm mb-1">{rec.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-2">{rec.description}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Badge variant="secondary" className="text-xs">{rec.area}</Badge>
-                          <Badge variant={rec.impact === "High" ? "destructive" : "outline"} className="text-xs">
-                            {rec.impact} Impact
-                          </Badge>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="p-1.5 rounded-full bg-primary/10 text-primary shrink-0">
+                          <Target className="w-3 h-3" />
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm mb-1">{rec.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{rec.description}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <Badge variant="secondary" className="text-xs">{rec.area}</Badge>
+                            <Badge variant={rec.impact === "High" ? "destructive" : "outline"} className="text-xs">
+                              {rec.impact} Impact
+                            </Badge>
+                            {rec.assignedTo && (
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <User className="w-3 h-3" /> Assigned
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Select
+                          value={rec.assignedTo || "unassigned"}
+                          onValueChange={(value) => 
+                            updateRecommendation.mutate({ 
+                              id: rec.id, 
+                              assignedTo: value === "unassigned" ? null : value 
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-24 h-7 text-xs">
+                            <SelectValue placeholder="Assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {tenantUsers.map((u) => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.name || u.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                          onClick={() => updateRecommendation.mutate({ id: rec.id, status: "accepted" })}
+                          data-testid={`button-accept-${rec.id}`}
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                          onClick={() => updateRecommendation.mutate({ id: rec.id, status: "dismissed" })}
+                          data-testid={`button-dismiss-${rec.id}`}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </div>
