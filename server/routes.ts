@@ -2712,6 +2712,37 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // Delete a tenant (Global Admin only)
+  app.delete("/api/tenants/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const tenant = await storage.getTenant(req.params.id);
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      // Prevent deleting the tenant the current user belongs to
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
+      if (tenant.domain.toLowerCase() === userDomain) {
+        return res.status(400).json({ error: "Cannot delete your own tenant" });
+      }
+
+      await storage.deleteTenant(req.params.id);
+      res.json({ success: true, message: "Tenant deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting tenant:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/tenants/:id/users", async (req, res) => {
     try {
       if (!req.session.userId) {

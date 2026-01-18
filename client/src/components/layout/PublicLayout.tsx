@@ -28,11 +28,9 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <Link href="/auth/signin" className="text-sm font-medium text-primary hover:text-primary/80 transition-colors">Sign In</Link>
         </div>
       </header>
-
       <main className="flex-1">
         {children}
       </main>
-
       <footer className="bg-card py-16 px-6 md:px-12 border-t border-border">
         <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
           <div className="md:col-span-2">
@@ -74,7 +72,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div className="mb-8">
             <h4 className="font-semibold mb-4">Legal</h4>
             <div className="text-sm text-muted-foreground space-y-3">
-              <p>© 2025 The Synozur Alliance, LLC. All rights reserved.</p>
+              <p>© 2026 The Synozur Alliance, LLC. All rights reserved.</p>
               <p>"Synozur" and "The Synozur Alliance" are trademarks of The Synozur Alliance, LLC.</p>
               <p className="leading-relaxed">
                 Disclaimer: Information provided on this site is presented "as is" without any express or implied warranties. 

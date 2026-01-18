@@ -188,6 +188,7 @@ export interface IStorage {
   updateTenantInvite(id: string, data: Partial<TenantInvite>): Promise<TenantInvite>;
   deleteTenantInvite(id: string): Promise<void>;
   deleteUser(id: string): Promise<void>;
+  deleteTenant(id: string): Promise<void>;
   
   // Domain Blocklist methods
   getDomainBlocklist(): Promise<DomainBlocklist[]>;
@@ -796,6 +797,49 @@ export class DatabaseStorage implements IStorage {
     
     // Now delete the user (consultantAccess.userId will cascade automatically)
     await db.delete(users).where(eq(users.id, id));
+  }
+
+  async deleteTenant(id: string): Promise<void> {
+    // Get tenant domain for cleaning up related records
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id));
+    if (!tenant) return;
+    
+    const tenantDomain = tenant.domain;
+    
+    // Delete all records that reference this tenant by domain
+    // Order matters due to foreign key constraints
+    
+    // Delete records with tenantDomain references
+    await db.delete(recommendations).where(eq(recommendations.tenantDomain, tenantDomain));
+    await db.delete(longFormRecommendations).where(eq(longFormRecommendations.tenantDomain, tenantDomain));
+    await db.delete(activity).where(eq(activity.tenantDomain, tenantDomain));
+    await db.delete(analysis).where(eq(analysis.tenantDomain, tenantDomain));
+    await db.delete(reports).where(eq(reports.tenantDomain, tenantDomain));
+    await db.delete(groundingDocuments).where(eq(groundingDocuments.tenantDomain, tenantDomain));
+    await db.delete(assessments).where(eq(assessments.tenantDomain, tenantDomain));
+    await db.delete(companyProfiles).where(eq(companyProfiles.tenantDomain, tenantDomain));
+    await db.delete(competitorScores).where(eq(competitorScores.tenantDomain, tenantDomain));
+    await db.delete(socialMetrics).where(eq(socialMetrics.tenantDomain, tenantDomain));
+    await db.delete(executiveSummaries).where(eq(executiveSummaries.tenantDomain, tenantDomain));
+    await db.delete(battlecards).where(eq(battlecards.tenantDomain, tenantDomain));
+    await db.delete(productBattlecards).where(eq(productBattlecards.tenantDomain, tenantDomain));
+    await db.delete(products).where(eq(products.tenantDomain, tenantDomain));
+    await db.delete(clientProjects).where(eq(clientProjects.tenantDomain, tenantDomain));
+    await db.delete(tenantInvites).where(eq(tenantInvites.tenantDomain, tenantDomain));
+    
+    // Delete records with tenantId references (markets, consultantAccess)
+    await db.delete(markets).where(eq(markets.tenantId, id));
+    await db.delete(consultantAccess).where(eq(consultantAccess.tenantId, id));
+    
+    // Delete users that belong to this tenant (by email domain matching tenant domain)
+    const allUsers = await db.select().from(users);
+    const tenantUsers = allUsers.filter(u => u.email.split("@")[1]?.toLowerCase() === tenantDomain.toLowerCase());
+    for (const user of tenantUsers) {
+      await this.deleteUser(user.id);
+    }
+    
+    // Finally delete the tenant itself
+    await db.delete(tenants).where(eq(tenants.id, id));
   }
 
   // Domain Blocklist methods

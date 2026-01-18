@@ -160,6 +160,25 @@ export default function AdminPage() {
     },
   });
 
+  const deleteTenantMutation = useMutation({
+    mutationFn: async (tenantId: string) => {
+      const response = await fetch(`/api/tenants/${tenantId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete tenant");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
+      setEditDialogOpen(false);
+      setSelectedTenant(null);
+    },
+  });
+
   const { data: blockedDomains = [] } = useQuery<BlockedDomain[]>({
     queryKey: ["/api/admin/domain-blocklist"],
     queryFn: async () => {
@@ -339,21 +358,6 @@ export default function AdminPage() {
     }
     if (editForm.status !== selectedTenant.status && editForm.status) {
       changedFields.status = editForm.status;
-    }
-    if (editForm.competitorLimit !== selectedTenant.competitorLimit) {
-      changedFields.competitorLimit = editForm.competitorLimit;
-    }
-    if (editForm.analysisLimit !== selectedTenant.analysisLimit) {
-      changedFields.analysisLimit = editForm.analysisLimit;
-    }
-    if (editForm.adminUserLimit !== ((selectedTenant as any).adminUserLimit ?? 1)) {
-      (changedFields as any).adminUserLimit = editForm.adminUserLimit;
-    }
-    if (editForm.readWriteUserLimit !== ((selectedTenant as any).readWriteUserLimit ?? 2)) {
-      (changedFields as any).readWriteUserLimit = editForm.readWriteUserLimit;
-    }
-    if (editForm.readOnlyUserLimit !== ((selectedTenant as any).readOnlyUserLimit ?? 5)) {
-      (changedFields as any).readOnlyUserLimit = editForm.readOnlyUserLimit;
     }
     if (editForm.logoUrl !== (selectedTenant.logoUrl || "")) {
       changedFields.logoUrl = editForm.logoUrl || null;
@@ -1031,59 +1035,42 @@ export default function AdminPage() {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Competitor Limit</Label>
-                    <Input
-                      type="number"
-                      value={editForm.competitorLimit}
-                      onChange={(e) => setEditForm({ ...editForm, competitorLimit: parseInt(e.target.value) || 0 })}
-                      data-testid="edit-tenant-competitor-limit"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Analysis Limit</Label>
-                    <Input
-                      type="number"
-                      value={editForm.analysisLimit}
-                      onChange={(e) => setEditForm({ ...editForm, analysisLimit: parseInt(e.target.value) || 0 })}
-                      data-testid="edit-tenant-analysis-limit"
-                    />
-                  </div>
-                </div>
                 <div className="space-y-2 pt-2">
-                  <Label className="text-sm font-medium">User Role Limits</Label>
-                  <p className="text-xs text-muted-foreground mb-2">Maximum number of users per role for this tenant</p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
+                  <Label className="text-sm font-medium">Plan Limits</Label>
+                  <p className="text-xs text-muted-foreground mb-2">These limits are determined by the selected plan and cannot be edited directly</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Competitor Limit</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-competitor-limit">
+                        {editForm.competitorLimit} competitors
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Analysis Limit</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-analysis-limit">
+                        {editForm.analysisLimit} AI analyses/month
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Max number of AI-powered analyses per month</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mt-3">
+                    <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Admin Users</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={editForm.adminUserLimit}
-                        onChange={(e) => setEditForm({ ...editForm, adminUserLimit: parseInt(e.target.value) || 1 })}
-                        data-testid="edit-tenant-admin-limit"
-                      />
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-admin-limit">
+                        {editForm.adminUserLimit}
+                      </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Read-Write Users</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={editForm.readWriteUserLimit}
-                        onChange={(e) => setEditForm({ ...editForm, readWriteUserLimit: parseInt(e.target.value) || 0 })}
-                        data-testid="edit-tenant-rw-limit"
-                      />
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-rw-limit">
+                        {editForm.readWriteUserLimit}
+                      </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Read-Only Users</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={editForm.readOnlyUserLimit}
-                        onChange={(e) => setEditForm({ ...editForm, readOnlyUserLimit: parseInt(e.target.value) || 0 })}
-                        data-testid="edit-tenant-ro-limit"
-                      />
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-ro-limit">
+                        {editForm.readOnlyUserLimit}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1190,18 +1177,38 @@ export default function AdminPage() {
                 </div>
               </TabsContent>
             </Tabs>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                Cancel
-              </Button>
+            <DialogFooter className="flex justify-between sm:justify-between">
               <Button
-                onClick={handleSaveEdit}
-                disabled={updateTenantMutation.isPending}
-                data-testid="save-tenant-edit"
+                variant="destructive"
+                onClick={() => {
+                  if (selectedTenant && confirm(`Are you sure you want to delete the tenant "${selectedTenant.name}"? This will permanently delete all users, competitors, analyses, and other data associated with this tenant. This action cannot be undone.`)) {
+                    deleteTenantMutation.mutate(selectedTenant.id);
+                  }
+                }}
+                disabled={deleteTenantMutation.isPending || updateTenantMutation.isPending}
+                data-testid="delete-tenant"
               >
-                {updateTenantMutation.isPending ? "Saving..." : "Save Changes"}
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleteTenantMutation.isPending ? "Deleting..." : "Delete Tenant"}
               </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEdit}
+                  disabled={updateTenantMutation.isPending || deleteTenantMutation.isPending}
+                  data-testid="save-tenant-edit"
+                >
+                  {updateTenantMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
             </DialogFooter>
+            {deleteTenantMutation.isError && (
+              <p className="text-sm text-destructive mt-2">
+                {deleteTenantMutation.error.message}
+              </p>
+            )}
           </DialogContent>
         </Dialog>
       </div>
