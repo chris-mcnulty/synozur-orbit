@@ -183,10 +183,14 @@ export const competitors = pgTable("competitors", {
 
 export const activity = pgTable("activity", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  type: text("type").notNull(),
-  competitorId: varchar("competitor_id").notNull().references(() => competitors.id),
-  competitorName: text("competitor_name").notNull(),
-  description: text("description").notNull(),
+  type: text("type").notNull(), // change, new_page, blog_post, social_update, product_update
+  sourceType: text("source_type").notNull().default("competitor"), // competitor | baseline
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "cascade" }), // Nullable for baseline activity
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }), // For baseline activity
+  competitorName: text("competitor_name").notNull(), // Display name (works for both competitor and baseline)
+  description: text("description").notNull(), // Brief description
+  summary: text("summary"), // AI-generated summary of what changed
+  details: jsonb("details"), // Structured data: {oldContent, newContent, pagesAffected[], blogTitles[], etc.}
   date: text("date").notNull(),
   impact: text("impact").notNull(),
   userId: varchar("user_id").references(() => users.id),
