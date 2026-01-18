@@ -165,7 +165,12 @@ export default function About() {
               </p>
             </a>
 
-            <div className="bg-card p-8 rounded-xl border border-border text-left">
+            <a 
+              href="https://orion.synozur.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="bg-card p-8 rounded-xl border border-border text-left block hover:border-primary/50 transition-colors"
+            >
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Users className="w-5 h-5 text-primary" />
@@ -176,7 +181,7 @@ export default function About() {
                 Multi-model maturity assessment platform with AI-powered recommendations. 
                 Evaluate organizational capabilities and identify improvement opportunities.
               </p>
-            </div>
+            </a>
           </div>
         </div>
       </section>
