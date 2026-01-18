@@ -552,7 +552,7 @@ Client Projects (Pro/Enterprise plans) enable managing complex competitive analy
 1. **Navigate to Projects page** (`/app/projects`)
 2. **Click "New Project"**
 3. **Fill in project details**:
-   - Project name (e.g., "Q1 2025 Competitive Review")
+   - Project name (e.g., "Q1 2026 Competitive Review")
    - Client name
    - Client domain (optional)
    - Description
@@ -1196,5 +1196,5 @@ Synozur Orbit empowers your team with AI-driven competitive intelligence, enabli
 ---
 
 *Document Version: 1.0*  
-*Last Updated: January 2025*  
+*Last Updated: January 2026*  
 *For the latest updates, see changelog.md*
