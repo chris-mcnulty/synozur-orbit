@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -20,7 +20,9 @@ import {
   Crown,
   Loader2,
   FolderKanban,
-  HelpCircle
+  HelpCircle,
+  Building2,
+  Swords
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,11 @@ import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
+
+type NavIndicator = {
+  type: "action" | "new" | "count";
+  count?: number;
+};
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -46,6 +53,74 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     },
     enabled: !!user,
   });
+
+  const { data: competitors = [] } = useQuery({
+    queryKey: ["/api/competitors"],
+    queryFn: async () => {
+      const response = await fetch("/api/competitors", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const { data: recommendations = [] } = useQuery({
+    queryKey: ["/api/recommendations"],
+    queryFn: async () => {
+      const response = await fetch("/api/recommendations", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const { data: analysis } = useQuery({
+    queryKey: ["/api/analysis"],
+    queryFn: async () => {
+      const response = await fetch("/api/analysis", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const { data: activityData = [] } = useQuery({
+    queryKey: ["/api/activity"],
+    queryFn: async () => {
+      const response = await fetch("/api/activity", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const navIndicators = useMemo((): Record<string, NavIndicator> => {
+    const indicators: Record<string, NavIndicator> = {};
+    
+    if (!companyProfile?.url) {
+      indicators["/app/company-profile"] = { type: "action" };
+    }
+    
+    if (competitors.length === 0) {
+      indicators["/app/competitors"] = { type: "action" };
+    }
+    
+    if (!analysis?.themes) {
+      indicators["/app/analysis"] = { type: "action" };
+    }
+    
+    const pendingRecs = recommendations.filter((r: any) => r.status === "Open" || r.status === "In Progress");
+    if (pendingRecs.length > 0) {
+      indicators["/app/recommendations"] = { type: "count", count: pendingRecs.length };
+    }
+    
+    const highImpactActivity = activityData.filter((a: any) => a.impact === "High");
+    if (highImpactActivity.length > 0) {
+      indicators["/app/activity"] = { type: "count", count: highImpactActivity.length };
+    }
+    
+    return indicators;
+  }, [companyProfile, competitors, analysis, recommendations, activityData]);
   
   const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user;
   
@@ -69,17 +144,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const navigation = [
     {
-      group: "Intelligence",
+      group: "Setup",
       items: [
         { label: "Overview", icon: LayoutDashboard, href: "/app" },
+        { label: "Company Baseline", icon: Building2, href: "/app/company-profile" },
         { label: "Competitors", icon: Target, href: "/app/competitors" },
+        { label: "Documents", icon: BookOpen, href: "/app/documents" },
+      ]
+    },
+    {
+      group: "Insights",
+      items: [
         { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
         { label: "Recommendations", icon: Lightbulb, href: "/app/recommendations" },
+        { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
+      ]
+    },
+    {
+      group: "Outputs",
+      items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
-        { label: "Documents", icon: BookOpen, href: "/app/documents" },
-        { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
         { label: "Projects", icon: FolderKanban, href: "/app/projects" },
+        { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
       ]
     },
     {
@@ -155,19 +242,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const isActive = location === item.href;
+                    const indicator = navIndicators[item.href];
                     return (
                       <Link 
                         key={item.href} 
                         href={item.href}
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
+                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",
                           isActive 
                             ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
                             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                         )}
                       >
-                        <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
-                        {item.label}
+                        <div className="relative">
+                          <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                          {indicator?.type === "action" && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                          )}
+                        </div>
+                        <span className="flex-1">{item.label}</span>
+                        {indicator?.type === "count" && indicator.count && indicator.count > 0 && (
+                          <Badge 
+                            variant="secondary" 
+                            className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                          >
+                            {indicator.count > 99 ? "99+" : indicator.count}
+                          </Badge>
+                        )}
                       </Link>
                     );
                   })}

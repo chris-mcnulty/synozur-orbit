@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { 
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
-  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X
+  Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -104,6 +104,15 @@ export default function Dashboard() {
     },
   });
 
+  const { data: battleCards = [] } = useQuery({
+    queryKey: ["/api/battlecards"],
+    queryFn: async () => {
+      const response = await fetch("/api/battlecards", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
   const baselineComplete = companyProfile && companyProfile.url;
   const hasAnalysis = analysis && analysis.themes;
   const activeProjects = projects.filter((p: any) => p.status === "active");
@@ -134,6 +143,14 @@ export default function Dashboard() {
       complete: !!hasAnalysis,
       href: "/app/analysis",
       icon: Sparkles,
+    },
+    {
+      id: "battlecards",
+      label: "Create a battle card",
+      description: "Arm your sales team",
+      complete: battleCards.length > 0,
+      href: "/app/battlecards",
+      icon: Swords,
     },
     {
       id: "reports",
