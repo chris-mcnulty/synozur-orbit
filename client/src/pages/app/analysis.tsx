@@ -7,7 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -28,6 +29,8 @@ export default function Analysis() {
   const [messagingGuidance, setMessagingGuidance] = useState("");
   const [gtmPromptsOpen, setGtmPromptsOpen] = useState(false);
   const [messagingPromptsOpen, setMessagingPromptsOpen] = useState(false);
+  const [regenerationStarted, setRegenerationStarted] = useState(false);
+  const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analysis"],
@@ -190,6 +193,28 @@ export default function Analysis() {
     generateAnalysisMutation.mutate(mode);
   };
 
+  const fullRegenerationMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/baseline/full-regenerate", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to start regeneration");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setRegenerationStarted(true);
+      setRegenerationDialogOpen(true);
+      toast.success(`Full regeneration started! Estimated time: ${data.estimatedMinutes} minutes`);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -205,12 +230,63 @@ export default function Analysis() {
 
   return (
     <AppLayout>
-      <div className="mb-8 flex justify-between items-center">
+      <Dialog open={regenerationDialogOpen} onOpenChange={setRegenerationDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-primary" />
+              Full Regeneration Started
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-4">
+              <p>
+                Your comprehensive analysis is now being generated in the background. This includes:
+              </p>
+              <ul className="text-sm space-y-1 pl-4 text-muted-foreground">
+                <li>• Competitor website analysis</li>
+                <li>• Gap analysis and recommendations</li>
+                <li>• Battlecards for each competitor</li>
+                <li>• GTM Plan (using GPT-5.2)</li>
+                <li>• Messaging Framework</li>
+              </ul>
+              <p className="text-sm pt-2">
+                <strong>You'll receive an email</strong> when everything is ready. Feel free to continue working or close this page.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setRegenerationDialogOpen(false)}>
+              Got it
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="mb-8 flex justify-between items-start gap-4">
         <div>
            <h1 className="text-3xl font-bold tracking-tight mb-2">Competitive Analysis</h1>
            <p className="text-muted-foreground">AI-powered analysis of your competitors' websites and positioning.</p>
         </div>
-        <DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={fullRegenerationMutation.isPending || !hasCompetitors || !companyProfile}
+            onClick={() => fullRegenerationMutation.mutate()}
+            data-testid="button-regenerate-all"
+            className="gap-2"
+          >
+            {fullRegenerationMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-4 w-4" />
+                Regenerate All
+              </>
+            )}
+          </Button>
+          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
               disabled={isGenerating || !hasCompetitors}
@@ -275,6 +351,7 @@ export default function Analysis() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
 
       {isGenerating && (

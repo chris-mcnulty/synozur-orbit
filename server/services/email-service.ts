@@ -69,7 +69,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 }
 
 // Common email template wrapper with Vega-inspired Synozur branding
-function wrapEmailContent(content: string): string {
+export function wrapEmailContent(content: string): string {
   return `
 <!DOCTYPE html>
 <html>

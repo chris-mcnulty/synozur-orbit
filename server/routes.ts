@@ -17,6 +17,7 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawl
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
+import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 
 // Helper: Check if user has cross-tenant READ access
 // Global Admin and Consultant roles can read across tenants
@@ -1131,7 +1132,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       let battlecardContent;
       try {
-        battlecardContent = JSON.parse(content.text);
+        let text = content.text.trim();
+        if (text.startsWith("```json")) text = text.slice(7);
+        else if (text.startsWith("```")) text = text.slice(3);
+        if (text.endsWith("```")) text = text.slice(0, -3);
+        battlecardContent = JSON.parse(text.trim());
       } catch {
         // Try to extract JSON from response
         const jsonMatch = content.text.match(/\{[\s\S]*\}/);
@@ -1722,7 +1727,11 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       let battlecardContent;
       try {
-        battlecardContent = JSON.parse(textContent.text);
+        let text = textContent.text.trim();
+        if (text.startsWith("```json")) text = text.slice(7);
+        else if (text.startsWith("```")) text = text.slice(3);
+        if (text.endsWith("```")) text = text.slice(0, -3);
+        battlecardContent = JSON.parse(text.trim());
       } catch {
         throw new Error("Failed to parse AI response as JSON");
       }
@@ -4544,6 +4553,71 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
       }
     } catch (error: any) {
       console.error("Baseline messaging framework generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== FULL REGENERATION ENDPOINTS ====================
+
+  // Start full regeneration of all analysis (runs in background, emails when complete)
+  app.post("/api/baseline/full-regenerate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      // Check prerequisites
+      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      if (!companyProfile) {
+        return res.status(400).json({ error: "Please set up your company profile first" });
+      }
+
+      const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      if (competitors.length === 0) {
+        return res.status(400).json({ error: "Please add at least one competitor first" });
+      }
+
+      // Start the background regeneration job
+      const jobId = await startFullRegeneration(
+        user.id,
+        tenantDomain,
+        user.email,
+        user.name
+      );
+
+      res.json({
+        success: true,
+        jobId,
+        message: "Full analysis regeneration started. You'll receive an email when it's complete.",
+        estimatedMinutes: Math.ceil((competitors.length * 2) + 5),
+      });
+    } catch (error: any) {
+      console.error("Full regeneration start error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get regeneration job status
+  app.get("/api/baseline/regeneration-status/:jobId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const status = getRegenerationStatus(req.params.jobId);
+      if (!status) {
+        return res.status(404).json({ error: "Job not found or expired" });
+      }
+
+      res.json(status);
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
