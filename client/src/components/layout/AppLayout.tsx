@@ -23,7 +23,8 @@ import {
   HelpCircle,
   Building2,
   Swords,
-  Zap
+  Zap,
+  Map
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -228,6 +229,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Help",
       items: [
         { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
+        { label: "Roadmap", icon: Map, href: "/app/roadmap" },
         { label: "About & Changelog", icon: FileText, href: "/about" },
       ]
     }
