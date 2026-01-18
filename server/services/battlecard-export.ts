@@ -1,0 +1,435 @@
+import puppeteer from "puppeteer";
+import type { Battlecard, Tenant } from "@shared/schema";
+
+interface ComparisonItem {
+  category: string;
+  us: string;
+  them: string;
+  notes?: string;
+}
+
+interface ObjectionItem {
+  objection: string;
+  response: string;
+}
+
+interface TalkTrack {
+  scenario: string;
+  script: string;
+}
+
+function harveyBallSvg(value: string): string {
+  const fills: Record<string, string> = {
+    full: '<circle cx="8" cy="8" r="6" fill="#810FFB"/>',
+    "three-quarter": '<circle cx="8" cy="8" r="6" fill="none" stroke="#810FFB" stroke-width="2"/><path d="M8 2 A6 6 0 1 1 2 8 L8 8 Z" fill="#810FFB"/>',
+    half: '<circle cx="8" cy="8" r="6" fill="none" stroke="#810FFB" stroke-width="2"/><path d="M8 2 A6 6 0 0 1 8 14 L8 8 Z" fill="#810FFB"/>',
+    quarter: '<circle cx="8" cy="8" r="6" fill="none" stroke="#810FFB" stroke-width="2"/><path d="M8 2 A6 6 0 0 1 14 8 L8 8 Z" fill="#810FFB"/>',
+    empty: '<circle cx="8" cy="8" r="6" fill="none" stroke="#810FFB" stroke-width="2"/>',
+  };
+  return `<svg width="16" height="16" viewBox="0 0 16 16">${fills[value] || fills.empty}</svg>`;
+}
+
+function generateBattlecardHtml(
+  battlecard: Battlecard,
+  competitorName: string,
+  companyName: string,
+  tenant?: Tenant | null
+): string {
+  const bc = battlecard as any;
+  const primaryColor = tenant?.primaryColor || "#810FFB";
+  const secondaryColor = tenant?.secondaryColor || "#E60CB3";
+  
+  const strengths = bc.strengths || [];
+  const weaknesses = bc.weaknesses || [];
+  const ourAdvantages = bc.ourAdvantages || [];
+  const comparison = (bc.comparison || []) as ComparisonItem[];
+  const objections = (bc.objections || []) as ObjectionItem[];
+  const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+  const quickStats = bc.quickStats || {};
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { margin: 0.75in; size: letter; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: 'Segoe UI', Arial, sans-serif; 
+      font-size: 11pt; 
+      line-height: 1.5;
+      color: #1a1a2e;
+      background: white;
+    }
+    .header {
+      background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor});
+      color: white;
+      padding: 24px 32px;
+      margin: -0.75in -0.75in 24px -0.75in;
+    }
+    .header h1 { font-size: 22pt; font-weight: 600; margin-bottom: 4px; }
+    .header .subtitle { font-size: 12pt; opacity: 0.9; }
+    .section { margin-bottom: 20px; page-break-inside: avoid; }
+    .section-title {
+      font-size: 11pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: ${primaryColor};
+      border-bottom: 2px solid ${primaryColor};
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+    }
+    .two-col { display: flex; gap: 24px; }
+    .col { flex: 1; }
+    .list-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .bullet { color: ${primaryColor}; font-weight: bold; }
+    .bullet-red { color: #dc2626; font-weight: bold; }
+    .bullet-green { color: #16a34a; font-weight: bold; }
+    .comparison-table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+    .comparison-table th { 
+      background: #f3f4f6; 
+      padding: 8px 12px; 
+      text-align: left;
+      font-weight: 600;
+    }
+    .comparison-table td { 
+      padding: 8px 12px; 
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: middle;
+    }
+    .comparison-table .harvey-cell { text-align: center; width: 60px; }
+    .objection-card {
+      background: #f9fafb;
+      border-left: 3px solid ${primaryColor};
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .objection-q { font-weight: 600; margin-bottom: 6px; }
+    .objection-a { color: #4b5563; }
+    .talk-track {
+      background: linear-gradient(135deg, rgba(129,15,251,0.05), rgba(230,12,179,0.05));
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .talk-track-scenario { font-weight: 600; margin-bottom: 6px; }
+    .talk-track-script { color: #4b5563; font-style: italic; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat-box {
+      background: #f3f4f6;
+      padding: 12px;
+      border-radius: 6px;
+    }
+    .stat-label { font-size: 9pt; color: #6b7280; text-transform: uppercase; }
+    .stat-value { font-weight: 600; }
+    .footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 9pt;
+      color: #6b7280;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${competitorName} Battle Card</h1>
+    <div class="subtitle">Competitive comparison vs ${companyName}</div>
+  </div>
+
+  ${strengths.length || weaknesses.length ? `
+  <div class="section">
+    <div class="section-title">Competitor Overview</div>
+    <div class="two-col">
+      ${strengths.length ? `
+      <div class="col">
+        <strong style="color: #16a34a;">Their Strengths</strong>
+        <div style="margin-top: 8px;">
+          ${strengths.map((s: string) => `<div class="list-item"><span class="bullet-green">✓</span> ${s}</div>`).join('')}
+        </div>
+      </div>
+      ` : ''}
+      ${weaknesses.length ? `
+      <div class="col">
+        <strong style="color: #dc2626;">Their Weaknesses</strong>
+        <div style="margin-top: 8px;">
+          ${weaknesses.map((w: string) => `<div class="list-item"><span class="bullet-red">✗</span> ${w}</div>`).join('')}
+        </div>
+      </div>
+      ` : ''}
+    </div>
+  </div>
+  ` : ''}
+
+  ${ourAdvantages.length ? `
+  <div class="section">
+    <div class="section-title">Our Advantages</div>
+    ${ourAdvantages.map((a: string) => `<div class="list-item"><span class="bullet">★</span> ${a}</div>`).join('')}
+  </div>
+  ` : ''}
+
+  ${comparison.length ? `
+  <div class="section">
+    <div class="section-title">Feature Comparison</div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th class="harvey-cell">${companyName}</th>
+          <th class="harvey-cell">${competitorName}</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${comparison.map((c: ComparisonItem) => `
+        <tr>
+          <td>${c.category}</td>
+          <td class="harvey-cell">${harveyBallSvg(c.us)}</td>
+          <td class="harvey-cell">${harveyBallSvg(c.them)}</td>
+          <td>${c.notes || ''}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+
+  ${objections.length ? `
+  <div class="section">
+    <div class="section-title">Objection Handling</div>
+    ${objections.map((o: ObjectionItem) => `
+    <div class="objection-card">
+      <div class="objection-q">"${o.objection}"</div>
+      <div class="objection-a">${o.response}</div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${talkTracks.length ? `
+  <div class="section">
+    <div class="section-title">Talk Tracks</div>
+    ${talkTracks.map((t: TalkTrack) => `
+    <div class="talk-track">
+      <div class="talk-track-scenario">${t.scenario}</div>
+      <div class="talk-track-script">"${t.script}"</div>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${Object.keys(quickStats).length ? `
+  <div class="section">
+    <div class="section-title">Quick Stats</div>
+    <div class="stats-grid">
+      ${quickStats.pricing ? `<div class="stat-box"><div class="stat-label">Pricing</div><div class="stat-value">${quickStats.pricing}</div></div>` : ''}
+      ${quickStats.marketPosition ? `<div class="stat-box"><div class="stat-label">Market Position</div><div class="stat-value">${quickStats.marketPosition}</div></div>` : ''}
+      ${quickStats.targetAudience ? `<div class="stat-box"><div class="stat-label">Target Audience</div><div class="stat-value">${quickStats.targetAudience}</div></div>` : ''}
+      ${quickStats.keyProducts ? `<div class="stat-box"><div class="stat-label">Key Products</div><div class="stat-value">${quickStats.keyProducts}</div></div>` : ''}
+    </div>
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    Generated by Orbit • ${new Date().toLocaleDateString()} • Confidential
+  </div>
+</body>
+</html>
+  `;
+}
+
+export async function generateBattlecardPdf(
+  battlecard: Battlecard,
+  competitorName: string,
+  companyName: string,
+  tenant?: Tenant | null
+): Promise<Buffer> {
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant);
+  
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+  
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    
+    const pdfBuffer = await page.pdf({
+      format: "Letter",
+      printBackground: true,
+      margin: { top: "0", bottom: "0", left: "0", right: "0" },
+    });
+    
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await browser.close();
+  }
+}
+
+export function generateBattlecardText(
+  battlecard: Battlecard,
+  competitorName: string,
+  companyName: string
+): string {
+  const bc = battlecard as any;
+  const strengths = bc.strengths || [];
+  const weaknesses = bc.weaknesses || [];
+  const ourAdvantages = bc.ourAdvantages || [];
+  const comparison = (bc.comparison || []) as ComparisonItem[];
+  const objections = (bc.objections || []) as ObjectionItem[];
+  const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+  const quickStats = bc.quickStats || {};
+
+  let content = `${competitorName} Battle Card
+Competitive comparison vs ${companyName}
+Generated: ${new Date().toLocaleDateString()}
+
+`;
+
+  if (strengths.length || weaknesses.length) {
+    content += `COMPETITOR OVERVIEW
+==================
+
+`;
+    if (strengths.length) {
+      content += `Their Strengths:
+${strengths.map((s: string) => `  • ${s}`).join('\n')}
+
+`;
+    }
+    if (weaknesses.length) {
+      content += `Their Weaknesses:
+${weaknesses.map((w: string) => `  • ${w}`).join('\n')}
+
+`;
+    }
+  }
+
+  if (ourAdvantages.length) {
+    content += `OUR ADVANTAGES
+==============
+${ourAdvantages.map((a: string) => `  ★ ${a}`).join('\n')}
+
+`;
+  }
+
+  if (comparison.length) {
+    content += `FEATURE COMPARISON
+==================
+`;
+    comparison.forEach((c: ComparisonItem) => {
+      content += `${c.category}:
+  - ${companyName}: ${c.us}
+  - ${competitorName}: ${c.them}
+  ${c.notes ? `  Notes: ${c.notes}` : ''}
+
+`;
+    });
+  }
+
+  if (objections.length) {
+    content += `OBJECTION HANDLING
+==================
+`;
+    objections.forEach((o: ObjectionItem, i: number) => {
+      content += `${i + 1}. "${o.objection}"
+   Response: ${o.response}
+
+`;
+    });
+  }
+
+  if (talkTracks.length) {
+    content += `TALK TRACKS
+===========
+`;
+    talkTracks.forEach((t: TalkTrack, i: number) => {
+      content += `${i + 1}. ${t.scenario}
+   "${t.script}"
+
+`;
+    });
+  }
+
+  if (Object.keys(quickStats).length) {
+    content += `QUICK STATS
+===========
+`;
+    if (quickStats.pricing) content += `Pricing: ${quickStats.pricing}\n`;
+    if (quickStats.marketPosition) content += `Market Position: ${quickStats.marketPosition}\n`;
+    if (quickStats.targetAudience) content += `Target Audience: ${quickStats.targetAudience}\n`;
+    if (quickStats.keyProducts) content += `Key Products: ${quickStats.keyProducts}\n`;
+  }
+
+  content += `
+---
+Generated by Orbit • Confidential
+`;
+
+  return content;
+}
+
+export function formatBattlecardForClipboard(
+  battlecard: Battlecard,
+  competitorName: string,
+  companyName: string
+): string {
+  const bc = battlecard as any;
+  const strengths = bc.strengths || [];
+  const weaknesses = bc.weaknesses || [];
+  const ourAdvantages = bc.ourAdvantages || [];
+  const comparison = (bc.comparison || []) as ComparisonItem[];
+  const objections = (bc.objections || []) as ObjectionItem[];
+  const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+  const quickStats = bc.quickStats || {};
+
+  let text = `🎯 ${competitorName} Battle Card\nvs ${companyName}\n\n`;
+
+  if (strengths.length) {
+    text += `✅ THEIR STRENGTHS\n${strengths.map((s: string) => `• ${s}`).join('\n')}\n\n`;
+  }
+
+  if (weaknesses.length) {
+    text += `❌ THEIR WEAKNESSES\n${weaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n`;
+  }
+
+  if (ourAdvantages.length) {
+    text += `⭐ OUR ADVANTAGES\n${ourAdvantages.map((a: string) => `• ${a}`).join('\n')}\n\n`;
+  }
+
+  if (comparison.length) {
+    text += `📊 FEATURE COMPARISON\n`;
+    comparison.forEach((c: ComparisonItem) => {
+      text += `• ${c.category}: Us (${c.us}) vs Them (${c.them})${c.notes ? ` - ${c.notes}` : ''}\n`;
+    });
+    text += '\n';
+  }
+
+  if (objections.length) {
+    text += `💬 OBJECTION HANDLING\n`;
+    objections.forEach((o: ObjectionItem) => {
+      text += `Q: "${o.objection}"\nA: ${o.response}\n\n`;
+    });
+  }
+
+  if (talkTracks.length) {
+    text += `🎤 TALK TRACKS\n`;
+    talkTracks.forEach((t: TalkTrack) => {
+      text += `Scenario: ${t.scenario}\nScript: "${t.script}"\n\n`;
+    });
+  }
+
+  if (Object.keys(quickStats).length) {
+    text += `📈 QUICK STATS\n`;
+    if (quickStats.pricing) text += `• Pricing: ${quickStats.pricing}\n`;
+    if (quickStats.marketPosition) text += `• Position: ${quickStats.marketPosition}\n`;
+    if (quickStats.targetAudience) text += `• Target: ${quickStats.targetAudience}\n`;
+    if (quickStats.keyProducts) text += `• Products: ${quickStats.keyProducts}\n`;
+  }
+
+  return text;
+}

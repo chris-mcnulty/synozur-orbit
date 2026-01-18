@@ -124,7 +124,6 @@ After completing significant features or bug fixes, update the following files:
 
 ### Standard Priority
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
-- **Battlecard PDF export**: Export battlecards as branded PDF documents
 - **Wire AI usage logging**: Connect logAiUsage() calls to all AI service entry points (competitor analysis, battlecard generation, executive summaries, etc.) to populate the usage tracking dashboard
 - **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
 - **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID

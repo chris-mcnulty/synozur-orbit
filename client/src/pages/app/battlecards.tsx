@@ -8,8 +8,9 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Swords, Plus, Download, RefreshCw, Target, ArrowRight, 
   CheckCircle, XCircle, MinusCircle, ChevronRight, Loader2,
-  Building2, Sparkles
+  Building2, Sparkles, Copy, FileText, FileDown
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -77,9 +78,11 @@ const harveyBallToLabel = (value: HarveyBall): string => {
 
 export default function BattleCardsPage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedCompetitor, setSelectedCompetitor] = useState<string>("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
+  const [downloading, setDownloading] = useState<"pdf" | "txt" | null>(null);
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -132,6 +135,104 @@ export default function BattleCardsPage() {
   const handleGenerate = (competitorId: string) => {
     setGeneratingFor(competitorId);
     generateMutation.mutate(competitorId);
+  };
+
+  const formatBattlecardForClipboard = (card: BattleCardData): string => {
+    let text = `🎯 ${card.competitorName} Battle Card\nvs ${companyProfile?.companyName || "Your Company"}\n\n`;
+    
+    if (card.strengths?.length) {
+      text += `✅ THEIR STRENGTHS\n${card.strengths.map(s => `• ${s}`).join('\n')}\n\n`;
+    }
+    if (card.weaknesses?.length) {
+      text += `❌ THEIR WEAKNESSES\n${card.weaknesses.map(w => `• ${w}`).join('\n')}\n\n`;
+    }
+    if (card.ourAdvantages?.length) {
+      text += `⭐ OUR ADVANTAGES\n${card.ourAdvantages.map(a => `• ${a}`).join('\n')}\n\n`;
+    }
+    if (card.comparison?.length) {
+      text += `📊 FEATURE COMPARISON\n`;
+      card.comparison.forEach(c => {
+        text += `• ${c.category}: Us (${c.us}) vs Them (${c.them})${c.notes ? ` - ${c.notes}` : ''}\n`;
+      });
+      text += '\n';
+    }
+    if (card.objections?.length) {
+      text += `💬 OBJECTION HANDLING\n`;
+      card.objections.forEach(o => {
+        text += `Q: "${o.objection}"\nA: ${o.response}\n\n`;
+      });
+    }
+    if (card.talkTracks?.length) {
+      text += `🎤 TALK TRACKS\n`;
+      card.talkTracks.forEach(t => {
+        text += `Scenario: ${t.scenario}\nScript: "${t.script}"\n\n`;
+      });
+    }
+    if (card.quickStats) {
+      text += `📈 QUICK STATS\n`;
+      if (card.quickStats.pricing) text += `• Pricing: ${card.quickStats.pricing}\n`;
+      if (card.quickStats.marketPosition) text += `• Position: ${card.quickStats.marketPosition}\n`;
+      if (card.quickStats.targetAudience) text += `• Target: ${card.quickStats.targetAudience}\n`;
+      if (card.quickStats.keyProducts) text += `• Products: ${card.quickStats.keyProducts}\n`;
+    }
+    return text;
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (!selectedCard) return;
+    try {
+      const text = formatBattlecardForClipboard(selectedCard);
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Copied!", description: "Battle card copied to clipboard" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to copy to clipboard", variant: "destructive" });
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!selectedCard) return;
+    setDownloading("pdf");
+    try {
+      const response = await fetch(`/api/battlecards/${selectedCard.id}/pdf`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to download PDF");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Battlecard_${selectedCard.competitorName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: "PDF saved successfully" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const handleDownloadText = async () => {
+    if (!selectedCard) return;
+    setDownloading("txt");
+    try {
+      const response = await fetch(`/api/battlecards/${selectedCard.id}/txt`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to download text file");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Battlecard_${selectedCard.competitorName}_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: "Text file saved successfully" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to download text file", variant: "destructive" });
+    } finally {
+      setDownloading(null);
+    }
   };
 
   const competitorsWithCards = competitors.filter((c: any) => 
@@ -547,6 +648,46 @@ export default function BattleCardsPage() {
                 </>
               )}
             </div>
+          </div>
+          
+          <div className="flex-shrink-0 pt-4 border-t flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyToClipboard}
+              data-testid="btn-copy-battlecard"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadText}
+              disabled={downloading === "txt"}
+              data-testid="btn-download-txt"
+            >
+              {downloading === "txt" ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4 mr-2" />
+              )}
+              Text
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownloadPdf}
+              disabled={downloading === "pdf"}
+              data-testid="btn-download-pdf"
+            >
+              {downloading === "pdf" ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4 mr-2" />
+              )}
+              PDF
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
