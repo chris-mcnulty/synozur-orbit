@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, FolderKanban, Zap, Search, Crown } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, Twitter, FolderKanban, Zap, Search, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -30,6 +30,7 @@ export default function Competitors() {
     websiteUrl: "",
     linkedInUrl: "",
     instagramUrl: "",
+    twitterUrl: "",
     description: "",
   });
 
@@ -289,6 +290,7 @@ export default function Competitors() {
         websiteUrl: companyProfile.websiteUrl || "",
         linkedInUrl: companyProfile.linkedInUrl || "",
         instagramUrl: companyProfile.instagramUrl || "",
+        twitterUrl: companyProfile.twitterUrl || "",
         description: companyProfile.description || "",
       });
     }
@@ -462,6 +464,18 @@ export default function Competitors() {
                         />
                       </div>
                       <div className="grid gap-2">
+                        <Label htmlFor="twitterUrl" className="flex items-center gap-2">
+                          <Twitter className="h-4 w-4 text-[#1DA1F2]" /> Twitter/X URL
+                        </Label>
+                        <Input
+                          id="twitterUrl"
+                          placeholder="https://x.com/..."
+                          value={profileForm.twitterUrl}
+                          onChange={(e) => setProfileForm({ ...profileForm, twitterUrl: e.target.value })}
+                          data-testid="input-company-twitter"
+                        />
+                      </div>
+                      <div className="grid gap-2">
                         <Label htmlFor="description">Description (optional)</Label>
                         <Textarea
                           id="description"
@@ -552,6 +566,21 @@ export default function Competitors() {
                       ) : (
                         <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
                           <Instagram className="h-4 w-4" /> No Instagram
+                        </span>
+                      )}
+                      {companyProfile.twitterUrl ? (
+                        <a 
+                          href={companyProfile.twitterUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-1 text-sm text-[#1DA1F2] hover:underline"
+                          data-testid="link-company-twitter"
+                        >
+                          <Twitter className="h-4 w-4" /> Twitter/X
+                        </a>
+                      ) : (
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                          <Twitter className="h-4 w-4" /> No Twitter
                         </span>
                       )}
                     </div>

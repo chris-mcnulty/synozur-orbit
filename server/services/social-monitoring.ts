@@ -9,7 +9,7 @@ const anthropic = new Anthropic({
 interface SocialMonitoringResult {
   competitorId: string;
   competitorName: string;
-  platform: "linkedin" | "instagram";
+  platform: "linkedin" | "instagram" | "twitter";
   hasChanges: boolean;
   summary?: string;
   status: "success" | "blocked" | "error" | "no_url";
@@ -91,6 +91,16 @@ function extractEngagementMetrics(html: string, platform: string): EngagementSna
     if (followersMatch) engagement.followers = parseNumber(followersMatch[1]);
     
     const postsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*posts?/i);
+    if (postsMatch) engagement.posts = parseNumber(postsMatch[1]);
+    
+    const likesMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*likes?/i);
+    if (likesMatch) engagement.likes = parseNumber(likesMatch[1]);
+  } else if (platform === "twitter") {
+    // Twitter/X patterns
+    const followersMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*(?:followers?|following)/i);
+    if (followersMatch) engagement.followers = parseNumber(followersMatch[1]);
+    
+    const postsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*(?:posts?|tweets?)/i);
     if (postsMatch) engagement.posts = parseNumber(postsMatch[1]);
     
     const likesMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*likes?/i);
@@ -367,6 +377,81 @@ export async function monitorCompetitorSocialMedia(
     }
   }
   
+  // Twitter/X monitoring
+  if (competitor.twitterUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.twitterUrl);
+    
+    if (blocked) {
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "twitter",
+        hasChanges: false,
+        status: "blocked",
+        message: "Twitter/X requires authentication. Consider using official Twitter API for reliable monitoring.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = competitor.twitterContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      const engagement = extractEngagementMetrics(rawHtml, "twitter");
+      updates.twitterEngagement = engagement;
+      
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(
+          competitor.name,
+          "Twitter/X",
+          previousContent,
+          newContent,
+          changeScore
+        );
+        
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "competitor",
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            description: `Twitter/X profile updated (${changeScore}% change detected)`,
+            summary,
+            details: {
+              platform: "twitter",
+              changeScore,
+              url: competitor.twitterUrl,
+            },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId: userId || competitor.userId,
+            tenantDomain,
+          });
+        }
+      }
+      
+      updates.twitterContent = newContent;
+      
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "twitter",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    } else {
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "twitter",
+        hasChanges: false,
+        status: "error",
+        message: "Could not fetch Twitter/X page content",
+      });
+    }
+  }
+  
   await storage.updateCompetitor(competitorId, updates);
   
   return results;
@@ -391,7 +476,7 @@ export async function monitorAllCompetitorsForTenant(
     const competitors = await storage.getCompetitorsByUserId(user.id);
     
     for (const competitor of competitors) {
-      if (competitor.linkedInUrl || competitor.instagramUrl) {
+      if (competitor.linkedInUrl || competitor.instagramUrl || competitor.twitterUrl) {
         try {
           const results = await monitorCompetitorSocialMedia(competitor.id, user.id, tenantDomain);
           allResults.push(...results);

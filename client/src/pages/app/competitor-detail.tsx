@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,7 @@ export default function CompetitorDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
+  const [editTwitter, setEditTwitter] = useState("");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -54,7 +55,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -84,6 +85,7 @@ export default function CompetitorDetail() {
   const handleEditOpen = () => {
     setEditLinkedIn(competitor?.linkedInUrl || "");
     setEditInstagram(competitor?.instagramUrl || "");
+    setEditTwitter(competitor?.twitterUrl || "");
     setEditOpen(true);
   };
 
@@ -91,6 +93,7 @@ export default function CompetitorDetail() {
     updateSocialMutation.mutate({
       linkedInUrl: editLinkedIn || undefined,
       instagramUrl: editInstagram || undefined,
+      twitterUrl: editTwitter || undefined,
     });
   };
 
@@ -199,7 +202,7 @@ export default function CompetitorDetail() {
     },
   });
 
-  const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl;
+  const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl;
   const isPremium = monitoringSettings?.isPremium;
 
   if (isLoading) {
@@ -280,6 +283,21 @@ export default function CompetitorDetail() {
                       <Instagram className="h-4 w-4" /> No Instagram
                     </span>
                   )}
+                  {competitor.twitterUrl ? (
+                    <a 
+                      href={competitor.twitterUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-1 text-sm text-[#1DA1F2] hover:underline"
+                      data-testid="link-twitter"
+                    >
+                      <Twitter className="h-4 w-4" /> Twitter/X
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                      <Twitter className="h-4 w-4" /> No Twitter
+                    </span>
+                  )}
                   <Dialog open={editOpen} onOpenChange={setEditOpen}>
                     <DialogTrigger asChild>
                       <Button variant="ghost" size="sm" onClick={handleEditOpen} data-testid="button-edit-social">
@@ -316,6 +334,18 @@ export default function CompetitorDetail() {
                             value={editInstagram}
                             onChange={(e) => setEditInstagram(e.target.value)}
                             data-testid="input-instagram"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="twitter" className="flex items-center gap-2">
+                            <Twitter className="h-4 w-4 text-[#1DA1F2]" /> Twitter/X URL
+                          </Label>
+                          <Input
+                            id="twitter"
+                            placeholder="https://x.com/..."
+                            value={editTwitter}
+                            onChange={(e) => setEditTwitter(e.target.value)}
+                            data-testid="input-twitter"
                           />
                         </div>
                       </div>
