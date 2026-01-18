@@ -61,7 +61,16 @@ import {
   type LongFormRecommendation,
   type InsertLongFormRecommendation,
   type PageView,
-  type InsertPageView
+  type InsertPageView,
+  type CompetitorScore,
+  type InsertCompetitorScore,
+  type SocialMetric,
+  type InsertSocialMetric,
+  type ExecutiveSummary,
+  type InsertExecutiveSummary,
+  competitorScores,
+  socialMetrics,
+  executiveSummaries
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct } from "drizzle-orm";
@@ -217,6 +226,21 @@ export interface IStorage {
   createLongFormRecommendation(recommendation: InsertLongFormRecommendation): Promise<LongFormRecommendation>;
   updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation>;
   deleteLongFormRecommendation(id: string): Promise<void>;
+  
+  // Competitor score methods
+  getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined>;
+  getCompetitorScoresByProject(projectId: string): Promise<CompetitorScore[]>;
+  getCompetitorScoresByTenant(tenantDomain: string): Promise<CompetitorScore[]>;
+  upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore>;
+  
+  // Social metrics methods
+  getSocialMetrics(competitorId: string, platform?: string): Promise<SocialMetric[]>;
+  getSocialMetricsByTenant(tenantDomain: string): Promise<SocialMetric[]>;
+  createSocialMetric(metric: InsertSocialMetric): Promise<SocialMetric>;
+  
+  // Executive summary methods
+  getExecutiveSummary(projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined>;
+  upsertExecutiveSummary(summary: InsertExecutiveSummary): Promise<ExecutiveSummary>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1059,6 +1083,111 @@ export class DatabaseStorage implements IStorage {
       referrers,
       utmCampaigns,
     };
+  }
+
+  // Competitor score methods
+  async getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined> {
+    if (projectId) {
+      const [score] = await db.select().from(competitorScores)
+        .where(and(
+          eq(competitorScores.competitorId, competitorId),
+          eq(competitorScores.projectId, projectId)
+        ));
+      return score || undefined;
+    }
+    const [score] = await db.select().from(competitorScores)
+      .where(eq(competitorScores.competitorId, competitorId));
+    return score || undefined;
+  }
+
+  async getCompetitorScoresByProject(projectId: string): Promise<CompetitorScore[]> {
+    return await db.select().from(competitorScores)
+      .where(eq(competitorScores.projectId, projectId))
+      .orderBy(desc(competitorScores.overallScore));
+  }
+
+  async getCompetitorScoresByTenant(tenantDomain: string): Promise<CompetitorScore[]> {
+    return await db.select().from(competitorScores)
+      .where(eq(competitorScores.tenantDomain, tenantDomain))
+      .orderBy(desc(competitorScores.overallScore));
+  }
+
+  async upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore> {
+    const existing = await this.getCompetitorScore(score.competitorId, score.projectId ?? undefined);
+    if (existing) {
+      const [result] = await db
+        .update(competitorScores)
+        .set({ ...score, updatedAt: new Date(), lastCalculatedAt: new Date() })
+        .where(eq(competitorScores.id, existing.id))
+        .returning();
+      return result;
+    }
+    const [result] = await db
+      .insert(competitorScores)
+      .values(score)
+      .returning();
+    return result;
+  }
+
+  // Social metrics methods
+  async getSocialMetrics(competitorId: string, platform?: string): Promise<SocialMetric[]> {
+    if (platform) {
+      return await db.select().from(socialMetrics)
+        .where(and(
+          eq(socialMetrics.competitorId, competitorId),
+          eq(socialMetrics.platform, platform)
+        ))
+        .orderBy(desc(socialMetrics.capturedAt));
+    }
+    return await db.select().from(socialMetrics)
+      .where(eq(socialMetrics.competitorId, competitorId))
+      .orderBy(desc(socialMetrics.capturedAt));
+  }
+
+  async getSocialMetricsByTenant(tenantDomain: string): Promise<SocialMetric[]> {
+    return await db.select().from(socialMetrics)
+      .where(eq(socialMetrics.tenantDomain, tenantDomain))
+      .orderBy(desc(socialMetrics.capturedAt));
+  }
+
+  async createSocialMetric(metric: InsertSocialMetric): Promise<SocialMetric> {
+    const [result] = await db
+      .insert(socialMetrics)
+      .values(metric)
+      .returning();
+    return result;
+  }
+
+  // Executive summary methods
+  async getExecutiveSummary(projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined> {
+    if (projectId) {
+      const [summary] = await db.select().from(executiveSummaries)
+        .where(eq(executiveSummaries.projectId, projectId));
+      return summary || undefined;
+    }
+    if (companyProfileId) {
+      const [summary] = await db.select().from(executiveSummaries)
+        .where(eq(executiveSummaries.companyProfileId, companyProfileId));
+      return summary || undefined;
+    }
+    return undefined;
+  }
+
+  async upsertExecutiveSummary(summary: InsertExecutiveSummary): Promise<ExecutiveSummary> {
+    const existing = await this.getExecutiveSummary(summary.projectId ?? undefined, summary.companyProfileId ?? undefined);
+    if (existing) {
+      const [result] = await db
+        .update(executiveSummaries)
+        .set({ ...summary, updatedAt: new Date(), lastGeneratedAt: new Date() })
+        .where(eq(executiveSummaries.id, existing.id))
+        .returning();
+      return result;
+    }
+    const [result] = await db
+      .insert(executiveSummaries)
+      .values(summary)
+      .returning();
+    return result;
   }
 }
 

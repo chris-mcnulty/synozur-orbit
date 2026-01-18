@@ -598,3 +598,119 @@ export const insertPageViewSchema = createInsertSchema(pageViews).omit({
 
 export type PageView = typeof pageViews.$inferSelect;
 export type InsertPageView = z.infer<typeof insertPageViewSchema>;
+
+// Competitor scores for ranking and comparison
+export const competitorScores = pgTable("competitor_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  overallScore: integer("overall_score").notNull().default(0), // 0-100 composite score
+  marketPresenceScore: integer("market_presence_score").default(0), // 0-100
+  innovationScore: integer("innovation_score").default(0), // 0-100
+  pricingScore: integer("pricing_score").default(0), // 0-100
+  featureBreadthScore: integer("feature_breadth_score").default(0), // 0-100
+  contentActivityScore: integer("content_activity_score").default(0), // 0-100
+  socialEngagementScore: integer("social_engagement_score").default(0), // 0-100
+  trendDirection: text("trend_direction").default("stable"), // rising, falling, stable
+  trendDelta: integer("trend_delta").default(0), // Change in overall score from last period
+  previousOverallScore: integer("previous_overall_score"), // For trend calculation
+  scoreBreakdown: jsonb("score_breakdown"), // Detailed breakdown for UI display
+  lastCalculatedAt: timestamp("last_calculated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const competitorScoresRelations = relations(competitorScores, ({ one }) => ({
+  competitor: one(competitors, {
+    fields: [competitorScores.competitorId],
+    references: [competitors.id],
+  }),
+  project: one(clientProjects, {
+    fields: [competitorScores.projectId],
+    references: [clientProjects.id],
+  }),
+}));
+
+export const insertCompetitorScoreSchema = createInsertSchema(competitorScores).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastCalculatedAt: true,
+});
+
+export type CompetitorScore = typeof competitorScores.$inferSelect;
+export type InsertCompetitorScore = z.infer<typeof insertCompetitorScoreSchema>;
+
+// Social metrics time series for trend tracking
+export const socialMetrics = pgTable("social_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  platform: text("platform").notNull(), // linkedin, instagram, twitter, blog
+  period: text("period").notNull(), // weekly, daily snapshot identifier (e.g., "2026-W03")
+  followers: integer("followers").default(0),
+  followersDelta: integer("followers_delta").default(0), // Change from previous period
+  posts: integer("posts").default(0),
+  postsDelta: integer("posts_delta").default(0),
+  engagement: integer("engagement").default(0), // Total likes, comments, shares
+  engagementDelta: integer("engagement_delta").default(0),
+  mentions: integer("mentions").default(0), // Brand mentions (if tracked)
+  mentionsDelta: integer("mentions_delta").default(0),
+  rawData: jsonb("raw_data"), // Full platform-specific metrics
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const socialMetricsRelations = relations(socialMetrics, ({ one }) => ({
+  competitor: one(competitors, {
+    fields: [socialMetrics.competitorId],
+    references: [competitors.id],
+  }),
+}));
+
+export const insertSocialMetricSchema = createInsertSchema(socialMetrics).omit({
+  id: true,
+  createdAt: true,
+  capturedAt: true,
+});
+
+export type SocialMetric = typeof socialMetrics.$inferSelect;
+export type InsertSocialMetric = z.infer<typeof insertSocialMetricSchema>;
+
+// Executive summary cache for fast dashboard loading
+export const executiveSummaries = pgTable("executive_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  scope: text("scope").notNull().default("baseline"), // baseline or project
+  summaryData: jsonb("summary_data").notNull(), // Aggregated executive summary payload
+  topCompetitors: jsonb("top_competitors"), // Ranked list of top competitors with scores
+  keyInsights: jsonb("key_insights"), // AI-generated key insights
+  alertItems: jsonb("alert_items"), // Items needing attention (rising competitors, gaps)
+  lastGeneratedAt: timestamp("last_generated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const executiveSummariesRelations = relations(executiveSummaries, ({ one }) => ({
+  project: one(clientProjects, {
+    fields: [executiveSummaries.projectId],
+    references: [clientProjects.id],
+  }),
+  companyProfile: one(companyProfiles, {
+    fields: [executiveSummaries.companyProfileId],
+    references: [companyProfiles.id],
+  }),
+}));
+
+export const insertExecutiveSummarySchema = createInsertSchema(executiveSummaries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastGeneratedAt: true,
+});
+
+export type ExecutiveSummary = typeof executiveSummaries.$inferSelect;
+export type InsertExecutiveSummary = z.infer<typeof insertExecutiveSummarySchema>;

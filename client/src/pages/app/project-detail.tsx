@@ -789,25 +789,33 @@ export default function ProjectDetail() {
     <AppLayout>
       <div className="flex-1 p-4 md:p-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-4 mb-6">
-            <Link href="/app/projects">
-              <Button variant="ghost" size="icon" data-testid="button-back">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold" data-testid="text-project-name">{project.name}</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline" className="text-xs">
-                  {project.analysisType === "product" ? (
-                    <><Package className="h-3 w-3 mr-1" /> Product Analysis</>
-                  ) : (
-                    <><Building className="h-3 w-3 mr-1" /> Company Analysis</>
-                  )}
-                </Badge>
-                <span className="text-muted-foreground text-sm">{project.clientName}</span>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <Link href="/app/projects">
+                <Button variant="ghost" size="icon" data-testid="button-back">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div>
+                <h1 className="text-2xl font-bold" data-testid="text-project-name">{project.name}</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-xs">
+                    {project.analysisType === "product" ? (
+                      <><Package className="h-3 w-3 mr-1" /> Product Analysis</>
+                    ) : (
+                      <><Building className="h-3 w-3 mr-1" /> Company Analysis</>
+                    )}
+                  </Badge>
+                  <span className="text-muted-foreground text-sm">{project.clientName}</span>
+                </div>
               </div>
             </div>
+            <Link href={`/app/projects/${project.id}/executive-summary`}>
+              <Button variant="default" className="gap-2" data-testid="button-executive-summary">
+                <Sparkles className="h-4 w-4" />
+                Executive Summary
+              </Button>
+            </Link>
           </div>
 
           {/* Main Tabs for Project Sections */}

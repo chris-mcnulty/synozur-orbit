@@ -4548,6 +4548,287 @@ Make this a comprehensive reference document for sales and strategy teams.`;
   });
 
   // ===============================
+  // EXECUTIVE SUMMARY DASHBOARD
+  // ===============================
+
+  // Get project executive summary - unified view of all competitive intelligence
+  app.get("/api/projects/:projectId/executive-summary", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin" && user.role !== "Consultant") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Gather all project data
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      // Get competitor scores
+      const competitorScoresData = await storage.getCompetitorScoresByProject(req.params.projectId);
+
+      // Get all long-form recommendations
+      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
+      const gapAnalysis = recommendations.find(r => r.type === "gap_analysis");
+      const strategicRecs = recommendations.find(r => r.type === "strategic_recommendations");
+      const competitiveSummary = recommendations.find(r => r.type === "competitive_summary");
+      const gtmPlan = recommendations.find(r => r.type === "gtm_plan");
+      const messagingFramework = recommendations.find(r => r.type === "messaging_framework");
+
+      // Get battlecards
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      // Calculate overall analytics
+      const totalCompetitors = competitorProducts.length;
+      const analyzedCompetitors = competitorProducts.filter(pp => pp.product?.analysisData).length;
+      const battlecardsGenerated = battlecards.filter(bc => bc.status === "published" || (Array.isArray(bc.strengths) && bc.strengths.length > 0)).length;
+
+      // Compute rankings from scores
+      const rankedCompetitors = competitorScoresData.map(score => {
+        const productInfo = competitorProducts.find(cp => 
+          cp.product?.competitorId === score.competitorId
+        );
+        return {
+          competitorId: score.competitorId,
+          name: productInfo?.product?.name || "Unknown",
+          companyName: productInfo?.product?.companyName || "Unknown",
+          overallScore: score.overallScore,
+          trendDirection: score.trendDirection,
+          trendDelta: score.trendDelta,
+          breakdown: {
+            marketPresence: score.marketPresenceScore,
+            innovation: score.innovationScore,
+            pricing: score.pricingScore,
+            featureBreadth: score.featureBreadthScore,
+            contentActivity: score.contentActivityScore,
+            socialEngagement: score.socialEngagementScore,
+          }
+        };
+      }).sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
+
+      // Identify rising/falling competitors
+      const risingCompetitors = rankedCompetitors.filter(c => c.trendDirection === "rising");
+      const fallingCompetitors = rankedCompetitors.filter(c => c.trendDirection === "falling");
+
+      // Build executive summary response
+      const executiveSummary = {
+        project: {
+          id: project.id,
+          name: project.name,
+          clientName: project.clientName,
+          analysisType: project.analysisType,
+          status: project.status,
+        },
+        baseline: baselineProduct ? {
+          id: baselineProduct.productId,
+          name: baselineProduct.product?.name,
+          companyName: baselineProduct.product?.companyName,
+          description: baselineProduct.product?.description,
+        } : null,
+        analytics: {
+          totalCompetitors,
+          analyzedCompetitors,
+          battlecardsGenerated,
+          completionPercentage: totalCompetitors > 0 
+            ? Math.round((analyzedCompetitors / totalCompetitors) * 100) 
+            : 0,
+        },
+        rankings: {
+          topCompetitors: rankedCompetitors.slice(0, 5),
+          risingThreats: risingCompetitors.slice(0, 3),
+          decliningCompetitors: fallingCompetitors.slice(0, 3),
+        },
+        insights: {
+          gapAnalysis: gapAnalysis ? {
+            status: gapAnalysis.status,
+            lastGenerated: gapAnalysis.lastGeneratedAt,
+            content: gapAnalysis.content,
+          } : null,
+          strategicRecommendations: strategicRecs ? {
+            status: strategicRecs.status,
+            lastGenerated: strategicRecs.lastGeneratedAt,
+            content: strategicRecs.content,
+          } : null,
+          competitiveSummary: competitiveSummary ? {
+            status: competitiveSummary.status,
+            lastGenerated: competitiveSummary.lastGeneratedAt,
+            content: competitiveSummary.content,
+          } : null,
+          gtmPlan: gtmPlan ? {
+            status: gtmPlan.status,
+            lastGenerated: gtmPlan.lastGeneratedAt,
+          } : null,
+          messagingFramework: messagingFramework ? {
+            status: messagingFramework.status,
+            lastGenerated: messagingFramework.lastGeneratedAt,
+          } : null,
+        },
+        competitors: competitorProducts.map(cp => {
+          const competitorId = cp.product?.competitorId;
+          const matchedScore = competitorId 
+            ? rankedCompetitors.find(r => r.competitorId === competitorId)
+            : null;
+          return {
+            id: cp.productId,
+            competitorId: competitorId,
+            name: cp.product?.name,
+            companyName: cp.product?.companyName,
+            score: matchedScore?.overallScore || null,
+            trend: matchedScore?.trendDirection || "stable",
+            hasAnalysis: !!cp.product?.analysisData,
+            hasBattlecard: battlecards.some(bc => bc.competitorProductId === cp.productId),
+          };
+        }),
+        lastUpdated: new Date().toISOString(),
+      };
+
+      res.json(executiveSummary);
+    } catch (error: any) {
+      console.error("Executive summary error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Calculate and update competitor scores
+  app.post("/api/projects/:projectId/calculate-scores", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      const scores = [];
+
+      for (const cp of competitorProducts) {
+        const product = cp.product;
+        if (!product?.competitorId) continue;
+
+        const competitor = await storage.getCompetitor(product.competitorId);
+        if (!competitor) continue;
+
+        const battlecard = battlecards.find(bc => bc.competitorProductId === cp.productId);
+
+        // Calculate component scores based on available data
+        let marketPresenceScore = 50; // Default baseline
+        let innovationScore = 50;
+        let pricingScore = 50;
+        let featureBreadthScore = 50;
+        let contentActivityScore = 50;
+        let socialEngagementScore = 50;
+
+        // Adjust based on analysis data
+        if (competitor.analysisData) {
+          const analysis = competitor.analysisData as any;
+          if (analysis.marketPosition) {
+            marketPresenceScore = analysis.marketPosition === "leader" ? 90 : 
+                                  analysis.marketPosition === "challenger" ? 70 : 50;
+          }
+          if (analysis.innovationLevel) {
+            innovationScore = analysis.innovationLevel === "high" ? 85 : 
+                             analysis.innovationLevel === "medium" ? 60 : 40;
+          }
+        }
+
+        // Adjust based on battlecard data
+        if (battlecard) {
+          const strengths = Array.isArray(battlecard.strengths) ? battlecard.strengths.length : 0;
+          const weaknesses = Array.isArray(battlecard.weaknesses) ? battlecard.weaknesses.length : 0;
+          featureBreadthScore = Math.min(100, 50 + (strengths - weaknesses) * 5);
+        }
+
+        // Adjust based on social engagement
+        if (competitor.linkedInEngagement) {
+          const engagement = competitor.linkedInEngagement as any;
+          if (engagement.followers > 10000) socialEngagementScore = 80;
+          else if (engagement.followers > 5000) socialEngagementScore = 65;
+        }
+
+        // Calculate overall score (weighted average)
+        const overallScore = Math.round(
+          (marketPresenceScore * 0.25) +
+          (innovationScore * 0.20) +
+          (featureBreadthScore * 0.20) +
+          (contentActivityScore * 0.15) +
+          (socialEngagementScore * 0.10) +
+          (pricingScore * 0.10)
+        );
+
+        // Get previous score for trend calculation
+        const existingScore = await storage.getCompetitorScore(product.competitorId, req.params.projectId);
+        const previousScore = existingScore?.overallScore || null;
+        const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
+        const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
+
+        const scoreData = await storage.upsertCompetitorScore({
+          competitorId: product.competitorId,
+          projectId: req.params.projectId,
+          tenantDomain,
+          overallScore,
+          marketPresenceScore,
+          innovationScore,
+          pricingScore,
+          featureBreadthScore,
+          contentActivityScore,
+          socialEngagementScore,
+          trendDirection,
+          trendDelta,
+          previousOverallScore: previousScore,
+          scoreBreakdown: {
+            marketPresence: { score: marketPresenceScore, weight: 0.25 },
+            innovation: { score: innovationScore, weight: 0.20 },
+            featureBreadth: { score: featureBreadthScore, weight: 0.20 },
+            contentActivity: { score: contentActivityScore, weight: 0.15 },
+            socialEngagement: { score: socialEngagementScore, weight: 0.10 },
+            pricing: { score: pricingScore, weight: 0.10 },
+          },
+        });
+
+        scores.push({
+          ...scoreData,
+          name: product.name,
+        });
+      }
+
+      res.json({ success: true, scores });
+    } catch (error: any) {
+      console.error("Score calculation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===============================
   // BASELINE-LEVEL RECOMMENDATIONS
   // ===============================
 
