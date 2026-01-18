@@ -281,6 +281,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
+        {/* Mobile Context Bar - inside sidebar for mobile */}
+        <div className="lg:hidden">
+          <ContextBar />
+        </div>
+
         {/* Quick Action */}
         <div className="p-6 pb-2">
            <Button 

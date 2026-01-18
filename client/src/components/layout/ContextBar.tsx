@@ -181,6 +181,7 @@ export default function ContextBar() {
 
   return (
     <>
+      {/* Desktop Context Bar */}
       <div className="h-12 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
         {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
           <DropdownMenu>
@@ -302,6 +303,131 @@ export default function ContextBar() {
               </>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Mobile Context Bar - shown in sidebar */}
+      <div className="lg:hidden px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30 space-y-2" data-testid="mobile-context-bar">
+        {/* Current context display */}
+        <div className="text-xs text-sidebar-foreground/60 flex items-center gap-1.5">
+          <Layers className="w-3.5 h-3.5" />
+          <span>Current Context:</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {context?.activeTenant && (
+            <Badge variant="outline" className="text-xs font-normal bg-sidebar-accent">{context.activeTenant.name}</Badge>
+          )}
+          {context?.activeMarket && showMarketSelector && (
+            <Badge variant="secondary" className="text-xs font-normal">{context.activeMarket.name}</Badge>
+          )}
+        </div>
+
+        {/* Tenant Switcher for mobile */}
+        {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-between gap-2 text-sidebar-foreground"
+                data-testid="dropdown-mobile-tenant-switcher"
+              >
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4" />
+                  <span className="truncate">{context?.activeTenant?.name || "Select Organization"}</span>
+                </div>
+                <ChevronDown className="w-3 h-3 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                Switch Organization
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {accessibleTenants.tenants.map((tenant) => (
+                <DropdownMenuItem
+                  key={tenant.id}
+                  onClick={() => switchTenantMutation.mutate(tenant.id)}
+                  className="flex items-center justify-between cursor-pointer"
+                  data-testid={`mobile-menu-item-tenant-${tenant.id}`}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{tenant.name}</span>
+                    <span className="text-xs text-muted-foreground">{tenant.domain}</span>
+                  </div>
+                  {tenant.id === context?.activeTenantId && (
+                    <Badge variant="secondary" className="text-xs">Active</Badge>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* Market Switcher for mobile */}
+        {showMarketSelector && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-between gap-2 text-sidebar-foreground"
+                data-testid="dropdown-mobile-market-switcher"
+              >
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  <span className="truncate">{context?.activeMarket?.name || "Default"}</span>
+                </div>
+                <ChevronDown className="w-3 h-3 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <Layers className="w-4 h-4" />
+                Switch Market
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {marketsData?.markets
+                ?.filter(m => m.status === "active")
+                .map((market) => (
+                  <DropdownMenuItem
+                    key={market.id}
+                    onClick={() => switchMarketMutation.mutate(market.id)}
+                    className="flex items-center justify-between cursor-pointer"
+                    data-testid={`mobile-menu-item-market-${market.id}`}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-medium">{market.name}</span>
+                      {market.description && (
+                        <span className="text-xs text-muted-foreground truncate max-w-40">{market.description}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {market.isDefault && (
+                        <Badge variant="outline" className="text-[10px]">Default</Badge>
+                      )}
+                      {market.id === context?.activeMarketId && (
+                        <Badge variant="secondary" className="text-xs">Active</Badge>
+                      )}
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              {canCreateMarket && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setCreateMarketOpen(true)}
+                    className="cursor-pointer"
+                    data-testid="mobile-btn-create-market"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create New Market
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
