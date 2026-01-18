@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -85,6 +85,15 @@ export default function Analysis() {
       return response.json();
     },
     enabled: !!companyProfile,
+  });
+
+  const { data: recommendations = [] } = useQuery<any[]>({
+    queryKey: ["/api/recommendations"],
+    queryFn: async () => {
+      const response = await fetch("/api/recommendations", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
   });
 
   React.useEffect(() => {
@@ -357,6 +366,10 @@ export default function Analysis() {
               <MessageCircle className="h-3.5 w-3.5" />
               Messaging Rewrite
               {messagingFramework?.status === "generated" && <Check className="h-3 w-3 ml-1" />}
+            </TabsTrigger>
+            <TabsTrigger value="full_report" className="data-[state=active]:bg-background data-[state=active]:shadow-sm flex items-center gap-1">
+              <FileStack className="h-3.5 w-3.5" />
+              Full Report
             </TabsTrigger>
           </TabsList>
           
@@ -762,6 +775,236 @@ export default function Analysis() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Full Report Tab */}
+          <TabsContent value="full_report">
+            <div className="space-y-8">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileStack className="h-5 w-5 text-primary" />
+                        Full Analysis Report
+                      </CardTitle>
+                      <CardDescription>
+                        Comprehensive view of all analysis, recommendations, and strategic plans
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="default"
+                      onClick={() => window.open("/api/reports/full-analysis/pdf", "_blank")}
+                      data-testid="button-download-full-report"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download PDF Report
+                    </Button>
+                  </div>
+                </CardHeader>
+              </Card>
+
+              {/* Themes Section */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Key Themes</CardTitle>
+                  <CardDescription>How strongly each competitor emphasizes key market themes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {analysis.themes?.length > 0 ? (
+                    <div className="relative w-full overflow-auto">
+                      <table className="w-full text-sm text-left">
+                        <thead className="text-muted-foreground font-medium border-b border-border/50">
+                          <tr>
+                            <th className="py-3 px-4 font-semibold">Theme</th>
+                            <th className="py-3 px-4 font-semibold">Us</th>
+                            {competitors.slice(0, 2).map((c: any) => (
+                              <th key={c.id} className="py-3 px-4 font-semibold text-muted-foreground">{c.name}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analysis.themes.slice(0, 5).map((theme: any, i: number) => (
+                            <tr key={i} className="border-b border-border/50 last:border-0">
+                              <td className="py-3 px-4 font-medium">{theme.theme}</td>
+                              <td className="py-3 px-4">
+                                <Badge variant={theme.us === 'High' ? "default" : theme.us === 'Medium' ? "secondary" : "outline"}>
+                                  {theme.us}
+                                </Badge>
+                              </td>
+                              <td className="py-3 px-4">{theme.competitorA}</td>
+                              <td className="py-3 px-4">{theme.competitorB}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">No theme data available.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Messaging Section */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Messaging Comparison</CardTitle>
+                  <CardDescription>Direct comparison of copy and tone across key touchpoints.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {analysis.messaging?.length > 0 ? (
+                    <div className="space-y-6">
+                      {analysis.messaging.slice(0, 3).map((item: any, i: number) => (
+                        <div key={i} className="space-y-2">
+                          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{item.category}</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                              <div className="text-xs font-semibold text-primary mb-1">Us</div>
+                              <div className="text-sm">"{item.us}"</div>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
+                              <div className="text-sm">"{item.competitorA}"</div>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
+                              <div className="text-sm">"{item.competitorB}"</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">No messaging data available.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Gaps Section */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Gap Analysis</CardTitle>
+                  <CardDescription>Identified competitive gaps and opportunities.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {analysis.gaps?.length > 0 ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {analysis.gaps.slice(0, 4).map((gap: any, i: number) => (
+                        <div key={i} className="p-4 border-l-4 border-l-destructive bg-muted/20 rounded-r-lg">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-medium">{gap.area}</h4>
+                            <Badge variant="outline" className="text-xs">Impact: {gap.impact}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{gap.observation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">No gaps detected.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Recommendations Section */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle>Action Items</CardTitle>
+                  <CardDescription>Strategic recommendations based on competitive analysis.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {recommendations.length > 0 ? (
+                    <div className="space-y-3">
+                      {recommendations.slice(0, 5).map((rec: any) => (
+                        <div key={rec.id} className="p-4 bg-muted/30 rounded-lg border border-border">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-medium">{rec.title}</h4>
+                            <Badge variant={rec.impact === "High" ? "default" : rec.impact === "Medium" ? "secondary" : "outline"}>
+                              {rec.impact} Impact
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{rec.description}</p>
+                          <div className="mt-2 text-xs text-muted-foreground">Area: {rec.area}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">No recommendations generated yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* GTM Plan Section */}
+              {gtmPlan?.status === "generated" && gtmPlan.content && (
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Rocket className="h-5 w-5 text-primary" />
+                      Go-To-Market Plan
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <div dangerouslySetInnerHTML={{ 
+                        __html: gtmPlan.content
+                          .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                          .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                          .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                          .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                          .replace(/^- (.*$)/gim, '<li>$1</li>')
+                          .replace(/\n\n/gim, '</p><p>')
+                          .replace(/\n/gim, '<br/>')
+                      }} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Messaging Framework Section */}
+              {messagingFramework?.status === "generated" && messagingFramework.content && (
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5 text-primary" />
+                      Messaging Framework
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <div dangerouslySetInnerHTML={{ 
+                        __html: messagingFramework.content
+                          .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                          .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                          .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                          .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                          .replace(/^- (.*$)/gim, '<li>$1</li>')
+                          .replace(/\n\n/gim, '</p><p>')
+                          .replace(/\n/gim, '<br/>')
+                      }} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Empty state for GTM/Messaging */}
+              {(!gtmPlan?.status || gtmPlan?.status !== "generated") && (!messagingFramework?.status || messagingFramework?.status !== "generated") && (
+                <Card className="p-6 text-center border-dashed border-2">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex gap-2">
+                      <Rocket className="h-8 w-8 text-muted-foreground" />
+                      <MessageCircle className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium mb-1">Strategic Plans Not Generated</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Generate GTM Plan and Messaging Framework from their respective tabs to include them in the full report.
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       )}

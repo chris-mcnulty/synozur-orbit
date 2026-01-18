@@ -1427,6 +1427,41 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // Full analysis PDF report (includes GTM Plan and Messaging Framework)
+  app.get("/api/reports/full-analysis/pdf", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const { generatePdfReport } = await import("./services/pdf-generator");
+      const reportName = `Full Analysis Report - ${new Date().toLocaleDateString()}`;
+      
+      const { pdfBuffer, report } = await generatePdfReport(
+        tenantDomain,
+        req.session.userId,
+        reportName,
+        "baseline",
+        undefined,
+        true // includeStrategicPlans
+      );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.setHeader("X-Report-Id", report.id);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Full analysis PDF generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/reports", async (req, res) => {
     try {
       if (!req.session.userId) {
