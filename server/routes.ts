@@ -7,6 +7,7 @@ import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertR
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
@@ -3959,18 +3960,19 @@ Potential challenges and solutions
 
 Make this practical and actionable. Use bullet points and clear formatting.`;
 
-      const anthropic = new Anthropic({
-        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      // Use OpenAI gpt-5.2 for enhanced GTM plan generation
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
       });
 
-      const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
 
-      const content = message.content[0].type === "text" ? message.content[0].text : "";
+      const content = completion.choices[0]?.message?.content || "";
 
       // Check if recommendation already exists
       const existing = await storage.getLongFormRecommendationByType("gtm_plan", req.params.projectId);
@@ -4354,18 +4356,19 @@ Brief overview of the GTM strategy
 
 Make this practical and actionable for the team.`;
 
-      const anthropic = new Anthropic({
-        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      // Use OpenAI gpt-5.2 for enhanced GTM plan generation
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
       });
 
-      const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
 
-      const content = message.content[0].type === "text" ? message.content[0].text : "";
+      const content = completion.choices[0]?.message?.content || "";
 
       const existing = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
 
