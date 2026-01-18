@@ -23,7 +23,6 @@ import {
   HelpCircle,
   Building2,
   Swords,
-  Zap,
   Map
 } from "lucide-react";
 import { cn } from "@/lib/utils";
