@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,9 +10,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@/lib/userContext";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Tenant {
   id: string;
@@ -56,6 +69,10 @@ interface MarketsData {
 export default function ContextBar() {
   const { user } = useUser();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [createMarketOpen, setCreateMarketOpen] = useState(false);
+  const [newMarketName, setNewMarketName] = useState("");
+  const [newMarketDescription, setNewMarketDescription] = useState("");
 
   const { data: context, isLoading: contextLoading } = useQuery<ContextData>({
     queryKey: ["/api/context"],
@@ -114,123 +131,236 @@ export default function ContextBar() {
     },
   });
 
+  const createMarketMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string }) => {
+      const response = await apiRequest("POST", "/api/markets", data);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create market");
+      }
+      return response.json();
+    },
+    onSuccess: (newMarket) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      setCreateMarketOpen(false);
+      setNewMarketName("");
+      setNewMarketDescription("");
+      toast({
+        title: "Market created",
+        description: `"${newMarket.name}" has been created and is now active.`,
+      });
+      switchMarketMutation.mutate(newMarket.id);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create market",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCreateMarket = () => {
+    if (!newMarketName.trim()) return;
+    createMarketMutation.mutate({
+      name: newMarketName.trim(),
+      description: newMarketDescription.trim() || undefined,
+    });
+  };
+
   const canSwitchTenants = user?.role === "Global Admin" || user?.role === "Consultant";
-  const showMarketSelector = marketsData?.multiMarketEnabled && marketsData?.markets && marketsData.markets.length > 1;
+  const showMarketSelector = marketsData?.multiMarketEnabled;
+  const canCreateMarket = marketsData?.multiMarketEnabled && 
+    (user?.role === "Global Admin" || user?.role === "Domain Admin") &&
+    (!marketsData?.marketLimit || marketsData.markets.length < marketsData.marketLimit);
 
   if (!canSwitchTenants && !showMarketSelector) {
     return null;
   }
 
   return (
-    <div className="h-12 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
-      {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="gap-2 text-muted-foreground hover:text-foreground"
-              data-testid="dropdown-tenant-switcher"
-            >
-              <Building2 className="w-4 h-4" />
-              <span className="max-w-32 truncate">{context?.activeTenant?.name || "Select Tenant"}</span>
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel className="flex items-center gap-2">
-              <Globe className="w-4 h-4" />
-              Switch Organization
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {accessibleTenants.tenants.map((tenant) => (
-              <DropdownMenuItem
-                key={tenant.id}
-                onClick={() => switchTenantMutation.mutate(tenant.id)}
-                className="flex items-center justify-between cursor-pointer"
-                data-testid={`menu-item-tenant-${tenant.id}`}
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium">{tenant.name}</span>
-                  <span className="text-xs text-muted-foreground">{tenant.domain}</span>
-                </div>
-                {tenant.id === context?.activeTenantId && (
-                  <Badge variant="secondary" className="text-xs">Active</Badge>
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-
-      {showMarketSelector && (
-        <>
-          {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
-            <div className="h-4 w-px bg-border" />
-          )}
+    <>
+      <div className="h-12 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
+        {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className="gap-2 text-muted-foreground hover:text-foreground"
-                data-testid="dropdown-market-switcher"
+                data-testid="dropdown-tenant-switcher"
               >
-                <Layers className="w-4 h-4" />
-                <span className="max-w-32 truncate">{context?.activeMarket?.name || "Default"}</span>
+                <Building2 className="w-4 h-4" />
+                <span className="max-w-32 truncate">{context?.activeTenant?.name || "Select Tenant"}</span>
                 <ChevronDown className="w-3 h-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent align="start" className="w-64">
               <DropdownMenuLabel className="flex items-center gap-2">
-                <Layers className="w-4 h-4" />
-                Switch Market
+                <Globe className="w-4 h-4" />
+                Switch Organization
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {marketsData.markets
-                .filter(m => m.status === "active")
-                .map((market) => (
-                  <DropdownMenuItem
-                    key={market.id}
-                    onClick={() => switchMarketMutation.mutate(market.id)}
-                    className="flex items-center justify-between cursor-pointer"
-                    data-testid={`menu-item-market-${market.id}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-medium">{market.name}</span>
-                      {market.description && (
-                        <span className="text-xs text-muted-foreground truncate max-w-40">{market.description}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {market.isDefault && (
-                        <Badge variant="outline" className="text-[10px]">Default</Badge>
-                      )}
-                      {market.id === context?.activeMarketId && (
-                        <Badge variant="secondary" className="text-xs">Active</Badge>
-                      )}
-                    </div>
-                  </DropdownMenuItem>
-                ))}
+              {accessibleTenants.tenants.map((tenant) => (
+                <DropdownMenuItem
+                  key={tenant.id}
+                  onClick={() => switchTenantMutation.mutate(tenant.id)}
+                  className="flex items-center justify-between cursor-pointer"
+                  data-testid={`menu-item-tenant-${tenant.id}`}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{tenant.name}</span>
+                    <span className="text-xs text-muted-foreground">{tenant.domain}</span>
+                  </div>
+                  {tenant.id === context?.activeTenantId && (
+                    <Badge variant="secondary" className="text-xs">Active</Badge>
+                  )}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </>
-      )}
+        )}
 
-      <div className="flex-1" />
+        {showMarketSelector && (
+          <>
+            {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
+              <div className="h-4 w-px bg-border" />
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="gap-2 text-muted-foreground hover:text-foreground"
+                  data-testid="dropdown-market-switcher"
+                >
+                  <Layers className="w-4 h-4" />
+                  <span className="max-w-32 truncate">{context?.activeMarket?.name || "Default"}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel className="flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  Switch Market
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {marketsData?.markets
+                  ?.filter(m => m.status === "active")
+                  .map((market) => (
+                    <DropdownMenuItem
+                      key={market.id}
+                      onClick={() => switchMarketMutation.mutate(market.id)}
+                      className="flex items-center justify-between cursor-pointer"
+                      data-testid={`menu-item-market-${market.id}`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium">{market.name}</span>
+                        {market.description && (
+                          <span className="text-xs text-muted-foreground truncate max-w-40">{market.description}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {market.isDefault && (
+                          <Badge variant="outline" className="text-[10px]">Default</Badge>
+                        )}
+                        {market.id === context?.activeMarketId && (
+                          <Badge variant="secondary" className="text-xs">Active</Badge>
+                        )}
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                {canCreateMarket && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setCreateMarketOpen(true)}
+                      className="cursor-pointer"
+                      data-testid="btn-create-market"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create New Market
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
 
-      {context?.activeTenant && (
-        <div className="text-xs text-muted-foreground flex items-center gap-2">
-          <span>Viewing:</span>
-          <Badge variant="outline" className="text-xs font-normal">{context.activeTenant.name}</Badge>
-          {context.activeMarket && showMarketSelector && (
-            <>
-              <span>/</span>
-              <Badge variant="outline" className="text-xs font-normal">{context.activeMarket.name}</Badge>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+        <div className="flex-1" />
+
+        {context?.activeTenant && (
+          <div className="text-xs text-muted-foreground flex items-center gap-2">
+            <span>Viewing:</span>
+            <Badge variant="outline" className="text-xs font-normal">{context.activeTenant.name}</Badge>
+            {context.activeMarket && showMarketSelector && (
+              <>
+                <span>/</span>
+                <Badge variant="outline" className="text-xs font-normal">{context.activeMarket.name}</Badge>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={createMarketOpen} onOpenChange={setCreateMarketOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Market</DialogTitle>
+            <DialogDescription>
+              Markets allow you to manage separate sets of competitors, analysis, and projects for different client contexts or business units.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="market-name">Market Name</Label>
+              <Input
+                id="market-name"
+                placeholder="e.g., Healthcare Division, EMEA Region"
+                value={newMarketName}
+                onChange={(e) => setNewMarketName(e.target.value)}
+                data-testid="input-market-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="market-description">Description (optional)</Label>
+              <Textarea
+                id="market-description"
+                placeholder="Brief description of this market context..."
+                value={newMarketDescription}
+                onChange={(e) => setNewMarketDescription(e.target.value)}
+                rows={3}
+                data-testid="input-market-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setCreateMarketOpen(false)}
+              disabled={createMarketMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateMarket}
+              disabled={!newMarketName.trim() || createMarketMutation.isPending}
+              data-testid="btn-confirm-create-market"
+            >
+              {createMarketMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Market"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
