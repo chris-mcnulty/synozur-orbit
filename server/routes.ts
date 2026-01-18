@@ -46,6 +46,22 @@ function toContextFilter(ctx: RequestContext): ContextFilter {
   };
 }
 
+// Helper to validate resource belongs to current context
+function validateResourceContext(
+  resource: { tenantDomain?: string | null; marketId?: string | null },
+  ctx: RequestContext
+): boolean {
+  // Must match tenant
+  if (resource.tenantDomain && resource.tenantDomain !== ctx.tenantDomain) {
+    return false;
+  }
+  // If resource has a marketId, it must match (or be null for legacy data)
+  if (resource.marketId && resource.marketId !== ctx.marketId) {
+    return false;
+  }
+  return true;
+}
+
 // Zod schemas for context/market endpoints
 const switchTenantSchema = z.object({
   tenantId: z.string().uuid("Invalid tenant ID format"),
@@ -311,57 +327,51 @@ export async function registerRoutes(
 
   app.get("/api/competitors", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Return only user's own competitors for tenant isolation
-      const competitors = await storage.getCompetitorsByUserId(req.session.userId);
+      const ctx = await getRequestContext(req);
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       res.json(competitors);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.get("/api/competitors/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
+      const ctx = await getRequestContext(req);
+      
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Verify ownership for tenant isolation
-      if (competitor.userId !== req.session.userId) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(competitor);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.patch("/api/competitors/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      if (competitor.userId !== req.session.userId && user.role !== "Global Admin") {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -383,15 +393,13 @@ export async function registerRoutes(
             return res.status(400).json({ error: "Project not found" });
           }
 
-          const tenantDomain = user.email.split("@")[1];
-          
-          // Security: Verify the project belongs to the user's tenant
-          if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+          // Security: Verify the project belongs to current context
+          if (!validateResourceContext(project, ctx)) {
             return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
           }
 
           // Plan-gating: Only Pro/Enterprise can use projects
-          const tenant = await storage.getTenantByDomain(tenantDomain);
+          const tenant = await storage.getTenant(ctx.tenantId);
           if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
             return res.status(403).json({ 
               error: "Client Projects require a Pro or Enterprise plan",
@@ -406,20 +414,16 @@ export async function registerRoutes(
       const updated = await storage.updateCompetitor(req.params.id, updateData);
       res.json(updated);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/competitors", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const { projectId, ...competitorData } = req.body;
       
@@ -430,15 +434,13 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Project not found" });
         }
 
-        const tenantDomain = user.email.split("@")[1];
-        
-        // Security: Verify the project belongs to the user's tenant
-        if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        // Security: Verify the project belongs to current context
+        if (!validateResourceContext(project, ctx)) {
           return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
         }
 
         // Plan-gating: Only Pro/Enterprise can use projects
-        const tenant = await storage.getTenantByDomain(tenantDomain);
+        const tenant = await storage.getTenant(ctx.tenantId);
         if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
           return res.status(403).json({ 
             error: "Client Projects require a Pro or Enterprise plan",
@@ -450,7 +452,9 @@ export async function registerRoutes(
       const parsed = insertCompetitorSchema.safeParse({
         ...competitorData,
         projectId: projectId || null,
-        userId: req.session.userId
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
 
       if (!parsed.success) {
@@ -460,23 +464,24 @@ export async function registerRoutes(
       const competitor = await storage.createCompetitor(parsed.data);
       res.json(competitor);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/competitors/:id/crawl", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Verify ownership for tenant isolation
-      if (competitor.userId !== req.session.userId) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -490,12 +495,7 @@ export async function registerRoutes(
 
       // Check plan for full_with_change analysis
       if (analysisType === "full_with_change") {
-        const user = await storage.getUser(req.session.userId);
-        if (!user) {
-          return res.status(404).json({ error: "User not found" });
-        }
-        const tenantDomain = user.email.split("@")[1];
-        const tenant = await storage.getTenantByDomain(tenantDomain);
+        const tenant = await storage.getTenant(ctx.tenantId);
         
         if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
           return res.status(403).json({ 
@@ -627,11 +627,7 @@ export async function registerRoutes(
           if (analysisType === "full_with_change") {
             if (competitor.linkedInUrl || competitor.instagramUrl) {
               try {
-                const user = await storage.getUser(req.session.userId);
-                if (user) {
-                  const tenantDomain = user.email.split("@")[1];
-                  socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, user.id, tenantDomain);
-                }
+                socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, ctx.userId, ctx.tenantDomain);
               } catch (socialError) {
                 console.error("Social monitoring failed:", socialError);
                 socialMonitoringResult = { error: "Social monitoring unavailable" };
@@ -672,17 +668,8 @@ export async function registerRoutes(
   // Monitor social media for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-social", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
 
       if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
         return res.status(403).json({ 
@@ -696,7 +683,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      if (competitor.userId !== req.session.userId) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -704,9 +692,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No social media URLs configured for this competitor" });
       }
 
-      const results = await monitorCompetitorSocialMedia(req.params.id, user.id, tenantDomain);
+      const results = await monitorCompetitorSocialMedia(req.params.id, ctx.userId, ctx.tenantDomain);
       res.json({ success: true, results });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -819,17 +810,8 @@ export async function registerRoutes(
   // Monitor website for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-website", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
 
       if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
         return res.status(403).json({ 
@@ -843,13 +825,17 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      if (competitor.userId !== req.session.userId && user.role !== "Global Admin") {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const result = await monitorCompetitorWebsite(req.params.id, user.id, tenantDomain);
+      const result = await monitorCompetitorWebsite(req.params.id, ctx.userId, ctx.tenantDomain);
       res.json({ success: true, result });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1048,23 +1034,24 @@ export async function registerRoutes(
 
   app.delete("/api/competitors/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Verify ownership for tenant isolation
-      if (competitor.userId !== req.session.userId) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteCompetitor(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -1073,60 +1060,44 @@ export async function registerRoutes(
 
   app.get("/api/competitors/:competitorId/battlecard", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      // Verify user has access (tenant isolation)
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
 
       const competitor = await storage.getCompetitor(req.params.competitorId);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Verify competitor belongs to user's tenant
-      const competitorUser = await storage.getUser(competitor.userId);
-      if (!competitorUser || competitorUser.email.split("@")[1] !== tenantDomain) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const battlecard = await storage.getBattlecardByCompetitor(req.params.competitorId);
       res.json(battlecard || null);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.post("/api/competitors/:competitorId/battlecard/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
 
       const competitor = await storage.getCompetitor(req.params.competitorId);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Verify competitor belongs to user's tenant
-      const competitorUser = await storage.getUser(competitor.userId);
-      if (!competitorUser || competitorUser.email.split("@")[1] !== tenantDomain) {
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       // Get company profile for comparison
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       // Get existing analysis data
       const analysisData = competitor.analysisData as any;
@@ -1230,7 +1201,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
         // Create new
         battlecard = await storage.createBattlecard({
           competitorId: req.params.competitorId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           strengths: battlecardContent.strengths,
           weaknesses: battlecardContent.weaknesses,
           ourAdvantages: battlecardContent.ourAdvantages,
@@ -1238,7 +1210,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
           talkTracks: battlecardContent.talkTracks,
           quickStats: battlecardContent.quickStats,
           status: "draft",
-          createdBy: req.session.userId,
+          createdBy: ctx.userId,
         });
       }
 
@@ -1251,23 +1223,15 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   app.patch("/api/battlecards/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const battlecard = await storage.getBattlecard(req.params.id);
       if (!battlecard) {
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      // Verify user has access (belongs to their tenant)
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
-      
-      if (battlecard.tenantDomain !== tenantDomain) {
+      // Validate battlecard belongs to current context
+      if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -1286,35 +1250,33 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       res.json(updatedBattlecard);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.delete("/api/battlecards/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const battlecard = await storage.getBattlecard(req.params.id);
       if (!battlecard) {
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      // Verify user has access
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-      const tenantDomain = user.email.split("@")[1];
-      
-      if (battlecard.tenantDomain !== tenantDomain) {
+      // Validate battlecard belongs to current context
+      if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteBattlecard(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2300,20 +2262,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get company profile for current tenant
   app.get("/api/company-profile", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const profile = await storage.getCompanyProfileByTenant(tenantDomain);
-      
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       res.json(profile || null);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2532,19 +2487,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get all assessments for current tenant
   app.get("/api/assessments", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const assessments = await storage.getAssessmentsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const assessments = await storage.getAssessmentsByContext(toContextFilter(ctx));
       res.json(assessments);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2552,27 +2501,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get single assessment
   app.get("/api/assessments/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const assessment = await storage.getAssessment(req.params.id);
       if (!assessment) {
         return res.status(404).json({ error: "Assessment not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (assessment.tenantDomain !== tenantDomain) {
+      // Validate assessment belongs to current context
+      if (!validateResourceContext(assessment, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(assessment);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2580,33 +2525,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Create new assessment (snapshot current state)
   app.post("/api/assessments", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
       
-      // Gather current state for snapshot (tenant-scoped)
-      // Only capture user's own competitors for tenant isolation
-      const competitors = await storage.getCompetitorsByUserId(user.id);
+      // Gather current state for snapshot (context-scoped)
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       // Note: Analysis and recommendations tables are not yet tenant-scoped
       // Capturing empty objects/arrays until these are refactored for multi-tenancy
       // to prevent cross-tenant data leakage
       const latestAnalysis = { themes: [], messaging: [], gaps: [] };
       const recommendations: any[] = [];
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
 
       // Validate input with proxy fields
       const parsed = insertAssessmentSchema.safeParse({
         name: req.body.name,
         description: req.body.description,
-        userId: user.id,
-        tenantDomain,
+        userId: ctx.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
         companyProfileSnapshot: companyProfile || null,
         competitorsSnapshot: competitors,
         analysisSnapshot: latestAnalysis || {},
@@ -2625,13 +2561,17 @@ Return ONLY valid JSON, no markdown or explanations.`;
       }
 
       // Only admins can create proxy assessments
-      if (parsed.data.isProxy && user.role === "Standard User") {
+      const user = await storage.getUser(ctx.userId);
+      if (parsed.data.isProxy && user?.role === "Standard User") {
         return res.status(403).json({ error: "Only admins can create proxy assessments" });
       }
 
       const assessment = await storage.createAssessment(parsed.data);
       res.json(assessment);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2639,22 +2579,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Update assessment
   app.put("/api/assessments/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const assessment = await storage.getAssessment(req.params.id);
       if (!assessment) {
         return res.status(404).json({ error: "Assessment not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (assessment.tenantDomain !== tenantDomain) {
+      // Validate assessment belongs to current context
+      if (!validateResourceContext(assessment, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -2664,6 +2597,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
       });
       res.json(updated);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2671,28 +2607,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Delete assessment
   app.delete("/api/assessments/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const assessment = await storage.getAssessment(req.params.id);
       if (!assessment) {
         return res.status(404).json({ error: "Assessment not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (assessment.tenantDomain !== tenantDomain) {
+      // Validate assessment belongs to current context
+      if (!validateResourceContext(assessment, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteAssessment(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3485,17 +3417,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get all client projects for current tenant
   app.get("/api/projects", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
       
       // Plan-gating: only Pro and Enterprise tenants can use client projects
       if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
@@ -3505,9 +3428,12 @@ Return ONLY valid JSON, no markdown or explanations.`;
         });
       }
 
-      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+      const projects = await storage.getClientProjectsByContext(toContextFilter(ctx));
       res.json(projects);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3515,23 +3441,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get single client project with its competitors
   app.get("/api/projects/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.id);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Verify tenant ownership
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -3540,6 +3458,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       res.json({ ...project, competitors: projectCompetitors });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3547,17 +3468,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Create client project
   app.post("/api/projects", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
       
       // Plan-gating
       if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
@@ -3581,12 +3493,16 @@ Return ONLY valid JSON, no markdown or explanations.`;
         analysisType: analysisType === "product" ? "product" : "company",
         notifyOnUpdates: notifyOnUpdates === true,
         status: "active",
-        tenantDomain,
-        ownerUserId: user.id,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        ownerUserId: ctx.userId,
       });
 
       res.status(201).json(project);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3594,23 +3510,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Update client project
   app.patch("/api/projects/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.id);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Verify tenant ownership
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -3628,6 +3536,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const updated = await storage.updateClientProject(req.params.id, updates);
       res.json(updated);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3635,34 +3546,29 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Delete client project (cascades to unlink competitors)
   app.delete("/api/projects/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.id);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Verify tenant ownership or admin
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       // Only owner or admin can delete
-      if (project.ownerUserId !== user.id && user.role !== "Domain Admin" && user.role !== "Global Admin") {
+      if (project.ownerUserId !== ctx.userId && ctx.userRole !== "Domain Admin" && ctx.userRole !== "Global Admin") {
         return res.status(403).json({ error: "Only project owner or admin can delete" });
       }
 
       await storage.deleteClientProject(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3670,29 +3576,26 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Assign competitor to project
   app.post("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Verify tenant ownership
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const competitor = await storage.getCompetitor(req.params.competitorId);
       if (!competitor) {
         return res.status(404).json({ error: "Competitor not found" });
+      }
+      
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied - competitor not in your context" });
       }
 
       // Update competitor with project ID
@@ -3709,22 +3612,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Remove competitor from project
   app.delete("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -3732,6 +3628,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
       await storage.updateCompetitor(req.params.competitorId, { projectId: null });
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3741,19 +3640,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get all products for tenant
   app.get("/api/products", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      const products = await storage.getProductsByTenant(tenantDomain);
+      const ctx = await getRequestContext(req);
+      const products = await storage.getProductsByContext(toContextFilter(ctx));
       res.json(products);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3761,27 +3654,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get single product
   app.get("/api/products/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const product = await storage.getProduct(req.params.id);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate product belongs to current context
+      if (!validateResourceContext(product, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(product);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3789,16 +3678,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Create product
   app.post("/api/products", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
+      const ctx = await getRequestContext(req);
       const { name, description, url, companyName, competitorId } = req.body;
 
       if (!name) {
@@ -3811,12 +3691,16 @@ Return ONLY valid JSON, no markdown or explanations.`;
         url,
         companyName,
         competitorId,
-        tenantDomain,
-        createdBy: req.session.userId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        createdBy: ctx.userId,
       });
 
       res.json(product);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Create product error:", error);
       res.status(500).json({ error: error.message || "Failed to create product" });
     }
@@ -3825,28 +3709,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Update product
   app.patch("/api/products/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const product = await storage.getProduct(req.params.id);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate product belongs to current context
+      if (!validateResourceContext(product, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const updated = await storage.updateProduct(req.params.id, req.body);
       res.json(updated);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3854,28 +3734,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Delete product
   app.delete("/api/products/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const product = await storage.getProduct(req.params.id);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (product.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate product belongs to current context
+      if (!validateResourceContext(product, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteProduct(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3883,28 +3759,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get products for a project
   app.get("/api/projects/:projectId/products", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const products = await storage.getProjectProducts(req.params.projectId);
       res.json(products);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3912,22 +3784,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Add product to project
   app.post("/api/projects/:projectId/products", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -3945,6 +3810,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       res.json(result);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3952,22 +3820,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Update product role in project (with single baseline enforcement)
   app.patch("/api/projects/:projectId/products/:productId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -3989,6 +3850,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
       await storage.updateProjectProductRole(req.params.projectId, req.params.productId, role);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3996,28 +3860,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Remove product from project
   app.delete("/api/projects/:projectId/products/:productId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       await storage.removeProductFromProject(req.params.projectId, req.params.productId);
       res.json({ success: true });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4027,28 +3887,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get all product battlecards for a project
   app.get("/api/projects/:projectId/battlecards", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
       res.json(battlecards);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4056,27 +3912,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Get a specific product battlecard
   app.get("/api/product-battlecards/:id", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
       const battlecard = await storage.getProductBattlecard(req.params.id);
       if (!battlecard) {
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const tenantDomain = user.email.split("@")[1];
-      if (battlecard.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate battlecard belongs to current context
+      if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
       res.json(battlecard);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -4084,22 +3936,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   // Generate a product battlecard for a competitor product
   app.post("/api/projects/:projectId/battlecards/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
-      if (project.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+      // Validate project belongs to current context
+      if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -4217,7 +4062,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
           baselineProductId: baseline.id,
           competitorProductId: competitor.id,
           projectId: req.params.projectId,
-          tenantDomain,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
           strengths: battlecardContent.strengths,
           weaknesses: battlecardContent.weaknesses,
           ourAdvantages: battlecardContent.ourAdvantages,
@@ -4226,7 +4072,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
           talkTracks: battlecardContent.talkTracks,
           featureComparison: battlecardContent.featureComparison,
           status: "draft",
-          createdBy: req.session.userId,
+          createdBy: ctx.userId,
         });
         res.json(created);
       }

@@ -168,6 +168,7 @@ export interface IStorage {
   // Assessment methods (snapshots for comparison)
   getAssessment(id: string): Promise<Assessment | undefined>;
   getAssessmentsByTenant(tenantDomain: string): Promise<Assessment[]>;
+  getAssessmentsByContext(ctx: ContextFilter): Promise<Assessment[]>;
   getAssessmentsByUser(userId: string): Promise<Assessment[]>;
   createAssessment(assessment: InsertAssessment): Promise<Assessment>;
   updateAssessment(id: string, data: Partial<Assessment>): Promise<Assessment>;
