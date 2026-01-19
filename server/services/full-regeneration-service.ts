@@ -102,7 +102,7 @@ async function runRegenerationInBackground(
     }
 
     const analyses: any[] = [];
-    for (const competitor of competitors.slice(0, 10)) {
+    for (const competitor of competitors) {
       try {
         const response = await fetch(competitor.url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)" },
@@ -189,7 +189,7 @@ async function runRegenerationInBackground(
       baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
     });
 
-    for (const competitor of competitors.slice(0, 5)) {
+    for (const competitor of competitors) {
       try {
         const competitorAnalysis = competitor.analysisData as any;
         const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
