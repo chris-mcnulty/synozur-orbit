@@ -25,6 +25,33 @@ import { startFullRegeneration, getRegenerationStatus } from "./services/full-re
 import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 
+// Helper to log AI usage after any AI call
+async function logAiUsage(
+  ctx: { tenantDomain: string; marketId: string; userId: string },
+  operation: string,
+  provider: string,
+  model: string,
+  usage: { input_tokens?: number; output_tokens?: number } | undefined,
+  durationMs?: number
+) {
+  try {
+    await storage.logAiUsage({
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      userId: ctx.userId,
+      provider,
+      model,
+      operation,
+      inputTokens: usage?.input_tokens || 0,
+      outputTokens: usage?.output_tokens || 0,
+      totalTokens: (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
+      durationMs: durationMs || null,
+    });
+  } catch (error) {
+    console.error("Failed to log AI usage:", error);
+  }
+}
+
 // Helper: Check if user has cross-tenant READ access
 // Global Admin and Consultant roles can read across tenants
 // Only Global Admin can WRITE across tenants
@@ -1173,6 +1200,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
         messages: [{ role: "user", content: prompt }],
       });
 
+      // Log AI usage
+      await logAiUsage(ctx, "generate_battlecard", "anthropic", "claude-sonnet-4-5", response.usage);
+
       const content = response.content[0];
       if (content.type !== "text") {
         throw new Error("Unexpected response type");
@@ -1703,6 +1733,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       });
+
+      // Log AI usage
+      await logAiUsage(ctx, "generate_battlecard", "anthropic", "claude-sonnet-4-5", response.usage);
 
       const textContent = response.content.find(c => c.type === "text");
       if (!textContent || textContent.type !== "text") {
@@ -4142,6 +4175,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
         messages: [{ role: "user", content: prompt }],
       });
 
+      // Log AI usage
+      await logAiUsage(ctx, "generate_product_battlecard", "anthropic", "claude-sonnet-4-5", response.usage);
+
       let battlecardContent: any = {};
       try {
         const responseText = response.content[0].type === "text" ? response.content[0].text : "";
@@ -4560,6 +4596,9 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
         messages: [{ role: "user", content: prompt }],
       });
 
+      // Log AI usage
+      await logAiUsage(ctx, "generate_messaging_framework", "anthropic", "claude-sonnet-4-5", message.usage);
+
       const content = message.content[0].type === "text" ? message.content[0].text : "";
 
       // Check if recommendation already exists
@@ -4685,6 +4724,9 @@ Make this actionable and specific to the competitive landscape.`;
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
+
+      // Log AI usage
+      await logAiUsage(ctx, "generate_gap_analysis", "anthropic", "claude-sonnet-4-5", message.usage);
 
       const content = message.content[0].type === "text" ? message.content[0].text : "";
 
@@ -5345,6 +5387,9 @@ Make this a comprehensive reference document for sales and strategy teams.`;
             max_tokens: 4000,
             messages: [{ role: "user", content: prompt }],
           });
+
+          // Log AI usage
+          await logAiUsage(ctx, `generate_${type}`, "anthropic", "claude-sonnet-4-20250514", response.usage);
 
           const content = response.content[0].type === "text" ? response.content[0].text : "";
 
@@ -6092,6 +6137,9 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       });
+
+      // Log AI usage
+      await logAiUsage(ctx, "generate_baseline_messaging_framework", "anthropic", "claude-sonnet-4-5", message.usage);
 
       const content = message.content[0].type === "text" ? message.content[0].text : "";
 
