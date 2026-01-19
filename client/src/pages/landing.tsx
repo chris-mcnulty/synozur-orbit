@@ -56,7 +56,7 @@ export default function Landing() {
           className="absolute inset-0 z-0 select-none bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/images/hero-background.png')" }}
         />
-        <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/60 via-background/85 to-background" />
+        <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
