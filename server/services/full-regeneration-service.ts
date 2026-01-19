@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "../ai-service";
 import { sendEmail, wrapEmailContent } from "./email-service";
+import { calculateScores } from "./scoring-service";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -128,6 +129,39 @@ async function runRegenerationInBackground(
         }
       } catch (e) {
         console.error(`Full regen: Failed to analyze ${competitor.name}:`, e);
+      }
+    }
+
+    // Calculate and store competitor scores after analysis
+    progress.currentStep = "Calculating competitor scores";
+    for (const competitor of competitors) {
+      try {
+        const refreshedCompetitor = await storage.getCompetitor(competitor.id);
+        if (refreshedCompetitor) {
+          const scores = calculateScores(
+            refreshedCompetitor.analysisData as any,
+            refreshedCompetitor.linkedInEngagement as any,
+            refreshedCompetitor.instagramEngagement as any,
+            refreshedCompetitor.crawlData as any,
+            refreshedCompetitor.blogSnapshot as any,
+            refreshedCompetitor.lastCrawl ? new Date(refreshedCompetitor.lastCrawl) : null
+          );
+          
+          // Store the competitive score in analysisData
+          const existingAnalysis = refreshedCompetitor.analysisData as any || {};
+          await storage.updateCompetitorAnalysis(competitor.id, {
+            ...existingAnalysis,
+            competitiveScore: scores.overallScore,
+            innovationScore: scores.innovationScore,
+            marketPresenceScore: scores.marketPresenceScore,
+            contentActivityScore: scores.contentActivityScore,
+            socialEngagementScore: scores.socialEngagementScore,
+            scoreFactors: scores.factors,
+            scoredAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.error(`Full regen: Failed to calculate scores for ${competitor.name}:`, e);
       }
     }
 
