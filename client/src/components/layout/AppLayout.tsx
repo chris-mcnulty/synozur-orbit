@@ -49,8 +49,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [profileCompleted, setProfileCompleted] = useState(false);
   const { user, logout, loading, refetch: refetchUser } = useUser();
   
+  // Fetch markets data first to get activeMarketId for other queries
+  const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null; multiMarketEnabled: boolean }>({
+    queryKey: ["/api/markets"],
+    queryFn: async () => {
+      const response = await fetch("/api/markets", { credentials: "include" });
+      if (!response.ok) return { markets: [], activeMarketId: null, multiMarketEnabled: false };
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const activeMarketId = marketsData?.activeMarketId;
+  const activeMarket = marketsData?.markets?.find(m => m.id === activeMarketId);
+  const isNonDefaultMarket = marketsData?.multiMarketEnabled && activeMarket && !activeMarket.isDefault;
+
+  // Reset onboarding dismissed state when market changes
+  useEffect(() => {
+    if (activeMarketId) {
+      setOnboardingDismissed(false);
+    }
+  }, [activeMarketId]);
+
   const { data: companyProfile, isLoading: profileLoading, refetch: refetchProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -108,19 +130,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     },
     enabled: !!user,
   });
-
-  const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null; multiMarketEnabled: boolean }>({
-    queryKey: ["/api/markets"],
-    queryFn: async () => {
-      const response = await fetch("/api/markets", { credentials: "include" });
-      if (!response.ok) return { markets: [], activeMarketId: null, multiMarketEnabled: false };
-      return response.json();
-    },
-    enabled: !!user,
-  });
-
-  const activeMarket = marketsData?.markets?.find(m => m.id === marketsData.activeMarketId);
-  const isNonDefaultMarket = marketsData?.multiMarketEnabled && activeMarket && !activeMarket.isDefault;
 
   const getLastVisited = (path: string): number => {
     try {
