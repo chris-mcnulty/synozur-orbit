@@ -142,8 +142,9 @@ export default function AuthPage() {
       
       <Card className="w-full max-w-md relative z-10 border-border/50 bg-background/95 backdrop-blur-sm shadow-2xl">
         <CardHeader className="text-center pb-2">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <img src="/brand/synozur-mark.png" alt="Synozur" className="h-12 w-12 object-contain" />
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <img src="/brand/synozur-horizontal.png" alt="Synozur" className="h-8 object-contain" />
+            <span className="text-foreground/50 text-xl">|</span>
             <span className="text-2xl font-bold">Orbit</span>
           </div>
           <CardTitle className="text-xl">Welcome to Orbit</CardTitle>

@@ -5,12 +5,13 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <header className="h-20 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
-        <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-3 hover:opacity-90 transition-opacity">
+        <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-2 hover:opacity-90 transition-opacity">
           <img 
-            src="/brand/synozur-mark.png" 
+            src="/brand/synozur-horizontal.png" 
             alt="Synozur" 
-            className="w-10 h-10 object-contain"
+            className="h-7 object-contain"
           />
+          <span className="text-foreground/50">|</span>
           <span>Orbit</span>
         </Link>
         
@@ -33,12 +34,13 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       <footer className="bg-card py-16 px-6 md:px-12 border-t border-border">
         <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
           <div className="md:col-span-2">
-            <div className="font-bold text-2xl mb-6 flex items-center gap-3">
+            <div className="font-bold text-2xl mb-6 flex items-center gap-2">
                <img 
-                  src="/brand/synozur-mark.png" 
+                  src="/brand/synozur-horizontal.png" 
                   alt="Synozur" 
-                  className="w-8 h-8 object-contain"
+                  className="h-6 object-contain"
                 />
+              <span className="text-foreground/50">|</span>
               Orbit
             </div>
             <p className="text-muted-foreground text-sm max-w-sm leading-relaxed">
