@@ -196,7 +196,7 @@ export default function ContextBar() {
   });
 
   const createMarketMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string }) => {
+    mutationFn: async (data: { name: string; description?: string; websiteUrl?: string }) => {
       const response = await apiRequest("POST", "/api/markets", data);
       if (!response.ok) {
         const error = await response.json();
@@ -207,6 +207,7 @@ export default function ContextBar() {
     onSuccess: (newMarket) => {
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
       handleCloseMarketDialog(false);
       toast({
         title: "Market created",
@@ -228,6 +229,7 @@ export default function ContextBar() {
     createMarketMutation.mutate({
       name: newMarketName.trim(),
       description: newMarketDescription.trim() || undefined,
+      websiteUrl: marketUrl.trim() || undefined,
     });
   };
 

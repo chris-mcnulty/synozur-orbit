@@ -3360,7 +3360,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: `Market limit reached (${tenant.marketLimit}). Contact support to increase your limit.` });
       }
 
-      const { name, description } = req.body;
+      const { name, description, websiteUrl } = req.body;
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "Market name is required" });
       }
@@ -3373,6 +3373,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
         status: "active",
         createdBy: user.id,
       });
+
+      // If a website URL was provided, automatically create a company profile for this market
+      if (websiteUrl) {
+        try {
+          await storage.createCompanyProfile({
+            userId: user.id,
+            tenantDomain: tenant.domain,
+            marketId: newMarket.id,
+            companyName: name.trim(),
+            websiteUrl: websiteUrl.trim(),
+            description: description?.trim() || null,
+          });
+          console.log(`[Market Creation] Auto-created baseline company profile for market: ${newMarket.name}`);
+        } catch (profileError) {
+          console.error(`[Market Creation] Failed to create baseline company profile:`, profileError);
+          // Don't fail market creation if profile creation fails
+        }
+      }
 
       res.status(201).json(newMarket);
     } catch (error: any) {
