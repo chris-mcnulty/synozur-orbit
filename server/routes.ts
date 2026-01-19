@@ -4367,6 +4367,7 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
           savedPrompts,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -4507,6 +4508,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           savedPrompts,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -4629,6 +4631,7 @@ Make this actionable and specific to the competitive landscape.`;
           content,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -4756,6 +4759,7 @@ Make each recommendation specific, actionable, and tied to competitive insights.
           content,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -4889,6 +4893,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
           content,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -5472,6 +5477,7 @@ Make this practical and actionable for the team.`;
           savedPrompts,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }
@@ -5616,6 +5622,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           savedPrompts,
           status: "generated",
           generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
         });
         res.json(created);
       }

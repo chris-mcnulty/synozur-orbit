@@ -436,7 +436,6 @@ export const insertLongFormRecommendationSchema = createInsertSchema(longFormRec
   id: true,
   createdAt: true,
   updatedAt: true,
-  lastGeneratedAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
