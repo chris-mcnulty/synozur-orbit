@@ -60,7 +60,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               <li><a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">About Synozur</a></li>
               <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
               <li><a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy Policy</a></li>
-              <li><Link href="#" className="hover:text-primary transition-colors">Terms of Service</Link></li>
+              <li><a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Terms of Service</a></li>
               <li><Link href="#" className="hover:text-primary transition-colors">Security</Link></li>
               <li><a href="mailto:support@synozur.com" className="hover:text-primary transition-colors">Contact Support</a></li>
             </ul>
@@ -83,7 +83,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2025.</p>
             <div className="mt-4 md:mt-0 flex gap-6">
                <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy</a>
-               <Link href="#" className="hover:text-primary transition-colors">Terms</Link>
+               <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Terms</a>
                <Link href="#" className="hover:text-primary transition-colors">Cookies</Link>
             </div>
           </div>
