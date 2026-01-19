@@ -7168,17 +7168,21 @@ Return only the description text, no quotes or formatting.`;
       let tenant;
       if (currentUser.role === "Global Admin" && req.session.activeTenantId) {
         tenant = await storage.getTenant(req.session.activeTenantId);
+        console.log(`[Entra Search] Global Admin using active tenant context: ${tenant?.domain}, Azure Tenant ID: ${tenant?.entraTenantId}`);
       } else {
         const userDomain = currentUser.email.split("@")[1];
         tenant = await storage.getTenantByDomain(userDomain);
+        console.log(`[Entra Search] Using user domain tenant: ${tenant?.domain}, Azure Tenant ID: ${tenant?.entraTenantId}`);
       }
       
       if (!tenant?.entraTenantId) {
+        console.log(`[Entra Search] No Azure Tenant ID configured for tenant: ${tenant?.domain}`);
         return res.status(400).json({ 
           error: "Azure Tenant ID is not configured for this organization. Please contact your administrator to set up Entra ID integration." 
         });
       }
 
+      console.log(`[Entra Search] Searching for "${query}" in Azure tenant: ${tenant.entraTenantId}`);
       const result = await searchEntraUsers(query, tenant.entraTenantId);
       
       if (result.error) {
