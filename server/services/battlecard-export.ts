@@ -1,5 +1,73 @@
 import puppeteer from "puppeteer";
 import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
+
+function getSynozurLogoBase64(): string {
+  try {
+    const logoPath = path.join(process.cwd(), "client/public/brand/synozur-horizontal.png");
+    if (fs.existsSync(logoPath)) {
+      const logoBuffer = fs.readFileSync(logoPath);
+      return `data:image/png;base64,${logoBuffer.toString("base64")}`;
+    }
+  } catch (e) {
+    console.error("Failed to load Synozur logo:", e);
+  }
+  return "";
+}
+
+function getFontBase64(fontFile: string): string {
+  try {
+    const fontPath = path.join(process.cwd(), "client/public/fonts", fontFile);
+    if (fs.existsSync(fontPath)) {
+      const fontBuffer = fs.readFileSync(fontPath);
+      return `data:font/truetype;base64,${fontBuffer.toString("base64")}`;
+    }
+  } catch (e) {
+    console.error(`Failed to load font ${fontFile}:`, e);
+  }
+  return "";
+}
+
+function getFontFacesCss(): string {
+  const regularFont = getFontBase64("AvenirNextLTPro-Regular.ttf");
+  const mediumFont = getFontBase64("AvenirNextLTPro-Medium.ttf");
+  const boldFont = getFontBase64("AvenirNextLTPro-Bold.ttf");
+  const lightFont = getFontBase64("AvenirNextLTPro-Light.ttf");
+  
+  return `
+    @font-face {
+      font-family: 'Avenir Next LT Pro';
+      src: url('${regularFont}') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Avenir Next LT Pro';
+      src: url('${mediumFont}') format('truetype');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Avenir Next LT Pro';
+      src: url('${boldFont}') format('truetype');
+      font-weight: 600;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Avenir Next LT Pro';
+      src: url('${boldFont}') format('truetype');
+      font-weight: 700;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Avenir Next LT Pro';
+      src: url('${lightFont}') format('truetype');
+      font-weight: 300;
+      font-style: normal;
+    }
+  `;
+}
 
 interface ComparisonItem {
   category: string;
@@ -50,6 +118,9 @@ function generateBattlecardHtml(
   const objections = (bc.objections || []) as ObjectionItem[];
   const talkTracks = (bc.talkTracks || []) as TalkTrack[];
   const quickStats = bc.quickStats || {};
+  
+  const synozurLogo = getSynozurLogoBase64();
+  const fontFaces = getFontFacesCss();
 
   return `
 <!DOCTYPE html>
@@ -57,11 +128,11 @@ function generateBattlecardHtml(
 <head>
   <meta charset="UTF-8">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    ${fontFaces}
     @page { margin: 0.75in; size: letter; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
-      font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+      font-family: 'Avenir Next LT Pro', -apple-system, BlinkMacSystemFont, sans-serif; 
       font-size: 11pt; 
       line-height: 1.5;
       color: #1a1a2e;
@@ -277,6 +348,7 @@ function generateBattlecardHtml(
   ` : ''}
 
   <div class="footer">
+    ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
     Generated ${new Date().toLocaleDateString()} • Confidential
   </div>
@@ -523,6 +595,9 @@ function generateProductBattlecardHtml(
   const keyDifferentiators = (bc.keyDifferentiators || []) as KeyDifferentiator[];
   const objections = (bc.objections || []) as ObjectionItem[];
   const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+  
+  const synozurLogo = getSynozurLogoBase64();
+  const fontFaces = getFontFacesCss();
 
   return `
 <!DOCTYPE html>
@@ -530,11 +605,11 @@ function generateProductBattlecardHtml(
 <head>
   <meta charset="UTF-8">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    ${fontFaces}
     @page { margin: 0.75in; size: letter; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
-      font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+      font-family: 'Avenir Next LT Pro', -apple-system, BlinkMacSystemFont, sans-serif; 
       font-size: 11pt; 
       line-height: 1.5;
       color: #1a1a2e;
@@ -716,6 +791,7 @@ function generateProductBattlecardHtml(
   ` : ''}
 
   <div class="footer">
+    ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
     Generated ${new Date().toLocaleDateString()} • Confidential
   </div>
