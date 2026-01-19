@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backlog.md file with comprehensive MVP feature tracking
 
 ### Changed
+- Separated Company Baseline and Competitors screens into distinct pages
+  - Company Baseline page now focused on your company profile, analysis, and grounding documents
+  - Competitors page now focused on competitor tracking with minimal baseline reference
+  - Clear visual distinction with different layouts and purposes
 - Unified Overview page - consolidated Command Center and Overview into a single, visually rich dashboard at `/app`
 - Overview is now the home page hero when logging in
 - Added "Rebuild All" button to Overview for admins to refresh all competitive intelligence

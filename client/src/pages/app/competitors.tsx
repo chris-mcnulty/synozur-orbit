@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Edit2, Loader2, Trash2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, Linkedin, Instagram, Twitter, FolderKanban, Zap, Search, Crown, Sparkles, Check, X } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -12,7 +12,6 @@ import { Link } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -20,19 +19,10 @@ export default function Competitors() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [expandedCompetitors, setExpandedCompetitors] = useState<Set<string>>(new Set());
-  const [profileForm, setProfileForm] = useState({
-    companyName: "",
-    websiteUrl: "",
-    linkedInUrl: "",
-    instagramUrl: "",
-    twitterUrl: "",
-    description: "",
-  });
 
   const [faviconErrors, setFaviconErrors] = useState<Set<string>>(new Set());
   const [isSuggestDialogOpen, setIsSuggestDialogOpen] = useState(false);
@@ -137,87 +127,6 @@ export default function Competitors() {
     },
   });
 
-  const saveProfile = useMutation({
-    mutationFn: async (data: { companyName: string; websiteUrl: string; linkedInUrl: string; instagramUrl: string; twitterUrl: string; description: string }) => {
-      const response = await fetch("/api/company-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to save company profile");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
-      setIsProfileDialogOpen(false);
-      toast({
-        title: "Profile Saved",
-        description: "Your company profile has been updated.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const analyzeProfile = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/company-profile/analyze", {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to analyze company website");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
-      toast({
-        title: "Analysis Complete",
-        description: "Your company website has been analyzed.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteProfile = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/company-profile", {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to delete company profile");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
-      toast({
-        title: "Profile Deleted",
-        description: "Your company profile has been removed.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   const [analyzingCompetitor, setAnalyzingCompetitor] = useState<string | null>(null);
 
   const crawlCompetitor = useMutation({
@@ -283,25 +192,6 @@ export default function Competitors() {
       url,
       projectId: selectedProjectId || undefined
     });
-  };
-
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    saveProfile.mutate(profileForm);
-  };
-
-  const openProfileDialog = () => {
-    if (companyProfile) {
-      setProfileForm({
-        companyName: companyProfile.companyName || "",
-        websiteUrl: companyProfile.websiteUrl || "",
-        linkedInUrl: companyProfile.linkedInUrl || "",
-        instagramUrl: companyProfile.instagramUrl || "",
-        twitterUrl: companyProfile.twitterUrl || "",
-        description: companyProfile.description || "",
-      });
-    }
-    setIsProfileDialogOpen(true);
   };
 
   const getSuggestions = async () => {
@@ -558,314 +448,53 @@ export default function Competitors() {
         </DialogContent>
       </Dialog>
 
-      <div className="space-y-8">
-        <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-secondary/5 animate-in fade-in slide-in-from-bottom-6 duration-600">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Your Company</CardTitle>
-                  <CardDescription>Baseline for competitive analysis</CardDescription>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={openProfileDialog}>
-                      <Edit2 className="w-4 h-4 mr-2" />
-                      {companyProfile ? "Edit" : "Set Up"}
-                    </Button>
-                  </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{companyProfile ? "Edit" : "Set Up"} Your Company Profile</DialogTitle>
-                    <DialogDescription>
-                      Add your company details to use as a baseline for competitive analysis.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleSaveProfile}>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="companyName">Company Name</Label>
-                        <Input
-                          id="companyName"
-                          placeholder="Your Company Inc."
-                          value={profileForm.companyName}
-                          onChange={(e) => setProfileForm({ ...profileForm, companyName: e.target.value })}
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="websiteUrl">Website URL</Label>
-                        <Input
-                          id="websiteUrl"
-                          placeholder="https://yourcompany.com"
-                          value={profileForm.websiteUrl}
-                          onChange={(e) => setProfileForm({ ...profileForm, websiteUrl: e.target.value })}
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="linkedInUrl" className="flex items-center gap-2">
-                          <Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn URL
-                        </Label>
-                        <Input
-                          id="linkedInUrl"
-                          placeholder="https://linkedin.com/company/..."
-                          value={profileForm.linkedInUrl}
-                          onChange={(e) => setProfileForm({ ...profileForm, linkedInUrl: e.target.value })}
-                          data-testid="input-company-linkedin"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="instagramUrl" className="flex items-center gap-2">
-                          <Instagram className="h-4 w-4 text-[#E4405F]" /> Instagram URL
-                        </Label>
-                        <Input
-                          id="instagramUrl"
-                          placeholder="https://instagram.com/..."
-                          value={profileForm.instagramUrl}
-                          onChange={(e) => setProfileForm({ ...profileForm, instagramUrl: e.target.value })}
-                          data-testid="input-company-instagram"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="twitterUrl" className="flex items-center gap-2">
-                          <Twitter className="h-4 w-4 text-[#1DA1F2]" /> Twitter/X URL
-                        </Label>
-                        <Input
-                          id="twitterUrl"
-                          placeholder="https://x.com/..."
-                          value={profileForm.twitterUrl}
-                          onChange={(e) => setProfileForm({ ...profileForm, twitterUrl: e.target.value })}
-                          data-testid="input-company-twitter"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="description">Description (optional)</Label>
-                        <Textarea
-                          id="description"
-                          placeholder="Brief description of your company..."
-                          value={profileForm.description}
-                          onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button type="submit" disabled={saveProfile.isPending}>
-                        {saveProfile.isPending ? "Saving..." : "Save Profile"}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-                {companyProfile && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Company Profile?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will remove your company profile and any associated analysis data. This action cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => deleteProfile.mutate()}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {companyProfile ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+      <div className="space-y-6">
+        {!companyProfile && (
+          <Card className="border-dashed border-2 border-amber-500/30 bg-amber-500/5">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-amber-600" />
+                  </div>
                   <div>
-                    <h3 className="font-semibold text-lg">{companyProfile.companyName}</h3>
-                    <a
-                      href={companyProfile.websiteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
-                    >
-                      {companyProfile.websiteUrl} <ExternalLink size={12} />
-                    </a>
-                    <div className="flex items-center gap-3 mt-2">
-                      {companyProfile.linkedInUrl ? (
-                        <a 
-                          href={companyProfile.linkedInUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="flex items-center gap-1 text-sm text-[#0A66C2] hover:underline"
-                          data-testid="link-company-linkedin"
-                        >
-                          <Linkedin className="h-4 w-4" /> LinkedIn
-                        </a>
-                      ) : (
-                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
-                          <Linkedin className="h-4 w-4" /> No LinkedIn
-                        </span>
-                      )}
-                      {companyProfile.instagramUrl ? (
-                        <a 
-                          href={companyProfile.instagramUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="flex items-center gap-1 text-sm text-[#E4405F] hover:underline"
-                          data-testid="link-company-instagram"
-                        >
-                          <Instagram className="h-4 w-4" /> Instagram
-                        </a>
-                      ) : (
-                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
-                          <Instagram className="h-4 w-4" /> No Instagram
-                        </span>
-                      )}
-                      {companyProfile.twitterUrl ? (
-                        <a 
-                          href={companyProfile.twitterUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="flex items-center gap-1 text-sm text-[#1DA1F2] hover:underline"
-                          data-testid="link-company-twitter"
-                        >
-                          <Twitter className="h-4 w-4" /> Twitter/X
-                        </a>
-                      ) : (
-                        <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
-                          <Twitter className="h-4 w-4" /> No Twitter
-                        </span>
-                      )}
-                    </div>
-                    {companyProfile.description && (
-                      <p className="text-sm text-muted-foreground mt-2">{companyProfile.description}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm font-medium">Last Analysis</p>
-                      <p className="text-xs text-muted-foreground">
-                        {companyProfile.lastAnalysis
-                          ? new Date(companyProfile.lastAnalysis).toLocaleDateString()
-                          : "Never"}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => analyzeProfile.mutate()}
-                      disabled={analyzeProfile.isPending}
-                    >
-                      {analyzeProfile.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Analyze
-                        </>
-                      )}
-                    </Button>
+                    <p className="font-medium">Set up your Company Baseline first</p>
+                    <p className="text-sm text-muted-foreground">Add your company profile before tracking competitors</p>
                   </div>
                 </div>
-                {companyProfile.analysisData && typeof companyProfile.analysisData === 'object' && (
-                  <div className="p-4 bg-muted/50 rounded-lg space-y-4">
-                    <p className="text-sm font-medium text-primary">Analysis Summary</p>
-                    <p className="text-sm text-muted-foreground">
-                      {companyProfile.analysisData.summary || "Analysis data available. View full analysis for details."}
-                    </p>
-                    
-                    {(companyProfile.analysisData.targetAudience || companyProfile.analysisData.keyMessages || companyProfile.analysisData.keywords) && (
-                      <div className="pt-4 border-t border-border/50 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {companyProfile.analysisData.summary && (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 text-sm font-medium">
-                                <Brain className="w-4 h-4 text-primary" />
-                                Summary
-                              </div>
-                              <p className="text-sm text-muted-foreground">{companyProfile.analysisData.summary}</p>
-                            </div>
-                          )}
-                          
-                          {companyProfile.analysisData.targetAudience && (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 text-sm font-medium">
-                                <Target className="w-4 h-4 text-primary" />
-                                Target Audience
-                              </div>
-                              <p className="text-sm text-muted-foreground">{companyProfile.analysisData.targetAudience}</p>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {companyProfile.analysisData.keyMessages && companyProfile.analysisData.keyMessages.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              <MessageSquare className="w-4 h-4 text-primary" />
-                              Key Messages
-                            </div>
-                            <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                              {companyProfile.analysisData.keyMessages.map((msg: string, i: number) => (
-                                <li key={i}>{msg}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        
-                        {((companyProfile.analysisData.keywords && companyProfile.analysisData.keywords.length > 0) || companyProfile.analysisData.tone) && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              <Tags className="w-4 h-4 text-primary" />
-                              Keywords & Tone
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {companyProfile.analysisData.keywords?.map((keyword: string, i: number) => (
-                                <Badge key={i} variant="outline">{keyword}</Badge>
-                              ))}
-                              {companyProfile.analysisData.tone && (
-                                <Badge variant="secondary" className="bg-primary/10 text-primary">
-                                  {companyProfile.analysisData.tone}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                <Link href="/app/company-profile">
+                  <Button variant="outline" data-testid="link-setup-baseline">
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Set Up Baseline
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {companyProfile && (
+          <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+            <CardContent className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+                    <Building2 className="w-4 h-4 text-primary" />
                   </div>
-                )}
+                  <div>
+                    <p className="font-medium">{companyProfile.companyName}</p>
+                    <p className="text-sm text-muted-foreground">Your baseline for competitive analysis</p>
+                  </div>
+                </div>
+                <Link href="/app/company-profile">
+                  <Button variant="ghost" size="sm" data-testid="link-view-baseline">
+                    View Baseline
+                  </Button>
+                </Link>
               </div>
-            ) : (
-              <div className="text-center py-6">
-                <p className="text-muted-foreground mb-4">
-                  Set up your company profile to establish a baseline for competitive analysis.
-                </p>
-                <Button variant="outline" onClick={openProfileDialog}>
-                  <Plus className="w-4 h-4 mr-2" /> Set Up Profile
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Tracked Competitors</h2>

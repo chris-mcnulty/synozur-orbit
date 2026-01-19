@@ -33,6 +33,7 @@ import BattleCardsPage from "@/pages/app/battlecards";
 import UsagePage from "@/pages/app/usage";
 import AppAbout from "@/pages/app/about";
 import DataSourcesPage from "@/pages/app/data-sources";
+import CompanyBaseline from "@/pages/app/company-baseline";
 
 function Router() {
   return (
@@ -52,7 +53,7 @@ function Router() {
       <Route path="/app/overview" component={Dashboard} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />
-      <Route path="/app/company-profile" component={Competitors} />
+      <Route path="/app/company-profile" component={CompanyBaseline} />
       <Route path="/app/competitors/:id" component={CompetitorDetail} />
       <Route path="/app/analysis" component={Analysis} />
       <Route path="/app/recommendations" component={Recommendations} />
