@@ -1162,6 +1162,7 @@ export class DatabaseStorage implements IStorage {
     dailyViews: Array<{ date: string; views: number; uniqueVisitors: number; signupViews: number }>;
     referrers: Array<{ referrer: string; count: number }>;
     utmCampaigns: Array<{ campaign: string; source: string; medium: string; count: number }>;
+    browsers: Array<{ browser: string; count: number }>;
   }> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -1173,6 +1174,27 @@ export class DatabaseStorage implements IStorage {
     const uniqueSessionIds = new Set(allViews.map(v => v.sessionId));
     const uniqueVisitors = uniqueSessionIds.size;
     const signupPageViews = allViews.filter(v => v.path === "/auth/signup").length;
+
+    // Parse browser from user agent
+    const parseBrowser = (ua: string | null): string => {
+      if (!ua) return "Unknown";
+      if (ua.includes("Edg/")) return "Edge";
+      if (ua.includes("Chrome/") && !ua.includes("Edg/")) return "Chrome";
+      if (ua.includes("Firefox/")) return "Firefox";
+      if (ua.includes("Safari/") && !ua.includes("Chrome/")) return "Safari";
+      if (ua.includes("MSIE") || ua.includes("Trident/")) return "Internet Explorer";
+      if (ua.includes("Opera") || ua.includes("OPR/")) return "Opera";
+      return "Other";
+    };
+
+    const browserMap = new Map<string, number>();
+    allViews.forEach(view => {
+      const browser = parseBrowser(view.userAgent);
+      browserMap.set(browser, (browserMap.get(browser) || 0) + 1);
+    });
+    const browsers = Array.from(browserMap.entries())
+      .map(([browser, count]) => ({ browser, count }))
+      .sort((a, b) => b.count - a.count);
 
     const dailyMap = new Map<string, { views: number; sessions: Set<string>; signupViews: number }>();
     
@@ -1245,6 +1267,7 @@ export class DatabaseStorage implements IStorage {
       dailyViews,
       referrers,
       utmCampaigns,
+      browsers,
     };
   }
 

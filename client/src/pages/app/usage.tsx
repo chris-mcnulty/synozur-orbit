@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from "recharts";
-import { TrendingUp, Users, MousePointerClick, ArrowUpRight, Calendar, RefreshCw, Loader2 } from "lucide-react";
+import { TrendingUp, Users, MousePointerClick, ArrowUpRight, Calendar, RefreshCw, Loader2, Globe, Monitor } from "lucide-react";
 import { format, subDays, startOfDay } from "date-fns";
 
 interface UsageStats {
@@ -28,6 +28,10 @@ interface UsageStats {
     campaign: string;
     source: string;
     medium: string;
+    count: number;
+  }>;
+  browsers: Array<{
+    browser: string;
     count: number;
   }>;
 }
@@ -220,7 +224,7 @@ export default function UsagePage() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card data-testid="card-referrers">
               <CardHeader>
                 <CardTitle>Top Referrers</CardTitle>
@@ -250,6 +254,43 @@ export default function UsagePage() {
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p>No referrer data yet</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-browsers">
+              <CardHeader>
+                <CardTitle>Browsers</CardTitle>
+                <CardDescription>Browser distribution of visitors</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {stats?.browsers && stats.browsers.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Browser</TableHead>
+                        <TableHead className="text-right">Visits</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stats.browsers.map((b, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <Monitor className="w-4 h-4 text-muted-foreground" />
+                              {b.browser}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">{b.count}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Monitor className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>No browser data yet</p>
                   </div>
                 )}
               </CardContent>
