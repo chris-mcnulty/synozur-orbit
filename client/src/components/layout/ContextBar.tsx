@@ -241,8 +241,8 @@ export default function ContextBar() {
 
   return (
     <>
-      {/* Desktop Context Bar */}
-      <div className="h-12 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
+      {/* Desktop Context Bar - aligned with sidebar header */}
+      <div className="h-14 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
         {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
