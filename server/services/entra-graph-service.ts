@@ -107,6 +107,14 @@ export async function searchEntraUsers(
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error("Graph API error:", response.status, errorData);
+      
+      if (response.status === 403) {
+        return { 
+          users: [], 
+          error: "Permission denied. The Azure app registration requires 'User.Read.All' application permission with admin consent." 
+        };
+      }
+      
       return { 
         users: [], 
         error: `Microsoft Graph API error: ${response.status}` 
