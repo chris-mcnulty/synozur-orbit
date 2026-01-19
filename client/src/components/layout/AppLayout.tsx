@@ -185,8 +185,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const needsProfileCompletion = !!user && !profileCompleted && 
     (!user.jobTitle || !user.industry || !user.companySize || !user.country);
   
-  // Only show profile completion after onboarding is dismissed or skipped
-  const showProfileCompletion = needsProfileCompletion && onboardingDismissed;
+  // Show profile completion if:
+  // 1. User already has company profile (skip onboarding) OR onboarding was dismissed
+  // 2. AND user needs profile completion
+  const companyAlreadySetUp = !profileLoading && !!companyProfile;
+  const showProfileCompletion = needsProfileCompletion && (companyAlreadySetUp || onboardingDismissed);
   
   useEffect(() => {
     if (!loading && !user) {
