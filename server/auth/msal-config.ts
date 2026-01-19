@@ -60,7 +60,12 @@ export const isEntraConfigured = () => {
 // Check if Graph API (client credentials) is properly configured
 // Requires a specific tenant ID, not "common"
 export const isGraphApiConfigured = () => {
-  return Boolean(ENTRA_CLIENT_ID && ENTRA_CLIENT_SECRET && ENTRA_TENANT_ID);
+  // Read fresh from env to handle late initialization
+  return Boolean(
+    process.env.ENTRA_CLIENT_ID && 
+    process.env.ENTRA_CLIENT_SECRET && 
+    process.env.ENTRA_TENANT_ID
+  );
 };
 
 let msalInstance: msal.ConfidentialClientApplication | null = null;
@@ -79,20 +84,38 @@ export const getMsalInstance = () => {
 // Separate instance for client credentials (Graph API calls)
 // Must use specific tenant, not "common"
 export const getMsalClientCredentialsInstance = () => {
-  if (!isGraphApiConfigured()) {
-    console.error("[MSAL] Graph API not configured - ENTRA_TENANT_ID is required for client credentials flow");
+  // Read tenant ID fresh each time in case it wasn't available at module load
+  const tenantId = process.env.ENTRA_TENANT_ID;
+  const clientId = process.env.ENTRA_CLIENT_ID;
+  const clientSecret = process.env.ENTRA_CLIENT_SECRET;
+  
+  if (!clientId || !clientSecret || !tenantId) {
+    console.error("[MSAL] Graph API not configured - missing credentials. TenantID exists:", !!tenantId);
     return null;
   }
-  if (!msalClientCredentialsInstance) {
-    const clientCredentialsConfig: msal.Configuration = {
-      auth: {
-        clientId: ENTRA_CLIENT_ID,
-        authority: `https://login.microsoftonline.com/${ENTRA_TENANT_ID}`,
-        clientSecret: ENTRA_CLIENT_SECRET,
+  
+  // Always create fresh instance to ensure latest env vars are used
+  const authority = `https://login.microsoftonline.com/${tenantId}`;
+  console.log("[MSAL] Creating client credentials instance with authority:", authority);
+  
+  const clientCredentialsConfig: msal.Configuration = {
+    auth: {
+      clientId,
+      authority,
+      clientSecret,
+    },
+    system: {
+      loggerOptions: {
+        loggerCallback(loglevel, message) {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[MSAL-CC]", message);
+          }
+        },
+        piiLoggingEnabled: false,
+        logLevel: msal.LogLevel.Info,
       },
-      system: msalConfig.system,
-    };
-    msalClientCredentialsInstance = new msal.ConfidentialClientApplication(clientCredentialsConfig);
-  }
-  return msalClientCredentialsInstance;
+    },
+  };
+  
+  return new msal.ConfidentialClientApplication(clientCredentialsConfig);
 };
