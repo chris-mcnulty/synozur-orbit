@@ -1,4 +1,4 @@
-import { getMsalInstance, isEntraConfigured } from "../auth/msal-config";
+import { getMsalClientCredentialsInstance, isGraphApiConfigured } from "../auth/msal-config";
 
 interface EntraUser {
   id: string;
@@ -15,9 +15,9 @@ interface EntraSearchResult {
 }
 
 async function getGraphAccessToken(): Promise<string | null> {
-  const msalInstance = getMsalInstance();
+  const msalInstance = getMsalClientCredentialsInstance();
   if (!msalInstance) {
-    console.error("MSAL not configured");
+    console.error("MSAL client credentials not configured - requires ENTRA_TENANT_ID");
     return null;
   }
 
@@ -36,8 +36,8 @@ export async function searchEntraUsers(
   searchQuery: string,
   tenantId?: string
 ): Promise<EntraSearchResult> {
-  if (!isEntraConfigured()) {
-    return { users: [], error: "Entra ID is not configured" };
+  if (!isGraphApiConfigured()) {
+    return { users: [], error: "Microsoft Graph API is not configured. ENTRA_TENANT_ID is required to search users." };
   }
 
   const accessToken = await getGraphAccessToken();
@@ -86,7 +86,7 @@ export async function searchEntraUsers(
 }
 
 export async function getEntraUser(userId: string): Promise<EntraUser | null> {
-  if (!isEntraConfigured()) {
+  if (!isGraphApiConfigured()) {
     return null;
   }
 
@@ -125,4 +125,4 @@ export async function getEntraUser(userId: string): Promise<EntraUser | null> {
   }
 }
 
-export { isEntraConfigured };
+export { isGraphApiConfigured };

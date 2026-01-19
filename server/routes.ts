@@ -6811,10 +6811,10 @@ Return only the description text, no quotes or formatting.`;
         return res.status(400).json({ error: "Search query must be at least 2 characters" });
       }
 
-      const { searchEntraUsers, isEntraConfigured } = await import("./services/entra-graph-service");
+      const { searchEntraUsers, isGraphApiConfigured } = await import("./services/entra-graph-service");
       
-      if (!isEntraConfigured()) {
-        return res.status(503).json({ error: "Entra ID is not configured" });
+      if (!isGraphApiConfigured()) {
+        return res.status(503).json({ error: "Microsoft Graph API is not configured. ENTRA_TENANT_ID secret is required." });
       }
 
       const result = await searchEntraUsers(query);
@@ -6846,8 +6846,8 @@ Return only the description text, no quotes or formatting.`;
         return res.status(403).json({ error: "Access denied - Admin only" });
       }
 
-      const { isEntraConfigured } = await import("./services/entra-graph-service");
-      res.json({ configured: isEntraConfigured() });
+      const { isGraphApiConfigured } = await import("./services/entra-graph-service");
+      res.json({ configured: isGraphApiConfigured() });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
