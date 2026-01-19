@@ -185,6 +185,7 @@ export interface IStorage {
   // Email Verification Token methods
   createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
   getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
+  getMostRecentVerificationToken(email: string): Promise<EmailVerificationToken | undefined>;
   markEmailVerificationTokenUsed(token: string): Promise<void>;
   
   // Password Reset Token methods
@@ -753,6 +754,15 @@ export class DatabaseStorage implements IStorage {
 
   async getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined> {
     const [result] = await db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.token, token));
+    return result || undefined;
+  }
+
+  async getMostRecentVerificationToken(email: string): Promise<EmailVerificationToken | undefined> {
+    const [result] = await db.select()
+      .from(emailVerificationTokens)
+      .where(eq(emailVerificationTokens.email, email))
+      .orderBy(desc(emailVerificationTokens.expiresAt))
+      .limit(1);
     return result || undefined;
   }
 

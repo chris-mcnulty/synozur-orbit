@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2 } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -66,13 +66,65 @@ interface MarketsData {
   marketLimit: number;
 }
 
+type MarketCreationStep = "choose" | "url" | "manual";
+
 export default function ContextBar() {
   const { user } = useUser();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [createMarketOpen, setCreateMarketOpen] = useState(false);
+  const [marketCreationStep, setMarketCreationStep] = useState<MarketCreationStep>("choose");
+  const [marketUrl, setMarketUrl] = useState("");
+  const [isAnalyzingUrl, setIsAnalyzingUrl] = useState(false);
   const [newMarketName, setNewMarketName] = useState("");
   const [newMarketDescription, setNewMarketDescription] = useState("");
+
+  const resetMarketDialog = () => {
+    setMarketCreationStep("choose");
+    setMarketUrl("");
+    setNewMarketName("");
+    setNewMarketDescription("");
+    setIsAnalyzingUrl(false);
+  };
+
+  const handleCloseMarketDialog = (open: boolean) => {
+    setCreateMarketOpen(open);
+    if (!open) {
+      resetMarketDialog();
+    }
+  };
+
+  const analyzeMarketUrl = async () => {
+    if (!marketUrl.trim()) return;
+    
+    setIsAnalyzingUrl(true);
+    try {
+      const response = await fetch("/api/markets/analyze-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: marketUrl.trim() }),
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to analyze URL");
+      }
+      
+      const data = await response.json();
+      setNewMarketName(data.companyName || "");
+      setNewMarketDescription(data.description || "");
+      setMarketCreationStep("manual");
+    } catch (error: any) {
+      toast({
+        title: "Analysis failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzingUrl(false);
+    }
+  };
 
   const { data: context, isLoading: contextLoading } = useQuery<ContextData>({
     queryKey: ["/api/context"],
@@ -153,9 +205,7 @@ export default function ContextBar() {
     onSuccess: (newMarket) => {
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/context"] });
-      setCreateMarketOpen(false);
-      setNewMarketName("");
-      setNewMarketDescription("");
+      handleCloseMarketDialog(false);
       toast({
         title: "Market created",
         description: `"${newMarket.name}" has been created and is now active.`,
@@ -441,60 +491,184 @@ export default function ContextBar() {
         )}
       </div>
 
-      <Dialog open={createMarketOpen} onOpenChange={setCreateMarketOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Market</DialogTitle>
-            <DialogDescription>
-              Markets allow you to manage separate sets of competitors, analysis, and projects for different client contexts or business units.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="market-name">Market Name</Label>
-              <Input
-                id="market-name"
-                placeholder="e.g., Healthcare Division, EMEA Region"
-                value={newMarketName}
-                onChange={(e) => setNewMarketName(e.target.value)}
-                data-testid="input-market-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="market-description">Description (optional)</Label>
-              <Textarea
-                id="market-description"
-                placeholder="Brief description of this market context..."
-                value={newMarketDescription}
-                onChange={(e) => setNewMarketDescription(e.target.value)}
-                rows={3}
-                data-testid="input-market-description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setCreateMarketOpen(false)}
-              disabled={createMarketMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleCreateMarket}
-              disabled={!newMarketName.trim() || createMarketMutation.isPending}
-              data-testid="btn-confirm-create-market"
-            >
-              {createMarketMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create Market"
-              )}
-            </Button>
-          </DialogFooter>
+      <Dialog open={createMarketOpen} onOpenChange={handleCloseMarketDialog}>
+        <DialogContent className="sm:max-w-md">
+          {marketCreationStep === "choose" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Create New Market</DialogTitle>
+                <DialogDescription>
+                  How would you like to set up this market?
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 py-4">
+                <Button
+                  variant="outline"
+                  className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                  onClick={() => setMarketCreationStep("url")}
+                  data-testid="btn-market-from-url"
+                >
+                  <div className="flex items-center gap-2 font-medium">
+                    <Link2 className="w-4 h-4" />
+                    Start from a website URL
+                  </div>
+                  <span className="text-xs text-muted-foreground font-normal">
+                    We'll analyze the website and auto-fill market details
+                  </span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                  onClick={() => setMarketCreationStep("manual")}
+                  data-testid="btn-market-manual"
+                >
+                  <div className="flex items-center gap-2 font-medium">
+                    <FileText className="w-4 h-4" />
+                    Enter details manually
+                  </div>
+                  <span className="text-xs text-muted-foreground font-normal">
+                    Provide a name and description yourself
+                  </span>
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => handleCloseMarketDialog(false)}>
+                  Cancel
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {marketCreationStep === "url" && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => setMarketCreationStep("choose")}
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                  Analyze Website
+                </DialogTitle>
+                <DialogDescription>
+                  Enter a website URL and we'll extract company information to create your market.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="market-url">Website URL</Label>
+                  <Input
+                    id="market-url"
+                    placeholder="https://example.com"
+                    value={marketUrl}
+                    onChange={(e) => setMarketUrl(e.target.value)}
+                    disabled={isAnalyzingUrl}
+                    data-testid="input-market-url"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMarketCreationStep("choose")} disabled={isAnalyzingUrl}>
+                  Back
+                </Button>
+                <Button 
+                  onClick={analyzeMarketUrl}
+                  disabled={!marketUrl.trim() || isAnalyzingUrl}
+                  data-testid="btn-analyze-url"
+                >
+                  {isAnalyzingUrl ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Analyze & Continue
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {marketCreationStep === "manual" && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => {
+                      setNewMarketName("");
+                      setNewMarketDescription("");
+                      setMarketCreationStep("choose");
+                    }}
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                  Market Details
+                </DialogTitle>
+                <DialogDescription>
+                  Provide the details for your new market.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="market-name">Market Name</Label>
+                  <Input
+                    id="market-name"
+                    placeholder="e.g., Healthcare Division, EMEA Region"
+                    value={newMarketName}
+                    onChange={(e) => setNewMarketName(e.target.value)}
+                    data-testid="input-market-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="market-description">Description (optional)</Label>
+                  <Textarea
+                    id="market-description"
+                    placeholder="Brief description of this market context..."
+                    value={newMarketDescription}
+                    onChange={(e) => setNewMarketDescription(e.target.value)}
+                    rows={3}
+                    data-testid="input-market-description"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setNewMarketName("");
+                    setNewMarketDescription("");
+                    setMarketCreationStep("choose");
+                  }}
+                  disabled={createMarketMutation.isPending}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleCreateMarket}
+                  disabled={!newMarketName.trim() || createMarketMutation.isPending}
+                  data-testid="btn-confirm-create-market"
+                >
+                  {createMarketMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Market"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>

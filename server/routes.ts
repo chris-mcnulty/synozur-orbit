@@ -3316,6 +3316,103 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // Analyze a URL for market creation (get company name and description)
+  app.post("/api/markets/analyze-url", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+
+      // Validate URL format
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          return res.status(400).json({ error: "Only HTTP/HTTPS URLs are allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid URL format" });
+      }
+
+      // Crawl the website
+      const crawlResult = await crawlCompetitorWebsite(url);
+      
+      if (!crawlResult.success) {
+        return res.status(400).json({ error: "Could not analyze website. Please check the URL and try again." });
+      }
+
+      // Extract company name from URL or analysis
+      let companyName = parsedUrl.hostname.replace(/^www\./, "").split(".")[0];
+      companyName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
+
+      // Check if AI is configured
+      if (!process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY) {
+        // Return basic info without AI analysis
+        return res.json({ 
+          companyName, 
+          description: `Market context for ${companyName}`
+        });
+      }
+
+      // Use AI to get a better company name and description
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const analysisPrompt = `Analyze this website content and provide:
+1. The company/organization name
+2. A brief 1-2 sentence description of what they do
+
+Website URL: ${url}
+Website Content:
+${crawlResult.content.substring(0, 4000)}
+
+Respond in JSON format:
+{
+  "companyName": "Company Name",
+  "description": "Brief description of what the company does"
+}`;
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 500,
+        messages: [{ role: "user", content: analysisPrompt }],
+      });
+
+      let result = { companyName, description: "" };
+      try {
+        const responseText = message.content[0].type === "text" ? message.content[0].text : "";
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          result.companyName = parsed.companyName || companyName;
+          result.description = parsed.description || "";
+        }
+      } catch (e) {
+        console.error("Failed to parse AI response for market URL analysis:", e);
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Update a market
   app.patch("/api/markets/:id", async (req, res) => {
     try {

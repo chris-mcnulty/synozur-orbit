@@ -344,6 +344,9 @@ export function registerEntraRoutes(app: Express) {
         return res.status(400).json({ error: "No pending verification found for this email" });
       }
       
+      // Get the most recent verification token to preserve the azureTenantId
+      const previousToken = await storage.getMostRecentVerificationToken(email);
+      
       const token = generateVerificationToken();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -353,6 +356,7 @@ export function registerEntraRoutes(app: Express) {
         name: existingUser.name,
         company: existingUser.company,
         entraId: existingUser.entraId,
+        azureTenantId: previousToken?.azureTenantId,
         expiresAt,
       });
 
