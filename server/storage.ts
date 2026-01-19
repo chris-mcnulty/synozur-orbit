@@ -51,6 +51,9 @@ import {
   type InsertAssessment,
   type EmailVerificationToken,
   type InsertEmailVerificationToken,
+  passwordResetTokens,
+  type PasswordResetToken,
+  type InsertPasswordResetToken,
   type TenantInvite,
   type InsertTenantInvite,
   type Product,
@@ -183,6 +186,11 @@ export interface IStorage {
   createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
   getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
   markEmailVerificationTokenUsed(token: string): Promise<void>;
+  
+  // Password Reset Token methods
+  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenUsed(token: string): Promise<void>;
   
   // Tenant Invite methods
   createTenantInvite(invite: InsertTenantInvite): Promise<TenantInvite>;
@@ -752,6 +760,25 @@ export class DatabaseStorage implements IStorage {
     await db.update(emailVerificationTokens)
       .set({ used: true })
       .where(eq(emailVerificationTokens.token, token));
+  }
+
+  async createPasswordResetToken(insertToken: InsertPasswordResetToken): Promise<PasswordResetToken> {
+    const [token] = await db
+      .insert(passwordResetTokens)
+      .values(insertToken)
+      .returning();
+    return token;
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [result] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
+    return result || undefined;
+  }
+
+  async markPasswordResetTokenUsed(token: string): Promise<void> {
+    await db.update(passwordResetTokens)
+      .set({ used: true })
+      .where(eq(passwordResetTokens.token, token));
   }
 
   // Tenant Invite methods

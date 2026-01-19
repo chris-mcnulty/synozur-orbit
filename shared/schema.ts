@@ -36,6 +36,16 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  token: text("token").notNull().unique(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  email: text("email").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const tenantInvites = pgTable("tenant_invites", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   token: text("token").notNull().unique(),
@@ -377,6 +387,12 @@ export const insertEmailVerificationTokenSchema = createInsertSchema(emailVerifi
   used: true,
 });
 
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+  used: true,
+});
+
 export const insertTenantInviteSchema = createInsertSchema(tenantInvites).omit({
   id: true,
   createdAt: true,
@@ -444,6 +460,8 @@ export type InsertTenant = z.infer<typeof insertTenantSchema>;
 export type Tenant = typeof tenants.$inferSelect;
 export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificationTokenSchema>;
 export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertTenantInvite = z.infer<typeof insertTenantInviteSchema>;
 export type TenantInvite = typeof tenantInvites.$inferSelect;
 export type InsertDomainBlocklist = z.infer<typeof insertDomainBlocklistSchema>;

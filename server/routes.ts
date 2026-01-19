@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { storage, type ContextFilter } from "./storage";
@@ -314,6 +314,94 @@ export async function registerRoutes(
       }
       res.json({ success: true });
     });
+  });
+
+  // Forgot password - request reset link
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      
+      // Always return success to prevent email enumeration attacks
+      if (!user) {
+        return res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+      }
+
+      // SSO users can't reset password through this flow
+      if (user.authProvider === "entra") {
+        return res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+      }
+
+      // Generate reset token
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await storage.createPasswordResetToken({
+        token,
+        userId: user.id,
+        email: user.email,
+        expiresAt,
+      });
+
+      // Send email
+      const protocol = req.headers["x-forwarded-proto"] || "http";
+      const host = req.headers.host;
+      const baseUrl = `${protocol}://${host}`;
+
+      const { sendPasswordResetEmail } = await import("./services/email-service");
+      await sendPasswordResetEmail(user.email, user.name, token, baseUrl);
+
+      res.json({ success: true, message: "If an account exists, a reset link has been sent" });
+    } catch (error: any) {
+      console.error("[Forgot Password] Error:", error);
+      res.status(500).json({ error: "Failed to process request" });
+    }
+  });
+
+  // Reset password - verify token and set new password
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: "Token and new password are required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+
+      const resetToken = await storage.getPasswordResetToken(token);
+      
+      if (!resetToken) {
+        return res.status(400).json({ error: "Invalid or expired reset link" });
+      }
+
+      if (resetToken.used) {
+        return res.status(400).json({ error: "This reset link has already been used" });
+      }
+
+      if (new Date() > resetToken.expiresAt) {
+        return res.status(400).json({ error: "Reset link has expired" });
+      }
+
+      // Hash and update password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(resetToken.userId, { password: hashedPassword });
+
+      // Mark token as used
+      await storage.markPasswordResetTokenUsed(token);
+
+      res.json({ success: true, message: "Password has been reset successfully" });
+    } catch (error: any) {
+      console.error("[Reset Password] Error:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
   });
 
   // Change password for local auth users

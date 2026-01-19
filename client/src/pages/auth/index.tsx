@@ -199,6 +199,16 @@ export default function AuthPage() {
                 </Button>
               </form>
 
+              <div className="text-center">
+                <a 
+                  href="/auth/forgot-password" 
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                  data-testid="link-forgot-password"
+                >
+                  Forgot password?
+                </a>
+              </div>
+
               {entraStatus?.configured && (
                 <>
                   <div className="relative my-4">
@@ -212,7 +222,7 @@ export default function AuthPage() {
                   
                   <Button 
                     variant="outline" 
-                    className="w-full" 
+                    className="w-full h-12" 
                     onClick={() => window.location.href = "/api/auth/entra"}
                     data-testid="button-signin-microsoft"
                   >
@@ -222,8 +232,17 @@ export default function AuthPage() {
                       <rect x="1" y="11" width="9" height="9" fill="#7fba00"/>
                       <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
                     </svg>
-                    Sign in with Microsoft
+                    Continue with Microsoft
                   </Button>
+                  
+                  <div className="text-center space-y-1 mt-3">
+                    <p className="text-xs text-muted-foreground">
+                      Uses your existing Microsoft identity. No credit card required.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      No tenant changes or device management needed.
+                    </p>
+                  </div>
                 </>
               )}
             </TabsContent>
@@ -380,7 +399,7 @@ export default function AuthPage() {
                   
                   <Button 
                     variant="outline" 
-                    className="w-full" 
+                    className="w-full h-12" 
                     onClick={() => window.location.href = "/api/auth/entra"}
                     data-testid="button-signup-microsoft"
                   >
@@ -390,8 +409,17 @@ export default function AuthPage() {
                       <rect x="1" y="11" width="9" height="9" fill="#7fba00"/>
                       <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
                     </svg>
-                    Sign up with Microsoft
+                    Continue with Microsoft
                   </Button>
+                  
+                  <div className="text-center space-y-1 mt-3">
+                    <p className="text-xs text-muted-foreground">
+                      Uses your existing Microsoft identity. No credit card required.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      No tenant changes or device management needed.
+                    </p>
+                  </div>
                 </>
               )}
             </TabsContent>

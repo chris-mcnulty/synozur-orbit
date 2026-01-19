@@ -13,6 +13,8 @@ import Changelog from "@/pages/changelog";
 import Roadmap from "@/pages/roadmap";
 import AuthPage from "@/pages/auth";
 import VerifyPending from "@/pages/auth/verify-pending";
+import ForgotPassword from "@/pages/auth/forgot-password";
+import ResetPassword from "@/pages/auth/reset-password";
 import Dashboard from "@/pages/app/dashboard";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
@@ -46,6 +48,8 @@ function Router() {
       <Route path="/auth/signin" component={AuthPage} />
       <Route path="/auth/signup" component={AuthPage} />
       <Route path="/auth/verify-pending" component={VerifyPending} />
+      <Route path="/auth/forgot-password" component={ForgotPassword} />
+      <Route path="/auth/reset-password" component={ResetPassword} />
       <Route path="/auth" component={AuthPage} />
       
       {/* App Routes */}
