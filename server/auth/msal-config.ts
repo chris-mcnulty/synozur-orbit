@@ -12,6 +12,14 @@ if (process.env.NODE_ENV === "development") {
 }
 
 const getRedirectUri = () => {
+  // Production: Use custom domain if configured, otherwise deployment URL
+  if (process.env.PRODUCTION_URL) {
+    return `${process.env.PRODUCTION_URL}/api/auth/entra/callback`;
+  }
+  if (process.env.REPLIT_DEPLOYMENT_URL) {
+    return `https://${process.env.REPLIT_DEPLOYMENT_URL}/api/auth/entra/callback`;
+  }
+  // Development
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}/api/auth/entra/callback`;
   }
