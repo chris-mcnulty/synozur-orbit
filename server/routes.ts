@@ -1588,7 +1588,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
         ctx.userId,
         reportName,
         scope || "baseline",
-        projectId
+        projectId,
+        false,
+        ctx.marketId || undefined
       );
 
       res.setHeader("Content-Type", "application/pdf");
@@ -1618,7 +1620,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
         reportName,
         "baseline",
         undefined,
-        true // includeStrategicPlans
+        true, // includeStrategicPlans
+        ctx.marketId || undefined
       );
 
       res.setHeader("Content-Type", "application/pdf");
