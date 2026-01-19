@@ -37,10 +37,16 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2 } from "lucide-react";
+import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2, Filter } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
+
+interface Tenant {
+  id: string;
+  domain: string;
+  name: string;
+}
 
 interface EntraUser {
   id: string;
@@ -69,6 +75,19 @@ export default function UsersPage() {
   const [entraRole, setEntraRole] = useState("Standard User");
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [tenantFilter, setTenantFilter] = useState<string>("all");
+
+  const isGlobalAdmin = currentUser?.role === "Global Admin";
+
+  const { data: accessibleTenants = [] } = useQuery<Tenant[]>({
+    queryKey: ["/api/admin/tenants"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/tenants", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: isGlobalAdmin,
+  });
 
   const { data: users = [], isLoading, error } = useQuery({
     queryKey: ["/api/users"],
@@ -85,6 +104,11 @@ export default function UsersPage() {
       return response.json();
     },
   });
+
+  const filteredUsers = React.useMemo(() => {
+    if (tenantFilter === "all") return users;
+    return users.filter((user: any) => user.company === tenantFilter);
+  }, [users, tenantFilter]);
 
   const sendInviteMutation = useMutation({
     mutationFn: async () => {
@@ -381,14 +405,38 @@ export default function UsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Team Members</CardTitle>
-          <CardDescription>
-            {users.length} user{users.length !== 1 ? 's' : ''} in your organization.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Team Members</CardTitle>
+              <CardDescription>
+                {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}{tenantFilter !== "all" ? " in selected organization" : " total"}.
+              </CardDescription>
+            </div>
+            {isGlobalAdmin && accessibleTenants.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-muted-foreground" />
+                <Select value={tenantFilter} onValueChange={setTenantFilter}>
+                  <SelectTrigger className="w-[200px]" data-testid="select-tenant-filter">
+                    <SelectValue placeholder="Filter by organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Organizations</SelectItem>
+                    {accessibleTenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.domain}>
+                        {tenant.name || tenant.domain}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No users found.</p>
+          {filteredUsers.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              {tenantFilter !== "all" ? "No users found in this organization." : "No users found."}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -402,7 +450,7 @@ export default function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user: any) => (
+                {filteredUsers.map((user: any) => (
                   <TableRow key={user.id} className={user.id === currentUser?.id ? "bg-primary/5" : ""}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
