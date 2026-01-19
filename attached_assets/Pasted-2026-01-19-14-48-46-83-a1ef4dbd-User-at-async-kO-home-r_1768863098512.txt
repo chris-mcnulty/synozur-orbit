@@ -1,0 +1,230 @@
+2026-01-19 14:48:46.83
+a1ef4dbd
+User
+at async kO (/home/runner/workspace/dist/index.cjs:1764:14286)
+2026-01-19 14:48:46.83
+a1ef4dbd
+User
+at xc (/home/runner/workspace/dist/index.cjs:1764:366)
+2026-01-19 14:48:46.83
+a1ef4dbd
+User
+at nn (/home/runner/workspace/dist/index.cjs:1740:12881)
+2026-01-19 14:48:49.83
+a1ef4dbd
+User
+[Scheduled Job] Monitoring website changes for Cadence Solutions...
+2026-01-19 14:48:51.79
+a1ef4dbd
+User
+at nn (/home/runner/workspace/dist/index.cjs:1740:12881)
+2026-01-19 14:48:51.79
+a1ef4dbd
+User
+at async kO (/home/runner/workspace/dist/index.cjs:1764:14286)
+2026-01-19 14:48:51.79
+a1ef4dbd
+User
+Error monitoring website for Cadence Solutions: TypeError: (0 , dO.default) is not a function
+2026-01-19 14:48:51.79
+a1ef4dbd
+User
+at xc (/home/runner/workspace/dist/index.cjs:1764:366)
+2026-01-19 14:48:54.85
+a1ef4dbd
+User
+[Scheduled Job] Monitoring baseline website changes for The Synozur Alliance...
+2026-01-19 14:48:56.79
+a1ef4dbd
+User
+at vO (/home/runner/workspace/dist/index.cjs:1764:2134)
+2026-01-19 14:48:56.79
+a1ef4dbd
+User
+at async kO (/home/runner/workspace/dist/index.cjs:1764:14706)
+2026-01-19 14:48:56.79
+a1ef4dbd
+User
+at nn (/home/runner/workspace/dist/index.cjs:1740:12881)
+2026-01-19 14:48:56.79
+a1ef4dbd
+User
+Error monitoring website for The Synozur Alliance: TypeError: (0 , dO.default) is not a function
+2026-01-19 14:48:59.79
+a1ef4dbd
+User
+[Scheduled Job] Monitoring baseline website changes for Helux...
+2026-01-19 14:49:01.36
+a1ef4dbd
+User
+at nn (/home/runner/workspace/dist/index.cjs:1740:12881)
+2026-01-19 14:49:01.36
+a1ef4dbd
+User
+at async kO (/home/runner/workspace/dist/index.cjs:1764:14706)
+2026-01-19 14:49:01.36
+a1ef4dbd
+User
+at vO (/home/runner/workspace/dist/index.cjs:1764:2134)
+2026-01-19 14:49:01.36
+a1ef4dbd
+User
+Error monitoring website for Helux: TypeError: (0 , dO.default) is not a function
+2026-01-19 14:49:04.37
+a1ef4dbd
+User
+[Scheduled Job] Monitoring baseline website changes for Allytics...
+2026-01-19 14:49:05.99
+a1ef4dbd
+User
+at async kO (/home/runner/workspace/dist/index.cjs:1764:14706)
+2026-01-19 14:49:05.99
+a1ef4dbd
+User
+at nn (/home/runner/workspace/dist/index.cjs:1740:12881)
+2026-01-19 14:49:05.99
+a1ef4dbd
+User
+at vO (/home/runner/workspace/dist/index.cjs:1764:2134)
+2026-01-19 14:49:05.99
+a1ef4dbd
+User
+Error monitoring website for Allytics: TypeError: (0 , dO.default) is not a function
+2026-01-19 14:49:08.99
+a1ef4dbd
+User
+[Scheduled Job] Website change monitor job completed
+2026-01-19 14:49:10.09
+a1ef4dbd
+User
+[Scheduled Job] Starting trial reminder job...
+2026-01-19 14:49:10.62
+a1ef4dbd
+User
+[Scheduled Job] Trial reminder job completed: 0 processed, 0 errors
+2026-01-19 14:49:39.18
+a1ef4dbd
+User
+10:49:39 PM [express] GET /api/me 401 in 2ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:39.57
+a1ef4dbd
+User
+10:49:39 PM [express] POST /api/analytics/page-view 200 in 413ms :: {"success":true}
+2026-01-19 14:49:41.20
+a1ef4dbd
+User
+10:49:41 PM [express] GET /api/auth/entra/status 200 in 1ms :: {"configured":true}
+2026-01-19 14:49:47.77
+a1ef4dbd
+User
+10:49:47 PM [express] GET /api/auth/entra 302 in 10ms
+2026-01-19 14:49:51.99
+a1ef4dbd
+User
+10:49:51 PM [express] GET /api/auth/entra/callback 302 in 644ms
+2026-01-19 14:49:52.47
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/competitors 401 in 2ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.47
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/recommendations 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.48
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/company-profile 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.48
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/activity 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.48
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/battlecards 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.48
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/users 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.48
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/analysis 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.49
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/reports 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.49
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/projects 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.49
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/me 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.49
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/dashboard/scores 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:49:52.60
+a1ef4dbd
+User
+10:49:52 PM [express] GET /api/auth/entra/status 304 in 0ms :: {"configured":true}
+2026-01-19 14:49:57.64
+a1ef4dbd
+User
+10:49:57 PM [express] GET /api/auth/entra 302 in 2ms
+2026-01-19 14:50:00.62
+a1ef4dbd
+User
+10:50:00 PM [express] GET /api/auth/entra/callback 302 in 347ms
+2026-01-19 14:50:01.10
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/competitors 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.10
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/activity 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.10
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/company-profile 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.10
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/analysis 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/recommendations 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/reports 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/projects 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/battlecards 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/me 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.11
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/users 401 in 0ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.12
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/dashboard/scores 401 in 1ms :: {"error":"Not authenticated"}
+2026-01-19 14:50:01.24
+a1ef4dbd
+User
+10:50:01 PM [express] GET /api/auth/entra/status 304 in 1ms :: {"configured":true}
+Wrap
+Colors
