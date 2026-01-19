@@ -7238,6 +7238,54 @@ Return only the description text, no quotes or formatting.`;
     }
   });
 
+  // Get admin consent URL for a tenant (to grant Graph API permissions)
+  app.get("/api/team/entra/admin-consent-url", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const clientId = process.env.ENTRA_CLIENT_ID;
+      if (!clientId) {
+        return res.status(503).json({ error: "Entra ID not configured" });
+      }
+
+      // Use active tenant context for Global Admins, otherwise use user's email domain
+      let tenant;
+      if (currentUser.role === "Global Admin" && req.session.activeTenantId) {
+        tenant = await storage.getTenant(req.session.activeTenantId);
+      } else {
+        const userDomain = currentUser.email.split("@")[1];
+        tenant = await storage.getTenantByDomain(userDomain);
+      }
+      
+      if (!tenant?.entraTenantId) {
+        return res.status(400).json({ error: "Azure Tenant ID is not configured for this organization" });
+      }
+
+      // Construct the admin consent URL
+      const redirectUri = `${req.protocol}://${req.get("host")}/team`;
+      const adminConsentUrl = `https://login.microsoftonline.com/${tenant.entraTenantId}/adminconsent?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+      res.json({ 
+        url: adminConsentUrl,
+        tenantId: tenant.entraTenantId,
+        tenantDomain: tenant.domain
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Provision user directly from Entra ID
   app.post("/api/team/entra/provision", async (req, res) => {
     try {
