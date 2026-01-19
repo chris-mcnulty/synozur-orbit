@@ -1,5 +1,64 @@
-import pLimit from "p-limit";
-import pRetry from "p-retry";
+// Inline concurrency limiter (CJS-compatible replacement for p-limit)
+function createConcurrencyLimit(maxConcurrent: number) {
+  let running = 0;
+  const queue: Array<() => void> = [];
+  
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const execute = async () => {
+        running++;
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        } finally {
+          running--;
+          if (queue.length > 0) {
+            const next = queue.shift();
+            next?.();
+          }
+        }
+      };
+      
+      if (running < maxConcurrent) {
+        execute();
+      } else {
+        queue.push(execute);
+      }
+    });
+  };
+}
+
+// Inline retry with exponential backoff (CJS-compatible replacement for p-retry)
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { retries: number; minTimeout: number; maxTimeout: number; factor: number }
+): Promise<T> {
+  const { retries, minTimeout, maxTimeout, factor } = options;
+  let lastError: unknown;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      lastError = error;
+      // Check if it's an abort error (non-retryable)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+      // If we've exhausted retries, throw
+      if (attempt === retries) {
+        throw error;
+      }
+      // Calculate delay with exponential backoff
+      const delay = Math.min(minTimeout * Math.pow(factor, attempt), maxTimeout);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
 
 /**
  * Batch Processing Utilities for Anthropic
@@ -78,12 +137,12 @@ export async function batchProcess<T, R>(
     onProgress,
   } = options;
 
-  const limit = pLimit(concurrency);
+  const limit = createConcurrencyLimit(concurrency);
   let completed = 0;
 
   const promises = items.map((item, index) =>
     limit(() =>
-      pRetry(
+      withRetry(
         async () => {
           try {
             const result = await processor(item, index);
@@ -128,19 +187,21 @@ export async function batchProcessWithSSE<T, R>(
     sendEvent({ type: "processing", index, item });
 
     try {
-      const result = await pRetry(() => processor(item, index), {
-        retries,
-        minTimeout,
-        maxTimeout,
-        factor: 2,
-        onFailedAttempt: (error) => {
-          if (!isRateLimitError(error)) {
+      const result = await withRetry(
+        async () => {
+          try {
+            return await processor(item, index);
+          } catch (error: unknown) {
+            if (isRateLimitError(error)) {
+              throw error;
+            }
             const abortError = new Error(error instanceof Error ? error.message : String(error));
             (abortError as any).name = 'AbortError';
             throw abortError;
           }
         },
-      });
+        { retries, minTimeout, maxTimeout, factor: 2 }
+      );
       results.push(result);
       sendEvent({ type: "progress", index, result });
     } catch (error) {

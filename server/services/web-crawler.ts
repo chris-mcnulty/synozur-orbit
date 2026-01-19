@@ -1,5 +1,3 @@
-import pLimit from "p-limit";
-
 interface CrawlResult {
   url: string;
   pageType: "homepage" | "about" | "services" | "products" | "blog" | "other";
@@ -301,8 +299,40 @@ function findKeyPages(html: string, baseUrl: string): KeyPages {
   return pages;
 }
 
+// Simple concurrency limiter that works in CJS bundle
+function createConcurrencyLimit(maxConcurrent: number) {
+  let running = 0;
+  const queue: Array<() => void> = [];
+  
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const execute = async () => {
+        running++;
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        } finally {
+          running--;
+          if (queue.length > 0) {
+            const next = queue.shift();
+            next?.();
+          }
+        }
+      };
+      
+      if (running < maxConcurrent) {
+        execute();
+      } else {
+        queue.push(execute);
+      }
+    });
+  };
+}
+
 export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary> {
-  const limit = pLimit(3);
+  const limit = createConcurrencyLimit(3);
   const crawledAt = new Date().toISOString();
   const pages: CrawlResult[] = [];
   let socialLinks: CrawlSummary["socialLinks"] = {};
