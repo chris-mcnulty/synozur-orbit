@@ -61,7 +61,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
               <li><a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy Policy</a></li>
               <li><a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Terms of Service</a></li>
-              <li><a href="mailto:support@synozur.com" className="hover:text-primary transition-colors">Contact Support</a></li>
+              <li><a href="https://www.synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Contact Support</a></li>
             </ul>
           </div>
         </div>
