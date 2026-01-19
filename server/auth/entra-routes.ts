@@ -292,7 +292,7 @@ export function registerEntraRoutes(app: Express) {
         const trialEndsAt = new Date(trialStartDate);
         trialEndsAt.setDate(trialEndsAt.getDate() + 60);
         
-        await storage.createTenant({
+        const newTenant = await storage.createTenant({
           domain,
           name: company || domain,
           plan: "trial",
@@ -304,6 +304,16 @@ export function registerEntraRoutes(app: Express) {
           analysisLimit: 5,
           entraTenantId: azureTenantId || undefined,
           entraEnabled: !!azureTenantId,
+        });
+        
+        // Create default market for the new tenant
+        await storage.createMarket({
+          tenantId: newTenant.id,
+          name: "Default",
+          description: `Default market for ${company || domain}`,
+          isDefault: true,
+          status: "active",
+          createdBy: user.id,
         });
       }
 

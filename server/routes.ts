@@ -225,7 +225,7 @@ export async function registerRoutes(
         const trialEndsAt = new Date(trialStartDate);
         trialEndsAt.setDate(trialEndsAt.getDate() + 60);
         
-        await storage.createTenant({
+        const newTenant = await storage.createTenant({
           domain,
           name: company,
           plan: "trial",
@@ -235,6 +235,16 @@ export async function registerRoutes(
           userCount: 0,
           competitorLimit: 3,
           analysisLimit: 5,
+        });
+        
+        // Create default market for the new tenant
+        await storage.createMarket({
+          tenantId: newTenant.id,
+          name: "Default",
+          description: `Default market for ${company}`,
+          isDefault: true,
+          status: "active",
+          createdBy: user.id,
         });
       }
 

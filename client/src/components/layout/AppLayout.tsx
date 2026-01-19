@@ -430,7 +430,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           setOnboardingDismissed(true);
           refetchProfile();
         }}
-        canSkip={!!isNonDefaultMarket}
+        canSkip={true}
         onSkip={() => setOnboardingDismissed(true)}
         marketName={activeMarket?.name}
       />

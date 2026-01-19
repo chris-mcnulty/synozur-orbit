@@ -1,6 +1,23 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 
+// Helper: ensure a default market exists for a tenant, creating one if needed
+async function ensureDefaultMarket(tenantId: string, userId: string) {
+  let defaultMarket = await storage.getDefaultMarket(tenantId);
+  if (!defaultMarket) {
+    const tenant = await storage.getTenant(tenantId);
+    defaultMarket = await storage.createMarket({
+      tenantId,
+      name: "Default",
+      description: `Default market for ${tenant?.name || "organization"}`,
+      isDefault: true,
+      status: "active",
+      createdBy: userId,
+    });
+  }
+  return defaultMarket;
+}
+
 export interface RequestContext {
   userId: string;
   tenantId: string;
@@ -59,16 +76,16 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
   }
 
   if (!activeMarketId) {
-    const defaultMarket = await storage.getDefaultMarket(activeTenantId);
-    if (defaultMarket) {
-      activeMarketId = defaultMarket.id;
-      req.session.activeMarketId = activeMarketId;
-    }
+    // Defensive: ensure default market exists (handles legacy tenants or creation failures)
+    const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
+    activeMarketId = defaultMarket.id;
+    req.session.activeMarketId = activeMarketId;
   } else {
     const marketValid = await storage.validateMarketBelongsToTenant(activeMarketId, activeTenantId);
     if (!marketValid) {
-      const defaultMarket = await storage.getDefaultMarket(activeTenantId);
-      activeMarketId = defaultMarket?.id || "";
+      // Fall back to default market (create if needed)
+      const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
+      activeMarketId = defaultMarket.id;
       req.session.activeMarketId = activeMarketId;
     }
   }
