@@ -1,5 +1,5 @@
 import puppeteer from "puppeteer";
-import type { Battlecard, Tenant } from "@shared/schema";
+import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
 
 interface ComparisonItem {
   category: string;
@@ -440,4 +440,312 @@ export function formatBattlecardForClipboard(
   }
 
   return text;
+}
+
+// Product Battlecard export functions
+interface KeyDifferentiator {
+  feature: string;
+  ours: string;
+  theirs: string;
+}
+
+function generateProductBattlecardHtml(
+  battlecard: ProductBattlecard,
+  competitorName: string,
+  baselineName: string,
+  tenant?: Tenant | null
+): string {
+  const bc = battlecard as any;
+  const primaryColor = tenant?.primaryColor || "#810FFB";
+  const secondaryColor = tenant?.secondaryColor || "#E60CB3";
+  
+  const strengths = bc.strengths || [];
+  const weaknesses = bc.weaknesses || [];
+  const ourAdvantages = bc.ourAdvantages || [];
+  const keyDifferentiators = (bc.keyDifferentiators || []) as KeyDifferentiator[];
+  const objections = (bc.objections || []) as ObjectionItem[];
+  const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { margin: 0.75in; size: letter; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: 'Segoe UI', Arial, sans-serif; 
+      font-size: 11pt; 
+      line-height: 1.5;
+      color: #1a1a2e;
+      background: white;
+    }
+    .header {
+      background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor});
+      color: white;
+      padding: 24px 32px;
+      margin: -0.75in -0.75in 24px -0.75in;
+    }
+    .header h1 { font-size: 22pt; font-weight: 600; margin-bottom: 4px; }
+    .header .subtitle { font-size: 12pt; opacity: 0.9; }
+    .section { margin-bottom: 20px; page-break-inside: avoid; }
+    .section-title {
+      font-size: 11pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: ${primaryColor};
+      border-bottom: 2px solid ${primaryColor};
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+    }
+    .two-col { display: flex; gap: 24px; }
+    .col { flex: 1; }
+    .list-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .bullet { color: ${primaryColor}; font-weight: bold; }
+    .bullet-red { color: #dc2626; font-weight: bold; }
+    .bullet-green { color: #16a34a; font-weight: bold; }
+    .comparison-table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+    .comparison-table th { 
+      background: #f3f4f6; 
+      padding: 8px 12px; 
+      text-align: left;
+      font-weight: 600;
+    }
+    .comparison-table td { 
+      padding: 8px 12px; 
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: middle;
+    }
+    .objection-card {
+      background: #f9fafb;
+      border-left: 3px solid ${primaryColor};
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .objection-q { font-weight: 600; margin-bottom: 6px; }
+    .objection-a { color: #4b5563; }
+    .talk-track {
+      background: linear-gradient(135deg, rgba(129,15,251,0.05), rgba(230,12,179,0.05));
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .talk-track-scenario { font-weight: 600; margin-bottom: 6px; }
+    .talk-track-script { color: #4b5563; font-style: italic; }
+    .footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 9pt;
+      color: #6b7280;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${competitorName} Battle Card</h1>
+    <div class="subtitle">vs ${baselineName} • Product Comparison</div>
+  </div>
+
+  <div class="two-col">
+    <div class="col">
+      <div class="section">
+        <div class="section-title">Their Strengths</div>
+        ${strengths.map((s: string) => `<div class="list-item"><span class="bullet-green">●</span><span>${s}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="col">
+      <div class="section">
+        <div class="section-title">Their Weaknesses</div>
+        ${weaknesses.map((w: string) => `<div class="list-item"><span class="bullet-red">●</span><span>${w}</span></div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Our Advantages</div>
+    ${ourAdvantages.map((a: string) => `<div class="list-item"><span class="bullet">★</span><span>${a}</span></div>`).join('')}
+  </div>
+
+  ${keyDifferentiators.length ? `
+  <div class="section">
+    <div class="section-title">Key Differentiators</div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Us (${baselineName})</th>
+          <th>Them (${competitorName})</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${keyDifferentiators.map((d: KeyDifferentiator) => `
+          <tr>
+            <td><strong>${d.feature}</strong></td>
+            <td>${d.ours}</td>
+            <td>${d.theirs}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+
+  ${objections.length ? `
+  <div class="section">
+    <div class="section-title">Objection Handling</div>
+    ${objections.map((o: ObjectionItem) => `
+      <div class="objection-card">
+        <div class="objection-q">"${o.objection}"</div>
+        <div class="objection-a">→ ${o.response}</div>
+      </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  ${talkTracks.length ? `
+  <div class="section">
+    <div class="section-title">Sales Talk Tracks</div>
+    ${talkTracks.map((t: TalkTrack) => `
+      <div class="talk-track">
+        <div class="talk-track-scenario">${t.scenario}</div>
+        <div class="talk-track-script">"${t.script}"</div>
+      </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    Generated by Orbit • ${new Date().toLocaleDateString()} • Confidential
+  </div>
+</body>
+</html>
+`;
+}
+
+export async function generateProductBattlecardPdf(
+  battlecard: ProductBattlecard,
+  competitorName: string,
+  baselineName: string,
+  tenant?: Tenant | null
+): Promise<Buffer> {
+  const html = generateProductBattlecardHtml(battlecard, competitorName, baselineName, tenant);
+  
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+    ],
+  });
+  
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    const pdfBuffer = await page.pdf({
+      format: "Letter",
+      printBackground: true,
+      margin: { top: "0", bottom: "0", left: "0", right: "0" },
+    });
+    return Buffer.from(pdfBuffer);
+  } finally {
+    await browser.close();
+  }
+}
+
+export function generateProductBattlecardText(
+  battlecard: ProductBattlecard,
+  competitorName: string,
+  baselineName: string
+): string {
+  const bc = battlecard as any;
+  const strengths = bc.strengths || [];
+  const weaknesses = bc.weaknesses || [];
+  const ourAdvantages = bc.ourAdvantages || [];
+  const keyDifferentiators = (bc.keyDifferentiators || []) as KeyDifferentiator[];
+  const objections = (bc.objections || []) as ObjectionItem[];
+  const talkTracks = (bc.talkTracks || []) as TalkTrack[];
+
+  let content = `${competitorName.toUpperCase()} BATTLE CARD
+vs ${baselineName}
+${'='.repeat(50)}
+Generated: ${new Date().toLocaleDateString()}
+
+`;
+
+  if (strengths.length) {
+    content += `THEIR STRENGTHS
+===============
+${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}
+
+`;
+  }
+
+  if (weaknesses.length) {
+    content += `THEIR WEAKNESSES
+================
+${weaknesses.map((w: string, i: number) => `${i + 1}. ${w}`).join('\n')}
+
+`;
+  }
+
+  if (ourAdvantages.length) {
+    content += `OUR ADVANTAGES
+==============
+${ourAdvantages.map((a: string, i: number) => `${i + 1}. ${a}`).join('\n')}
+
+`;
+  }
+
+  if (keyDifferentiators.length) {
+    content += `KEY DIFFERENTIATORS
+===================
+`;
+    keyDifferentiators.forEach((d: KeyDifferentiator, i: number) => {
+      content += `${i + 1}. ${d.feature}
+   Us: ${d.ours}
+   Them: ${d.theirs}
+
+`;
+    });
+  }
+
+  if (objections.length) {
+    content += `OBJECTION HANDLING
+==================
+`;
+    objections.forEach((o: ObjectionItem, i: number) => {
+      content += `${i + 1}. Objection: "${o.objection}"
+   Response: ${o.response}
+
+`;
+    });
+  }
+
+  if (talkTracks.length) {
+    content += `TALK TRACKS
+===========
+`;
+    talkTracks.forEach((t: TalkTrack, i: number) => {
+      content += `${i + 1}. ${t.scenario}
+   "${t.script}"
+
+`;
+    });
+  }
+
+  content += `
+---
+Generated by Orbit • Confidential
+`;
+
+  return content;
 }

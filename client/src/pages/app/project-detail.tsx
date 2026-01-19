@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy } from "lucide-react";
 import { MarkdownContent } from "@/components/MarkdownViewer";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -184,6 +184,99 @@ export default function ProjectDetail() {
   const [isExporting, setIsExporting] = useState(false);
   const [isGeneratingFullReport, setIsGeneratingFullReport] = useState(false);
   const [generationResults, setGenerationResults] = useState<{ section: string; status: string; error?: string }[] | null>(null);
+  const [downloadingBattlecard, setDownloadingBattlecard] = useState<"pdf" | "txt" | null>(null);
+
+  const formatProductBattlecardForClipboard = (card: ProductBattlecard, baselineProduct: Product | undefined, competitorProduct: Product | undefined): string => {
+    let text = `🎯 ${competitorProduct?.name || "Competitor"} Battle Card\nvs ${baselineProduct?.name || "Your Product"}\n\n`;
+    
+    if (card.strengths?.length) {
+      text += `✅ THEIR STRENGTHS\n${card.strengths.map(s => `• ${s}`).join('\n')}\n\n`;
+    }
+    if (card.weaknesses?.length) {
+      text += `❌ THEIR WEAKNESSES\n${card.weaknesses.map(w => `• ${w}`).join('\n')}\n\n`;
+    }
+    if (card.ourAdvantages?.length) {
+      text += `⭐ OUR ADVANTAGES\n${card.ourAdvantages.map(a => `• ${a}`).join('\n')}\n\n`;
+    }
+    if (card.keyDifferentiators?.length) {
+      text += `📊 KEY DIFFERENTIATORS\n`;
+      card.keyDifferentiators.forEach(d => {
+        text += `• ${d.feature}: Us (${d.ours}) vs Them (${d.theirs})\n`;
+      });
+      text += '\n';
+    }
+    if (card.objections?.length) {
+      text += `💬 OBJECTION HANDLING\n`;
+      card.objections.forEach(o => {
+        text += `Q: "${o.objection}"\nA: ${o.response}\n\n`;
+      });
+    }
+    if (card.talkTracks?.length) {
+      text += `🎤 TALK TRACKS\n`;
+      card.talkTracks.forEach(t => {
+        text += `Scenario: ${t.scenario}\nScript: "${t.script}"\n\n`;
+      });
+    }
+    return text;
+  };
+
+  const handleCopyBattlecard = async (card: ProductBattlecard) => {
+    const baselineProduct = projectProducts.find(pp => pp.role === "baseline")?.product;
+    const competitorProduct = projectProducts.find(pp => pp.productId === card.competitorProductId)?.product;
+    try {
+      const text = formatProductBattlecardForClipboard(card, baselineProduct, competitorProduct);
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Copied!", description: "Battle card copied to clipboard" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to copy to clipboard", variant: "destructive" });
+    }
+  };
+
+  const handleDownloadBattlecardPdf = async (card: ProductBattlecard) => {
+    setDownloadingBattlecard("pdf");
+    try {
+      const response = await fetch(`/api/product-battlecards/${card.id}/pdf`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to download PDF");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const competitorProduct = projectProducts.find(pp => pp.productId === card.competitorProductId)?.product;
+      a.href = url;
+      a.download = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: "PDF saved successfully" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    } finally {
+      setDownloadingBattlecard(null);
+    }
+  };
+
+  const handleDownloadBattlecardText = async (card: ProductBattlecard) => {
+    setDownloadingBattlecard("txt");
+    try {
+      const response = await fetch(`/api/product-battlecards/${card.id}/txt`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to download text file");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const competitorProduct = projectProducts.find(pp => pp.productId === card.competitorProductId)?.product;
+      a.href = url;
+      a.download = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: "Text file saved successfully" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to download text file", variant: "destructive" });
+    } finally {
+      setDownloadingBattlecard(null);
+    }
+  };
 
   const generateFullReport = async () => {
     if (!project) return;
@@ -1655,6 +1748,47 @@ export default function ProjectDetail() {
                                     </div>
                                   </div>
                                 )}
+                                
+                                {/* Export Actions */}
+                                <div className="flex items-center gap-2 pt-4 border-t">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleCopyBattlecard(existingBattlecard)}
+                                    data-testid={`button-copy-battlecard-${existingBattlecard.id}`}
+                                  >
+                                    <Copy className="h-4 w-4 mr-1" />
+                                    Copy
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDownloadBattlecardPdf(existingBattlecard)}
+                                    disabled={downloadingBattlecard === "pdf"}
+                                    data-testid={`button-pdf-battlecard-${existingBattlecard.id}`}
+                                  >
+                                    {downloadingBattlecard === "pdf" ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <Download className="h-4 w-4 mr-1" />
+                                    )}
+                                    PDF
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDownloadBattlecardText(existingBattlecard)}
+                                    disabled={downloadingBattlecard === "txt"}
+                                    data-testid={`button-txt-battlecard-${existingBattlecard.id}`}
+                                  >
+                                    {downloadingBattlecard === "txt" ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <FileText className="h-4 w-4 mr-1" />
+                                    )}
+                                    Text
+                                  </Button>
+                                </div>
                               </div>
                             )}
                           </div>

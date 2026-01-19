@@ -1855,6 +1855,82 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // Product Battlecard PDF export
+  app.get("/api/product-battlecards/:id/pdf", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const battlecard = await storage.getProductBattlecard(req.params.id);
+      
+      if (!battlecard) {
+        return res.status(404).json({ error: "Product battle card not found" });
+      }
+      
+      if (!validateResourceContext(battlecard, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const baselineProduct = await storage.getProduct(battlecard.baselineProductId);
+      const competitorProduct = await storage.getProduct(battlecard.competitorProductId);
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      
+      const { generateProductBattlecardPdf } = await import("./services/battlecard-export");
+      const pdfBuffer = await generateProductBattlecardPdf(
+        battlecard,
+        competitorProduct?.name || "Competitor Product",
+        baselineProduct?.name || "Your Product",
+        tenant
+      );
+      
+      const filename = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Product battlecard PDF export error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Product Battlecard text export
+  app.get("/api/product-battlecards/:id/txt", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const battlecard = await storage.getProductBattlecard(req.params.id);
+      
+      if (!battlecard) {
+        return res.status(404).json({ error: "Product battle card not found" });
+      }
+      
+      if (!validateResourceContext(battlecard, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const baselineProduct = await storage.getProduct(battlecard.baselineProductId);
+      const competitorProduct = await storage.getProduct(battlecard.competitorProductId);
+      
+      const { generateProductBattlecardText } = await import("./services/battlecard-export");
+      const textBuffer = generateProductBattlecardText(
+        battlecard,
+        competitorProduct?.name || "Competitor Product",
+        baselineProduct?.name || "Your Product"
+      );
+      
+      const filename = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.txt`;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"`);
+      res.send(textBuffer);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Product battlecard text export error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== USER MANAGEMENT ROUTES ====================
 
   app.get("/api/users", async (req, res) => {

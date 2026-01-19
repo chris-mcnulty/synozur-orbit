@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Copy to clipboard with formatted text (emojis, sections, ready to paste)
   - Download as PDF with Synozur branding (purple gradients, professional layout)
   - Download as text file for use in Word, PowerPoint, or any document
+  - Works for both company-level battlecards and product-level (project) battlecards
 - 60-Day Trial System with automated reminder emails
   - New tenants automatically start with a 60-day trial period
   - Reminder emails at key milestones: day 7, 30, 46 (14 left), 53 (7 left), 57 (3 left), 59 (1 left), and day 60 (expired)
