@@ -5383,13 +5383,13 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       ): Promise<void> => {
         try {
           const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
+            model: "claude-sonnet-4-5",
             max_tokens: 4000,
             messages: [{ role: "user", content: prompt }],
           });
 
           // Log AI usage
-          await logAiUsage(ctx, `generate_${type}`, "anthropic", "claude-sonnet-4-20250514", response.usage);
+          await logAiUsage(ctx, `generate_${type}`, "anthropic", "claude-sonnet-4-5", response.usage);
 
           const content = response.content[0].type === "text" ? response.content[0].text : "";
 
@@ -7676,7 +7676,7 @@ Provide analysis in this JSON format:
 }`;
 
             const analysisResponse = await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-5",
               max_tokens: 2000,
               messages: [{ role: "user", content: analysisPrompt }],
             });
@@ -7749,7 +7749,7 @@ Provide analysis in this JSON format:
 }`;
 
             const analysisResponse = await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-5",
               max_tokens: 2000,
               messages: [{ role: "user", content: analysisPrompt }],
             });
@@ -7816,7 +7816,7 @@ Generate a comprehensive battlecard in this JSON format:
 }`;
 
                 const battlecardResponse = await anthropic.messages.create({
-                  model: "claude-sonnet-4-20250514",
+                  model: "claude-sonnet-4-5",
                   max_tokens: 3000,
                   messages: [{ role: "user", content: battlecardPrompt }],
                 });
