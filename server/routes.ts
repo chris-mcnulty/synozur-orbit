@@ -3415,9 +3415,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
       // Crawl the website
       const crawlResult = await crawlCompetitorWebsite(url);
       
-      if (!crawlResult.success) {
+      // Check if crawl was successful (has at least one page with content)
+      if (!crawlResult.pages || crawlResult.pages.length === 0 || crawlResult.totalWordCount === 0) {
         return res.status(400).json({ error: "Could not analyze website. Please check the URL and try again." });
       }
+
+      // Combine page content for AI analysis
+      const combinedContent = crawlResult.pages.map(p => `${p.title}\n${p.content}`).join("\n\n");
 
       // Extract company name from URL or analysis
       let companyName = parsedUrl.hostname.replace(/^www\./, "").split(".")[0];
@@ -3444,7 +3448,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
 Website URL: ${url}
 Website Content:
-${crawlResult.content.substring(0, 4000)}
+${combinedContent.substring(0, 4000)}
 
 Respond in JSON format:
 {
