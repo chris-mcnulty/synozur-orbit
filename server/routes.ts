@@ -192,15 +192,15 @@ export async function registerRoutes(
       }
 
       // Determine role based on business logic
-      // SECURITY: Self-service signup ONLY creates Standard User
-      // Consultant is a privileged cross-tenant role assigned only by Global Admin
-      // Domain Admin and Global Admin roles must be manually assigned by existing admins
+      // SECURITY: Consultant and Global Admin are privileged roles assigned only by existing admins
+      // Domain Admin is auto-assigned to the FIRST user who creates a new tenant (self-service account owner)
       const domain = email.split("@")[1].toLowerCase();
-      let role = "Standard User";
       
-      // Check if domain is blocked from auto-provisioning
-      const existingTenantForBlock = await storage.getTenantByDomain(domain);
-      if (!existingTenantForBlock) {
+      // Check if tenant already exists for this domain
+      const existingTenantForDomain = await storage.getTenantByDomain(domain);
+      
+      // If no tenant exists, check if domain is blocked
+      if (!existingTenantForDomain) {
         const isBlocked = await storage.isdomainBlocked(domain);
         if (isBlocked) {
           return res.status(403).json({ 
@@ -208,6 +208,10 @@ export async function registerRoutes(
           });
         }
       }
+      
+      // First user for a new domain becomes Domain Admin (can configure their account)
+      // Subsequent users get Standard User role
+      let role = existingTenantForDomain ? "Standard User" : "Domain Admin";
 
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -227,8 +231,7 @@ export async function registerRoutes(
       });
 
       // Create tenant for this domain if it doesn't exist (after user creation to ensure consistency)
-      const existingTenant = await storage.getTenantByDomain(domain);
-      if (!existingTenant) {
+      if (!existingTenantForDomain) {
         const trialStartDate = new Date();
         const trialEndsAt = new Date(trialStartDate);
         trialEndsAt.setDate(trialEndsAt.getDate() + 60);

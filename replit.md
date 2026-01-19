@@ -48,7 +48,7 @@ Preferred communication style: Simple, everyday language.
 - **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO.
 - **Fallback**: Traditional email/password login for non-SSO users.
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
-- **Provisioning**: Self-service signup ONLY creates Standard User role. All privileged roles (Global Admin, Domain Admin, Consultant) must be manually assigned by existing Global Admins.
+- **Provisioning**: First user to register from a new domain is automatically promoted to Domain Admin (so they can configure their account). Subsequent users from the same domain get Standard User role. Global Admin and Consultant are privileged roles that must be manually assigned by existing admins.
 - **Consultant Role**: Privileged cross-tenant read role for Synozur platform staff. Can only be assigned by Global Admin, never auto-provisioned during signup.
 - **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
 - **Entra ID User Provisioning**: Admins can search their organization's Entra ID directory via Microsoft Graph API and add users directly without requiring invitation acceptance. SSO-provisioned users are marked with `authProvider: "entra"` and optional welcome emails are sent via SendGrid.
