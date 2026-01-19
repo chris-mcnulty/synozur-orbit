@@ -3,17 +3,9 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Plus, Clock, Building2, Briefcase, BookOpen, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -24,8 +16,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 type ReportSections = {
@@ -51,14 +41,12 @@ const defaultSections: ReportSections = {
 export default function Reports() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isCapstoneDialogOpen, setIsCapstoneDialogOpen] = useState(false);
+  const [reportType, setReportType] = useState<"quick" | "capstone">("quick");
   const [scope, setScope] = useState<"baseline" | "project">("baseline");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [reportName, setReportName] = useState("");
   const [sections, setSections] = useState<ReportSections>(defaultSections);
-  const [includeAllProjects, setIncludeAllProjects] = useState(true);
-  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["/api/reports"],
@@ -77,8 +65,6 @@ export default function Reports() {
       return response.json();
     },
   });
-
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleGenerateAndDownload = async () => {
     if (scope === "project" && !selectedProjectId) {
@@ -100,6 +86,7 @@ export default function Reports() {
           name: reportName || undefined,
           scope,
           projectId: scope === "project" ? selectedProjectId : undefined,
+          sections: reportType === "capstone" ? sections : undefined,
         }),
       });
 
@@ -127,10 +114,7 @@ export default function Reports() {
         title: "Report Generated",
         description: "Your report has been downloaded successfully.",
       });
-      setIsDialogOpen(false);
       setReportName("");
-      setScope("baseline");
-      setSelectedProjectId("");
     } catch (error: any) {
       toast({
         title: "Error",
@@ -140,13 +124,6 @@ export default function Reports() {
     } finally {
       setIsGenerating(false);
     }
-  };
-
-  const handleOpenDialog = () => {
-    setReportName("");
-    setScope("baseline");
-    setSelectedProjectId("");
-    setIsDialogOpen(true);
   };
 
   const handleDownloadReport = async (report: any) => {
@@ -204,174 +181,158 @@ export default function Reports() {
 
   return (
     <AppLayout>
-      <div className="mb-8 flex justify-between items-center">
-        <div>
-           <h1 className="text-3xl font-bold tracking-tight mb-2">Reports</h1>
-           <p className="text-muted-foreground">Generate and download branded competitive intelligence reports.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setIsCapstoneDialogOpen(true)} data-testid="button-capstone-report">
-            <BookOpen className="w-4 h-4 mr-2" /> Capstone Report
-          </Button>
-          <Button onClick={handleOpenDialog} data-testid="button-generate-report">
-            <Plus className="w-4 h-4 mr-2" /> Quick Report
-          </Button>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Reports</h1>
+        <p className="text-muted-foreground">Generate branded competitive intelligence reports in one click.</p>
       </div>
 
-      <Card className="mb-6 border-primary/20 bg-gradient-to-r from-primary/5 to-secondary/5">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <BookOpen className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Capstone Report Builder</CardTitle>
-              <CardDescription>Create a comprehensive report with customizable sections</CardDescription>
-            </div>
-          </div>
+      <Card className="mb-8 border-primary/20">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-primary" />
+            Generate Report
+          </CardTitle>
+          <CardDescription>
+            No assessment required - Orbit automatically includes all your competitive data.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {[
-              { key: "executiveSummary", label: "Executive Summary", icon: Sparkles },
-              { key: "companyBaseline", label: "Company Profile", icon: Building2 },
-              { key: "competitorProfiles", label: "Competitors", icon: Target },
-              { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
-              { key: "recommendations", label: "Recommendations", icon: Lightbulb },
-              { key: "battleCards", label: "Battle Cards", icon: Swords },
-              { key: "activityLog", label: "Activity Log", icon: Activity },
-            ].map(({ key, label, icon: Icon }) => (
-              <Badge 
-                key={key} 
-                variant={sections[key as keyof ReportSections] ? "default" : "outline"}
-                className={cn(
-                  "cursor-pointer transition-all",
-                  sections[key as keyof ReportSections] 
-                    ? "bg-primary/90 hover:bg-primary" 
-                    : "hover:bg-primary/10"
-                )}
-                onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
-              >
-                <Icon className="w-3 h-3 mr-1" />
-                {label}
-              </Badge>
-            ))}
+        <CardContent className="space-y-6">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <Info className="w-4 h-4 text-primary flex-shrink-0" />
+            <p className="text-sm text-muted-foreground">
+              Reports include your company profile, competitors, gap analysis, and AI recommendations - all generated automatically.
+            </p>
           </div>
-          <Button onClick={() => setIsCapstoneDialogOpen(true)} className="w-full sm:w-auto">
-            <BookOpen className="w-4 h-4 mr-2" /> Build Capstone Report
-          </Button>
-        </CardContent>
-      </Card>
 
-      {reports.length === 0 ? (
-        <Card className="p-12 text-center">
-          <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground mb-2">No reports generated yet.</p>
-          <p className="text-sm text-muted-foreground mb-4">Generate your first competitive intelligence report.</p>
-          <Button onClick={handleOpenDialog} data-testid="button-generate-first-report">
-            <Plus className="w-4 h-4 mr-2" /> Generate New Report
-          </Button>
-        </Card>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {reports.map((report: any) => (
-              <Card key={report.id} className="flex flex-col group hover:border-primary/50 transition-all duration-300" data-testid={`card-report-${report.id}`}>
-                  <CardHeader>
-                      <div className="flex justify-between items-start mb-4">
-                          <div className="w-10 h-10 rounded bg-primary/10 text-primary flex items-center justify-center">
-                              <FileText size={20} />
-                          </div>
-                          <div className="flex gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {report.scope === "project" ? (
-                                <><Briefcase className="w-3 h-3 mr-1" /> Project</>
-                              ) : (
-                                <><Building2 className="w-3 h-3 mr-1" /> Baseline</>
-                              )}
-                            </Badge>
-                            <Badge variant={report.status === "Ready" ? "default" : "secondary"}>
-                                {report.status}
-                            </Badge>
-                          </div>
-                      </div>
-                      <CardTitle className="line-clamp-1 group-hover:text-primary transition-colors">{report.name}</CardTitle>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                          <Clock size={12} /> {report.date || new Date(report.createdAt).toLocaleDateString()}
-                          {report.size && (
-                            <>
-                              <span>•</span>
-                              <span>{report.size}</span>
-                            </>
-                          )}
-                      </div>
-                  </CardHeader>
-                  <CardContent className="flex-1">
-                      <p className="text-sm text-muted-foreground line-clamp-3">
-                          {report.description || "Comprehensive competitive analysis report covering key themes, messaging gaps, and AI-driven recommendations."}
-                      </p>
-                  </CardContent>
-                  <CardFooter className="border-t border-border pt-4">
-                      <Button 
-                        variant="outline" 
-                        className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all" 
-                        onClick={() => handleDownloadReport(report)}
-                        data-testid={`button-download-${report.id}`}
-                      >
-                          <Download className="w-4 h-4 mr-2" /> Download {report.type || "PDF"}
-                      </Button>
-                  </CardFooter>
-              </Card>
-          ))}
-        </div>
-      )}
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate New Report</DialogTitle>
-            <DialogDescription>
-              Choose what to include in your competitive intelligence report.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="report-name">Report Name (Optional)</Label>
-              <Input
-                id="report-name"
-                placeholder="e.g., Q1 2025 Competitive Analysis"
-                value={reportName}
-                onChange={(e) => setReportName(e.target.value)}
-                data-testid="input-report-name"
-              />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div
+              className={cn(
+                "p-4 rounded-lg border-2 cursor-pointer transition-all",
+                reportType === "quick" 
+                  ? "border-primary bg-primary/5" 
+                  : "border-border hover:border-primary/50"
+              )}
+              onClick={() => setReportType("quick")}
+              data-testid="option-quick-report"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  reportType === "quick" ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Quick Report</h3>
+                  <p className="text-xs text-muted-foreground">Standard sections</p>
+                </div>
+                {reportType === "quick" && (
+                  <CheckCircle2 className="w-5 h-5 text-primary ml-auto" />
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Fast, comprehensive report with all standard sections included.
+              </p>
             </div>
 
+            <div
+              className={cn(
+                "p-4 rounded-lg border-2 cursor-pointer transition-all",
+                reportType === "capstone" 
+                  ? "border-primary bg-primary/5" 
+                  : "border-border hover:border-primary/50"
+              )}
+              onClick={() => setReportType("capstone")}
+              data-testid="option-capstone-report"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  reportType === "capstone" ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Capstone Report</h3>
+                  <p className="text-xs text-muted-foreground">Customizable sections</p>
+                </div>
+                {reportType === "capstone" && (
+                  <CheckCircle2 className="w-5 h-5 text-primary ml-auto" />
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Choose exactly which sections to include in your report.
+              </p>
+            </div>
+          </div>
+
+          {reportType === "capstone" && (
+            <div className="space-y-3 p-4 rounded-lg bg-muted/30 border">
+              <Label className="text-sm font-medium">Select Sections</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {[
+                  { key: "executiveSummary", label: "Executive Summary", icon: Sparkles },
+                  { key: "companyBaseline", label: "Company Profile", icon: Building2 },
+                  { key: "competitorProfiles", label: "Competitors", icon: Target },
+                  { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
+                  { key: "recommendations", label: "Recommendations", icon: Lightbulb },
+                  { key: "battleCards", label: "Battle Cards", icon: Swords },
+                  { key: "activityLog", label: "Activity Log", icon: Activity },
+                ].map(({ key, label, icon: Icon }) => (
+                  <div 
+                    key={key}
+                    className={cn(
+                      "flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all text-sm",
+                      sections[key as keyof ReportSections] 
+                        ? "bg-primary/10 text-primary" 
+                        : "bg-background hover:bg-muted"
+                    )}
+                    onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
+                  >
+                    <Checkbox 
+                      checked={sections[key as keyof ReportSections]} 
+                      onCheckedChange={(checked) => setSections(s => ({ ...s, [key]: !!checked }))}
+                      className="h-4 w-4"
+                    />
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="truncate">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Report Source</Label>
-              <Select value={scope} onValueChange={(v: "baseline" | "project") => setScope(v)}>
-                <SelectTrigger data-testid="select-report-source">
-                  <SelectValue placeholder="Select source" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="baseline" data-testid="option-baseline">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4" />
-                      <span>Baseline (Your Company Profile)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="project" data-testid="option-project">
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="w-4 h-4" />
-                      <span>Project</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Report Scope</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={scope === "baseline" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setScope("baseline")}
+                  data-testid="button-scope-baseline"
+                >
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Baseline
+                </Button>
+                <Button
+                  type="button"
+                  variant={scope === "project" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setScope("project")}
+                  data-testid="button-scope-project"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Project
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {scope === "baseline" 
-                  ? "Generate a report based on your company profile and all tracked competitors."
-                  : "Generate a report for a specific client project."}
+                  ? "Your company profile and all tracked competitors"
+                  : "A specific client project"}
               </p>
             </div>
 
@@ -403,217 +364,94 @@ export default function Reports() {
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleGenerateAndDownload} 
-              disabled={isGenerating || (scope === "project" && !selectedProjectId)}
-              data-testid="button-confirm-generate"
-            >
-              {isGenerating ? "Generating..." : "Generate & Download"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isCapstoneDialogOpen} onOpenChange={setIsCapstoneDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-primary" />
-              Capstone Report Builder
-            </DialogTitle>
-            <DialogDescription>
-              Build a comprehensive report by selecting the sections you want to include.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="capstone-name">Report Name</Label>
-              <Input
-                id="capstone-name"
-                placeholder="e.g., Q1 2025 Comprehensive Competitive Analysis"
-                value={reportName}
-                onChange={(e) => setReportName(e.target.value)}
-                data-testid="input-capstone-name"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <Label>Include Sections</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { key: "executiveSummary", label: "Executive Summary", description: "AI-generated overview of findings", icon: Sparkles },
-                  { key: "companyBaseline", label: "Company Baseline Profile", description: "Your company's positioning", icon: Building2 },
-                  { key: "competitorProfiles", label: "Competitor Profiles", description: "Detailed competitor analysis", icon: Target },
-                  { key: "gapAnalysis", label: "Gap Analysis", description: "Messaging and positioning gaps", icon: BarChart2 },
-                  { key: "recommendations", label: "Recommendations", description: "AI-driven action items", icon: Lightbulb },
-                  { key: "battleCards", label: "Battle Cards", description: "Sales enablement cards", icon: Swords },
-                  { key: "activityLog", label: "Activity Log", description: "Recent competitor changes", icon: Activity },
-                ].map(({ key, label, description, icon: Icon }) => (
-                  <div 
-                    key={key}
-                    className={cn(
-                      "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all",
-                      sections[key as keyof ReportSections] 
-                        ? "border-primary bg-primary/5" 
-                        : "border-border hover:border-primary/50"
-                    )}
-                    onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
-                  >
-                    <Checkbox 
-                      checked={sections[key as keyof ReportSections]} 
-                      onCheckedChange={(checked) => setSections(s => ({ ...s, [key]: !!checked }))}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Icon className="w-4 h-4 text-primary" />
-                        <span className="font-medium text-sm">{label}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-3">
-              <Label>Include Projects</Label>
-              <div className="space-y-2">
-                <div 
-                  className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
-                    includeAllProjects ? "border-primary bg-primary/5" : "border-border"
-                  )}
-                  onClick={() => setIncludeAllProjects(true)}
-                >
-                  <Checkbox checked={includeAllProjects} onCheckedChange={() => setIncludeAllProjects(true)} />
-                  <div>
-                    <span className="font-medium text-sm">All Projects</span>
-                    <p className="text-xs text-muted-foreground">Include all client projects in the report</p>
-                  </div>
-                </div>
-                <div 
-                  className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
-                    !includeAllProjects ? "border-primary bg-primary/5" : "border-border"
-                  )}
-                  onClick={() => setIncludeAllProjects(false)}
-                >
-                  <Checkbox checked={!includeAllProjects} onCheckedChange={() => setIncludeAllProjects(false)} />
-                  <div className="flex-1">
-                    <span className="font-medium text-sm">Select Specific Projects</span>
-                    {!includeAllProjects && projects.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {projects.map((project: any) => (
-                          <div 
-                            key={project.id} 
-                            className="flex items-center gap-2 text-sm"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Checkbox 
-                              checked={selectedProjects.includes(project.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setSelectedProjects([...selectedProjects, project.id]);
-                                } else {
-                                  setSelectedProjects(selectedProjects.filter(id => id !== project.id));
-                                }
-                              }}
-                            />
-                            <span>{project.clientName || project.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Estimated pages:</span>
-                <span className="font-medium">
-                  {Object.values(sections).filter(Boolean).length * 2 + 2} - {Object.values(sections).filter(Boolean).length * 4 + 4}
-                </span>
-              </div>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="report-name">Report Name (Optional)</Label>
+            <Input
+              id="report-name"
+              placeholder="e.g., Q1 2025 Competitive Analysis"
+              value={reportName}
+              onChange={(e) => setReportName(e.target.value)}
+              data-testid="input-report-name"
+            />
           </div>
+        </CardContent>
+        <CardFooter className="border-t pt-4">
+          <Button 
+            onClick={handleGenerateAndDownload} 
+            disabled={isGenerating || (scope === "project" && !selectedProjectId) || (reportType === "capstone" && Object.values(sections).every(v => !v))}
+            className="w-full sm:w-auto"
+            size="lg"
+            data-testid="button-generate-report"
+          >
+            {isGenerating ? (
+              <>
+                <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Generating Report...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Generate & Download Report
+              </>
+            )}
+          </Button>
+        </CardFooter>
+      </Card>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCapstoneDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={async () => {
-                setIsGenerating(true);
-                try {
-                  const response = await fetch("/api/reports/generate", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({
-                      name: reportName || "Capstone Competitive Analysis",
-                      scope: "baseline",
-                      sections,
-                      includeProjects: includeAllProjects ? "all" : selectedProjects,
-                    }),
-                  });
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold">Report History</h2>
+        <p className="text-sm text-muted-foreground">Previously generated reports</p>
+      </div>
 
-                  if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error || "Failed to generate report");
-                  }
-
-                  const blob = await response.blob();
-                  const fileName = `${(reportName || "Capstone_Analysis").replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
-                  
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                  document.body.removeChild(a);
-
-                  queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
-                  toast({
-                    title: "Capstone Report Generated",
-                    description: "Your comprehensive report has been downloaded successfully.",
-                  });
-                  setIsCapstoneDialogOpen(false);
-                  setReportName("");
-                  setSections(defaultSections);
-                } catch (error: any) {
-                  toast({
-                    title: "Error",
-                    description: error.message,
-                    variant: "destructive",
-                  });
-                } finally {
-                  setIsGenerating(false);
-                }
-              }}
-              disabled={isGenerating || Object.values(sections).every(v => !v)}
-            >
-              {isGenerating ? "Generating..." : (
-                <>
-                  <BookOpen className="w-4 h-4 mr-2" />
-                  Generate Capstone Report
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {reports.length === 0 ? (
+        <Card className="p-8 text-center">
+          <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+          <p className="text-muted-foreground">No reports generated yet</p>
+          <p className="text-sm text-muted-foreground">Your report history will appear here</p>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {reports.map((report: any) => (
+            <Card key={report.id} className="group hover:border-primary/50 transition-all" data-testid={`card-report-${report.id}`}>
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="w-9 h-9 rounded bg-primary/10 text-primary flex items-center justify-center">
+                    <FileText size={18} />
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {report.scope === "project" ? (
+                      <><Briefcase className="w-3 h-3 mr-1" /> Project</>
+                    ) : (
+                      <><Building2 className="w-3 h-3 mr-1" /> Baseline</>
+                    )}
+                  </Badge>
+                </div>
+                <CardTitle className="text-base line-clamp-1">{report.name}</CardTitle>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock size={12} /> {report.date || new Date(report.createdAt).toLocaleDateString()}
+                  {report.size && (
+                    <>
+                      <span>•</span>
+                      <span>{report.size}</span>
+                    </>
+                  )}
+                </div>
+              </CardHeader>
+              <CardFooter className="pt-0">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-all" 
+                  onClick={() => handleDownloadReport(report)}
+                  data-testid={`button-download-${report.id}`}
+                >
+                  <Download className="w-4 h-4 mr-2" /> Download
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
     </AppLayout>
   );
 }
