@@ -32,6 +32,13 @@ const allowlist = [
   "zod-validation-error",
 ];
 
+// ESM-only modules that must be kept external (not bundled into CJS)
+const esmOnlyModules = [
+  "p-limit",
+  "p-retry",
+  "yocto-queue",
+];
+
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
@@ -44,7 +51,11 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  // External = deps not in allowlist + ESM-only modules that can't be bundled to CJS
+  const externals = [
+    ...allDeps.filter((dep) => !allowlist.includes(dep)),
+    ...esmOnlyModules,
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],

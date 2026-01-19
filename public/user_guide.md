@@ -677,6 +677,12 @@ Each project can generate:
 - See role, status, and last activity
 - Filter by role or status
 
+**Organization Filter (Global Admins):**
+- Global Admins can filter users by organization using the dropdown in the Team Members section
+- Select "All Organizations" to view users across all tenants
+- Select a specific organization to filter the user list
+- User counts update dynamically based on the selected filter
+
 **Change User Role:**
 1. Find user in list
 2. Click role dropdown

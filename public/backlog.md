@@ -78,6 +78,8 @@
 - [x] User management (view/update roles/remove members)
 - [x] Tenant settings page (branding, monitoring frequency)
 - [x] RBAC enforcement for Domain Admin and Global Admin
+- [x] Organization filter for Global Admins in User Management
+- [x] Auto-promotion of first domain user to Domain Admin role
 **Effort**: Medium - COMPLETED
 
 ### 2.4 Side-by-Side Messaging Comparison ✅

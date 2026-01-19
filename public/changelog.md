@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Organization Filter for User Management - Global Admins can now filter users by organization
+  - Filter dropdown appears in Team Members section when logged in as Global Admin
+  - Filter by any accessible tenant organization
+  - User count updates dynamically based on selected filter
+- Auto-Promotion for First Domain User - Self-service account creation now automatically promotes the first user from a new email domain to Domain Admin role
+  - Enables immediate configuration of organization settings without waiting for manual role assignment
+  - Subsequent users from the same domain receive Standard User role
 - One-Click Full Report Generation - Generate all project content with a single click
   - "Generate Full Report" button in project header orchestrates all 5 AI content sections in parallel
   - Creates Gap Analysis, Strategic Recommendations, Competitive Summary, GTM Plan, and Messaging Framework
