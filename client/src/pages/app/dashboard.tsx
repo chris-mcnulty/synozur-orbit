@@ -213,6 +213,23 @@ export default function Dashboard() {
   const hasAnalysis = analysis && analysis.themes;
   const activeProjects = projects.filter((p: any) => p.status === "active");
   const highImpactActivity = activity.filter((a: any) => a.impact === "High");
+  
+  const prioritizedActivity = [...activity].sort((a: any, b: any) => {
+    const typePriority: Record<string, number> = { 
+      website_update: 1, 
+      blog_update: 2, 
+      social_update: 3, 
+      crawl: 4 
+    };
+    const aPriority = typePriority[a.type] || 5;
+    const bPriority = typePriority[b.type] || 5;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime();
+  });
+  
+  const meaningfulSignals = activity.filter((a: any) => 
+    a.type === "website_update" || a.type === "blog_update" || a.type === "social_update"
+  );
 
   // Onboarding checklist items
   const onboardingSteps = [
@@ -687,32 +704,55 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {activity.slice(0, 4).map((item: any) => (
-                  <Link key={item.id} href={`/app/competitors/${item.competitorId}`} data-testid={`link-signal-${item.id}`}>
-                    <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group" data-testid={`signal-${item.id}`}>
-                      <div className={cn("p-1.5 rounded-full shrink-0", getImpactColor(item.impact))}>
-                        {item.impact === "High" ? (
-                          <AlertCircle className="w-3 h-3" />
-                        ) : (
-                          <Eye className="w-3 h-3" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-                            {item.competitorName}
-                          </span>
-                          <Badge variant="outline" className="text-xs shrink-0">{item.type}</Badge>
+                {meaningfulSignals.length > 0 && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="default" className="text-xs bg-primary/10 text-primary border-0">
+                      {meaningfulSignals.length} meaningful change{meaningfulSignals.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                )}
+                {prioritizedActivity.slice(0, 4).map((item: any) => {
+                  const isMeaningful = item.type === "website_update" || item.type === "blog_update" || item.type === "social_update";
+                  return (
+                    <Link key={item.id} href={`/app/competitors/${item.competitorId}`} data-testid={`link-signal-${item.id}`}>
+                      <div className={cn(
+                        "flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
+                        isMeaningful && "border border-primary/20 bg-primary/5"
+                      )} data-testid={`signal-${item.id}`}>
+                        <div className={cn("p-1.5 rounded-full shrink-0", getImpactColor(item.impact))}>
+                          {item.type === "website_update" ? (
+                            <Globe className="w-3 h-3" />
+                          ) : item.type === "blog_update" ? (
+                            <FileText className="w-3 h-3" />
+                          ) : item.impact === "High" ? (
+                            <AlertCircle className="w-3 h-3" />
+                          ) : (
+                            <Eye className="w-3 h-3" />
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+                              {item.competitorName}
+                            </span>
+                            <Badge variant={isMeaningful ? "default" : "outline"} className="text-xs shrink-0">
+                              {item.type === "website_update" ? "website change" : 
+                               item.type === "blog_update" ? "new blog post" : 
+                               item.type}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {item.summary || item.description}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {item.date}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.date}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </CardContent>
