@@ -461,6 +461,39 @@ export async function registerRoutes(
     res.json(userWithoutPassword);
   });
 
+  // Update user demographics (for SSO profile completion)
+  app.patch("/api/me/demographics", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const { jobTitle, industry, companySize, country } = req.body;
+
+      // Validate required fields
+      if (!jobTitle || !industry || !companySize || !country) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
+
+      const updatedUser = await storage.updateUser(req.session.userId, {
+        jobTitle,
+        industry,
+        companySize,
+        country,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("Error updating user demographics:", error);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
   // ==================== COMPETITOR ROUTES ====================
 
   app.get("/api/competitors", async (req, res) => {

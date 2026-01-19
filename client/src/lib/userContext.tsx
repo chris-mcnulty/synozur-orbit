@@ -31,6 +31,7 @@ interface UserContextType {
     country?: string
   ) => Promise<void>;
   logout: () => Promise<void>;
+  refetch: () => Promise<void>;
   loading: boolean;
 }
 
@@ -124,8 +125,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const refetch = async () => {
+    try {
+      const response = await fetch("/api/me", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error("Refetch user failed:", error);
+    }
+  };
+
   return (
-    <UserContext.Provider value={{ user, login, register, logout, loading }}>
+    <UserContext.Provider value={{ user, login, register, logout, refetch, loading }}>
       {children}
     </UserContext.Provider>
   );

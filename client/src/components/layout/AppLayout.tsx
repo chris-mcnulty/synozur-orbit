@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useQuery } from "@tanstack/react-query";
 import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
+import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDialog";
 import ContextBar from "@/components/layout/ContextBar";
 
 type NavIndicator = {
@@ -45,7 +46,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-  const { user, logout, loading } = useUser();
+  const [profileCompleted, setProfileCompleted] = useState(false);
+  const { user, logout, loading, refetch: refetchUser } = useUser();
   
   const { data: companyProfile, isLoading: profileLoading, refetch: refetchProfile } = useQuery({
     queryKey: ["/api/company-profile"],
@@ -178,6 +180,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [companyProfile, competitors, analysis, recommendations, activityData, reports]);
   
   const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user;
+  
+  // Show profile completion dialog for SSO users missing demographics
+  const needsProfileCompletion = !!user && !profileCompleted && 
+    (!user.jobTitle || !user.industry || !user.companySize || !user.country);
+  
+  // Only show profile completion after onboarding is dismissed or skipped
+  const showProfileCompletion = needsProfileCompletion && onboardingDismissed;
   
   useEffect(() => {
     if (!loading && !user) {
@@ -433,6 +442,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         canSkip={true}
         onSkip={() => setOnboardingDismissed(true)}
         marketName={activeMarket?.name}
+      />
+
+      <ProfileCompletionDialog
+        open={showProfileCompletion}
+        onComplete={() => {
+          setProfileCompleted(true);
+          refetchUser();
+        }}
+        userName={user?.name || user?.email?.split("@")[0] || ""}
       />
     </div>
   );
