@@ -80,11 +80,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             </div>
           </div>
           <div className="flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground pt-6 border-t border-border/50">
-            <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2025.</p>
+            <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
             <div className="mt-4 md:mt-0 flex gap-6">
                <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy</a>
                <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Terms</a>
-               <Link href="#" className="hover:text-primary transition-colors">Cookies</Link>
             </div>
           </div>
         </div>
