@@ -68,8 +68,9 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 }
 
-// Standard email header image URL
-const EMAIL_HEADER_IMAGE_URL = 'https://storage.googleapis.com/replit-objstore-7732f445-e623-487e-959c-af350317396c/public/email-header.jpg';
+// Standard email header image URL - served from app's public folder
+// Uses production URL for emails to work in all email clients
+const EMAIL_HEADER_IMAGE_URL = 'https://orbit.synozur.com/images/email-header.jpg';
 
 // Common email template wrapper with Vega-inspired Synozur branding
 export function wrapEmailContent(content: string): string {
