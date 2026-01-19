@@ -7042,11 +7042,9 @@ Return only the description text, no quotes or formatting.`;
   // Rebuild All - refresh all competitive intelligence (Admin only)
   app.post("/api/rebuild-all", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
-      const user = await storage.getUser(req.session.userId);
+      const user = await storage.getUser(ctx.userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -7056,12 +7054,13 @@ Return only the description text, no quotes or formatting.`;
         return res.status(403).json({ error: "Access denied - Admin only" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
+      // Use market context filter to get only competitors in active market
+      const contextFilter = toContextFilter(ctx);
 
-      // Get all competitors and products that need processing
-      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
-      const allProducts = await storage.getProductsByTenant(tenantDomain);
-      const projects = await storage.getClientProjectsByTenant(tenantDomain);
+      // Get all competitors and products that need processing (filtered by market context)
+      const allCompetitors = await storage.getCompetitorsByContext(contextFilter);
+      const allProducts = await storage.getProductsByContext(contextFilter);
+      const projects = await storage.getClientProjectsByContext(contextFilter);
 
       // Return immediately with job info - actual processing happens async
       const jobId = `rebuild-${Date.now()}`;
@@ -7080,8 +7079,11 @@ Return only the description text, no quotes or formatting.`;
         // Process competitors - crawl and analyze
         for (const competitor of allCompetitors) {
           try {
-            // Skip if recently crawled (within 24 hours)
-            if (competitor.lastFullCrawl) {
+            // Always process if never crawled (no analysisData)
+            const hasBeenAnalyzed = competitor.analysisData && Object.keys(competitor.analysisData).length > 0;
+            
+            // Skip if recently crawled (within 24 hours) AND already has analysis data
+            if (hasBeenAnalyzed && competitor.lastFullCrawl) {
               const hoursSinceCrawl = (Date.now() - new Date(competitor.lastFullCrawl).getTime()) / (1000 * 60 * 60);
               if (hoursSinceCrawl < 24) {
                 processed++;
