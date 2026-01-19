@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import fileUpload from "express-fileupload";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -33,6 +34,13 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// File upload middleware for logo uploads
+app.use(fileUpload({
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  abortOnLimit: true,
+  useTempFiles: false,
+}));
 
 const PgSession = connectPgSimple(session);
 const pgPool = new pg.Pool({

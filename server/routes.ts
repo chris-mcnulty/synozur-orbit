@@ -1,9 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import fileUpload, { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "./storage";
+import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
@@ -2568,7 +2570,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl } = parsed.data;
+      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, logoUrl } = parsed.data;
       
       // Plan-gating: Trial/Free plans can only baseline their own domain
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
@@ -2592,6 +2594,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         const updated = await storage.updateCompanyProfile(existingProfile.id, {
           companyName,
           websiteUrl,
+          logoUrl: logoUrl || null,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
           twitterUrl: twitterUrl || null,
@@ -2605,6 +2608,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           marketId: ctx.marketId,
           companyName,
           websiteUrl,
+          logoUrl: logoUrl || null,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
           twitterUrl: twitterUrl || null,
@@ -2740,6 +2744,60 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(error.status).json({ error: error.message });
       }
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Upload company logo
+  app.post("/api/upload/logo", async (req, res) => {
+    try {
+      // Verify context to enforce tenant security
+      const ctx = await getRequestContext(req);
+      
+      const files = req.files;
+      if (!files || !files.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const file = files.file as UploadedFile;
+      
+      // Validate file type
+      const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        return res.status(400).json({ error: "Invalid file type. Please upload PNG, JPEG, GIF, WebP, or SVG." });
+      }
+
+      // Validate file size (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: "File too large. Maximum size is 5MB." });
+      }
+
+      const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (!BUCKET_ID) {
+        return res.status(500).json({ error: "Object storage not configured" });
+      }
+
+      // Generate unique filename with tenant context for organization
+      const ext = file.name.split('.').pop() || 'png';
+      const tenantSlug = ctx.tenantDomain.replace(/[^a-z0-9]/gi, '-');
+      const filename = `${tenantSlug}-logo-${randomUUID()}.${ext}`;
+      
+      // Upload to object storage
+      const bucket = objectStorageClient.bucket(BUCKET_ID);
+      const gcsFile = bucket.file(`public/logos/${filename}`);
+      
+      await gcsFile.save(file.data, {
+        contentType: file.mimetype,
+        public: true,
+      });
+
+      const url = `https://storage.googleapis.com/${BUCKET_ID}/public/logos/${filename}`;
+      res.json({ url });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Logo upload error:", error);
+      res.status(500).json({ error: "Failed to upload logo" });
     }
   });
 

@@ -602,6 +602,7 @@ export const companyProfiles = pgTable("company_profiles", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context - each market has its baseline
   companyName: text("company_name").notNull(),
   websiteUrl: text("website_url").notNull(),
+  logoUrl: text("logo_url"), // Company logo URL (uploaded or external)
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"), // Twitter/X profile URL

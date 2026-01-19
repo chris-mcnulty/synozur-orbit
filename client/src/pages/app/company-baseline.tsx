@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -17,9 +18,13 @@ export default function CompanyBaseline() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [logoUploadTab, setLogoUploadTab] = useState<"url" | "upload">("url");
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [profileForm, setProfileForm] = useState({
     companyName: "",
     websiteUrl: "",
+    logoUrl: "",
     linkedInUrl: "",
     instagramUrl: "",
     twitterUrl: "",
@@ -124,20 +129,78 @@ export default function CompanyBaseline() {
     },
   });
 
+  const handleLogoUpload = async (file: File) => {
+    if (!file) return;
+    
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a PNG, JPEG, GIF, WebP, or SVG image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Logo file must be under 5MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "logo");
+      
+      const response = await fetch("/api/upload/logo", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to upload logo");
+      }
+      
+      const { url } = await response.json();
+      setProfileForm({ ...profileForm, logoUrl: url });
+      toast({
+        title: "Logo Uploaded",
+        description: "Your logo has been uploaded successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload logo. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
   const openProfileDialog = () => {
     if (companyProfile) {
       setProfileForm({
         companyName: companyProfile.companyName || "",
         websiteUrl: companyProfile.websiteUrl || "",
+        logoUrl: companyProfile.logoUrl || "",
         linkedInUrl: companyProfile.linkedInUrl || "",
         instagramUrl: companyProfile.instagramUrl || "",
         twitterUrl: companyProfile.twitterUrl || "",
         description: companyProfile.description || "",
       });
+      setLogoUploadTab("url");
     } else {
       setProfileForm({
         companyName: "",
         websiteUrl: "",
+        logoUrl: "",
         linkedInUrl: "",
         instagramUrl: "",
         twitterUrl: "",
@@ -226,6 +289,79 @@ export default function CompanyBaseline() {
                           />
                         </div>
                         <div className="grid gap-2">
+                          <Label className="flex items-center gap-2">
+                            <ImageIcon className="h-4 w-4" /> Company Logo (optional)
+                          </Label>
+                          <Tabs value={logoUploadTab} onValueChange={(v) => setLogoUploadTab(v as "url" | "upload")} className="w-full">
+                            <TabsList className="grid w-full grid-cols-2">
+                              <TabsTrigger value="url" className="text-xs">
+                                <Link2 className="h-3 w-3 mr-1" /> URL
+                              </TabsTrigger>
+                              <TabsTrigger value="upload" className="text-xs">
+                                <Upload className="h-3 w-3 mr-1" /> Upload
+                              </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="url" className="mt-2">
+                              <Input
+                                placeholder="https://example.com/logo.png"
+                                value={profileForm.logoUrl}
+                                onChange={(e) => setProfileForm({ ...profileForm, logoUrl: e.target.value })}
+                                data-testid="input-logo-url"
+                              />
+                            </TabsContent>
+                            <TabsContent value="upload" className="mt-2">
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleLogoUpload(file);
+                                }}
+                              />
+                              <div 
+                                className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                                onClick={() => fileInputRef.current?.click()}
+                              >
+                                {isUploadingLogo ? (
+                                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span className="text-sm">Uploading...</span>
+                                  </div>
+                                ) : (
+                                  <div className="text-muted-foreground">
+                                    <Upload className="h-6 w-6 mx-auto mb-1" />
+                                    <p className="text-sm">Click to upload logo</p>
+                                    <p className="text-xs">PNG, JPG, GIF, WebP, SVG (max 5MB)</p>
+                                  </div>
+                                )}
+                              </div>
+                            </TabsContent>
+                          </Tabs>
+                          {profileForm.logoUrl && (
+                            <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded">
+                              <img 
+                                src={profileForm.logoUrl} 
+                                alt="Logo preview" 
+                                className="h-8 w-8 object-contain rounded"
+                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                              />
+                              <span className="text-sm text-muted-foreground truncate flex-1">
+                                {profileForm.logoUrl}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setProfileForm({ ...profileForm, logoUrl: "" })}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="grid gap-2">
                           <Label htmlFor="linkedInUrl" className="flex items-center gap-2">
                             <Linkedin className="h-4 w-4 text-[#0A66C2]" /> LinkedIn URL
                           </Label>
@@ -291,11 +427,19 @@ export default function CompanyBaseline() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                        <span className="text-2xl font-bold text-white">
-                          {companyProfile.companyName?.charAt(0) || "C"}
-                        </span>
-                      </div>
+                      {companyProfile.logoUrl ? (
+                        <img 
+                          src={companyProfile.logoUrl} 
+                          alt={companyProfile.companyName}
+                          className="w-14 h-14 rounded-xl object-contain bg-white shadow-lg"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                          <span className="text-2xl font-bold text-white">
+                            {companyProfile.companyName?.charAt(0) || "C"}
+                          </span>
+                        </div>
+                      )}
                       <div>
                         <CardTitle className="text-xl">{companyProfile.companyName}</CardTitle>
                         <CardDescription className="flex items-center gap-2 mt-1">
@@ -356,6 +500,79 @@ export default function CompanyBaseline() {
                                   onChange={(e) => setProfileForm({ ...profileForm, websiteUrl: e.target.value })}
                                   required
                                 />
+                              </div>
+                              <div className="grid gap-2">
+                                <Label className="flex items-center gap-2">
+                                  <ImageIcon className="h-4 w-4" /> Company Logo (optional)
+                                </Label>
+                                <Tabs value={logoUploadTab} onValueChange={(v) => setLogoUploadTab(v as "url" | "upload")} className="w-full">
+                                  <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="url" className="text-xs">
+                                      <Link2 className="h-3 w-3 mr-1" /> URL
+                                    </TabsTrigger>
+                                    <TabsTrigger value="upload" className="text-xs">
+                                      <Upload className="h-3 w-3 mr-1" /> Upload
+                                    </TabsTrigger>
+                                  </TabsList>
+                                  <TabsContent value="url" className="mt-2">
+                                    <Input
+                                      placeholder="https://example.com/logo.png"
+                                      value={profileForm.logoUrl}
+                                      onChange={(e) => setProfileForm({ ...profileForm, logoUrl: e.target.value })}
+                                      data-testid="input-logo-url-edit"
+                                    />
+                                  </TabsContent>
+                                  <TabsContent value="upload" className="mt-2">
+                                    <input
+                                      ref={fileInputRef}
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleLogoUpload(file);
+                                      }}
+                                    />
+                                    <div 
+                                      className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                                      onClick={() => fileInputRef.current?.click()}
+                                    >
+                                      {isUploadingLogo ? (
+                                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                          <span className="text-sm">Uploading...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="text-muted-foreground">
+                                          <Upload className="h-6 w-6 mx-auto mb-1" />
+                                          <p className="text-sm">Click to upload logo</p>
+                                          <p className="text-xs">PNG, JPG, GIF, WebP, SVG (max 5MB)</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TabsContent>
+                                </Tabs>
+                                {profileForm.logoUrl && (
+                                  <div className="flex items-center gap-2 mt-2 p-2 bg-muted/50 rounded">
+                                    <img 
+                                      src={profileForm.logoUrl} 
+                                      alt="Logo preview" 
+                                      className="h-8 w-8 object-contain rounded"
+                                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                                    />
+                                    <span className="text-sm text-muted-foreground truncate flex-1">
+                                      {profileForm.logoUrl}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setProfileForm({ ...profileForm, logoUrl: "" })}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                               <div className="grid gap-2">
                                 <Label htmlFor="linkedInUrl" className="flex items-center gap-2">
