@@ -169,6 +169,7 @@ export interface IStorage {
   // Company Profile methods (baseline own website)
   getCompanyProfile(id: string): Promise<CompanyProfile | undefined>;
   getCompanyProfileByTenant(tenantDomain: string): Promise<CompanyProfile | undefined>;
+  getCompanyProfilesByTenantDomain(tenantDomain: string): Promise<CompanyProfile[]>;
   createCompanyProfile(profile: InsertCompanyProfile): Promise<CompanyProfile>;
   updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile>;
   deleteCompanyProfile(id: string): Promise<void>;
@@ -681,6 +682,11 @@ export class DatabaseStorage implements IStorage {
   async getCompanyProfileByTenant(tenantDomain: string): Promise<CompanyProfile | undefined> {
     const [profile] = await db.select().from(companyProfiles).where(eq(companyProfiles.tenantDomain, tenantDomain));
     return profile || undefined;
+  }
+
+  async getCompanyProfilesByTenantDomain(tenantDomain: string): Promise<CompanyProfile[]> {
+    return await db.select().from(companyProfiles)
+      .where(eq(companyProfiles.tenantDomain, tenantDomain));
   }
 
   async createCompanyProfile(insertProfile: InsertCompanyProfile): Promise<CompanyProfile> {

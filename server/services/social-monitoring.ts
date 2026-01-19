@@ -458,6 +458,202 @@ export async function monitorCompetitorSocialMedia(
   return results;
 }
 
+interface CompanyProfileSocialResult {
+  companyProfileId: string;
+  companyName: string;
+  platform: "linkedin" | "instagram" | "twitter";
+  hasChanges: boolean;
+  summary?: string;
+  status: "success" | "blocked" | "error" | "no_url";
+  message?: string;
+  engagement?: EngagementSnapshot;
+}
+
+export async function monitorCompanyProfileSocialMedia(
+  companyProfileId: string,
+  userId: string,
+  tenantDomain: string,
+  marketId?: string
+): Promise<CompanyProfileSocialResult[]> {
+  const companyProfile = await storage.getCompanyProfile(companyProfileId);
+  if (!companyProfile) {
+    throw new Error("Company profile not found");
+  }
+  
+  const results: CompanyProfileSocialResult[] = [];
+  const now = new Date();
+  const updates: any = { lastSocialCrawl: now };
+  
+  if (companyProfile.linkedInUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(companyProfile.linkedInUrl);
+    
+    if (blocked) {
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "linkedin",
+        hasChanges: false,
+        status: "blocked",
+        message: "LinkedIn requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = companyProfile.linkedInContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      const engagement = extractEngagementMetrics(rawHtml, "linkedin");
+      updates.linkedInEngagement = engagement;
+      
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(companyProfile.companyName, "LinkedIn", previousContent, newContent, changeScore);
+        
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "baseline",
+            companyProfileId: companyProfile.id,
+            competitorName: companyProfile.companyName,
+            description: `Your LinkedIn profile was updated (${changeScore}% change detected)`,
+            summary,
+            details: { platform: "linkedin", changeScore, url: companyProfile.linkedInUrl },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId,
+            tenantDomain,
+            marketId: marketId || companyProfile.marketId || undefined,
+          });
+        }
+      }
+      
+      updates.linkedInContent = newContent;
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "linkedin",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  if (companyProfile.instagramUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(companyProfile.instagramUrl);
+    
+    if (blocked) {
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "instagram",
+        hasChanges: false,
+        status: "blocked",
+        message: "Instagram requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = companyProfile.instagramContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      const engagement = extractEngagementMetrics(rawHtml, "instagram");
+      updates.instagramEngagement = engagement;
+      
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(companyProfile.companyName, "Instagram", previousContent, newContent, changeScore);
+        
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "baseline",
+            companyProfileId: companyProfile.id,
+            competitorName: companyProfile.companyName,
+            description: `Your Instagram profile was updated (${changeScore}% change detected)`,
+            summary,
+            details: { platform: "instagram", changeScore, url: companyProfile.instagramUrl },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId,
+            tenantDomain,
+            marketId: marketId || companyProfile.marketId || undefined,
+          });
+        }
+      }
+      
+      updates.instagramContent = newContent;
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "instagram",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  if (companyProfile.twitterUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(companyProfile.twitterUrl);
+    
+    if (blocked) {
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "twitter",
+        hasChanges: false,
+        status: "blocked",
+        message: "Twitter/X requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = companyProfile.twitterContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+      
+      const engagement = extractEngagementMetrics(rawHtml, "twitter");
+      updates.twitterEngagement = engagement;
+      
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(companyProfile.companyName, "Twitter/X", previousContent, newContent, changeScore);
+        
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "baseline",
+            companyProfileId: companyProfile.id,
+            competitorName: companyProfile.companyName,
+            description: `Your Twitter/X profile was updated (${changeScore}% change detected)`,
+            summary,
+            details: { platform: "twitter", changeScore, url: companyProfile.twitterUrl },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId,
+            tenantDomain,
+            marketId: marketId || companyProfile.marketId || undefined,
+          });
+        }
+      }
+      
+      updates.twitterContent = newContent;
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "twitter",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  await storage.updateCompanyProfile(companyProfileId, updates);
+  
+  return results;
+}
+
 export async function monitorAllCompetitorsForTenant(
   tenantDomain: string
 ): Promise<SocialMonitoringResult[]> {

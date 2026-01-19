@@ -1,8 +1,8 @@
 import { storage } from "../storage";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
-import { monitorCompetitorSocialMedia } from "./social-monitoring";
-import { monitorCompetitorWebsite } from "./website-monitoring";
+import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 
@@ -216,6 +216,35 @@ async function runSocialMonitorJob(): Promise<void> {
           console.error(`[Scheduled Job] Failed social monitoring for ${competitor.name}:`, error);
         }
       }
+
+      // Monitor company profiles (baseline) for social changes
+      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
+      for (const profile of companyProfiles) {
+        if (!profile.linkedInUrl && !profile.instagramUrl && !profile.twitterUrl) continue;
+
+        const lastSocialCrawl = profile.lastSocialCrawl
+          ? new Date(profile.lastSocialCrawl).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastSocialCrawl < intervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Monitoring baseline social for ${profile.companyName}...`);
+
+        try {
+          await monitorCompanyProfileSocialMedia(
+            profile.id,
+            profile.userId,
+            tenant.domain,
+            profile.marketId || undefined
+          );
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          console.error(`[Scheduled Job] Failed baseline social monitoring for ${profile.companyName}:`, error);
+        }
+      }
     }
   } catch (error) {
     console.error("[Scheduled Job] Social monitor job failed:", error);
@@ -271,6 +300,33 @@ async function runWebsiteMonitorJob(): Promise<void> {
           await new Promise(resolve => setTimeout(resolve, 3000));
         } catch (error) {
           console.error(`[Scheduled Job] Failed website monitoring for ${competitor.name}:`, error);
+        }
+      }
+
+      // Monitor company profiles (baseline) for website changes
+      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
+      for (const profile of companyProfiles) {
+        const lastWebsiteMonitor = profile.lastWebsiteMonitor
+          ? new Date(profile.lastWebsiteMonitor).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastWebsiteMonitor < intervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Monitoring baseline website changes for ${profile.companyName}...`);
+
+        try {
+          await monitorCompanyProfileWebsite(
+            profile.id,
+            profile.userId,
+            tenant.domain,
+            profile.marketId || undefined
+          );
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          console.error(`[Scheduled Job] Failed baseline website monitoring for ${profile.companyName}:`, error);
         }
       }
     }

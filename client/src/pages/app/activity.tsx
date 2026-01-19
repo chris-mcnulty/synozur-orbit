@@ -106,6 +106,13 @@ export default function Activity() {
     c.linkedInUrl || c.instagramUrl || c.twitterUrl
   );
 
+  // Include baseline company profile in social and blog tracking
+  const baselineHasSocial = companyProfile && (
+    companyProfile.linkedInUrl || companyProfile.instagramUrl || companyProfile.twitterUrl ||
+    companyProfile.linkedInEngagement || companyProfile.instagramEngagement || companyProfile.twitterEngagement
+  );
+  const baselineHasBlog = companyProfile?.blogSnapshot && (companyProfile.blogSnapshot as any)?.postCount > 0;
+
   const filteredActivity = activity.filter((item) => {
     const sourceType = item.sourceType || "competitor";
     if (companyFilter === "all") return true;
@@ -228,7 +235,7 @@ export default function Activity() {
         </TabsContent>
 
         <TabsContent value="social" className="space-y-6">
-          {competitorsWithSocial.length === 0 ? (
+          {competitorsWithSocial.length === 0 && !baselineHasSocial ? (
             <Card className="p-8">
               <div className="text-center">
                 <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -241,6 +248,71 @@ export default function Activity() {
             </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {/* Baseline company profile first */}
+              {baselineHasSocial && companyProfile && (
+                <Card className="border-primary/50 bg-primary/5" data-testid="social-card-baseline">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Building className="h-4 w-4 text-primary" />
+                      {companyProfile.companyName}
+                      <Badge variant="secondary" className="ml-auto text-xs">Your Company</Badge>
+                    </CardTitle>
+                    {companyProfile.lastWebsiteMonitor && (
+                      <CardDescription className="text-xs">
+                        Last checked {formatTimeAgo(companyProfile.lastWebsiteMonitor)}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {companyProfile.linkedInUrl && (
+                      <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                        <div className="flex items-center gap-2">
+                          <Linkedin className="h-4 w-4 text-[#0077B5]" />
+                          <span className="text-sm">LinkedIn</span>
+                        </div>
+                        {(companyProfile.linkedInEngagement as any)?.followers ? (
+                          <span className="text-sm font-medium">
+                            {formatNumber((companyProfile.linkedInEngagement as any).followers)} followers
+                          </span>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Linked</Badge>
+                        )}
+                      </div>
+                    )}
+                    {companyProfile.instagramUrl && (
+                      <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                        <div className="flex items-center gap-2">
+                          <Instagram className="h-4 w-4 text-[#E4405F]" />
+                          <span className="text-sm">Instagram</span>
+                        </div>
+                        {(companyProfile.instagramEngagement as any)?.followers ? (
+                          <span className="text-sm font-medium">
+                            {formatNumber((companyProfile.instagramEngagement as any).followers)} followers
+                          </span>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Linked</Badge>
+                        )}
+                      </div>
+                    )}
+                    {companyProfile.twitterUrl && (
+                      <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                        <div className="flex items-center gap-2">
+                          <Twitter className="h-4 w-4 text-[#1DA1F2]" />
+                          <span className="text-sm">Twitter/X</span>
+                        </div>
+                        {(companyProfile.twitterEngagement as any)?.followers ? (
+                          <span className="text-sm font-medium">
+                            {formatNumber((companyProfile.twitterEngagement as any).followers)} followers
+                          </span>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">Linked</Badge>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+              {/* Competitors */}
               {competitorsWithSocial.map((competitor) => (
                 <Card key={competitor.id} data-testid={`social-card-${competitor.id}`}>
                   <CardHeader className="pb-3">
@@ -312,18 +384,58 @@ export default function Activity() {
         </TabsContent>
 
         <TabsContent value="blogs" className="space-y-6">
-          {competitorsWithBlogs.length === 0 ? (
+          {competitorsWithBlogs.length === 0 && !baselineHasBlog ? (
             <Card className="p-8">
               <div className="text-center">
                 <Rss className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No blog content detected</h3>
                 <p className="text-muted-foreground max-w-md mx-auto">
-                  Blog posts are discovered during website crawls. Competitors with active blogs will appear here.
+                  Blog posts are discovered during website crawls. Companies with active blogs will appear here.
                 </p>
               </div>
             </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
+              {/* Baseline company blog first */}
+              {baselineHasBlog && companyProfile && (
+                <Card className="border-primary/50 bg-primary/5" data-testid="blog-card-baseline">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Building className="h-4 w-4 text-primary" />
+                        {companyProfile.companyName}
+                        <Badge variant="secondary" className="text-xs">Your Company</Badge>
+                      </CardTitle>
+                      <Badge variant="secondary">
+                        {(companyProfile.blogSnapshot as any)?.postCount || 0} posts detected
+                      </Badge>
+                    </div>
+                    {(companyProfile.blogSnapshot as any)?.capturedAt && (
+                      <CardDescription className="text-xs">
+                        Last scanned {formatTimeAgo((companyProfile.blogSnapshot as any).capturedAt)}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {(companyProfile.blogSnapshot as any)?.latestTitles?.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase">Recent Topics</p>
+                        <ul className="space-y-1">
+                          {(companyProfile.blogSnapshot as any).latestTitles.slice(0, 5).map((title: string, i: number) => (
+                            <li key={i} className="text-sm flex items-start gap-2">
+                              <Rss className="h-3 w-3 mt-1 text-muted-foreground flex-shrink-0" />
+                              <span className="line-clamp-1">{title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Blog detected but no specific posts extracted.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+              {/* Competitors */}
               {competitorsWithBlogs.map((competitor) => (
                 <Card key={competitor.id} data-testid={`blog-card-${competitor.id}`}>
                   <CardHeader className="pb-2">
@@ -380,7 +492,7 @@ export default function Activity() {
                   <SelectItem value="baseline" data-testid="filter-option-baseline">
                     <div className="flex items-center gap-2">
                       <Building className="h-3 w-3" />
-                      {companyProfile.name} (Baseline)
+                      {companyProfile.companyName} (Your Company)
                     </div>
                   </SelectItem>
                 )}
@@ -410,7 +522,7 @@ export default function Activity() {
                 const sourceType = item.sourceType || "competitor";
                 const isBaseline = sourceType === "baseline";
                 const companyName = isBaseline 
-                  ? companyProfile?.name || "Your Company"
+                  ? companyProfile?.companyName || "Your Company"
                   : item.competitorName || "Unknown";
                 
                 return (

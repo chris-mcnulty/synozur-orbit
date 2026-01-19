@@ -210,6 +210,129 @@ export async function monitorCompetitorWebsite(
   }
 }
 
+interface CompanyProfileMonitoringResult {
+  companyProfileId: string;
+  companyName: string;
+  hasChanges: boolean;
+  changeScore: number;
+  summary?: string;
+  status: "success" | "error" | "no_content";
+  message?: string;
+  pagesMonitored: number;
+}
+
+export async function monitorCompanyProfileWebsite(
+  companyProfileId: string,
+  userId: string,
+  tenantDomain: string,
+  marketId?: string
+): Promise<CompanyProfileMonitoringResult> {
+  const companyProfile = await storage.getCompanyProfile(companyProfileId);
+  if (!companyProfile) {
+    throw new Error("Company profile not found");
+  }
+  
+  const now = new Date();
+  
+  try {
+    await delay(REQUEST_DELAY_MS + Math.random() * 500);
+    
+    const crawlResult = await crawlCompetitorWebsite(companyProfile.websiteUrl);
+    
+    if (crawlResult.pages.length === 0) {
+      return {
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Unable to crawl website - site may be unavailable",
+        pagesMonitored: 0,
+      };
+    }
+    
+    const newContent = getCombinedContent(crawlResult);
+    const previousContent = companyProfile.previousWebsiteContent || "";
+    
+    const changeScore = calculateChangeScore(previousContent, newContent);
+    const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
+    
+    let summary: string | undefined;
+    
+    if (hasSignificantChanges) {
+      summary = await summarizeWebsiteChanges(companyProfile.companyName, previousContent, newContent, changeScore);
+      
+      const isRealChange = !summary.toLowerCase().includes("no significant");
+      
+      if (isRealChange) {
+        await storage.createActivity({
+          type: "website_update",
+          sourceType: "baseline",
+          companyProfileId: companyProfile.id,
+          competitorName: companyProfile.companyName,
+          description: `Your website content changed (${changeScore}% change detected)`,
+          summary,
+          details: {
+            changeScore,
+            pagesMonitored: crawlResult.pages.length,
+            crawledAt: crawlResult.crawledAt,
+          },
+          date: now.toISOString().split("T")[0],
+          impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
+          userId,
+          tenantDomain,
+          marketId: marketId || companyProfile.marketId || undefined,
+        });
+      }
+    }
+    
+    await storage.updateCompanyProfile(companyProfile.id, {
+      previousWebsiteContent: newContent.substring(0, 100000),
+      lastWebsiteMonitor: now,
+      crawlData: {
+        pagesCrawled: crawlResult.pages.map(p => ({
+          url: p.url,
+          pageType: p.pageType,
+          title: p.title,
+          wordCount: p.wordCount,
+        })),
+        totalWordCount: crawlResult.totalWordCount,
+        crawledAt: crawlResult.crawledAt,
+      },
+      lastFullCrawl: now,
+      blogSnapshot: crawlResult.blogSnapshot ? {
+        ...crawlResult.blogSnapshot,
+        capturedAt: now.toISOString(),
+      } : undefined,
+      linkedInUrl: companyProfile.linkedInUrl || crawlResult.socialLinks.linkedIn,
+      instagramUrl: companyProfile.instagramUrl || crawlResult.socialLinks.instagram,
+      twitterUrl: companyProfile.twitterUrl || crawlResult.socialLinks.twitter,
+    });
+    
+    return {
+      companyProfileId: companyProfile.id,
+      companyName: companyProfile.companyName,
+      hasChanges: hasSignificantChanges && !summary?.toLowerCase().includes("no significant"),
+      changeScore,
+      summary: hasSignificantChanges ? summary : undefined,
+      status: "success",
+      pagesMonitored: crawlResult.pages.length,
+    };
+    
+  } catch (error: any) {
+    console.error(`Error monitoring website for ${companyProfile.companyName}:`, error);
+    return {
+      companyProfileId: companyProfile.id,
+      companyName: companyProfile.companyName,
+      hasChanges: false,
+      changeScore: 0,
+      status: "error",
+      message: error.message || "Unknown error occurred",
+      pagesMonitored: 0,
+    };
+  }
+}
+
 export async function monitorAllCompetitorsForTenant(
   tenantDomain: string
 ): Promise<WebsiteMonitoringResult[]> {
