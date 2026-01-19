@@ -293,22 +293,29 @@ export async function generateBattlecardPdf(
 ): Promise<Buffer> {
   const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant);
   
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
-    ],
-  });
-  
+  let browser;
   try {
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--single-process",
+        "--no-zygote",
+      ],
+    });
+    
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    
+    await page.setContent(html, { 
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     const pdfBuffer = await page.pdf({
       format: "Letter",
@@ -317,8 +324,13 @@ export async function generateBattlecardPdf(
     });
     
     return Buffer.from(pdfBuffer);
+  } catch (error) {
+    console.error("Battlecard PDF generation error:", error);
+    throw error;
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close().catch(e => console.error("Failed to close browser:", e));
+    }
   }
 }
 
@@ -720,30 +732,44 @@ export async function generateProductBattlecardPdf(
 ): Promise<Buffer> {
   const html = generateProductBattlecardHtml(battlecard, competitorName, baselineName, tenant);
   
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
-    ],
-  });
-  
+  let browser;
   try {
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--single-process",
+        "--no-zygote",
+      ],
+    });
+    
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    
+    await page.setContent(html, { 
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     const pdfBuffer = await page.pdf({
       format: "Letter",
       printBackground: true,
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
     });
+    
     return Buffer.from(pdfBuffer);
+  } catch (error) {
+    console.error("Product battlecard PDF generation error:", error);
+    throw error;
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close().catch(e => console.error("Failed to close browser:", e));
+    }
   }
 }
 
