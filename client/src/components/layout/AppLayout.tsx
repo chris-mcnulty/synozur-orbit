@@ -439,7 +439,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GTM Services</a>
                 <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Privacy Policy</a>
                 <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms of Service</a>
-                <Link href="#" className="hover:text-foreground transition-colors">Support</Link>
+                <a href="https://www.synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Support</a>
               </div>
             </div>
           </footer>
