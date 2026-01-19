@@ -432,6 +432,12 @@ export default function Reports() {
                 <CardTitle className="text-base line-clamp-1">{report.name}</CardTitle>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Clock size={12} /> {report.date || new Date(report.createdAt).toLocaleDateString()}
+                  {report.marketName && (
+                    <>
+                      <span>•</span>
+                      <span>{report.marketName}</span>
+                    </>
+                  )}
                   {report.size && (
                     <>
                       <span>•</span>

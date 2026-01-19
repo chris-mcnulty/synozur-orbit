@@ -301,7 +301,7 @@ export interface IStorage {
   getProductsByContext(ctx: ContextFilter): Promise<Product[]>;
   getAssessmentsByContext(ctx: ContextFilter): Promise<Assessment[]>;
   getAssessmentByIdWithContext(id: string, ctx: ContextFilter): Promise<Assessment | undefined>;
-  getReportsByContext(ctx: ContextFilter): Promise<Report[]>;
+  getReportsByContext(ctx: ContextFilter): Promise<(Report & { marketName?: string })[]>;
   getReportByIdWithContext(id: string, ctx: ContextFilter): Promise<Report | undefined>;
   getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]>;
   getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
@@ -1736,12 +1736,16 @@ export class DatabaseStorage implements IStorage {
     return assessment || undefined;
   }
 
-  async getReportsByContext(ctx: ContextFilter): Promise<Report[]> {
+  async getReportsByContext(ctx: ContextFilter): Promise<(Report & { marketName?: string })[]> {
     const marketCondition = ctx.isDefaultMarket
       ? or(eq(reports.marketId, ctx.marketId), isNull(reports.marketId))
       : eq(reports.marketId, ctx.marketId);
     
-    return await db.select().from(reports)
+    const result = await db.select({
+      report: reports,
+      marketName: markets.name,
+    }).from(reports)
+      .leftJoin(markets, eq(reports.marketId, markets.id))
       .where(
         and(
           eq(reports.tenantDomain, ctx.tenantDomain),
@@ -1749,6 +1753,11 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(reports.createdAt));
+    
+    return result.map(r => ({
+      ...r.report,
+      marketName: r.marketName || undefined,
+    }));
   }
 
   async getReportByIdWithContext(id: string, ctx: ContextFilter): Promise<Report | undefined> {

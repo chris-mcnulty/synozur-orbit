@@ -26,21 +26,81 @@ interface CrawlSummary {
   };
 }
 
-const USER_AGENT = "Mozilla/5.0 (compatible; OrbitBot/1.0; +https://orbit.synozur.com)";
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+];
 
-async function fetchPage(url: string): Promise<{ html: string; finalUrl: string } | null> {
-  try {
-    const response = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
-      redirect: "follow",
-    });
-    if (!response.ok) return null;
-    const html = await response.text();
-    return { html, finalUrl: response.url };
-  } catch (error) {
-    console.error(`Failed to fetch ${url}:`, error);
-    return null;
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function getBrowserHeaders(userAgent: string): Record<string, string> {
+  const isChrome = userAgent.includes("Chrome");
+  const isFirefox = userAgent.includes("Firefox");
+  
+  const headers: Record<string, string> = {
+    "User-Agent": userAgent,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Cache-Control": "max-age=0",
+  };
+  
+  if (isChrome) {
+    headers["Sec-Ch-Ua"] = '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"';
+    headers["Sec-Ch-Ua-Mobile"] = "?0";
+    headers["Sec-Ch-Ua-Platform"] = '"Windows"';
+    headers["Sec-Fetch-Dest"] = "document";
+    headers["Sec-Fetch-Mode"] = "navigate";
+    headers["Sec-Fetch-Site"] = "none";
+    headers["Sec-Fetch-User"] = "?1";
+  } else if (isFirefox) {
+    headers["DNT"] = "1";
   }
+  
+  return headers;
+}
+
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchPage(url: string, retries = 2): Promise<{ html: string; finalUrl: string } | null> {
+  const userAgent = getRandomUserAgent();
+  const headers = getBrowserHeaders(userAgent);
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) {
+        await delay(1000 + Math.random() * 2000);
+      }
+      
+      const response = await fetch(url, {
+        headers,
+        redirect: "follow",
+      });
+      
+      if (response.status === 403 || response.status === 429) {
+        console.warn(`Blocked (${response.status}) fetching ${url}, attempt ${attempt + 1}/${retries + 1}`);
+        if (attempt < retries) continue;
+        return null;
+      }
+      
+      if (!response.ok) return null;
+      const html = await response.text();
+      return { html, finalUrl: response.url };
+    } catch (error) {
+      console.error(`Failed to fetch ${url} (attempt ${attempt + 1}):`, error);
+      if (attempt < retries) continue;
+      return null;
+    }
+  }
+  return null;
 }
 
 function extractTextContent(html: string): string {
