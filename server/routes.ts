@@ -7112,13 +7112,18 @@ Return only the description text, no quotes or formatting.`;
         return res.status(503).json({ error: "Microsoft Graph API is not configured. Please contact Synozur support." });
       }
 
-      // Get the tenant's Azure tenant ID from the database
-      const userDomain = currentUser.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(userDomain);
+      // Use active tenant context for Global Admins, otherwise use user's email domain
+      let tenant;
+      if (currentUser.role === "Global Admin" && req.session.activeTenantId) {
+        tenant = await storage.getTenant(req.session.activeTenantId);
+      } else {
+        const userDomain = currentUser.email.split("@")[1];
+        tenant = await storage.getTenantByDomain(userDomain);
+      }
       
       if (!tenant?.entraTenantId) {
         return res.status(400).json({ 
-          error: "Azure Tenant ID is not configured for your organization. Please contact your administrator to set up Entra ID integration." 
+          error: "Azure Tenant ID is not configured for this organization. Please contact your administrator to set up Entra ID integration." 
         });
       }
 
@@ -7158,9 +7163,14 @@ Return only the description text, no quotes or formatting.`;
         return res.json({ configured: false, reason: "platform" });
       }
       
-      // Check if tenant has Azure tenant ID configured
-      const userDomain = currentUser.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(userDomain);
+      // Use active tenant context for Global Admins, otherwise use user's email domain
+      let tenant;
+      if (currentUser.role === "Global Admin" && req.session.activeTenantId) {
+        tenant = await storage.getTenant(req.session.activeTenantId);
+      } else {
+        const userDomain = currentUser.email.split("@")[1];
+        tenant = await storage.getTenantByDomain(userDomain);
+      }
       
       if (!tenant?.entraTenantId) {
         return res.json({ configured: false, reason: "tenant" });
