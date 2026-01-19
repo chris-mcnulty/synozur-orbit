@@ -59,6 +59,7 @@ Preferred communication style: Simple, everyday language.
 - **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining.
 - **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
+- **Competitor Intelligence Dashboard**: Activity page with four tabs - Insights (AI-summarized website changes), Social Signals (competitor social media profiles and engagement), Blog Activity (detected blog posts), and Activity Log (raw crawl events). Dashboard Live Signals prioritizes meaningful changes over raw crawl events.
 - **Assessments**: Snapshots of competitive analysis with proxy assessment capabilities.
 - **Client Projects**: Primary purpose is to focus on individual products rather than overall company positioning. Projects enable product-level competitive analysis, comparing specific products against competitor products. Also supports proxy analysis for consulting firms.
 - **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
