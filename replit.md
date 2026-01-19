@@ -15,6 +15,7 @@ Preferred communication style: Simple, everyday language.
 - **Purpose**: Digital maturity modeling AI platform by Synozur
 - **Use As Reference For**: UI/UX patterns, feature implementations, admin dashboards, AI usage tracking
 - **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
+- **Public GTM Assessment**: https://orion.synozur.com/gtm - Open Go-to-Market Maturity Assessment available for use in outbound emails, page footers, and marketing materials as a lead generation resource.
 
 ## System Architecture
 
