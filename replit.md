@@ -60,7 +60,7 @@ Preferred communication style: Simple, everyday language.
 - **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
 - **Assessments**: Snapshots of competitive analysis with proxy assessment capabilities.
-- **Client Projects**: Proxy analysis for consulting firms with company vs company and product vs product analysis types.
+- **Client Projects**: Primary purpose is to focus on individual products rather than overall company positioning. Projects enable product-level competitive analysis, comparing specific products against competitor products. Also supports proxy analysis for consulting firms.
 - **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
 - **Report Generation**: Branded PDF reports that can be scoped to baseline (company profile + all competitors) or specific projects. Project-scoped reports require project owner or Global Admin permissions.
 - **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) within a single organization. Each market contains its own baseline company, competitors, and projects. Enabled via `multiMarketEnabled` flag with configurable `marketLimit`.
