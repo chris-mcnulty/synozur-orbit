@@ -59,10 +59,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <ul className="space-y-3 text-sm text-muted-foreground">
               <li><a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">About Synozur</a></li>
               <li><a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">GTM Services</a></li>
-              <li><Link href="#" className="hover:text-primary transition-colors">Privacy Policy</Link></li>
+              <li><a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy Policy</a></li>
               <li><Link href="#" className="hover:text-primary transition-colors">Terms of Service</Link></li>
               <li><Link href="#" className="hover:text-primary transition-colors">Security</Link></li>
-              <li><Link href="#" className="hover:text-primary transition-colors">Contact Support</Link></li>
+              <li><a href="mailto:support@synozur.com" className="hover:text-primary transition-colors">Contact Support</a></li>
             </ul>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div className="flex flex-col md:flex-row justify-between items-center text-sm text-muted-foreground pt-6 border-t border-border/50">
             <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2025.</p>
             <div className="mt-4 md:mt-0 flex gap-6">
-               <Link href="#" className="hover:text-primary transition-colors">Privacy</Link>
+               <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">Privacy</a>
                <Link href="#" className="hover:text-primary transition-colors">Terms</Link>
                <Link href="#" className="hover:text-primary transition-colors">Cookies</Link>
             </div>
