@@ -7065,9 +7065,16 @@ Return only the description text, no quotes or formatting.`;
       // Return immediately with job info - actual processing happens async
       const jobId = `rebuild-${Date.now()}`;
       
+      // Get total battlecards count for projects
+      let projectBattlecardCount = 0;
+      for (const project of projects) {
+        const battlecards = await storage.getProductBattlecardsByProject(project.id);
+        projectBattlecardCount += battlecards.length;
+      }
+
       // Track progress
       let processed = 0;
-      const total = allCompetitors.length + allProducts.length;
+      const total = allCompetitors.length + allProducts.length + projectBattlecardCount;
 
       // Start async processing
       (async () => {
@@ -7222,7 +7229,84 @@ Provide analysis in this JSON format:
           processed++;
         }
 
-        console.log(`Rebuild all completed: ${processed}/${total} items processed`);
+        // Process projects - regenerate product battlecards
+        for (const project of projects) {
+          try {
+            // Get existing product battlecards for this project
+            const existingBattlecards = await storage.getProductBattlecardsByProject(project.id);
+            
+            for (const battlecard of existingBattlecards) {
+              try {
+                // Get the products
+                const baselineProduct = await storage.getProduct(battlecard.baselineProductId);
+                const competitorProduct = await storage.getProduct(battlecard.competitorProductId);
+                
+                if (!baselineProduct || !competitorProduct) continue;
+
+                // Regenerate battlecard using updated product analysis data
+                const battlecardPrompt = `Generate a competitive sales battlecard comparing these two products:
+
+BASELINE PRODUCT (Our Product):
+Name: ${baselineProduct.name}
+Company: ${baselineProduct.companyName || "Unknown"}
+Analysis: ${JSON.stringify(baselineProduct.analysisData || {}, null, 2)}
+
+COMPETITOR PRODUCT:
+Name: ${competitorProduct.name}
+Company: ${competitorProduct.companyName || "Unknown"}  
+Analysis: ${JSON.stringify(competitorProduct.analysisData || {}, null, 2)}
+
+Generate a comprehensive battlecard in this JSON format:
+{
+  "strengths": ["competitor strength 1", "competitor strength 2"],
+  "weaknesses": ["competitor weakness 1", "competitor weakness 2"],
+  "ourAdvantages": ["our advantage 1", "our advantage 2"],
+  "keyDifferentiators": [{"feature": "feature name", "ours": "our capability", "theirs": "their capability"}],
+  "objections": [{"objection": "common objection", "response": "how to respond"}],
+  "talkTracks": [{"scenario": "scenario name", "script": "what to say"}]
+}`;
+
+                const battlecardResponse = await anthropic.messages.create({
+                  model: "claude-sonnet-4-20250514",
+                  max_tokens: 3000,
+                  messages: [{ role: "user", content: battlecardPrompt }],
+                });
+
+                const battlecardText = battlecardResponse.content[0].type === "text" 
+                  ? battlecardResponse.content[0].text : "";
+                
+                let battlecardData: any = {};
+                try {
+                  const jsonMatch = battlecardText.match(/\{[\s\S]*\}/);
+                  if (jsonMatch) {
+                    battlecardData = JSON.parse(jsonMatch[0]);
+                  }
+                } catch (e) {
+                  console.error("Failed to parse battlecard:", e);
+                }
+
+                await storage.updateProductBattlecard(battlecard.id, {
+                  strengths: battlecardData.strengths || battlecard.strengths,
+                  weaknesses: battlecardData.weaknesses || battlecard.weaknesses,
+                  ourAdvantages: battlecardData.ourAdvantages || battlecard.ourAdvantages,
+                  keyDifferentiators: battlecardData.keyDifferentiators || battlecard.keyDifferentiators,
+                  objections: battlecardData.objections || battlecard.objections,
+                  talkTracks: battlecardData.talkTracks || battlecard.talkTracks,
+                  lastGeneratedAt: new Date(),
+                });
+
+              } catch (error) {
+                console.error(`Error regenerating battlecard ${battlecard.id}:`, error);
+              }
+              processed++;
+            }
+
+          } catch (error) {
+            console.error(`Error processing project ${project.name}:`, error);
+          }
+        }
+
+        console.log(`Rebuild all completed: ${processed}/${total} items processed, ${projects.length} projects refreshed`);
       })();
 
       res.json({
@@ -7393,6 +7477,57 @@ Provide analysis in this JSON format:
 
   // ==================== ANALYTICS ROUTES ====================
 
+  // Simple in-memory cache for IP to country lookups
+  const ipCountryCache = new Map<string, { country: string; expires: number }>();
+  const IP_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+  async function getCountryFromIP(ip: string): Promise<string | null> {
+    try {
+      // Check cache first
+      const cached = ipCountryCache.get(ip);
+      if (cached && cached.expires > Date.now()) {
+        return cached.country;
+      }
+
+      // Skip private/local IPs (RFC 1918 and RFC 4193)
+      if (ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.') || 
+          ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') ||
+          ip.startsWith('172.19.') || ip.startsWith('172.20.') || ip.startsWith('172.21.') ||
+          ip.startsWith('172.22.') || ip.startsWith('172.23.') || ip.startsWith('172.24.') ||
+          ip.startsWith('172.25.') || ip.startsWith('172.26.') || ip.startsWith('172.27.') ||
+          ip.startsWith('172.28.') || ip.startsWith('172.29.') || ip.startsWith('172.30.') ||
+          ip.startsWith('172.31.') || ip === '::1' || ip === 'localhost' ||
+          ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) {
+        return null;
+      }
+
+      // Validate IP format (basic check)
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      const ipv6Regex = /^[0-9a-fA-F:]+$/;
+      if (!ipv4Regex.test(ip) && !ipv6Regex.test(ip)) {
+        return null;
+      }
+
+      // Use ipapi.co (HTTPS, free tier: 1000 req/day)
+      const response = await fetch(`https://ipapi.co/${ip}/json/`, {
+        headers: { 'User-Agent': 'Orbit/1.0' },
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+      });
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      if (data.country_code && !data.error) {
+        // Cache the result
+        ipCountryCache.set(ip, { country: data.country_code, expires: Date.now() + IP_CACHE_TTL });
+        return data.country_code;
+      }
+      return null;
+    } catch (error) {
+      // Silently fail - geolocation is best-effort
+      return null;
+    }
+  }
+
   app.post("/api/analytics/page-view", async (req, res) => {
     try {
       const { path, sessionId, referrer, utmSource, utmMedium, utmCampaign } = req.body;
@@ -7401,9 +7536,13 @@ Provide analysis in this JSON format:
         return res.status(400).json({ error: "path and sessionId are required" });
       }
 
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const xForwardedFor = req.headers['x-forwarded-for'];
+      const ip = Array.isArray(xForwardedFor) ? xForwardedFor[0] : (xForwardedFor?.split(',')[0]?.trim() || req.socket.remoteAddress || '');
       const ipHash = createHash('sha256').update(String(ip)).digest('hex').substring(0, 16);
       const userAgent = req.headers['user-agent'] || '';
+
+      // Get country from IP (async, cached)
+      const country = await getCountryFromIP(ip);
 
       await storage.createPageView({
         path,
@@ -7414,6 +7553,7 @@ Provide analysis in this JSON format:
         utmSource: utmSource || null,
         utmMedium: utmMedium || null,
         utmCampaign: utmCampaign || null,
+        country: country || null,
       });
 
       res.json({ success: true });

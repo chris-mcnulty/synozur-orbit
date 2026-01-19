@@ -667,6 +667,7 @@ export const pageViews = pgTable("page_views", {
   utmSource: text("utm_source"),
   utmMedium: text("utm_medium"),
   utmCampaign: text("utm_campaign"),
+  country: text("country"), // IP geolocation country code
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -34,6 +34,10 @@ interface UsageStats {
     browser: string;
     count: number;
   }>;
+  countries: Array<{
+    country: string;
+    count: number;
+  }>;
 }
 
 export default function UsagePage() {
@@ -335,6 +339,32 @@ export default function UsagePage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card data-testid="card-countries" className="mt-6">
+            <CardHeader>
+              <CardTitle>Visitor Countries</CardTitle>
+              <CardDescription>Geographic distribution of your traffic</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {stats?.countries && stats.countries.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                  {stats.countries.map((c, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                      <Globe className="w-4 h-4 text-muted-foreground" />
+                      <span className="font-medium">{c.country}</span>
+                      <span className="text-muted-foreground ml-auto">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Globe className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p>No country data yet</p>
+                  <p className="text-xs mt-1">Country tracking begins with new page views</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </AppLayout>

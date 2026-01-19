@@ -1163,6 +1163,7 @@ export class DatabaseStorage implements IStorage {
     referrers: Array<{ referrer: string; count: number }>;
     utmCampaigns: Array<{ campaign: string; source: string; medium: string; count: number }>;
     browsers: Array<{ browser: string; count: number }>;
+    countries: Array<{ country: string; count: number }>;
   }> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -1195,6 +1196,16 @@ export class DatabaseStorage implements IStorage {
     const browsers = Array.from(browserMap.entries())
       .map(([browser, count]) => ({ browser, count }))
       .sort((a, b) => b.count - a.count);
+
+    const countryMap = new Map<string, number>();
+    allViews.forEach(view => {
+      const country = view.country || "Unknown";
+      countryMap.set(country, (countryMap.get(country) || 0) + 1);
+    });
+    const countries = Array.from(countryMap.entries())
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
 
     const dailyMap = new Map<string, { views: number; sessions: Set<string>; signupViews: number }>();
     
@@ -1268,6 +1279,7 @@ export class DatabaseStorage implements IStorage {
       referrers,
       utmCampaigns,
       browsers,
+      countries,
     };
   }
 
