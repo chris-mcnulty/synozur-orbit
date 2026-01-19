@@ -181,6 +181,37 @@ export default function ProjectDetail() {
     keyMessages: "",
     customGuidance: "",
   });
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportProject = async () => {
+    if (!project) return;
+    setIsExporting(true);
+    try {
+      const response = await fetch(`/api/projects/${id}/export`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to export project");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name.replace(/[^a-z0-9]/gi, "_")}_report.md`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({
+        title: "Export Complete",
+        description: "Project report has been downloaded.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Fetch GTM Plan recommendation
   const { data: gtmPlan, isLoading: gtmLoading } = useQuery<LongFormRecommendation>({
@@ -849,12 +880,28 @@ export default function ProjectDetail() {
                 </div>
               </div>
             </div>
-            <Link href={`/app/projects/${project.id}/executive-summary`}>
-              <Button variant="default" className="gap-2" data-testid="button-executive-summary">
-                <Sparkles className="h-4 w-4" />
-                Executive Summary
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                className="gap-2" 
+                onClick={exportProject}
+                disabled={isExporting}
+                data-testid="button-export-project"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Export
               </Button>
-            </Link>
+              <Link href={`/app/projects/${project.id}/executive-summary`}>
+                <Button variant="default" className="gap-2" data-testid="button-executive-summary">
+                  <Sparkles className="h-4 w-4" />
+                  Executive Summary
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Main Tabs for Project Sections */}

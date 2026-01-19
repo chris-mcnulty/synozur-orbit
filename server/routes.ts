@@ -5055,6 +5055,173 @@ Make this a comprehensive reference document for sales and strategy teams.`;
     }
   });
 
+  // Export project as Markdown report
+  app.get("/api/projects/:projectId/export", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!validateResourceContext(project, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Gather all project data
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      const gapAnalysis = recommendations.find(r => r.type === "gap_analysis");
+      const strategicRecs = recommendations.find(r => r.type === "strategic_recommendations");
+      const competitiveSummary = recommendations.find(r => r.type === "competitive_summary");
+      const gtmPlan = recommendations.find(r => r.type === "gtm_plan");
+      const messagingFramework = recommendations.find(r => r.type === "messaging_framework");
+
+      // Build Markdown report
+      let markdown = `# ${project.name} - Competitive Intelligence Report\n\n`;
+      markdown += `**Client:** ${project.clientName}\n`;
+      markdown += `**Analysis Type:** ${project.analysisType === "product" ? "Product Analysis" : "Company Analysis"}\n`;
+      markdown += `**Generated:** ${new Date().toLocaleDateString()}\n\n`;
+      markdown += `---\n\n`;
+
+      // Products Overview
+      markdown += `## Products Overview\n\n`;
+      if (baselineProduct) {
+        markdown += `### Baseline Product\n`;
+        markdown += `- **${baselineProduct.product?.name || "Unnamed"}** (${baselineProduct.product?.companyName || "Unknown Company"})\n`;
+        if (baselineProduct.product?.url) {
+          markdown += `  - URL: ${baselineProduct.product.url}\n`;
+        }
+        markdown += `\n`;
+      }
+
+      if (competitorProducts.length > 0) {
+        markdown += `### Competitors (${competitorProducts.length})\n`;
+        for (const cp of competitorProducts) {
+          markdown += `- **${cp.product?.name || "Unnamed"}** (${cp.product?.companyName || "Unknown Company"})\n`;
+        }
+        markdown += `\n`;
+      }
+
+      markdown += `---\n\n`;
+
+      // Gap Analysis
+      if (gapAnalysis?.status === "generated" && gapAnalysis.content) {
+        markdown += `## Gap Analysis\n\n`;
+        markdown += `*Last updated: ${gapAnalysis.lastGeneratedAt ? new Date(gapAnalysis.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+        markdown += gapAnalysis.content + `\n\n`;
+        markdown += `---\n\n`;
+      }
+
+      // Strategic Recommendations
+      if (strategicRecs?.status === "generated" && strategicRecs.content) {
+        markdown += `## Strategic Recommendations\n\n`;
+        markdown += `*Last updated: ${strategicRecs.lastGeneratedAt ? new Date(strategicRecs.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+        markdown += strategicRecs.content + `\n\n`;
+        markdown += `---\n\n`;
+      }
+
+      // Competitive Summary
+      if (competitiveSummary?.status === "generated" && competitiveSummary.content) {
+        markdown += `## Competitive Summary\n\n`;
+        markdown += `*Last updated: ${competitiveSummary.lastGeneratedAt ? new Date(competitiveSummary.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+        markdown += competitiveSummary.content + `\n\n`;
+        markdown += `---\n\n`;
+      }
+
+      // GTM Plan
+      if (gtmPlan?.status === "generated" && gtmPlan.content) {
+        markdown += `## Go-to-Market Plan\n\n`;
+        markdown += `*Last updated: ${gtmPlan.lastGeneratedAt ? new Date(gtmPlan.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+        markdown += gtmPlan.content + `\n\n`;
+        markdown += `---\n\n`;
+      }
+
+      // Messaging Framework
+      if (messagingFramework?.status === "generated" && messagingFramework.content) {
+        markdown += `## Messaging Framework\n\n`;
+        markdown += `*Last updated: ${messagingFramework.lastGeneratedAt ? new Date(messagingFramework.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+        markdown += messagingFramework.content + `\n\n`;
+        markdown += `---\n\n`;
+      }
+
+      // Battlecards
+      const publishedBattlecards = battlecards.filter(bc => bc.status === "published" || (Array.isArray(bc.strengths) && (bc.strengths as string[]).length > 0));
+      if (publishedBattlecards.length > 0) {
+        markdown += `## Battlecards\n\n`;
+        for (const bc of publishedBattlecards) {
+          const competitor = competitorProducts.find(cp => cp.productId === bc.competitorProductId);
+          markdown += `### ${competitor?.product?.name || "Competitor"} Battlecard\n\n`;
+
+          const strengths = bc.strengths as string[] | null;
+          const weaknesses = bc.weaknesses as string[] | null;
+          const ourAdvantages = bc.ourAdvantages as string[] | null;
+          const keyDifferentiators = bc.keyDifferentiators as { feature: string; ours: string; theirs: string }[] | null;
+          const objections = bc.objections as { objection: string; response: string }[] | null;
+          const talkTracks = bc.talkTracks as { scenario: string; script: string }[] | null;
+
+          if (strengths && strengths.length > 0) {
+            markdown += `**Their Strengths:**\n`;
+            strengths.forEach((s) => markdown += `- ${s}\n`);
+            markdown += `\n`;
+          }
+
+          if (weaknesses && weaknesses.length > 0) {
+            markdown += `**Their Weaknesses:**\n`;
+            weaknesses.forEach((w) => markdown += `- ${w}\n`);
+            markdown += `\n`;
+          }
+
+          if (ourAdvantages && ourAdvantages.length > 0) {
+            markdown += `**Our Advantages:**\n`;
+            ourAdvantages.forEach((a) => markdown += `- ${a}\n`);
+            markdown += `\n`;
+          }
+
+          if (keyDifferentiators && keyDifferentiators.length > 0) {
+            markdown += `**Key Differentiators:**\n`;
+            keyDifferentiators.forEach((d) => {
+              markdown += `- **${d.feature}**: Ours: ${d.ours} | Theirs: ${d.theirs}\n`;
+            });
+            markdown += `\n`;
+          }
+
+          if (objections && objections.length > 0) {
+            markdown += `**Objection Handling:**\n`;
+            objections.forEach((o) => {
+              markdown += `- *"${o.objection}"* → ${o.response}\n`;
+            });
+            markdown += `\n`;
+          }
+
+          if (talkTracks && talkTracks.length > 0) {
+            markdown += `**Talk Tracks:**\n`;
+            talkTracks.forEach((t) => {
+              markdown += `- **${t.scenario}**: "${t.script}"\n`;
+            });
+            markdown += `\n`;
+          }
+
+          markdown += `---\n\n`;
+        }
+      }
+
+      markdown += `\n*Report generated by Orbit - Synozur Marketing Intelligence Platform*\n`;
+
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${project.name.replace(/[^a-z0-9]/gi, "_")}_report.md"`);
+      res.send(markdown);
+    } catch (error: any) {
+      console.error("Project export error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get side-by-side messaging comparison
   app.get("/api/projects/:projectId/messaging-comparison", async (req, res) => {
     try {
