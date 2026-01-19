@@ -350,7 +350,10 @@ export default function Reports() {
                       projects.map((project: any) => (
                         <SelectItem key={project.id} value={project.id} data-testid={`option-project-${project.id}`}>
                           <div className="flex items-center gap-2">
-                            <span>{project.clientName}</span>
+                            <span className="font-medium">{project.name}</span>
+                            {project.clientName && (
+                              <span className="text-muted-foreground text-xs">({project.clientName})</span>
+                            )}
                             <Badge variant="outline" className="text-xs">
                               {project.analysisType === "product" ? "Product" : "Company"}
                             </Badge>
