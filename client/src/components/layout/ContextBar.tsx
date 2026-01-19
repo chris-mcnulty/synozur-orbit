@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -78,6 +78,8 @@ export default function ContextBar() {
   const [isAnalyzingUrl, setIsAnalyzingUrl] = useState(false);
   const [newMarketName, setNewMarketName] = useState("");
   const [newMarketDescription, setNewMarketDescription] = useState("");
+  const [deleteMarketOpen, setDeleteMarketOpen] = useState(false);
+  const [marketToDelete, setMarketToDelete] = useState<Market | null>(null);
 
   const resetMarketDialog = () => {
     setMarketCreationStep("choose");
@@ -229,7 +231,48 @@ export default function ContextBar() {
     });
   };
 
+  const deleteMarketMutation = useMutation({
+    mutationFn: async (marketId: string) => {
+      const response = await apiRequest("DELETE", `/api/markets/${marketId}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete market");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      setDeleteMarketOpen(false);
+      setMarketToDelete(null);
+      toast({
+        title: "Market deleted",
+        description: "The market and all its data have been removed.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete market",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDeleteMarket = (market: Market, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMarketToDelete(market);
+    setDeleteMarketOpen(true);
+  };
+
+  const confirmDeleteMarket = () => {
+    if (marketToDelete) {
+      deleteMarketMutation.mutate(marketToDelete.id);
+    }
+  };
+
   const canSwitchTenants = user?.role === "Global Admin" || user?.role === "Consultant";
+  const canDeleteMarket = user?.role === "Global Admin" || user?.role === "Domain Admin";
   const showMarketSelector = marketsData?.multiMarketEnabled;
   const canCreateMarket = marketsData?.multiMarketEnabled && 
     (user?.role === "Global Admin" || user?.role === "Domain Admin") &&
@@ -313,13 +356,13 @@ export default function ContextBar() {
                     <DropdownMenuItem
                       key={market.id}
                       onClick={() => switchMarketMutation.mutate(market.id)}
-                      className="flex items-center justify-between cursor-pointer"
+                      className="flex items-center justify-between cursor-pointer group"
                       data-testid={`menu-item-market-${market.id}`}
                     >
-                      <div className="flex flex-col">
+                      <div className="flex flex-col flex-1 min-w-0">
                         <span className="font-medium">{market.name}</span>
                         {market.description && (
-                          <span className="text-xs text-muted-foreground truncate max-w-40">{market.description}</span>
+                          <span className="text-xs text-muted-foreground truncate max-w-32">{market.description}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -328,6 +371,17 @@ export default function ContextBar() {
                         )}
                         {market.id === context?.activeMarketId && (
                           <Badge variant="secondary" className="text-xs">Active</Badge>
+                        )}
+                        {canDeleteMarket && !market.isDefault && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => handleDeleteMarket(market, e)}
+                            data-testid={`btn-delete-market-${market.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                       </div>
                     </DropdownMenuItem>
@@ -669,6 +723,45 @@ export default function ContextBar() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Market Confirmation Dialog */}
+      <Dialog open={deleteMarketOpen} onOpenChange={setDeleteMarketOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Market</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{marketToDelete?.name}"? This will permanently remove all data associated with this market including competitors, analysis, recommendations, and reports.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteMarketOpen(false);
+                setMarketToDelete(null);
+              }}
+              disabled={deleteMarketMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteMarket}
+              disabled={deleteMarketMutation.isPending}
+              data-testid="btn-confirm-delete-market"
+            >
+              {deleteMarketMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Market"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

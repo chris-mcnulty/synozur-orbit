@@ -1515,6 +1515,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteMarket(id: string): Promise<void> {
+    // Delete all related data for this market (cascade delete)
+    // The schema uses onDelete: "set null" which would leave orphaned data, so we clean up explicitly
+    await db.delete(competitors).where(eq(competitors.marketId, id));
+    await db.delete(companyProfiles).where(eq(companyProfiles.marketId, id));
+    await db.delete(clientProjects).where(eq(clientProjects.marketId, id));
+    await db.delete(battlecards).where(eq(battlecards.marketId, id));
+    await db.delete(executiveSummaries).where(eq(executiveSummaries.marketId, id));
+    await db.delete(groundingDocuments).where(eq(groundingDocuments.marketId, id));
+    await db.delete(competitorScores).where(eq(competitorScores.marketId, id));
+    await db.delete(socialMetrics).where(eq(socialMetrics.marketId, id));
+    // Finally delete the market itself
     await db.delete(markets).where(eq(markets.id, id));
   }
 

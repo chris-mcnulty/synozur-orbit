@@ -3520,6 +3520,54 @@ Respond in JSON format:
     }
   });
 
+  // Delete a market (non-default only)
+  app.delete("/api/markets/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const market = await storage.getMarket(req.params.id);
+      if (!market) {
+        return res.status(404).json({ error: "Market not found" });
+      }
+
+      // Cannot delete default market
+      if (market.isDefault) {
+        return res.status(400).json({ error: "Cannot delete the default market" });
+      }
+
+      // Verify user has access to this tenant
+      const userDomain = user.email.split("@")[1];
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === market.tenantId)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Delete market and associated data
+      await storage.deleteMarket(req.params.id);
+
+      // If the deleted market was the active market, switch to default
+      if (req.session.activeMarketId === req.params.id) {
+        const defaultMarket = await storage.getDefaultMarket(market.tenantId);
+        req.session.activeMarketId = defaultMarket?.id || null;
+      }
+
+      res.json({ success: true, message: "Market deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Switch active market context
   app.post("/api/context/market", async (req, res) => {
     try {
