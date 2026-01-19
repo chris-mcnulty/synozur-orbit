@@ -1871,6 +1871,10 @@ export class DatabaseStorage implements IStorage {
     allLogs.forEach(log => {
       if (log.estimatedCost) {
         totalEstimatedCost += parseFloat(log.estimatedCost);
+      } else if (log.inputTokens || log.outputTokens) {
+        const inputCost = ((log.inputTokens || 0) / 1_000_000) * 3.0;
+        const outputCost = ((log.outputTokens || 0) / 1_000_000) * 15.0;
+        totalEstimatedCost += inputCost + outputCost;
       }
     });
     

@@ -24,6 +24,7 @@ import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
+import { calculateEstimatedCost } from "./services/ai-pricing";
 
 // Helper to log AI usage after any AI call
 async function logAiUsage(
@@ -35,6 +36,10 @@ async function logAiUsage(
   durationMs?: number
 ) {
   try {
+    const inputTokens = usage?.input_tokens || 0;
+    const outputTokens = usage?.output_tokens || 0;
+    const estimatedCost = calculateEstimatedCost(model, inputTokens, outputTokens);
+    
     await storage.logAiUsage({
       tenantDomain: ctx.tenantDomain,
       marketId: ctx.marketId,
@@ -42,9 +47,10 @@ async function logAiUsage(
       provider,
       model,
       operation,
-      inputTokens: usage?.input_tokens || 0,
-      outputTokens: usage?.output_tokens || 0,
-      totalTokens: (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      estimatedCost,
       durationMs: durationMs || null,
     });
   } catch (error) {
