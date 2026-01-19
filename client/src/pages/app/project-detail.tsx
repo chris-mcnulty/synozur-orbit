@@ -182,6 +182,57 @@ export default function ProjectDetail() {
     customGuidance: "",
   });
   const [isExporting, setIsExporting] = useState(false);
+  const [isGeneratingFullReport, setIsGeneratingFullReport] = useState(false);
+  const [generationResults, setGenerationResults] = useState<{ section: string; status: string; error?: string }[] | null>(null);
+
+  const generateFullReport = async () => {
+    if (!project) return;
+    setIsGeneratingFullReport(true);
+    setGenerationResults(null);
+    try {
+      const response = await fetch(`/api/projects/${id}/generate-full-report`, { 
+        method: "POST",
+        credentials: "include" 
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate report");
+      }
+      const data = await response.json();
+      setGenerationResults(data.results);
+      
+      // Invalidate all project-related queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "gap_analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "strategic_recommendations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "competitive_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "gtm_plan"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "messaging_framework"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "battlecards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "messaging-comparison"] });
+      queryClient.invalidateQueries({ queryKey: ["executive-summary", id] });
+      
+      toast({
+        title: data.allSuccess ? "Report Generated" : "Report Partially Generated",
+        description: data.message,
+        variant: data.allSuccess ? "default" : "destructive",
+      });
+
+      // Auto-download the export if all succeeded
+      if (data.allSuccess) {
+        setTimeout(() => exportProject(), 1000);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingFullReport(false);
+    }
+  };
 
   const exportProject = async () => {
     if (!project) return;
@@ -882,6 +933,19 @@ export default function ProjectDetail() {
             </div>
             <div className="flex items-center gap-2">
               <Button 
+                variant="default" 
+                className="gap-2" 
+                onClick={generateFullReport}
+                disabled={isGeneratingFullReport || !projectProducts.some(pp => pp.role === "baseline")}
+                data-testid="button-generate-full-report"
+              >
+                {isGeneratingFullReport ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" /> Generate Full Report</>
+                )}
+              </Button>
+              <Button 
                 variant="outline" 
                 className="gap-2" 
                 onClick={exportProject}
@@ -896,13 +960,57 @@ export default function ProjectDetail() {
                 Export
               </Button>
               <Link href={`/app/projects/${project.id}/executive-summary`}>
-                <Button variant="default" className="gap-2" data-testid="button-executive-summary">
-                  <Sparkles className="h-4 w-4" />
+                <Button variant="outline" className="gap-2" data-testid="button-executive-summary">
+                  <FileText className="h-4 w-4" />
                   Executive Summary
                 </Button>
               </Link>
             </div>
           </div>
+
+          {/* Generation Progress Indicator */}
+          {isGeneratingFullReport && (
+            <Card className="mb-6 border-primary/50 bg-primary/5">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <div>
+                    <p className="font-medium">Generating Full Report...</p>
+                    <p className="text-sm text-muted-foreground">
+                      Creating Gap Analysis, Recommendations, Summary, GTM Plan, Messaging Framework, and calculating scores. This may take a minute.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Generation Results */}
+          {generationResults && !isGeneratingFullReport && (
+            <Card className="mb-6">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Check className="h-6 w-6 text-green-500" />
+                    <div>
+                      <p className="font-medium">Report Generation Complete</p>
+                      <p className="text-sm text-muted-foreground">
+                        {generationResults.filter(r => r.status === "success").length} of {generationResults.length} sections generated successfully
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setGenerationResults(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                {generationResults.some(r => r.status === "error") && (
+                  <div className="mt-3 text-sm text-destructive">
+                    Failed sections: {generationResults.filter(r => r.status === "error").map(r => r.section).join(", ")}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Main Tabs for Project Sections */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">

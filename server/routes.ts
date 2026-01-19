@@ -5222,6 +5222,257 @@ Make this a comprehensive reference document for sales and strategy teams.`;
     }
   });
 
+  // Generate Full Report - orchestrate all AI generations with one click
+  app.post("/api/projects/:projectId/generate-full-report", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!validateResourceContext(project, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set. Add a baseline product first." });
+      }
+
+      const baseline = await storage.getProduct(baselineProduct.productId);
+      const competitors = await Promise.all(
+        competitorProducts.map(pp => storage.getProduct(pp.productId))
+      );
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const results: { section: string; status: "success" | "error"; error?: string }[] = [];
+
+      // Helper function to generate and save a section
+      const generateSection = async (
+        type: string,
+        prompt: string,
+        sectionName: string
+      ): Promise<void> => {
+        try {
+          const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4000,
+            messages: [{ role: "user", content: prompt }],
+          });
+
+          const content = response.content[0].type === "text" ? response.content[0].text : "";
+
+          const existing = await storage.getLongFormRecommendationByType(
+            type,
+            req.params.projectId,
+            undefined
+          );
+
+          if (existing) {
+            await storage.updateLongFormRecommendation(existing.id, {
+              content,
+              status: "generated",
+              lastGeneratedAt: new Date(),
+            });
+          } else {
+            await storage.createLongFormRecommendation({
+              type,
+              projectId: req.params.projectId,
+              tenantDomain: ctx.tenantDomain,
+              marketId: project.marketId || null,
+              content,
+              status: "generated",
+              lastGeneratedAt: new Date(),
+              generatedBy: ctx.userId,
+            });
+          }
+          results.push({ section: sectionName, status: "success" });
+        } catch (error: any) {
+          console.error(`Failed to generate ${sectionName}:`, error);
+          results.push({ section: sectionName, status: "error", error: error.message });
+        }
+      };
+
+      // Build context for prompts
+      const contextInfo = `
+## Our Product
+Name: ${baseline?.name}
+Company: ${baseline?.companyName || "Unknown"}
+Description: ${baseline?.description || "No description"}
+
+## Competitors
+${competitors.filter(Boolean).map(c => `- ${c?.name} (${c?.companyName || "Unknown"}): ${c?.description || "No description"}`).join("\n")}
+
+## Battlecard Insights
+${battlecards.map(bc => {
+  const comp = competitors.find(c => c?.id === bc.competitorProductId);
+  return `
+Competitor: ${comp?.name || "Unknown"}
+- Their Strengths: ${(Array.isArray(bc.strengths) ? (bc.strengths as string[]).join(", ") : "N/A")}
+- Their Weaknesses: ${(Array.isArray(bc.weaknesses) ? (bc.weaknesses as string[]).join(", ") : "N/A")}
+- Our Advantages: ${(Array.isArray(bc.ourAdvantages) ? (bc.ourAdvantages as string[]).join(", ") : "N/A")}`;
+}).join("\n")}`;
+
+      // Run all generations in parallel
+      await Promise.allSettled([
+        generateSection(
+          "gap_analysis",
+          `You are a competitive intelligence analyst. Analyze the positioning gaps for "${baseline?.name}" compared to its competitors.
+${contextInfo}
+
+Generate a comprehensive gap analysis in markdown format with sections:
+# Gap Analysis
+## Executive Summary
+## Messaging Gaps  
+## Feature Gaps
+## Market Position Gaps
+## Recommendations`,
+          "Gap Analysis"
+        ),
+        generateSection(
+          "strategic_recommendations",
+          `You are a strategic advisor. Provide actionable recommendations for "${baseline?.name}" based on competitive analysis.
+${contextInfo}
+
+Generate strategic recommendations in markdown format with sections:
+# Strategic Recommendations
+## Priority Actions
+## Competitive Differentiation Opportunities
+## Market Expansion Strategies
+## Risk Mitigation`,
+          "Strategic Recommendations"
+        ),
+        generateSection(
+          "competitive_summary",
+          `You are a competitive intelligence analyst. Create a comprehensive competitive summary for "${baseline?.name}".
+${contextInfo}
+
+Generate a competitive landscape summary in markdown format with sections:
+# Competitive Summary
+## Market Overview
+## Competitor Profiles
+## Competitive Dynamics
+## Key Takeaways`,
+          "Competitive Summary"
+        ),
+        generateSection(
+          "gtm_plan",
+          `You are a go-to-market strategist. Create a GTM plan for "${baseline?.name}" considering the competitive landscape.
+${contextInfo}
+
+Generate a go-to-market plan in markdown format with sections:
+# Go-to-Market Plan
+## Target Market
+## Value Proposition
+## Channel Strategy
+## Launch Tactics
+## Success Metrics`,
+          "GTM Plan"
+        ),
+        generateSection(
+          "messaging_framework",
+          `You are a marketing strategist. Create a messaging framework for "${baseline?.name}" that differentiates from competitors.
+${contextInfo}
+
+Generate a messaging framework in markdown format with sections:
+# Messaging Framework
+## Core Value Proposition
+## Key Messages by Audience
+## Competitive Positioning Statements
+## Proof Points
+## Call to Action Templates`,
+          "Messaging Framework"
+        ),
+      ]);
+
+      // Calculate competitor scores
+      try {
+        for (const pp of competitorProducts) {
+          const product = pp.product;
+          if (!product?.competitorId) continue;
+
+          const competitor = await storage.getCompetitor(product.competitorId);
+          const battlecard = battlecards.find(bc => bc.competitorProductId === pp.productId);
+
+          let marketPresenceScore = 50;
+          let innovationScore = 50;
+          let pricingScore = 50;
+          let featureBreadthScore = 50;
+          let contentActivityScore = 50;
+          let socialEngagementScore = 50;
+
+          if (battlecard) {
+            const strengthsArr = Array.isArray(battlecard.strengths) ? battlecard.strengths as string[] : [];
+            const weaknessesArr = Array.isArray(battlecard.weaknesses) ? battlecard.weaknesses as string[] : [];
+            featureBreadthScore = Math.min(100, 50 + (strengthsArr.length - weaknessesArr.length) * 5);
+          }
+
+          if (competitor?.linkedInEngagement) {
+            const engagement = competitor.linkedInEngagement as any;
+            if (engagement.followers > 10000) socialEngagementScore = 80;
+            else if (engagement.followers > 5000) socialEngagementScore = 65;
+          }
+
+          const overallScore = Math.round(
+            (marketPresenceScore * 0.25) +
+            (innovationScore * 0.20) +
+            (featureBreadthScore * 0.20) +
+            (contentActivityScore * 0.15) +
+            (socialEngagementScore * 0.10) +
+            (pricingScore * 0.10)
+          );
+
+          const existingScore = await storage.getCompetitorScore(product.competitorId, req.params.projectId);
+          const previousScore = existingScore?.overallScore || null;
+          const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
+          const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
+
+          await storage.upsertCompetitorScore({
+            competitorId: product.competitorId,
+            projectId: req.params.projectId,
+            tenantDomain: ctx.tenantDomain,
+            marketId: project.marketId || null,
+            overallScore,
+            marketPresenceScore,
+            innovationScore,
+            pricingScore,
+            featureBreadthScore,
+            contentActivityScore,
+            socialEngagementScore,
+            trendDirection,
+            trendDelta,
+          });
+        }
+        results.push({ section: "Competitor Scores", status: "success" });
+      } catch (error: any) {
+        console.error("Failed to calculate scores:", error);
+        results.push({ section: "Competitor Scores", status: "error", error: error.message });
+      }
+
+      const successful = results.filter(r => r.status === "success").length;
+      const failed = results.filter(r => r.status === "error").length;
+
+      res.json({
+        message: `Report generation complete. ${successful} sections generated successfully${failed > 0 ? `, ${failed} failed` : ""}.`,
+        results,
+        allSuccess: failed === 0,
+      });
+    } catch (error: any) {
+      console.error("Generate full report error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get side-by-side messaging comparison
   app.get("/api/projects/:projectId/messaging-comparison", async (req, res) => {
     try {
