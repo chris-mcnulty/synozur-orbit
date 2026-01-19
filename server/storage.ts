@@ -843,6 +843,15 @@ export class DatabaseStorage implements IStorage {
     await db.update(longFormRecommendations).set({ generatedBy: null }).where(eq(longFormRecommendations.generatedBy, id));
     await db.update(reports).set({ createdBy: null }).where(eq(reports.createdBy, id));
     
+    // Get all competitors owned by this user so we can delete their related activity records
+    const userCompetitors = await db.select({ id: competitors.id }).from(competitors)
+      .where(eq(competitors.userId, id));
+    
+    // Delete activity records that reference these competitors (foreign key constraint)
+    for (const comp of userCompetitors) {
+      await db.delete(activity).where(eq(activity.competitorId, comp.id));
+    }
+    
     // Delete records with NOT NULL user foreign keys (must delete, cannot nullify)
     await db.delete(activity).where(eq(activity.userId, id));
     await db.delete(groundingDocuments).where(eq(groundingDocuments.userId, id));
