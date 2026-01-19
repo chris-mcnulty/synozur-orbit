@@ -68,6 +68,9 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 }
 
+// Standard email header image URL
+const EMAIL_HEADER_IMAGE_URL = 'https://storage.googleapis.com/replit-objstore-7732f445-e623-487e-959c-af350317396c/public/email-header.jpg';
+
 // Common email template wrapper with Vega-inspired Synozur branding
 export function wrapEmailContent(content: string): string {
   return `
@@ -97,6 +100,11 @@ export function wrapEmailContent(content: string): string {
       overflow: hidden;
       border: 1px solid rgba(129, 15, 251, 0.2);
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+    .header-image {
+      width: 100%;
+      display: block;
+      height: auto;
     }
     .header {
       background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
@@ -219,6 +227,7 @@ export function wrapEmailContent(content: string): string {
 <body>
   <div class="email-wrapper">
     <div class="container">
+      <img src="${EMAIL_HEADER_IMAGE_URL}" alt="Synozur Alliance" class="header-image" />
       <div class="header">
         <div class="header-logo">
           <h2 class="logo-orbit">Orbit</h2>
