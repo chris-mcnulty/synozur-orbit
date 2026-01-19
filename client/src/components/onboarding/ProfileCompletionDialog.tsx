@@ -156,8 +156,8 @@ export default function ProfileCompletionDialog({ open, onComplete, userName }: 
                 <SelectTrigger data-testid="select-country">
                   <SelectValue placeholder="Select..." />
                 </SelectTrigger>
-                <SelectContent>
-                  {COUNTRIES.map((c) => (
+                <SelectContent position="popper" side="bottom" align="start" className="max-h-[200px]">
+                  {COUNTRIES.filter(c => !c.startsWith("---")).map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>

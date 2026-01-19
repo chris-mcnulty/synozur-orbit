@@ -179,17 +179,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return indicators;
   }, [companyProfile, competitors, analysis, recommendations, activityData, reports]);
   
-  const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user;
-  
   // Show profile completion dialog for SSO users missing demographics
+  // This should show FIRST before company setup for new SSO users
   const needsProfileCompletion = !!user && !profileCompleted && 
     (!user.jobTitle || !user.industry || !user.companySize || !user.country);
   
-  // Show profile completion if:
-  // 1. User already has company profile (skip onboarding) OR onboarding was dismissed
-  // 2. AND user needs profile completion
-  const companyAlreadySetUp = !profileLoading && !!companyProfile;
-  const showProfileCompletion = needsProfileCompletion && (companyAlreadySetUp || onboardingDismissed);
+  // Show profile completion immediately if user needs it (don't wait for company setup)
+  const showProfileCompletion = needsProfileCompletion;
+  
+  // Only show company onboarding if profile is complete AND no company profile exists
+  const showOnboarding = !profileLoading && !companyProfile && !onboardingDismissed && !!user && !needsProfileCompletion;
   
   useEffect(() => {
     if (!loading && !user) {
