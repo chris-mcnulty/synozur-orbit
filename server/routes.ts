@@ -6814,10 +6814,20 @@ Return only the description text, no quotes or formatting.`;
       const { searchEntraUsers, isGraphApiConfigured } = await import("./services/entra-graph-service");
       
       if (!isGraphApiConfigured()) {
-        return res.status(503).json({ error: "Microsoft Graph API is not configured. ENTRA_TENANT_ID secret is required." });
+        return res.status(503).json({ error: "Microsoft Graph API is not configured. Please contact Synozur support." });
       }
 
-      const result = await searchEntraUsers(query);
+      // Get the tenant's Azure tenant ID from the database
+      const userDomain = currentUser.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(userDomain);
+      
+      if (!tenant?.entraTenantId) {
+        return res.status(400).json({ 
+          error: "Azure Tenant ID is not configured for your organization. Please contact your administrator to set up Entra ID integration." 
+        });
+      }
+
+      const result = await searchEntraUsers(query, tenant.entraTenantId);
       
       if (result.error) {
         return res.status(500).json({ error: result.error });
@@ -6847,7 +6857,21 @@ Return only the description text, no quotes or formatting.`;
       }
 
       const { isGraphApiConfigured } = await import("./services/entra-graph-service");
-      res.json({ configured: isGraphApiConfigured() });
+      
+      // Check if base credentials are configured
+      if (!isGraphApiConfigured()) {
+        return res.json({ configured: false, reason: "platform" });
+      }
+      
+      // Check if tenant has Azure tenant ID configured
+      const userDomain = currentUser.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(userDomain);
+      
+      if (!tenant?.entraTenantId) {
+        return res.json({ configured: false, reason: "tenant" });
+      }
+      
+      res.json({ configured: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

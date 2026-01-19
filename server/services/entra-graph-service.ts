@@ -1,4 +1,4 @@
-import { getMsalClientCredentialsInstance, isGraphApiConfigured } from "../auth/msal-config";
+import * as msal from "@azure/msal-node";
 
 interface EntraUser {
   id: string;
@@ -14,12 +14,53 @@ interface EntraSearchResult {
   error?: string;
 }
 
-async function getGraphAccessToken(): Promise<string | null> {
-  const msalInstance = getMsalClientCredentialsInstance();
-  if (!msalInstance) {
-    console.error("MSAL client credentials not configured - requires ENTRA_TENANT_ID");
+// Check if the base Entra credentials (client ID and secret) are configured
+// The tenant-specific Azure Tenant ID comes from the database
+export function isGraphApiConfigured(): boolean {
+  return Boolean(
+    process.env.ENTRA_CLIENT_ID && 
+    process.env.ENTRA_CLIENT_SECRET
+  );
+}
+
+// Get access token for a specific Azure tenant
+async function getGraphAccessToken(azureTenantId: string): Promise<string | null> {
+  const clientId = process.env.ENTRA_CLIENT_ID;
+  const clientSecret = process.env.ENTRA_CLIENT_SECRET;
+  
+  if (!clientId || !clientSecret) {
+    console.error("MSAL client credentials not configured - requires ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET");
     return null;
   }
+
+  if (!azureTenantId) {
+    console.error("Azure Tenant ID is required for Graph API calls");
+    return null;
+  }
+
+  const authority = `https://login.microsoftonline.com/${azureTenantId}`;
+  console.log("[Graph API] Acquiring token for tenant:", azureTenantId);
+
+  const msalConfig: msal.Configuration = {
+    auth: {
+      clientId,
+      authority,
+      clientSecret,
+    },
+    system: {
+      loggerOptions: {
+        loggerCallback(loglevel, message) {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[MSAL-Graph]", message);
+          }
+        },
+        piiLoggingEnabled: false,
+        logLevel: msal.LogLevel.Warning,
+      },
+    },
+  };
+
+  const msalInstance = new msal.ConfidentialClientApplication(msalConfig);
 
   try {
     const result = await msalInstance.acquireTokenByClientCredential({
@@ -34,15 +75,19 @@ async function getGraphAccessToken(): Promise<string | null> {
 
 export async function searchEntraUsers(
   searchQuery: string,
-  tenantId?: string
+  azureTenantId: string
 ): Promise<EntraSearchResult> {
   if (!isGraphApiConfigured()) {
-    return { users: [], error: "Microsoft Graph API is not configured. ENTRA_TENANT_ID is required to search users." };
+    return { users: [], error: "Microsoft Graph API is not configured. ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET are required." };
   }
 
-  const accessToken = await getGraphAccessToken();
+  if (!azureTenantId) {
+    return { users: [], error: "Azure Tenant ID is not configured for this organization. Please contact your administrator." };
+  }
+
+  const accessToken = await getGraphAccessToken(azureTenantId);
   if (!accessToken) {
-    return { users: [], error: "Failed to authenticate with Microsoft Graph" };
+    return { users: [], error: "Failed to authenticate with Microsoft Graph. Please verify your organization's Azure configuration." };
   }
 
   try {
@@ -85,12 +130,12 @@ export async function searchEntraUsers(
   }
 }
 
-export async function getEntraUser(userId: string): Promise<EntraUser | null> {
-  if (!isGraphApiConfigured()) {
+export async function getEntraUser(userId: string, azureTenantId: string): Promise<EntraUser | null> {
+  if (!isGraphApiConfigured() || !azureTenantId) {
     return null;
   }
 
-  const accessToken = await getGraphAccessToken();
+  const accessToken = await getGraphAccessToken(azureTenantId);
   if (!accessToken) {
     return null;
   }
@@ -124,5 +169,3 @@ export async function getEntraUser(userId: string): Promise<EntraUser | null> {
     return null;
   }
 }
-
-export { isGraphApiConfigured };
