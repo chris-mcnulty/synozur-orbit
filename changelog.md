@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- One-Click Full Report Generation - Generate all project content with a single click
+  - "Generate Full Report" button in project header orchestrates all 5 AI content sections in parallel
+  - Creates Gap Analysis, Strategic Recommendations, Competitive Summary, GTM Plan, and Messaging Framework
+  - Also calculates competitor scores automatically
+  - Progress indicator shows during generation (~1 minute)
+  - Results card displays success/failure count for each section
+  - Auto-downloads comprehensive markdown export when all sections complete successfully
+  - All project tabs refresh automatically after generation
 - Battlecard Export Options - Share and use battle cards outside of Orbit
   - Copy to clipboard with formatted text (emojis, sections, ready to paste)
   - Download as PDF with Synozur branding (purple gradients, professional layout)
