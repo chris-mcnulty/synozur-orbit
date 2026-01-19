@@ -1,6 +1,6 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -285,15 +285,8 @@ export default function Dashboard() {
     }))
   ];
 
-  // Trend data placeholder - will be replaced with historical data when available
-  const baselineScore = dashboardScores?.baseline?.overallScore || 50;
-  const trendData = [
-    { name: 'Week 1', score: Math.max(0, baselineScore - 12) },
-    { name: 'Week 2', score: Math.max(0, baselineScore - 8) },
-    { name: 'Week 3', score: Math.max(0, baselineScore - 5) },
-    { name: 'Week 4', score: Math.max(0, baselineScore - 2) },
-    { name: 'Week 5', score: baselineScore },
-  ];
+  // Current score - no fake trend data
+  const baselineScore = dashboardScores?.baseline?.overallScore || 0;
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
@@ -638,28 +631,20 @@ export default function Dashboard() {
             </CardTitle>
             <CardDescription>Your Orbit Score over time</CardDescription>
           </CardHeader>
-          <CardContent className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} />
-                <YAxis domain={[60, 100]} tick={{fontSize: 10, fill: 'hsl(var(--muted-foreground))'}} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'hsl(var(--card))', 
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                    fontSize: '12px'
-                  }} 
-                />
-                <Area type="monotone" dataKey="score" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorScore)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <CardContent className="h-[200px] flex flex-col items-center justify-center">
+            <div className="text-center">
+              <TrendingUp className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">Historical data coming soon</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Score trends will appear as you track competitors over time
+              </p>
+              {baselineScore > 0 && (
+                <div className="mt-4 px-4 py-2 bg-primary/10 rounded-lg inline-block">
+                  <p className="text-xs text-muted-foreground">Current Score</p>
+                  <p className="text-2xl font-bold text-primary">{baselineScore.toFixed(0)}</p>
+                </div>
+              )}
+            </div>
           </CardContent>
           <CardFooter className="pt-0">
             <p className="text-xs text-muted-foreground">
@@ -670,7 +655,7 @@ export default function Dashboard() {
                   </span> vs market average ({dashboardScores.marketAverages?.overallScore?.toFixed(2) || '—'})
                 </>
               ) : (
-                'Score data loading...'
+                'Add competitors to see score comparison'
               )}
             </p>
           </CardFooter>
