@@ -2158,7 +2158,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         battlecard,
         competitor?.name || "Competitor",
         companyProfile?.companyName || "Your Company",
-        tenant
+        tenant,
+        battlecard.lastGeneratedAt || battlecard.createdAt
       );
       
       const filename = `Battlecard_${competitor?.name || "Competitor"}_${new Date().toISOString().split('T')[0]}.pdf`;

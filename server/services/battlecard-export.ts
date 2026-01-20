@@ -103,7 +103,8 @@ function generateBattlecardHtml(
   battlecard: Battlecard,
   competitorName: string,
   companyName: string,
-  tenant?: Tenant | null
+  tenant?: Tenant | null,
+  generatedAt?: Date | string | null
 ): string {
   const bc = battlecard as any;
   const primaryColor = tenant?.primaryColor || "#810FFB";
@@ -350,7 +351,7 @@ function generateBattlecardHtml(
   <div class="footer">
     ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
-    Generated ${new Date().toLocaleDateString()} • Confidential
+    Generated ${generatedAt ? new Date(generatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • Confidential
   </div>
 </body>
 </html>
@@ -361,9 +362,10 @@ export async function generateBattlecardPdf(
   battlecard: Battlecard,
   competitorName: string,
   companyName: string,
-  tenant?: Tenant | null
+  tenant?: Tenant | null,
+  generatedAt?: Date | string | null
 ): Promise<Buffer> {
-  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant);
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt);
   
   let browser;
   try {

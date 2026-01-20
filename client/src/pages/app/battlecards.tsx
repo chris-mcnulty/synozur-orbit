@@ -123,12 +123,25 @@ export default function BattleCardsPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
       setGeneratingFor(null);
+      // Update the selected card if it was regenerated - merge with existing to preserve fields
+      if (selectedCard && data?.competitorId === selectedCard.competitorId) {
+        setSelectedCard({ ...selectedCard, ...data });
+      }
+      toast({
+        title: "Battle Card Updated",
+        description: "The battle card has been regenerated with the latest data.",
+      });
     },
-    onError: () => {
+    onError: (error: Error) => {
       setGeneratingFor(null);
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -460,8 +473,11 @@ export default function BattleCardsPage() {
               <Building2 className="w-5 h-5 text-primary" />
               {selectedCard?.competitorName} Battle Card
             </DialogTitle>
-            <DialogDescription>
-              Competitive comparison vs {companyProfile?.companyName || "Your Company"}
+            <DialogDescription className="flex items-center justify-between">
+              <span>Competitive comparison vs {companyProfile?.companyName || "Your Company"}</span>
+              <span className="text-xs">
+                Generated: {new Date(selectedCard?.lastGeneratedAt || selectedCard?.createdAt || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+              </span>
             </DialogDescription>
           </DialogHeader>
           
@@ -650,7 +666,26 @@ export default function BattleCardsPage() {
             </div>
           </div>
           
-          <div className="flex-shrink-0 pt-4 border-t flex items-center justify-end gap-2">
+          <div className="flex-shrink-0 pt-4 border-t flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (selectedCard) {
+                  handleGenerate(selectedCard.competitorId);
+                }
+              }}
+              disabled={generatingFor === selectedCard?.competitorId}
+              data-testid="btn-regenerate-battlecard"
+            >
+              {generatingFor === selectedCard?.competitorId ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Regenerate
+            </Button>
+            <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -688,6 +723,7 @@ export default function BattleCardsPage() {
               )}
               PDF
             </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
