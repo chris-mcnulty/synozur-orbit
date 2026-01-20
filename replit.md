@@ -154,3 +154,4 @@ After completing significant features or bug fixes, update the following files:
   - **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
   - **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
   - **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
+  - **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
