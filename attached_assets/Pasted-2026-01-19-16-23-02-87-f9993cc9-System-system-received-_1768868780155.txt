@@ -1,0 +1,120 @@
+2026-01-19 16:23:02.87
+f9993cc9
+System
+system: received signal terminated
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async /home/runner/workspace/dist/index.cjs:2042:1906
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async QZ (/home/runner/workspace/dist/index.cjs:1304:364)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+Battlecard PDF export error: ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-01-19 16:23:02.91
+f9993cc9
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at async /home/runner/workspace/dist/index.cjs:2042:1906
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-01-19 16:23:02.97
+f9993cc9
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)

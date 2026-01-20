@@ -413,8 +413,11 @@ export async function generateBattlecardPdf(
         "--disable-translate",
         "--hide-scrollbars",
         "--mute-audio",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
       ],
-      timeout: 30000,
+      timeout: 120000,
+      protocolTimeout: 120000,
     });
     
     console.log(`[Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);
@@ -879,8 +882,11 @@ export async function generateProductBattlecardPdf(
         "--disable-translate",
         "--hide-scrollbars",
         "--mute-audio",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
       ],
-      timeout: 30000,
+      timeout: 120000,
+      protocolTimeout: 120000,
     });
     
     console.log(`[Product Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);

@@ -837,8 +837,15 @@ export async function generatePdfReport(
       "--no-zygote",
       "--disable-extensions",
       "--disable-background-networking",
+      "--disable-sync",
+      "--disable-translate",
+      "--hide-scrollbars",
+      "--mute-audio",
+      "--disable-web-security",
+      "--disable-features=IsolateOrigins,site-per-process",
     ],
-    timeout: 60000,
+    timeout: 120000,
+    protocolTimeout: 120000,
   });
 
   console.log(`[Report PDF] Browser launched in ${Date.now() - startTime}ms`);
