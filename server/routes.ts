@@ -697,8 +697,59 @@ export async function registerRoutes(
         }
       }
 
+      // Validate and normalize URL before processing
+      let normalizedUrl = competitorData.url?.trim() || "";
+      if (normalizedUrl && !normalizedUrl.match(/^https?:\/\//i)) {
+        normalizedUrl = `https://${normalizedUrl}`;
+      }
+      
+      try {
+        const parsed_url = new URL(normalizedUrl);
+        
+        // Require https://
+        if (parsed_url.protocol !== "https:") {
+          return res.status(400).json({ error: "URL must use https:// (secure connection required)" });
+        }
+        
+        const hostname = parsed_url.hostname.toLowerCase();
+        
+        // Block localhost variations
+        if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+          return res.status(400).json({ error: "Private/local URLs are not allowed" });
+        }
+        
+        // Block internal TLDs and private domains
+        if (hostname.endsWith(".local") || hostname.endsWith(".internal") || 
+            hostname.endsWith(".localhost") || hostname.endsWith(".test") ||
+            hostname.endsWith(".invalid") || hostname.endsWith(".example")) {
+          return res.status(400).json({ error: "Private/local URLs are not allowed" });
+        }
+        
+        // Block private IPv4 ranges (RFC 1918) and other reserved ranges
+        const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+        if (ipv4Match) {
+          const [, a, b] = ipv4Match.map(Number);
+          // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
+          if (a === 10 || a === 127 || 
+              (a === 172 && b >= 16 && b <= 31) ||
+              (a === 192 && b === 168) ||
+              (a === 169 && b === 254) ||
+              a === 0 || a >= 224) {
+            return res.status(400).json({ error: "Private/reserved IP addresses are not allowed" });
+          }
+        }
+        
+        // Must have a valid domain with TLD
+        if (!hostname.includes(".")) {
+          return res.status(400).json({ error: "Please enter a valid website URL" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid URL format. Please enter a valid URL (e.g., https://example.com)" });
+      }
+
       const parsed = insertCompetitorSchema.safeParse({
         ...competitorData,
+        url: normalizedUrl,
         projectId: projectId || null,
         userId: ctx.userId,
         tenantDomain: ctx.tenantDomain,

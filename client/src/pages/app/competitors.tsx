@@ -32,6 +32,36 @@ export default function Competitors() {
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
+  const [urlError, setUrlError] = useState("");
+
+  // Validate and normalize URL - basic frontend validation, backend does authoritative security checks
+  const normalizeAndValidateUrl = (inputUrl: string): { valid: boolean; normalized: string; error: string } => {
+    let normalized = inputUrl.trim();
+    
+    // Auto-prepend https:// if no scheme provided
+    if (normalized && !normalized.match(/^https?:\/\//i)) {
+      normalized = `https://${normalized}`;
+    }
+    
+    try {
+      const parsed = new URL(normalized);
+      
+      // Require https://
+      if (parsed.protocol !== "https:") {
+        return { valid: false, normalized, error: "URL must use https:// (secure connection required)" };
+      }
+      
+      // Must have a valid domain with TLD
+      const hostname = parsed.hostname.toLowerCase();
+      if (!hostname.includes(".") || hostname === "localhost") {
+        return { valid: false, normalized, error: "Please enter a valid website URL (e.g., https://example.com)" };
+      }
+      
+      return { valid: true, normalized, error: "" };
+    } catch {
+      return { valid: false, normalized, error: "Please enter a valid URL (e.g., https://example.com)" };
+    }
+  };
 
   const handleFaviconError = (competitorId: string) => {
     setFaviconErrors(prev => new Set(prev).add(competitorId));
@@ -115,6 +145,7 @@ export default function Competitors() {
       setIsDialogOpen(false);
       setName("");
       setUrl("");
+      setUrlError("");
       setSelectedProjectId("");
       toast({
         title: "Competitor Added",
@@ -213,9 +244,18 @@ export default function Competitors() {
 
   const handleAddCompetitor = (e: React.FormEvent) => {
     e.preventDefault();
+    setUrlError("");
+    
+    // Validate and normalize URL
+    const validation = normalizeAndValidateUrl(url);
+    if (!validation.valid) {
+      setUrlError(validation.error);
+      return;
+    }
+    
     addCompetitor.mutate({ 
       name, 
-      url,
+      url: validation.normalized,
       projectId: selectedProjectId || undefined
     });
   };
@@ -337,14 +377,23 @@ export default function Competitors() {
                   <Label htmlFor="url" className="text-right">
                     Website
                   </Label>
-                  <Input
-                    id="url"
-                    placeholder="https://acme.com"
-                    className="col-span-3"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    required
-                  />
+                  <div className="col-span-3 space-y-1">
+                    <Input
+                      id="url"
+                      placeholder="https://acme.com"
+                      className={urlError ? "border-destructive" : ""}
+                      value={url}
+                      onChange={(e) => {
+                        setUrl(e.target.value);
+                        if (urlError) setUrlError("");
+                      }}
+                      required
+                      data-testid="input-competitor-url"
+                    />
+                    {urlError && (
+                      <p className="text-xs text-destructive">{urlError}</p>
+                    )}
+                  </div>
                 </div>
                 {activeProjects.length > 0 && (
                   <div className="grid grid-cols-4 items-center gap-4">
