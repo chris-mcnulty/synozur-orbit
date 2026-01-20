@@ -17,10 +17,11 @@ Preferred communication style: Simple, everyday language.
 - **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
 - **Public GTM Assessment**: https://orion.synozur.com/gtm - Open Go-to-Market Maturity Assessment available for use in outbound emails, page footers, and marketing materials as a lead generation resource.
 
-### Constellation - Synozur SCDP
+### Constellation - Synozur SCDP (Public)
 - **Repository**: https://github.com/chris-mcnulty/synozur-scdp
 - **Purpose**: Synozur Customer Delivery Platform - estimation, time tracking, task management, expense management, invoicing, and reporting
 - **Use As Reference For**: Microsoft Planner integration via Graph API, task sync patterns, Teams/Planner connectivity
+- **Status**: Public repository - can be referenced directly
 
 ## System Architecture
 
