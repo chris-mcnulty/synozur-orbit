@@ -644,11 +644,13 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, name, url, projectId } = req.body;
+      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, name, url, projectId } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
       if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
+      if (twitterUrl !== undefined) updateData.twitterUrl = twitterUrl || null;
+      if (blogUrl !== undefined) updateData.blogUrl = blogUrl || null;
       if (name) updateData.name = name;
       if (url) updateData.url = url;
 

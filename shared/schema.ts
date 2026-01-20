@@ -174,6 +174,7 @@ export const competitors = pgTable("competitors", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
+  blogUrl: text("blog_url"), // Blog or RSS feed URL
   faviconUrl: text("favicon_url"), // URL to stored favicon/logo
   screenshotUrl: text("screenshot_url"), // URL to stored homepage screenshot
   lastCrawl: text("last_crawl"),
