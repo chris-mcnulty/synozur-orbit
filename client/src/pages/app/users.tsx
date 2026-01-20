@@ -107,7 +107,11 @@ export default function UsersPage() {
 
   const filteredUsers = React.useMemo(() => {
     if (tenantFilter === "all") return users;
-    return users.filter((user: any) => user.company === tenantFilter);
+    return users.filter((user: any) => {
+      // Match by email domain (e.g., user@synozur.com matches synozur.com)
+      const emailDomain = user.email?.split("@")[1]?.toLowerCase();
+      return emailDomain === tenantFilter.toLowerCase();
+    });
   }, [users, tenantFilter]);
 
   const sendInviteMutation = useMutation({
