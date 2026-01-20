@@ -8776,6 +8776,77 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Vote on a recommendation (thumbs up/down)
+  app.post("/api/recommendations/:id/vote", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { vote } = req.body; // "up" or "down"
+      if (!vote || !["up", "down"].includes(vote)) {
+        return res.status(400).json({ error: "Vote must be 'up' or 'down'" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updates = vote === "up"
+        ? { thumbsUp: (recommendation.thumbsUp || 0) + 1 }
+        : { thumbsDown: (recommendation.thumbsDown || 0) + 1 };
+
+      const updated = await storage.updateRecommendation(req.params.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Vote on recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Toggle priority on a recommendation
+  app.post("/api/recommendations/:id/priority", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateRecommendation(req.params.id, {
+        isPriority: !recommendation.isPriority,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Toggle priority error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== DATA SOURCES / NEWS ROUTES ====================
 
   app.get("/api/data-sources/news", async (req, res) => {
