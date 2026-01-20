@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Database table for tracking all AI API calls (provider, model, tokens, costs)
 - Backlog.md file with comprehensive MVP feature tracking
 
+### Fixed
+- "Regenerate All" now preserves manual research - competitors with manually entered research (source === "manual") are no longer overwritten during full regeneration, protecting hand-entered data for companies that block web crawlers
+
 ### Changed
 - Separated Company Baseline and Competitors screens into distinct pages
   - Company Baseline page now focused on your company profile, analysis, and grounding documents

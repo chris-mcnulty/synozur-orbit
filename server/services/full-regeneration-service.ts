@@ -105,6 +105,18 @@ async function runRegenerationInBackground(
     const analyses: any[] = [];
     for (const competitor of competitors) {
       try {
+        // Check if competitor has manual research that should be preserved
+        const existingAnalysis = competitor.analysisData as any;
+        const hasManualResearch = existingAnalysis?.source === "manual";
+        
+        if (hasManualResearch) {
+          // Skip re-crawling - preserve manual research data
+          console.log(`Full regen: Preserving manual research for ${competitor.name}`);
+          analyses.push({ competitor: competitor.name, ...existingAnalysis });
+          results.competitorsAnalyzed++;
+          continue;
+        }
+        
         const response = await fetch(competitor.url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)" },
         });

@@ -126,7 +126,6 @@ After completing significant features or bug fixes, update the following files:
 
 ### Standard Priority
 - **Competitor document uploads**: Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence, similar to company grounding documents
-- **Protect manual research in Regenerate All**: Add source === "manual" check to full regeneration service to prevent overwriting manually entered competitor research
 - **Headless browser crawling**: Replace HTTP-based crawling with Puppeteer headless browser to bypass bot detection, handle JavaScript-rendered content, and improve crawl success rate for protected sites
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
 - **Wire AI usage logging**: Connect logAiUsage() calls to all AI service entry points (competitor analysis, battlecard generation, executive summaries, etc.) to populate the usage tracking dashboard
