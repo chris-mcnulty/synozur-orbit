@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2 } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -80,6 +80,10 @@ export default function ContextBar() {
   const [newMarketDescription, setNewMarketDescription] = useState("");
   const [deleteMarketOpen, setDeleteMarketOpen] = useState(false);
   const [marketToDelete, setMarketToDelete] = useState<Market | null>(null);
+  const [editMarketOpen, setEditMarketOpen] = useState(false);
+  const [marketToEdit, setMarketToEdit] = useState<Market | null>(null);
+  const [editMarketName, setEditMarketName] = useState("");
+  const [editMarketDescription, setEditMarketDescription] = useState("");
 
   const resetMarketDialog = () => {
     setMarketCreationStep("choose");
@@ -273,6 +277,52 @@ export default function ContextBar() {
     }
   };
 
+  const updateMarketMutation = useMutation({
+    mutationFn: async ({ marketId, name, description }: { marketId: string; name: string; description?: string }) => {
+      const response = await apiRequest("PATCH", `/api/context/markets/${marketId}`, { name, description });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update market");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      setEditMarketOpen(false);
+      setMarketToEdit(null);
+      toast({
+        title: "Market updated",
+        description: "Market details have been saved.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update market",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditMarket = (market: Market, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMarketToEdit(market);
+    setEditMarketName(market.name);
+    setEditMarketDescription(market.description || "");
+    setEditMarketOpen(true);
+  };
+
+  const confirmEditMarket = () => {
+    if (marketToEdit && editMarketName.trim()) {
+      updateMarketMutation.mutate({
+        marketId: marketToEdit.id,
+        name: editMarketName.trim(),
+        description: editMarketDescription.trim() || undefined,
+      });
+    }
+  };
+
   const canSwitchTenants = user?.role === "Global Admin" || user?.role === "Consultant";
   const canDeleteMarket = user?.role === "Global Admin" || user?.role === "Domain Admin";
   const showMarketSelector = marketsData?.multiMarketEnabled;
@@ -375,15 +425,26 @@ export default function ContextBar() {
                           <Badge variant="secondary" className="text-xs">Active</Badge>
                         )}
                         {canDeleteMarket && !market.isDefault && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            onClick={(e) => handleDeleteMarket(market, e)}
-                            data-testid={`btn-delete-market-${market.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                              onClick={(e) => handleEditMarket(market, e)}
+                              data-testid={`btn-edit-market-${market.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              onClick={(e) => handleDeleteMarket(market, e)}
+                              data-testid={`btn-delete-market-${market.id}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
                         )}
                       </div>
                     </DropdownMenuItem>
@@ -761,6 +822,74 @@ export default function ContextBar() {
                 </>
               ) : (
                 "Delete Market"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Market Dialog */}
+      <Dialog open={editMarketOpen} onOpenChange={(open) => {
+        setEditMarketOpen(open);
+        if (!open) {
+          setMarketToEdit(null);
+          setEditMarketName("");
+          setEditMarketDescription("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Market</DialogTitle>
+            <DialogDescription>
+              Update the name and description for this market.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-market-name">Name</Label>
+              <Input
+                id="edit-market-name"
+                placeholder="e.g., Enterprise Clients"
+                value={editMarketName}
+                onChange={(e) => setEditMarketName(e.target.value)}
+                data-testid="input-edit-market-name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-market-description">Description (optional)</Label>
+              <Textarea
+                id="edit-market-description"
+                placeholder="Brief description of this market context..."
+                value={editMarketDescription}
+                onChange={(e) => setEditMarketDescription(e.target.value)}
+                rows={3}
+                data-testid="input-edit-market-description"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditMarketOpen(false);
+                setMarketToEdit(null);
+              }}
+              disabled={updateMarketMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmEditMarket}
+              disabled={updateMarketMutation.isPending || !editMarketName.trim()}
+              data-testid="btn-confirm-edit-market"
+            >
+              {updateMarketMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
               )}
             </Button>
           </DialogFooter>
