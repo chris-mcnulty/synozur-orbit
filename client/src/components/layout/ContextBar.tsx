@@ -168,6 +168,7 @@ export default function ContextBar() {
       return response.json();
     },
     onSuccess: () => {
+      // Clear all cached queries when switching tenants to ensure complete data refresh
       queryClient.invalidateQueries({ queryKey: ["/api/context"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
@@ -178,6 +179,12 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/grounding-documents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
     },
   });
 
@@ -187,6 +194,7 @@ export default function ContextBar() {
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate all market-scoped data to ensure fresh data after context switch
       queryClient.invalidateQueries({ queryKey: ["/api/context"] });
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
@@ -196,6 +204,12 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/grounding-documents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
     },
   });
 
