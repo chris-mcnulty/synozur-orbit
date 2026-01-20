@@ -28,6 +28,8 @@ import { calculateScores, type ScoreBreakdown } from "./services/scoring-service
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
 import { testBlogUrl, monitorBlogForCompetitor } from "./services/rss-service";
+import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
+import { validateDocumentUpload } from "./utils/file-validator";
 
 // Helper to log AI usage after any AI call
 async function logAiUsage(
@@ -713,12 +715,18 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Blog URL is required" });
       }
       
-      // Test the blog URL
-      const result = await testBlogUrl(blogUrl);
+      // Validate blog URL for security (SSRF protection)
+      const urlValidation = await validateBlogUrl(blogUrl);
+      if (!urlValidation.isValid) {
+        return res.status(400).json({ error: urlValidation.error });
+      }
       
-      // If save is true and test was successful, update the competitor
+      // Test the blog URL
+      const result = await testBlogUrl(urlValidation.normalizedUrl!);
+      
+      // If save is true and test was successful, update the competitor with validated URL
       if (save && result.valid) {
-        await storage.updateCompetitor(competitor.id, { blogUrl });
+        await storage.updateCompetitor(competitor.id, { blogUrl: urlValidation.normalizedUrl });
         
         // Also update the blog snapshot with initial data
         if (result.postCount > 0) {
@@ -810,55 +818,12 @@ export async function registerRoutes(
         }
       }
 
-      // Validate and normalize URL before processing
-      let normalizedUrl = competitorData.url?.trim() || "";
-      if (normalizedUrl && !normalizedUrl.match(/^https?:\/\//i)) {
-        normalizedUrl = `https://${normalizedUrl}`;
+      // Validate and normalize URL using comprehensive security validator
+      const urlValidation = await validateCompetitorUrl(competitorData.url || "");
+      if (!urlValidation.isValid) {
+        return res.status(400).json({ error: urlValidation.error });
       }
-      
-      try {
-        const parsed_url = new URL(normalizedUrl);
-        
-        // Require https://
-        if (parsed_url.protocol !== "https:") {
-          return res.status(400).json({ error: "URL must use https:// (secure connection required)" });
-        }
-        
-        const hostname = parsed_url.hostname.toLowerCase();
-        
-        // Block localhost variations
-        if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
-          return res.status(400).json({ error: "Private/local URLs are not allowed" });
-        }
-        
-        // Block internal TLDs and private domains
-        if (hostname.endsWith(".local") || hostname.endsWith(".internal") || 
-            hostname.endsWith(".localhost") || hostname.endsWith(".test") ||
-            hostname.endsWith(".invalid") || hostname.endsWith(".example")) {
-          return res.status(400).json({ error: "Private/local URLs are not allowed" });
-        }
-        
-        // Block private IPv4 ranges (RFC 1918) and other reserved ranges
-        const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-        if (ipv4Match) {
-          const [, a, b] = ipv4Match.map(Number);
-          // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
-          if (a === 10 || a === 127 || 
-              (a === 172 && b >= 16 && b <= 31) ||
-              (a === 192 && b === 168) ||
-              (a === 169 && b === 254) ||
-              a === 0 || a >= 224) {
-            return res.status(400).json({ error: "Private/reserved IP addresses are not allowed" });
-          }
-        }
-        
-        // Must have a valid domain with TLD
-        if (!hostname.includes(".")) {
-          return res.status(400).json({ error: "Please enter a valid website URL" });
-        }
-      } catch {
-        return res.status(400).json({ error: "Invalid URL format. Please enter a valid URL (e.g., https://example.com)" });
-      }
+      const normalizedUrl = urlValidation.normalizedUrl!;
 
       const parsed = insertCompetitorSchema.safeParse({
         ...competitorData,
@@ -2897,11 +2862,18 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, logoUrl } = parsed.data;
       
+      // Validate websiteUrl for security (SSRF protection)
+      const urlValidation = await validateCompetitorUrl(websiteUrl);
+      if (!urlValidation.isValid) {
+        return res.status(400).json({ error: urlValidation.error });
+      }
+      const validatedWebsiteUrl = urlValidation.normalizedUrl!;
+      
       // Plan-gating: Trial/Free plans can only baseline their own domain
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
       if (tenant && (tenant.plan === "trial" || tenant.plan === "free")) {
         try {
-          const websiteDomain = new URL(websiteUrl).hostname.replace(/^www\./, "").toLowerCase();
+          const websiteDomain = new URL(validatedWebsiteUrl).hostname.replace(/^www\./, "").toLowerCase();
           if (websiteDomain !== ctx.tenantDomain.toLowerCase()) {
             return res.status(403).json({ 
               error: `Your ${tenant.plan} plan only allows analyzing your own company website (${ctx.tenantDomain}). Upgrade to Pro or Enterprise to analyze other companies.`,
@@ -2918,7 +2890,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
       if (existingProfile) {
         const updated = await storage.updateCompanyProfile(existingProfile.id, {
           companyName,
-          websiteUrl,
+          websiteUrl: validatedWebsiteUrl,
           logoUrl: logoUrl || null,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
@@ -2932,7 +2904,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
           companyName,
-          websiteUrl,
+          websiteUrl: validatedWebsiteUrl,
           logoUrl: logoUrl || null,
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
@@ -3152,15 +3124,11 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       const file = files.file as UploadedFile;
       
-      // Validate file type
-      const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
-      if (!allowedMimeTypes.includes(file.mimetype)) {
-        return res.status(400).json({ error: "Invalid file type. Please upload PNG, JPEG, GIF, WebP, or SVG." });
-      }
-
-      // Validate file size (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        return res.status(400).json({ error: "File too large. Maximum size is 5MB." });
+      // Validate file using comprehensive security validator
+      const { validateImageUpload } = await import("./utils/file-validator");
+      const fileValidation = validateImageUpload(file);
+      if (!fileValidation.isValid) {
+        return res.status(400).json({ error: fileValidation.error });
       }
 
       const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;

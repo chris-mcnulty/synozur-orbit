@@ -1,6 +1,25 @@
 import type { Express } from "express";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
+const ALLOWED_DOCUMENT_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain",
+];
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+];
+
+const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_TYPES];
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 /**
  * Register object storage routes for file uploads.
  *
@@ -42,6 +61,26 @@ export function registerObjectStorageRoutes(app: Express): void {
         });
       }
 
+      // Validate content type for security
+      if (contentType && !ALLOWED_CONTENT_TYPES.includes(contentType)) {
+        return res.status(400).json({
+          error: `File type not allowed. Allowed types: PDF, DOCX, DOC, TXT, and common image formats.`,
+        });
+      }
+
+      // Validate file size
+      if (size && size > MAX_FILE_SIZE) {
+        return res.status(400).json({
+          error: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB.`,
+        });
+      }
+
+      // Sanitize filename to prevent path traversal
+      const sanitizedName = name
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .replace(/\.{2,}/g, ".")
+        .substring(0, 255);
+
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
 
       // Extract object path from the presigned URL for later reference
@@ -51,7 +90,7 @@ export function registerObjectStorageRoutes(app: Express): void {
         uploadURL,
         objectPath,
         // Echo back the metadata for client convenience
-        metadata: { name, size, contentType },
+        metadata: { name: sanitizedName, size, contentType },
       });
     } catch (error) {
       console.error("Error generating upload URL:", error);
