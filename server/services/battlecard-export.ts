@@ -3,6 +3,26 @@ import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 
+// Format date in a timezone-safe way (uses UTC to avoid date shifting)
+function formatDateSafe(date: Date | string | null | undefined): string {
+  if (!date) {
+    const now = new Date();
+    return now.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      timeZone: 'America/New_York' // Use Eastern time as default business timezone
+    });
+  }
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    timeZone: 'America/New_York'
+  });
+}
+
 function getSynozurLogoBase64(): string {
   try {
     const logoPath = path.join(process.cwd(), "client/public/brand/synozur-horizontal.png");
@@ -352,7 +372,7 @@ function generateBattlecardHtml(
   <div class="footer">
     ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
-    Generated ${generatedAt ? new Date(generatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • Confidential
+    Generated ${formatDateSafe(generatedAt)} • Confidential
   </div>
 </body>
 </html>
@@ -464,6 +484,7 @@ export function generateBattlecardText(
   companyName: string
 ): string {
   const bc = battlecard as any;
+  const generatedAt = bc.lastGeneratedAt || bc.createdAt || null;
   const strengths = bc.strengths || [];
   const weaknesses = bc.weaknesses || [];
   const ourAdvantages = bc.ourAdvantages || [];
@@ -474,7 +495,7 @@ export function generateBattlecardText(
 
   let content = `${competitorName} Battle Card
 Competitive comparison vs ${companyName}
-Generated: ${new Date().toLocaleDateString()}
+Generated: ${formatDateSafe(generatedAt)}
 
 `;
 
@@ -636,6 +657,7 @@ function generateProductBattlecardHtml(
   tenant?: Tenant | null
 ): string {
   const bc = battlecard as any;
+  const generatedAt = bc.lastGeneratedAt || bc.createdAt || null;
   const primaryColor = tenant?.primaryColor || "#810FFB";
   const secondaryColor = tenant?.secondaryColor || "#E60CB3";
   const tenantLogo = tenant?.logoUrl || null;
@@ -846,7 +868,7 @@ function generateProductBattlecardHtml(
   <div class="footer">
     ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
-    Generated ${new Date().toLocaleDateString()} • Confidential
+    Generated ${formatDateSafe(generatedAt)} • Confidential
   </div>
 </body>
 </html>
@@ -931,6 +953,7 @@ export function generateProductBattlecardText(
   baselineName: string
 ): string {
   const bc = battlecard as any;
+  const generatedAt = bc.lastGeneratedAt || bc.createdAt || null;
   const strengths = bc.strengths || [];
   const weaknesses = bc.weaknesses || [];
   const ourAdvantages = bc.ourAdvantages || [];
@@ -941,7 +964,7 @@ export function generateProductBattlecardText(
   let content = `${competitorName.toUpperCase()} BATTLE CARD
 vs ${baselineName}
 ${'='.repeat(50)}
-Generated: ${new Date().toLocaleDateString()}
+Generated: ${formatDateSafe(generatedAt)}
 
 `;
 
