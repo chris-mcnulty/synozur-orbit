@@ -6,6 +6,28 @@ import { calculateScores } from "./scoring-service";
 import * as fs from "fs";
 import * as path from "path";
 
+async function findChromiumPath(): Promise<string | undefined> {
+  const possiblePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+  ].filter(Boolean) as string[];
+  
+  for (const execPath of possiblePaths) {
+    try {
+      if (fs.existsSync(execPath)) {
+        return execPath;
+      }
+    } catch {
+      continue;
+    }
+  }
+  
+  return undefined;
+}
+
 interface CompetitorWithAnalysis extends Competitor {
   scores?: {
     overallScore: number;
@@ -798,16 +820,35 @@ export async function generatePdfReport(
   };
 
   const html = generateReportHtml(reportData);
+  const startTime = Date.now();
+
+  const executablePath = await findChromiumPath();
+  console.log(`[Report PDF] Starting generation, chromium path: ${executablePath || 'auto-detect'}`);
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+      "--disable-extensions",
+      "--disable-background-networking",
+    ],
+    timeout: 60000,
   });
+
+  console.log(`[Report PDF] Browser launched in ${Date.now() - startTime}ms`);
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setViewport({ width: 800, height: 600 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    
+    console.log(`[Report PDF] Content loaded in ${Date.now() - startTime}ms`);
     
     const pdfBuffer = await page.pdf({
       format: "A4",
@@ -824,6 +865,8 @@ export async function generatePdfReport(
     const sizeLabel = pdfSizeKb > 1024 
       ? `${(pdfSizeKb / 1024).toFixed(1)} MB` 
       : `${pdfSizeKb} KB`;
+    
+    console.log(`[Report PDF] PDF generated in ${Date.now() - startTime}ms, size: ${sizeLabel}`);
 
     const report = await storage.createReport({
       name: reportName,
