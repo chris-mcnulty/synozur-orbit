@@ -201,3 +201,132 @@ Generate competitive battlecards for sales enablement:
 - [ ] Stripe integration for payment processing
 - [ ] Plan upgrade/downgrade flows
 - [ ] Usage-based billing
+
+---
+
+## Strategic Backlog (From replit.md)
+
+### High Priority
+
+#### Service Plan Feature Gating
+**Status**: Designed, deferred until all features verified working
+Implement tiered access control with blurred overlays and upgrade prompts:
+- [ ] Free tier: 1 company, 1-2 competitors, no projects/GTM/messaging rewrites
+- [ ] Trial (60 days): full Pro features
+- [ ] Pro: 7 competitors, projects, GTM, messaging
+- [ ] Enterprise: unlimited + markets
+- [ ] Each tier has RW/RO user limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit)
+- [ ] Show locked features with diamond icon and blur effect
+**Effort**: High
+
+#### Input Safety Validation
+**Status**: Not implemented
+Pre-validate all user-entered URLs and uploaded data before crawling or processing:
+- [ ] Check for malicious URLs
+- [ ] SSRF attempt prevention
+- [ ] Block private IP ranges
+- [ ] Unsafe file content detection
+**Effort**: Medium
+
+### Standard Priority
+
+#### Marketing Planner
+**Status**: Planned
+Break down AI-generated GTM plan into actionable tasks that can be accepted/removed:
+- [ ] Task extraction from GTM with category assignment (Themes, Digital, Outbound, Partners, Events)
+- [ ] Quarter/time period alignment (Constant, Q1-Q4, Future/Next Year)
+- [ ] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
+- [ ] Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks
+- [ ] Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs
+- [ ] Uses comprehensive marketing activities document as grounding
+**Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
+**Effort**: High
+
+#### Competitor Document Uploads
+**Status**: Not implemented
+Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence:
+- [ ] Document upload UI similar to company grounding documents
+- [ ] Text extraction and indexing
+- [ ] Include in AI analysis context
+**Effort**: Medium
+
+#### Headless Browser Crawling
+**Status**: Not implemented
+Replace HTTP-based crawling with Puppeteer headless browser:
+- [ ] Bypass bot detection
+- [ ] Handle JavaScript-rendered content
+- [ ] Improve crawl success rate for protected sites
+**Effort**: Medium
+
+#### Consolidated Action Items
+**Status**: Not implemented
+Dashboard view showing all action items across baseline and projects for a tenant:
+- [ ] Aggregate view of all recommendations and action items
+- [ ] Ability to assign to users
+- [ ] Close, dismiss, or add comments
+**Effort**: Medium
+
+#### Wire AI Usage Logging
+**Status**: Not implemented
+Connect logAiUsage() calls to all AI service entry points:
+- [ ] Competitor analysis
+- [ ] Battlecard generation
+- [ ] Executive summaries
+- [ ] All other AI operations
+**Effort**: Low
+
+#### reCAPTCHA for Signups
+**Status**: Not implemented
+- [ ] Add Google reCAPTCHA to new account signup form to prevent bot registrations
+**Effort**: Low
+
+#### Google SSO
+**Status**: Not implemented
+- [ ] Add Google OAuth as alternative to Microsoft Entra ID
+**Effort**: Medium
+
+#### Per-Tenant Branding
+**Status**: Not implemented
+- [ ] Custom logos per tenant
+- [ ] Custom colors per tenant
+**Effort**: Medium
+
+#### Active Social/Blog Monitoring
+**Status**: Partially implemented (manual triggers exist)
+Scheduled monitoring of competitor social media accounts and blog posts:
+- [ ] Configurable check intervals
+- [ ] Change detection
+- [ ] AI-summarized diffs highlighting what changed
+**Effort**: Medium
+
+#### Domain Blocklist
+**Status**: Not implemented
+- [ ] Prevent signups from specific email domains
+**Effort**: Low
+
+### Deferred (Pending User Demand)
+
+#### LinkedIn Content Integration
+**Status**: Deferred
+Deep LinkedIn post content tracking (beyond basic profile metrics):
+- Requires LinkedIn Marketing API access ($69-159/mo third-party services or official API partnership)
+- Current implementation captures profile URLs and engagement numbers only
+**Effort**: High (cost + API complexity)
+
+---
+
+## Long-Range / Future (May Become Separate App)
+
+### Product Management Module
+**Status**: Future exploration
+Comprehensive product planning and roadmap intelligence. May live in Orbit or become its own application.
+
+Features:
+- [ ] **Feature Ingestion**: Use projects/products object to ingest current feature set and proposed roadmap
+- [ ] **Market Analysis Comparison**: Compare product features and roadmap against competitive market analysis data
+- [ ] **AI Roadmap Recommendations**: Propose changes and additions to the roadmap based on market conditions, competitive gaps, and trends
+- [ ] **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
+- [ ] **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
+- [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
+- [ ] **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
+**Effort**: Very High

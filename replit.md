@@ -126,32 +126,16 @@ After completing significant features or bug fixes, update the following files:
 
 ## Backlog
 
-### High Priority
-- **Service plan feature gating**: Implement tiered access control with blurred overlays and upgrade prompts. Free tier: 1 company, 1-2 competitors, no projects/GTM/messaging rewrites. Trial (60 days): full Pro features. Pro: 7 competitors, projects, GTM, messaging. Enterprise: unlimited + markets. Each tier has RW/RO user limits. Show locked features with diamond icon and blur effect. Defer until all features are verified working.
-- **Input safety validation**: Pre-validate all user-entered URLs and uploaded data before crawling or processing. Check for malicious URLs, SSRF attempts, private IP ranges, and unsafe file content to protect the platform from security threats.
+The product backlog is maintained in **`backlog.md`** (displayed in the About > Backlog tab).
 
-### Standard Priority
-- **Marketing Planner**: Break down AI-generated GTM plan into actionable tasks that can be accepted/removed. Features: (1) Task extraction from GTM with category assignment (Themes, Digital, Outbound, Partners, Events), (2) Quarter/time period alignment (Constant, Q1-Q4, Future/Next Year), (3) Matrix view showing categories as rows and time periods as columns matching Synozur marketing plan format, (4) Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks, (5) Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs (Objectives and Key Results). Reference Constellation project for Planner sync code patterns. Uses comprehensive marketing activities document as grounding.
-- **Competitor document uploads**: Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence, similar to company grounding documents
-- **Headless browser crawling**: Replace HTTP-based crawling with Puppeteer headless browser to bypass bot detection, handle JavaScript-rendered content, and improve crawl success rate for protected sites
-- **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
-- **Wire AI usage logging**: Connect logAiUsage() calls to all AI service entry points (competitor analysis, battlecard generation, executive summaries, etc.) to populate the usage tracking dashboard
-- **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
-- **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID
-- **Per-tenant branding**: Custom logos and colors per tenant
-- **Active social/blog monitoring**: Scheduled monitoring of competitor social media accounts and blog posts with configurable check intervals, change detection, and AI-summarized diffs highlighting what changed
-- **Visual competitor assets**: Screenshot capture and visual analysis
-- **Domain blocklist**: Prevent signups from specific email domains
+### How to Update the Backlog
+1. Edit `backlog.md` directly for feature tracking, status updates, and new items
+2. Use checkbox format: `- [x]` for completed, `- [ ]` for pending
+3. Include status, effort estimates, and dependencies where applicable
+4. After updates, sync to public folder: `cp backlog.md public/backlog.md`
 
-### Deferred (Pending User Demand)
-- **LinkedIn content integration**: Deep LinkedIn post content tracking (beyond basic profile metrics). Requires LinkedIn Marketing API access ($69-159/mo third-party services or official API partnership). Current implementation captures profile URLs and engagement numbers only.
-
-### Long-Range / Future (May Become Separate App)
-- **Product Management Module**: Comprehensive product planning and roadmap intelligence. May live in Orbit or become its own application. Features:
-  - **Feature Ingestion**: Use projects/products object to ingest current feature set and proposed roadmap
-  - **Market Analysis Comparison**: Compare product features and roadmap against competitive market analysis data
-  - **AI Roadmap Recommendations**: Propose changes and additions to the roadmap based on market conditions, competitive gaps, and trends
-  - **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
-  - **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
-  - **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
-  - **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
+### Backlog Structure
+- **Priority 1-3**: MVP features with implementation status
+- **Post-MVP Roadmap**: Year one features by quarter
+- **Strategic Backlog**: High-level features (service gating, Marketing Planner, etc.)
+- **Long-Range / Future**: Features that may become separate apps (Product Management Module)
