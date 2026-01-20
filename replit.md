@@ -96,6 +96,10 @@ Preferred communication style: Simple, everyday language.
 ### Authentication
 - **@azure/msal-node**: Microsoft Entra ID integration.
 
+### Security Utilities
+- **URL Validation** (`server/utils/url-validator.ts`): SSRF protection with private IP blocking, protocol validation, internal domain blocking. Uses soft DNS validation that allows non-resolving domains while blocking URLs that resolve to private/internal IPs.
+- **File Validation** (`server/utils/file-validator.ts`): Magic bytes verification for PDF, DOCX, JPEG, PNG, GIF. Dangerous content pattern scanning. Size limits (5MB images, 10MB documents).
+
 ### Environment Variables
 - `DATABASE_URL`
 - `SESSION_SECRET`
