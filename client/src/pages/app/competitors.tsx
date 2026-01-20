@@ -34,12 +34,20 @@ export default function Competitors() {
   const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
   const [urlError, setUrlError] = useState("");
   
-  // Blog URL editing state
-  const [blogEditOpen, setBlogEditOpen] = useState(false);
-  const [blogEditTarget, setBlogEditTarget] = useState<{ id: string; name: string; blogUrl: string } | null>(null);
-  const [blogUrlInput, setBlogUrlInput] = useState("");
+  // Social/Blog links editing state
+  const [linksEditOpen, setLinksEditOpen] = useState(false);
+  const [linksEditTarget, setLinksEditTarget] = useState<{ 
+    id: string; 
+    name: string; 
+    linkedInUrl: string; 
+    twitterUrl: string; 
+    instagramUrl: string;
+    blogUrl: string;
+  } | null>(null);
+  const [linksForm, setLinksForm] = useState({ linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "" });
   const [isBlogTesting, setIsBlogTesting] = useState(false);
   const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
+  const [isSavingLinks, setIsSavingLinks] = useState(false);
 
   // Validate and normalize URL - basic frontend validation, backend does authoritative security checks
   const normalizeAndValidateUrl = (inputUrl: string): { valid: boolean; normalized: string; error: string } => {
@@ -249,18 +257,18 @@ export default function Competitors() {
     },
   });
 
-  // Blog URL testing and saving
-  const testAndSaveBlogUrl = async (save: boolean) => {
-    if (!blogEditTarget || !blogUrlInput.trim()) return;
+  // Test blog URL
+  const testBlogUrl = async () => {
+    if (!linksEditTarget || !linksForm.blogUrl.trim()) return;
     
     setIsBlogTesting(true);
     setBlogTestResult(null);
     
     try {
-      const response = await fetch(`/api/competitors/${blogEditTarget.id}/test-blog`, {
+      const response = await fetch(`/api/competitors/${linksEditTarget.id}/test-blog`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blogUrl: blogUrlInput.trim(), save }),
+        body: JSON.stringify({ blogUrl: linksForm.blogUrl.trim(), save: false }),
         credentials: "include",
       });
       
@@ -271,15 +279,54 @@ export default function Competitors() {
       }
       
       setBlogTestResult(result);
+    } catch (error: any) {
+      setBlogTestResult({ valid: false, feedType: "unknown", postCount: 0, sampleTitles: [], error: error.message });
+    } finally {
+      setIsBlogTesting(false);
+    }
+  };
+
+  // Save all social/blog links
+  const saveLinks = async () => {
+    if (!linksEditTarget) return;
+    
+    setIsSavingLinks(true);
+    
+    try {
+      // Save social links via PATCH
+      const response = await fetch(`/api/competitors/${linksEditTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkedInUrl: linksForm.linkedInUrl.trim() || null,
+          twitterUrl: linksForm.twitterUrl.trim() || null,
+          instagramUrl: linksForm.instagramUrl.trim() || null,
+          blogUrl: linksForm.blogUrl.trim() || null,
+        }),
+        credentials: "include",
+      });
       
-      if (save && result.valid) {
-        queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
-        toast({
-          title: "Blog URL Saved",
-          description: `Found ${result.postCount} blog posts. Orbit will now monitor this feed for updates.`,
-        });
-        setBlogEditOpen(false);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to save links");
       }
+      
+      // If blog URL is set, also test and save it properly
+      if (linksForm.blogUrl.trim()) {
+        await fetch(`/api/competitors/${linksEditTarget.id}/test-blog`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blogUrl: linksForm.blogUrl.trim(), save: true }),
+          credentials: "include",
+        });
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      toast({
+        title: "Links Saved",
+        description: "Social and blog links have been updated.",
+      });
+      setLinksEditOpen(false);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -287,19 +334,27 @@ export default function Competitors() {
         variant: "destructive",
       });
     } finally {
-      setIsBlogTesting(false);
+      setIsSavingLinks(false);
     }
   };
 
-  const openBlogEdit = (competitor: any) => {
-    setBlogEditTarget({
+  const openLinksEdit = (competitor: any) => {
+    setLinksEditTarget({
       id: competitor.id,
       name: competitor.name,
+      linkedInUrl: competitor.linkedInUrl || "",
+      twitterUrl: competitor.twitterUrl || "",
+      instagramUrl: competitor.instagramUrl || "",
       blogUrl: competitor.blogUrl || "",
     });
-    setBlogUrlInput(competitor.blogUrl || "");
+    setLinksForm({
+      linkedInUrl: competitor.linkedInUrl || "",
+      twitterUrl: competitor.twitterUrl || "",
+      instagramUrl: competitor.instagramUrl || "",
+      blogUrl: competitor.blogUrl || "",
+    });
     setBlogTestResult(null);
-    setBlogEditOpen(true);
+    setLinksEditOpen(true);
   };
 
   const handleAddCompetitor = (e: React.FormEvent) => {
@@ -803,11 +858,11 @@ export default function Competitors() {
                                       Manual AI Research
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
-                                      onClick={() => openBlogEdit(competitor)}
-                                      data-testid={`button-edit-blog-${competitor.id}`}
+                                      onClick={() => openLinksEdit(competitor)}
+                                      data-testid={`button-edit-links-${competitor.id}`}
                                     >
-                                      <Rss className="w-4 h-4 mr-2" />
-                                      {competitor.blogUrl ? "Edit Blog/RSS Feed" : "Add Blog/RSS Feed"}
+                                      <Pencil className="w-4 h-4 mr-2" />
+                                      Edit Social & Blog Links
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
@@ -907,83 +962,114 @@ export default function Competitors() {
         />
       )}
 
-      {/* Blog/RSS URL Edit Dialog */}
-      <Dialog open={blogEditOpen} onOpenChange={setBlogEditOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+      {/* Social & Blog Links Edit Dialog */}
+      <Dialog open={linksEditOpen} onOpenChange={setLinksEditOpen}>
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Rss className="w-5 h-5 text-primary" />
-              {blogEditTarget?.blogUrl ? "Edit" : "Add"} Blog/RSS Feed
+              <Pencil className="w-5 h-5 text-primary" />
+              Edit Links for {linksEditTarget?.name}
             </DialogTitle>
             <DialogDescription>
-              Enter a direct link to {blogEditTarget?.name}'s blog or RSS feed. 
-              This is useful for companies that block web crawlers.
+              Add social media profiles and blog/RSS feeds for this competitor.
+              This is especially useful for companies that block web crawlers.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="blogUrl">Blog or RSS Feed URL</Label>
+              <Label htmlFor="linkedInUrl">LinkedIn Company Page</Label>
+              <Input
+                id="linkedInUrl"
+                placeholder="https://linkedin.com/company/example"
+                value={linksForm.linkedInUrl}
+                onChange={(e) => setLinksForm(f => ({ ...f, linkedInUrl: e.target.value }))}
+                data-testid="input-linkedin-url"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="twitterUrl">Twitter/X Profile</Label>
+              <Input
+                id="twitterUrl"
+                placeholder="https://twitter.com/example"
+                value={linksForm.twitterUrl}
+                onChange={(e) => setLinksForm(f => ({ ...f, twitterUrl: e.target.value }))}
+                data-testid="input-twitter-url"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="instagramUrl">Instagram Profile</Label>
+              <Input
+                id="instagramUrl"
+                placeholder="https://instagram.com/example"
+                value={linksForm.instagramUrl}
+                onChange={(e) => setLinksForm(f => ({ ...f, instagramUrl: e.target.value }))}
+                data-testid="input-instagram-url"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="blogUrl">Blog or RSS Feed URL</Label>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={testBlogUrl}
+                  disabled={isBlogTesting || !linksForm.blogUrl.trim()}
+                  data-testid="button-test-blog"
+                >
+                  {isBlogTesting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Rss className="w-3 h-3 mr-1" />}
+                  Test
+                </Button>
+              </div>
               <Input
                 id="blogUrl"
                 placeholder="https://example.com/blog or https://example.com/feed.xml"
-                value={blogUrlInput}
+                value={linksForm.blogUrl}
                 onChange={(e) => {
-                  setBlogUrlInput(e.target.value);
+                  setLinksForm(f => ({ ...f, blogUrl: e.target.value }));
                   setBlogTestResult(null);
                 }}
                 data-testid="input-blog-url"
               />
               <p className="text-xs text-muted-foreground">
-                Supported: RSS feeds, Atom feeds, or direct blog page URLs
+                RSS feeds, Atom feeds, or blog page URLs
               </p>
-            </div>
-            
-            {blogTestResult && (
-              <div className={`p-3 rounded-lg border ${blogTestResult.valid ? "bg-green-500/10 border-green-500/30" : "bg-destructive/10 border-destructive/30"}`}>
-                {blogTestResult.valid ? (
-                  <div className="space-y-2">
+              
+              {blogTestResult && (
+                <div className={`p-2 rounded border text-sm ${blogTestResult.valid ? "bg-green-500/10 border-green-500/30" : "bg-destructive/10 border-destructive/30"}`}>
+                  {blogTestResult.valid ? (
                     <div className="flex items-center gap-2 text-green-500">
-                      <Check className="w-4 h-4" />
-                      <span className="font-medium">Feed detected ({blogTestResult.feedType})</span>
+                      <Check className="w-3 h-3" />
+                      <span>Found {blogTestResult.postCount} posts ({blogTestResult.feedType})</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Found {blogTestResult.postCount} posts
-                    </p>
-                    {blogTestResult.sampleTitles.length > 0 && (
-                      <div className="text-sm">
-                        <span className="text-muted-foreground">Latest: </span>
-                        <span className="text-foreground">{blogTestResult.sampleTitles[0]}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-destructive">
-                    <X className="w-4 h-4" />
-                    <span>{blogTestResult.error || "Could not parse feed"}</span>
-                  </div>
-                )}
-              </div>
-            )}
+                  ) : (
+                    <div className="flex items-center gap-2 text-destructive">
+                      <X className="w-3 h-3" />
+                      <span>{blogTestResult.error || "Could not parse feed"}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => testAndSaveBlogUrl(false)}
-              disabled={isBlogTesting || !blogUrlInput.trim()}
-              data-testid="button-test-blog"
+              onClick={() => setLinksEditOpen(false)}
             >
-              {isBlogTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Test URL
+              Cancel
             </Button>
             <Button 
-              onClick={() => testAndSaveBlogUrl(true)}
-              disabled={isBlogTesting || !blogUrlInput.trim()}
-              data-testid="button-save-blog"
+              onClick={saveLinks}
+              disabled={isSavingLinks}
+              data-testid="button-save-links"
             >
-              {isBlogTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Test & Save
+              {isSavingLinks ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save Links
             </Button>
           </DialogFooter>
         </DialogContent>
