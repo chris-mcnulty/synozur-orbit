@@ -8847,6 +8847,86 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Soft hide (dismiss) a recommendation with reason
+  app.post("/api/recommendations/:id/hide", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { reason } = req.body; // already_done, not_relevant, duplicate, other
+      const allowedReasons = ["already_done", "not_relevant", "duplicate", "other"];
+      if (reason && !allowedReasons.includes(reason)) {
+        return res.status(400).json({ error: `Reason must be one of: ${allowedReasons.join(", ")}` });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Generate dedupe key from title + area (normalized)
+      const dedupeKey = `${recommendation.title.toLowerCase().replace(/[^a-z0-9]/g, "")}_${recommendation.area.toLowerCase()}`;
+
+      const updated = await storage.updateRecommendation(req.params.id, {
+        status: "dismissed",
+        dismissedAt: new Date(),
+        dismissedReason: reason || "not_relevant",
+        dismissedBy: user.id,
+        dedupeKey,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Hide recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Restore a hidden recommendation
+  app.post("/api/recommendations/:id/restore", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updated = await storage.updateRecommendation(req.params.id, {
+        status: "pending",
+        dismissedAt: null,
+        dismissedReason: null,
+        dismissedBy: null,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Restore recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== DATA SOURCES / NEWS ROUTES ====================
 
   app.get("/api/data-sources/news", async (req, res) => {

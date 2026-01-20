@@ -236,6 +236,10 @@ export const recommendations = pgTable("recommendations", {
   thumbsUp: integer("thumbs_up").notNull().default(0),
   thumbsDown: integer("thumbs_down").notNull().default(0),
   isPriority: boolean("is_priority").notNull().default(false),
+  // Soft hide with duplicate prevention
+  dedupeKey: text("dedupe_key"), // Normalized key for duplicate detection
+  dismissedReason: text("dismissed_reason"), // already_done, not_relevant, duplicate, other
+  dismissedBy: varchar("dismissed_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
