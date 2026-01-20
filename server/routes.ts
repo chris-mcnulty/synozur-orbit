@@ -130,16 +130,37 @@ const grantConsultantAccessSchema = z.object({
 
 // Parse manual AI research content into structured analysis data
 function parseManualResearch(content: string, entityName: string): any {
+  // List of known section headers to use as delimiters
+  const knownHeaders = [
+    "Company Summary", "Summary", "Overview",
+    "Value Proposition", "Main Value Proposition",
+    "Target Audience", "Target Market",
+    "Key Messages", "Main Messages",
+    "Keywords", "Themes", "Keywords/Themes",
+    "Tone", "Brand Voice",
+    "Strengths", "Weaknesses"
+  ];
+  
+  const headerPattern = knownHeaders.map(h => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  
   const extractSection = (content: string, header: string): string => {
+    const escapedHeader = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const patterns = [
-      new RegExp(`\\*\\*${header}[:\\s]*\\*\\*[:\\s]*([\\s\\S]*?)(?=\\*\\*[A-Z]|$)`, 'i'),
-      new RegExp(`${header}[:\\s]*([\\s\\S]*?)(?=\\n[A-Z][a-z]+[:\\s]|$)`, 'i'),
-      new RegExp(`##?\\s*${header}[:\\s]*([\\s\\S]*?)(?=##?\\s|$)`, 'i'),
+      // Match **Header:** or **Header** followed by content until next known header
+      new RegExp(`\\*\\*${escapedHeader}[:\\s]*\\*\\*[:\\s]*([\\s\\S]*?)(?=\\*\\*(?:${headerPattern})[:\\s]*\\*\\*|$)`, 'i'),
+      // Match Header: at start of line followed by content until next known header
+      new RegExp(`^${escapedHeader}[:\\s]+([\\s\\S]*?)(?=\\n(?:${headerPattern})[:\\s]|$)`, 'im'),
+      // Match ## Header or # Header (markdown format)
+      new RegExp(`##?\\s*${escapedHeader}[:\\s]*([\\s\\S]*?)(?=##?\\s*(?:${headerPattern})|$)`, 'i'),
     ];
     for (const pattern of patterns) {
       const match = content.match(pattern);
       if (match && match[1]?.trim()) {
-        return match[1].trim();
+        // Clean up the extracted content - remove trailing markdown or headers
+        let result = match[1].trim();
+        // Remove any bold markdown formatting from the result
+        result = result.replace(/\*\*([^*]+)\*\*/g, '$1');
+        return result;
       }
     }
     return "";

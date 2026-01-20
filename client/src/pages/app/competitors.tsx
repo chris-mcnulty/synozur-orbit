@@ -594,18 +594,18 @@ export default function Competitors() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
                               {competitor.faviconUrl && !faviconErrors.has(competitor.id) ? (
-                                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden group-hover:ring-2 group-hover:ring-primary/50 transition-all">
+                                <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center overflow-hidden group-hover:ring-2 group-hover:ring-primary/50 transition-all flex-shrink-0">
                                   <img 
                                     src={competitor.faviconUrl} 
                                     alt={`${competitor.name} logo`}
-                                    className="w-8 h-8 object-contain"
+                                    className="w-10 h-10 object-contain"
                                     onError={() => handleFaviconError(competitor.id)}
                                     referrerPolicy="no-referrer"
                                     data-testid={`img-favicon-${competitor.id}`}
                                   />
                                 </div>
                               ) : (
-                                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center font-bold text-lg text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                                <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center font-bold text-xl text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors flex-shrink-0">
                                   {competitor.name.charAt(0).toUpperCase()}
                                 </div>
                               )}
