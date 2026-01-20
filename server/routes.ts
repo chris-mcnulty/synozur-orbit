@@ -2068,11 +2068,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
       let battlecardContent;
       try {
         let text = textContent.text.trim();
+        // Remove markdown code blocks
         if (text.startsWith("```json")) text = text.slice(7);
         else if (text.startsWith("```")) text = text.slice(3);
         if (text.endsWith("```")) text = text.slice(0, -3);
-        battlecardContent = JSON.parse(text.trim());
-      } catch {
+        text = text.trim();
+        
+        // Try to find JSON object in the response if it contains other text
+        if (!text.startsWith("{")) {
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            text = jsonMatch[0];
+          }
+        }
+        
+        battlecardContent = JSON.parse(text);
+      } catch (parseError) {
+        console.error("Failed to parse AI response as JSON. Raw response:", textContent.text.substring(0, 500));
         throw new Error("Failed to parse AI response as JSON");
       }
 
