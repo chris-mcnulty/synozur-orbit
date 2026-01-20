@@ -14,8 +14,11 @@ export interface CompetitorAnalysis {
   tone: string;
 }
 
+export type GapCategory = "messaging" | "features" | "audience" | "content" | "positioning" | "other";
+
 export interface GapAnalysis {
   area: string;
+  category: GapCategory;
   impact: string;
   observation: string;
 }
@@ -152,11 +155,20 @@ Compare our baseline company against competitors. Consider:
 Please identify 3-5 key gaps and return as a JSON array:
 [
   {
-    "area": "Area name (e.g., Messaging, Features, Audience)",
+    "area": "Specific area name describing the gap",
+    "category": "messaging|features|audience|content|positioning|other",
     "impact": "High/Medium/Low",
     "observation": "Detailed observation about the gap, referencing specific differences between our company and competitors"
   }
 ]
+
+Categories:
+- messaging: Messaging, value propositions, taglines, brand voice
+- features: Product features, capabilities, functionality gaps
+- audience: Target audience, market segments, personas
+- content: Content marketing, thought leadership, blog, resources
+- positioning: Market positioning, differentiation, competitive stance
+- other: Other gaps that don't fit above categories
 
 Return ONLY valid JSON array, no additional text.`,
       },

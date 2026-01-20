@@ -8,7 +8,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ export default function Analysis() {
   const [messagingPromptsOpen, setMessagingPromptsOpen] = useState(false);
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
+  const [gapCategoryFilter, setGapCategoryFilter] = useState<string>("all");
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analysis"],
@@ -541,31 +543,75 @@ export default function Analysis() {
 
           <TabsContent value="gaps">
               {analysis.gaps?.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2">
-                    {analysis.gaps.map((gap: any, i: number) => (
-                        <Card key={i} className="border-l-4 border-l-destructive hover:bg-muted/20 transition-colors">
-                            <CardHeader>
-                                <div className="flex justify-between items-start gap-4">
-                                    <div>
-                                        <CardTitle className="text-lg">{gap.area}</CardTitle>
-                                        <CardDescription className="mt-1 flex items-center gap-2">
-                                            <AlertTriangle size={14} className="text-destructive" />
-                                            Impact: <span className="text-destructive font-medium">{gap.impact}</span>
-                                        </CardDescription>
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Filter by type:</span>
+                        <Select value={gapCategoryFilter} onValueChange={setGapCategoryFilter}>
+                          <SelectTrigger className="w-[180px] h-8" data-testid="gap-category-filter">
+                            <SelectValue placeholder="All Categories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Categories</SelectItem>
+                            <SelectItem value="messaging">Messaging</SelectItem>
+                            <SelectItem value="features">Product Features</SelectItem>
+                            <SelectItem value="audience">Target Audience</SelectItem>
+                            <SelectItem value="content">Content</SelectItem>
+                            <SelectItem value="positioning">Positioning</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {gapCategoryFilter === "all" 
+                          ? `${analysis.gaps.length} gaps detected`
+                          : `${analysis.gaps.filter((g: any) => g.category === gapCategoryFilter || (!g.category && gapCategoryFilter === "other")).length} of ${analysis.gaps.length} gaps`
+                        }
+                      </span>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {analysis.gaps
+                          .filter((gap: any) => {
+                            if (gapCategoryFilter === "all") return true;
+                            if (!gap.category && gapCategoryFilter === "other") return true;
+                            return gap.category === gapCategoryFilter;
+                          })
+                          .map((gap: any, i: number) => (
+                            <Card key={i} className="border-l-4 border-l-destructive hover:bg-muted/20 transition-colors" data-testid={`gap-card-${i}`}>
+                                <CardHeader>
+                                    <div className="flex justify-between items-start gap-4">
+                                        <div>
+                                            <CardTitle className="text-lg">{gap.area}</CardTitle>
+                                            <CardDescription className="mt-1 flex items-center gap-2">
+                                                <AlertTriangle size={14} className="text-destructive" />
+                                                Impact: <span className="text-destructive font-medium">{gap.impact}</span>
+                                            </CardDescription>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                          <Badge variant="outline" className="shrink-0">Gap Detected</Badge>
+                                          {gap.category && (
+                                            <Badge variant="secondary" className="text-xs capitalize">{gap.category}</Badge>
+                                          )}
+                                        </div>
                                     </div>
-                                    <Badge variant="outline" className="shrink-0">Gap Detected</Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-sm leading-relaxed">{gap.observation}</p>
-                                <div className="mt-4 flex justify-end">
-                                    <span className="text-xs text-primary font-medium flex items-center cursor-pointer hover:underline">
-                                        View Recommendation <ArrowRight size={12} className="ml-1" />
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm leading-relaxed">{gap.observation}</p>
+                                    <div className="mt-4 flex justify-end">
+                                        <span className="text-xs text-primary font-medium flex items-center cursor-pointer hover:underline">
+                                            View Recommendation <ArrowRight size={12} className="ml-1" />
+                                        </span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                    {gapCategoryFilter !== "all" && analysis.gaps.filter((g: any) => g.category === gapCategoryFilter || (!g.category && gapCategoryFilter === "other")).length === 0 && (
+                      <Card className="p-8 text-center">
+                        <p className="text-muted-foreground">No gaps in this category. Try selecting a different filter.</p>
+                      </Card>
+                    )}
                 </div>
               ) : (
                 <Card className="p-8 text-center">
