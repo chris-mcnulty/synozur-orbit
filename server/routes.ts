@@ -1016,6 +1016,24 @@ export async function registerRoutes(
         impact: "Medium",
       });
 
+      // Capture visual assets (screenshot/favicon) if not already captured
+      if (!competitor.screenshotUrl && competitor.url) {
+        try {
+          console.log(`[Manual Research] Capturing visual assets for ${competitor.name}...`);
+          const visualAssets = await captureVisualAssets(competitor.url, competitor.id);
+          if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+            await storage.updateCompetitor(competitor.id, {
+              faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
+              screenshotUrl: visualAssets.screenshotUrl,
+            });
+            console.log(`[Manual Research] Visual assets captured: favicon=${!!visualAssets.faviconUrl}, screenshot=${!!visualAssets.screenshotUrl}`);
+          }
+        } catch (visualError) {
+          console.error(`[Manual Research] Failed to capture visual assets:`, visualError);
+          // Non-blocking - continue even if visual capture fails
+        }
+      }
+
       res.json({ success: true, analysisData });
     } catch (error: any) {
       console.error("Manual research save error:", error);
