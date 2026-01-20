@@ -853,7 +853,7 @@ export async function registerRoutes(
       }).catch(err => console.error("Visual capture failed:", err));
 
       const now = new Date();
-      const lastCrawl = now.toLocaleString();
+      const lastCrawl = now.toISOString();
       
       // Update social links only if not already set
       const socialUpdates: any = {};
@@ -1362,7 +1362,7 @@ export async function registerRoutes(
             );
             // Store analysis on competitor
             await storage.updateCompetitorAnalysis(competitor.id, analysis);
-            await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
+            await storage.updateCompetitorLastCrawl(competitor.id, new Date().toISOString());
             analyses.push({ competitor: competitor.name, ...analysis });
           }
         } catch (e) {

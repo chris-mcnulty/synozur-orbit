@@ -640,7 +640,17 @@ export default function Competitors() {
                             <div className="flex items-center gap-6">
                               <div className="text-right hidden md:block">
                                 <p className="text-sm font-medium">Last Crawl</p>
-                                <p className="text-xs text-muted-foreground">{competitor.lastCrawl || "Never"}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {competitor.lastCrawl 
+                                    ? new Date(competitor.lastCrawl).toLocaleString(undefined, { 
+                                        month: 'short', 
+                                        day: 'numeric', 
+                                        year: 'numeric',
+                                        hour: 'numeric',
+                                        minute: '2-digit'
+                                      })
+                                    : "Never"}
+                                </p>
                               </div>
 
                               <div className="flex items-center gap-2">
