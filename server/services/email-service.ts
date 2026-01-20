@@ -1,6 +1,18 @@
 // SendGrid Email Service - Using Replit SendGrid Integration
 // Email styling inspired by Vega by The Synozur Alliance
+// All email copy is centralized in server/config/email-copy.ts
 import sgMail from '@sendgrid/mail';
+import {
+  EMAIL_CONFIG,
+  VERIFICATION_EMAIL,
+  WELCOME_EMAIL,
+  TEAM_INVITE_EMAIL,
+  USER_PROVISIONED_EMAIL,
+  PASSWORD_RESET_EMAIL,
+  TRIAL_REMINDER_EMAILS,
+  WEEKLY_DIGEST_EMAIL,
+  COMPETITOR_ALERT_EMAIL,
+} from '../config/email-copy';
 
 let connectionSettings: any;
 
@@ -68,9 +80,8 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 }
 
-// Standard email header image URL - served from app's public folder
-// Uses production URL for emails to work in all email clients
-const EMAIL_HEADER_IMAGE_URL = 'https://orbit.synozur.com/images/email-header.jpg';
+// Standard email header image URL - from centralized config
+const EMAIL_HEADER_IMAGE_URL = EMAIL_CONFIG.branding.headerImageUrl;
 
 // Common email template wrapper with Vega-inspired Synozur branding
 export function wrapEmailContent(content: string): string {
@@ -256,89 +267,70 @@ export async function sendVerificationEmail(
   baseUrl: string
 ): Promise<boolean> {
   const verificationLink = `${baseUrl}/api/auth/verify-email?token=${verificationToken}`;
+  const copy = VERIFICATION_EMAIL;
   
   const content = `
-    <h1>Verify your email address</h1>
+    <h1>${copy.heading}</h1>
     
-    <p>Hi <span class="highlight">${name}</span>,</p>
+    <p>${copy.greeting(name)}</p>
     
-    <p>Thank you for signing up for Orbit! To complete your registration and set up your organization, please verify your email address by clicking the button below:</p>
+    <p>${copy.body}</p>
     
     <div class="button-container">
-      <a href="${verificationLink}" class="button">Verify Email Address</a>
+      <a href="${verificationLink}" class="button">${copy.buttonText}</a>
     </div>
     
     <div class="divider"></div>
     
-    <p class="muted">Or copy and paste this link into your browser:</p>
+    <p class="muted">${copy.linkInstructions}</p>
     <p class="link">${verificationLink}</p>
     
-    <p class="muted" style="margin-top: 24px;">This verification link will expire in 24 hours.</p>
+    <p class="muted" style="margin-top: 24px;">${copy.expiryNotice}</p>
     
-    <p>Once verified, you'll be set up as the administrator for your organization and can start tracking competitors and generating AI-powered insights.</p>
+    <p>${copy.postVerification}</p>
     
-    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you didn't create an account with Orbit, you can safely ignore this email.</p>
-  `;
-
-  const text = `
-Hi ${name},
-
-Thank you for signing up for Orbit! To complete your registration and set up your organization, please verify your email address by clicking the link below:
-
-${verificationLink}
-
-This verification link will expire in 24 hours.
-
-Once verified, you'll be set up as the administrator for your organization and can start tracking competitors and generating AI-powered insights.
-
-If you didn't create an account with Orbit, you can safely ignore this email.
-
-© ${new Date().getFullYear()} The Synozur Alliance, LLC. All rights reserved.
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">${copy.disclaimer}</p>
   `;
 
   return sendEmail({
     to: email,
-    subject: 'Verify your email address - Orbit by Synozur',
+    subject: copy.subject,
     html: wrapEmailContent(content),
-    text
+    text: copy.plainText(name, verificationLink)
   });
 }
 
 export async function sendWelcomeEmail(email: string, name: string, companyName: string): Promise<boolean> {
+  const copy = WELCOME_EMAIL;
+  
+  const featuresHtml = copy.features.map(f => `
+    <div class="feature">
+      <div class="feature-title">${f.title}</div>
+      <p class="feature-desc">${f.description}</p>
+    </div>
+  `).join('');
+  
   const content = `
-    <h1>Welcome to Orbit, ${name}!</h1>
+    <h1>${copy.heading(name)}</h1>
     
-    <p>Your email has been verified and <span class="highlight">${companyName}</span> is now set up on Orbit. As the organization administrator, you can invite team members and manage your competitive intelligence.</p>
+    <p>${copy.body(companyName)}</p>
     
-    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Here's what you can do next:</p>
+    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.nextStepsIntro}</p>
     
     <div class="feature-list">
-      <div class="feature">
-        <div class="feature-title">1. Add Competitors</div>
-        <p class="feature-desc">Enter competitor URLs and Orbit will automatically analyze their positioning and messaging.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">2. Upload Your Positioning Docs</div>
-        <p class="feature-desc">Add your messaging guidelines, brand docs, or pitch decks for AI-powered comparison.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">3. Run AI Analysis</div>
-        <p class="feature-desc">Let Claude analyze your positioning vs competitors and identify gaps and opportunities.</p>
-      </div>
+      ${featuresHtml}
     </div>
     
     <div class="button-container">
-      <a href="https://orbit.synozur.com/app" class="button">Get Started</a>
+      <a href="${EMAIL_CONFIG.branding.appUrl}" class="button">${copy.buttonText}</a>
     </div>
   `;
 
   return sendEmail({
     to: email,
-    subject: `Welcome to Orbit - ${companyName} is ready!`,
+    subject: copy.subject(companyName),
     html: wrapEmailContent(content),
-    text: `Welcome to Orbit, ${name}! Your email has been verified and ${companyName} is now set up. Get started at https://orbit.synozur.com/app`
+    text: copy.plainText(name, companyName)
   });
 }
 
@@ -350,48 +342,43 @@ export async function sendTeamInviteEmail(
   baseUrl: string
 ): Promise<boolean> {
   const inviteLink = `${baseUrl}/accept-invite?token=${inviteToken}`;
+  const copy = TEAM_INVITE_EMAIL;
+  
+  const featuresHtml = copy.features.map(f => `
+    <div class="feature">
+      <div class="feature-title">${f.title}</div>
+      <p class="feature-desc">${f.description}</p>
+    </div>
+  `).join('');
   
   const content = `
-    <h1>You've been invited to join ${companyName} on Orbit</h1>
+    <h1>${copy.heading(companyName)}</h1>
     
-    <p><span class="highlight">${inviterName}</span> has invited you to join their team on Orbit, the AI-powered competitive intelligence platform.</p>
+    <p>${copy.body(inviterName)}</p>
     
-    <p>As a team member, you'll be able to:</p>
+    <p>${copy.capabilitiesIntro}</p>
     
     <div class="feature-list">
-      <div class="feature">
-        <div class="feature-title">Track Competitors</div>
-        <p class="feature-desc">Monitor competitor websites, social media, and messaging in real-time.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">Access AI Insights</div>
-        <p class="feature-desc">Get AI-powered recommendations and gap analysis powered by Claude.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">Generate Reports</div>
-        <p class="feature-desc">Create branded PDF reports for stakeholders and leadership.</p>
-      </div>
+      ${featuresHtml}
     </div>
     
     <div class="button-container">
-      <a href="${inviteLink}" class="button">Accept Invitation</a>
+      <a href="${inviteLink}" class="button">${copy.buttonText}</a>
     </div>
     
     <div class="divider"></div>
     
-    <p class="muted">Or copy and paste this link into your browser:</p>
+    <p class="muted">${copy.linkInstructions}</p>
     <p class="link">${inviteLink}</p>
     
-    <p class="muted" style="margin-top: 24px;">This invitation link will expire in 7 days.</p>
+    <p class="muted" style="margin-top: 24px;">${copy.expiryNotice}</p>
   `;
 
   return sendEmail({
     to: email,
-    subject: `${inviterName} invited you to join ${companyName} on Orbit`,
+    subject: copy.subject(inviterName, companyName),
     html: wrapEmailContent(content),
-    text: `${inviterName} has invited you to join ${companyName} on Orbit. Accept your invitation: ${inviteLink}`
+    text: copy.plainText(inviterName, companyName, inviteLink)
   });
 }
 
@@ -405,81 +392,50 @@ export async function sendUserProvisionedWelcomeEmail(
 ): Promise<boolean> {
   const loginLink = `${baseUrl}/auth/signin`;
   const guideLink = `${baseUrl}/app/guide`;
+  const copy = USER_PROVISIONED_EMAIL;
+  
+  const featuresHtml = copy.features.map(f => `
+    <div class="feature">
+      <div class="feature-title">${f.title}</div>
+      <p class="feature-desc">${f.description}</p>
+    </div>
+  `).join('');
   
   const content = `
-    <h1>Welcome to Orbit!</h1>
+    <h1>${copy.heading}</h1>
     
-    <p>Hi <span class="highlight">${name}</span>,</p>
+    <p>${copy.greeting(name)}</p>
     
-    <p><span class="highlight">${addedByName}</span> has added you to <span class="highlight">${companyName}</span>'s team on Orbit, our AI-powered competitive intelligence platform. Your role has been set to <span class="highlight">${role}</span>.</p>
+    <p>${copy.body(addedByName, companyName, role)}</p>
     
-    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Getting Started</p>
+    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.gettingStartedTitle}</p>
     
-    <p>Since your organization uses Microsoft Entra ID for sign-in, you can access Orbit using your work account. Simply click the button below and sign in with your Microsoft credentials:</p>
+    <p>${copy.gettingStartedBody}</p>
     
     <div class="button-container">
-      <a href="${loginLink}" class="button">Sign In to Orbit</a>
+      <a href="${loginLink}" class="button">${copy.buttonText}</a>
     </div>
     
     <div class="divider"></div>
     
-    <p style="color: #ffffff; font-weight: 500;">What can you do in Orbit?</p>
+    <p style="color: #ffffff; font-weight: 500;">${copy.capabilitiesTitle}</p>
     
     <div class="feature-list">
-      <div class="feature">
-        <div class="feature-title">Track Competitors</div>
-        <p class="feature-desc">Monitor competitor websites, social media presence, and messaging strategies in real-time.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">AI-Powered Analysis</div>
-        <p class="feature-desc">Get intelligent recommendations and gap analysis powered by Claude AI to strengthen your positioning.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">Battle Cards</div>
-        <p class="feature-desc">Access dynamically generated competitive battle cards with key differentiators and talk tracks.</p>
-      </div>
-      
-      <div class="feature">
-        <div class="feature-title">Generate Reports</div>
-        <p class="feature-desc">Create branded PDF reports for stakeholders, leadership, and sales teams.</p>
-      </div>
+      ${featuresHtml}
     </div>
     
     <div class="divider"></div>
     
-    <p><strong>Need help?</strong> Check out our <a href="${guideLink}" class="link" style="font-size: 15px;">User Guide</a> for step-by-step instructions on using Orbit effectively.</p>
+    <p>${copy.helpText(guideLink)}</p>
     
-    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you have any questions, reach out to your administrator or contact support.</p>
-  `;
-
-  const text = `
-Hi ${name},
-
-${addedByName} has added you to ${companyName}'s team on Orbit, our AI-powered competitive intelligence platform. Your role has been set to ${role}.
-
-Getting Started:
-Since your organization uses Microsoft Entra ID for sign-in, you can access Orbit using your work account. Simply visit ${loginLink} and sign in with your Microsoft credentials.
-
-What can you do in Orbit?
-- Track Competitors: Monitor competitor websites, social media presence, and messaging strategies.
-- AI-Powered Analysis: Get intelligent recommendations and gap analysis powered by Claude AI.
-- Battle Cards: Access dynamically generated competitive battle cards with key differentiators.
-- Generate Reports: Create branded PDF reports for stakeholders and leadership.
-
-Need help? Check out our User Guide at ${guideLink}
-
-If you have any questions, reach out to your administrator or contact support.
-
-© ${new Date().getFullYear()} The Synozur Alliance, LLC. All rights reserved.
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">${copy.disclaimer}</p>
   `;
 
   return sendEmail({
     to: email,
-    subject: `You've been added to ${companyName} on Orbit`,
+    subject: copy.subject(companyName),
     html: wrapEmailContent(content),
-    text
+    text: copy.plainText(name, addedByName, companyName, role, loginLink, guideLink)
   });
 }
 
@@ -490,38 +446,40 @@ export async function sendPasswordResetEmail(
   baseUrl: string
 ): Promise<boolean> {
   const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
+  const copy = PASSWORD_RESET_EMAIL;
   
   const content = `
-    <h1>Reset your password</h1>
+    <h1>${copy.heading}</h1>
     
-    <p>Hi <span class="highlight">${name}</span>,</p>
+    <p>${copy.greeting(name)}</p>
     
-    <p>We received a request to reset your password for your Orbit account. Click the button below to create a new password:</p>
+    <p>${copy.body}</p>
     
     <div class="button-container">
-      <a href="${resetLink}" class="button">Reset Password</a>
+      <a href="${resetLink}" class="button">${copy.buttonText}</a>
     </div>
     
     <div class="divider"></div>
     
-    <p class="muted">Or copy and paste this link into your browser:</p>
+    <p class="muted">${copy.linkInstructions}</p>
     <p class="link">${resetLink}</p>
     
-    <p class="muted" style="margin-top: 24px;">This link will expire in 1 hour for security reasons.</p>
+    <p class="muted" style="margin-top: 24px;">${copy.expiryNotice}</p>
     
-    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">${copy.disclaimer}</p>
   `;
 
   return sendEmail({
     to: email,
-    subject: 'Reset your password - Orbit by Synozur',
+    subject: copy.subject,
     html: wrapEmailContent(content),
-    text: `Hi ${name}, Reset your Orbit password: ${resetLink}. This link expires in 1 hour.`
+    text: copy.plainText(name, resetLink)
   });
 }
 
 // Trial Reminder Email Templates
 // 60-day trial with reminders at: day 7, day 30, day 46 (14 left), day 53 (7 left), day 57 (3 left), day 59 (1 left), day 60 (expired)
+// Copy is centralized in server/config/email-copy.ts
 
 export type TrialReminderType = 'day7' | 'day30' | 'day46' | 'day53' | 'day57' | 'day59' | 'day60';
 
@@ -533,206 +491,151 @@ interface TrialReminderParams {
   baseUrl: string;
 }
 
+function buildFeaturesHtml(features: Array<{title: string, description: string}>): string {
+  if (!features || features.length === 0) return '';
+  return `
+    <div class="feature-list">
+      ${features.map(f => `
+        <div class="feature">
+          <div class="feature-title">${f.title}</div>
+          <p class="feature-desc">${f.description}</p>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 export async function sendTrialReminderEmail(
   params: TrialReminderParams,
   reminderType: TrialReminderType
 ): Promise<boolean> {
   const { email, name, companyName, daysRemaining, baseUrl } = params;
   const loginLink = `${baseUrl}/auth`;
-  const contactEmail = 'contactus@synozur.com';
+  const contactEmail = EMAIL_CONFIG.branding.supportEmail;
+  
+  const templates = TRIAL_REMINDER_EMAILS;
+  const template = templates[reminderType];
   
   let subject: string;
   let heading: string;
   let bodyContent: string;
-  let includeContactCta: boolean = false;
+  let includeContactCta: boolean = template.includeContactCta;
   
   switch (reminderType) {
-    case 'day7':
-      subject = `How's your first week with Orbit, ${name}?`;
-      heading = `Your First Week with Orbit`;
+    case 'day7': {
+      const t = templates.day7;
+      subject = t.subject(name);
+      heading = t.heading;
+      const featuresHtml = buildFeaturesHtml(t.features);
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>You've been exploring Orbit for a week now! We hope you're discovering valuable insights about your competitive landscape.</p>
-        
-        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Quick tips to get more value:</p>
-        
-        <div class="feature-list">
-          <div class="feature">
-            <div class="feature-title">Add more competitors</div>
-            <p class="feature-desc">The more competitors you track, the richer your competitive intelligence becomes.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Upload positioning documents</div>
-            <p class="feature-desc">Add your brand guidelines or pitch decks to get AI-powered gap analysis.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Generate a report</div>
-            <p class="feature-desc">Create a branded PDF report to share insights with your team or leadership.</p>
-          </div>
-        </div>
-        
-        <p style="margin-top: 24px;">You have <span class="highlight">${daysRemaining} days</span> remaining in your trial. Make the most of it!</p>
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro}</p>
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${t.tipsTitle}</p>
+        ${featuresHtml}
+        <p style="margin-top: 24px;">${t.closing(daysRemaining)}</p>
       `;
       break;
+    }
       
-    case 'day30':
-      subject = `You're halfway through your Orbit trial, ${name}`;
-      heading = `Halfway Through Your Trial`;
+    case 'day30': {
+      const t = templates.day30;
+      subject = t.subject(name);
+      heading = t.heading;
+      const featuresHtml = buildFeaturesHtml(t.features);
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>You've reached the midpoint of your 60-day Orbit trial! By now, you should have a solid understanding of how your competitive landscape looks.</p>
-        
-        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Have you tried these features yet?</p>
-        
-        <div class="feature-list">
-          <div class="feature">
-            <div class="feature-title">AI Battle Cards</div>
-            <p class="feature-desc">Generate competitive battle cards with key differentiators and talk tracks for your sales team.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Change Monitoring</div>
-            <p class="feature-desc">Track when competitors update their websites or social media presence.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Side-by-Side Comparison</div>
-            <p class="feature-desc">See how your messaging stacks up against each competitor.</p>
-          </div>
-        </div>
-        
-        <p style="margin-top: 24px;">You have <span class="highlight">${daysRemaining} days</span> remaining to explore everything Orbit has to offer.</p>
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro}</p>
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${t.tipsTitle}</p>
+        ${featuresHtml}
+        <p style="margin-top: 24px;">${t.closing(daysRemaining)}</p>
       `;
       break;
+    }
       
-    case 'day46':
-      subject = `14 days left in your Orbit trial`;
-      heading = `Your Trial Ends in 14 Days`;
-      includeContactCta = true;
+    case 'day46': {
+      const t = templates.day46;
+      subject = t.subject;
+      heading = t.heading;
+      const featuresHtml = buildFeaturesHtml(t.features);
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>Your Orbit trial for <span class="highlight">${companyName}</span> will end in <span class="highlight">14 days</span>. After your trial expires, your account will transition to our Free tier with limited functionality.</p>
-        
-        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">What happens after your trial?</p>
-        
-        <div class="feature-list">
-          <div class="feature">
-            <div class="feature-title">Free Tier Limitations</div>
-            <p class="feature-desc">You'll be limited to 1 competitor and 1 analysis. Premium features like battle cards and change monitoring will be unavailable.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Your Data is Safe</div>
-            <p class="feature-desc">All your existing analysis, reports, and competitor data will remain accessible.</p>
-          </div>
-        </div>
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro(companyName)}</p>
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${t.tipsTitle}</p>
+        ${featuresHtml}
       `;
       break;
+    }
       
-    case 'day53':
-      subject = `7 days left - Your Orbit trial is ending soon`;
-      heading = `Only 7 Days Left`;
-      includeContactCta = true;
+    case 'day53': {
+      const t = templates.day53;
+      subject = t.subject;
+      heading = t.heading;
+      const featuresHtml = buildFeaturesHtml(t.features);
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>Your Orbit trial for <span class="highlight">${companyName}</span> expires in just <span class="highlight">7 days</span>. This is a great time to generate any reports or battle cards you'd like to keep.</p>
-        
-        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">Before your trial ends:</p>
-        
-        <div class="feature-list">
-          <div class="feature">
-            <div class="feature-title">Download your reports</div>
-            <p class="feature-desc">Generate and save PDF reports for your records before transitioning to the Free tier.</p>
-          </div>
-          
-          <div class="feature">
-            <div class="feature-title">Review your insights</div>
-            <p class="feature-desc">Take note of key recommendations and action items from your competitive analysis.</p>
-          </div>
-        </div>
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro(companyName)}</p>
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${t.tipsTitle}</p>
+        ${featuresHtml}
       `;
       break;
+    }
       
-    case 'day57':
-      subject = `3 days left - Your Orbit trial is almost over`;
-      heading = `3 Days Remaining`;
-      includeContactCta = true;
+    case 'day57': {
+      const t = templates.day57;
+      subject = t.subject;
+      heading = t.heading;
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>Your Orbit trial for <span class="highlight">${companyName}</span> ends in <span class="highlight">3 days</span>. After that, your account will automatically transition to the Free tier.</p>
-        
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro(companyName)}</p>
         <p style="margin-top: 24px;">If you've found value in Orbit's competitive intelligence capabilities, we'd love to continue working with you.</p>
       `;
       break;
+    }
       
-    case 'day59':
-      subject = `Tomorrow: Your Orbit trial expires`;
-      heading = `Your Trial Ends Tomorrow`;
-      includeContactCta = true;
+    case 'day59': {
+      const t = templates.day59;
+      subject = t.subject;
+      heading = t.heading;
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>This is your final reminder: Your Orbit trial for <span class="highlight">${companyName}</span> expires <span class="highlight">tomorrow</span>.</p>
-        
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro(companyName)}</p>
         <p style="margin-top: 24px;">After your trial ends, you'll still have access to Orbit on our Free tier, but with limited functionality (1 competitor, 1 analysis).</p>
-        
         <p style="margin-top: 24px;">If you want to continue using all of Orbit's features, reach out to us today.</p>
       `;
       break;
+    }
       
-    case 'day60':
-      subject = `Thank you for trying Orbit`;
-      heading = `Thank You for Trying Orbit`;
-      includeContactCta = true;
+    case 'day60': {
+      const t = templates.day60;
+      subject = t.subject;
+      heading = t.heading;
+      const featuresHtml = buildFeaturesHtml(t.features);
       bodyContent = `
-        <p>Hi <span class="highlight">${name}</span>,</p>
-        
-        <p>Your 60-day Orbit trial for <span class="highlight">${companyName}</span> has ended. We hope you found valuable insights about your competitive landscape during your trial.</p>
-        
+        <p>${t.greeting(name)}</p>
+        <p>${t.intro(companyName)}</p>
         <p style="margin-top: 24px;">Your account has been transitioned to our <span class="highlight">Free tier</span>. You can still access Orbit with limited functionality:</p>
-        
-        <div class="feature-list">
-          <div class="feature">
-            <div class="feature-title">Free Tier Access</div>
-            <p class="feature-desc">Track 1 competitor with basic analysis capabilities. Your existing data remains accessible.</p>
-          </div>
-        </div>
-        
+        ${featuresHtml}
         <p style="margin-top: 24px;">We'd love to hear about your experience and how we can better serve your competitive intelligence needs.</p>
       `;
       break;
+    }
   }
   
+  const contactCtaCopy = templates.contactCta;
   const contactCtaHtml = includeContactCta ? `
     <div class="divider"></div>
-    
-    <p style="color: #ffffff; font-weight: 500;">Continue with Orbit</p>
-    
-    <p>If you'd like to continue using Orbit's full competitive intelligence capabilities, we'd be happy to discuss how we can support your organization. Establish a client relationship with Synozur to maintain access to all features.</p>
-    
-    <p style="margin-top: 16px;">
-      <strong>Contact us:</strong> <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>
-    </p>
+    <p style="color: #ffffff; font-weight: 500;">${contactCtaCopy.title}</p>
+    <p>If you'd like to continue using Orbit's full competitive intelligence capabilities, we'd be happy to discuss how we can support your organization.</p>
+    <p style="margin-top: 16px;">${contactCtaCopy.description(contactEmail)}</p>
   ` : '';
   
   const content = `
     <h1>${heading}</h1>
-    
     ${bodyContent}
-    
     ${contactCtaHtml}
-    
     <div class="button-container">
       <a href="${loginLink}" class="button">Log in to Orbit</a>
     </div>
-    
     <p class="muted" style="font-size: 13px; margin-top: 32px;">If you have any questions, contact us at <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>.</p>
   `;
   
