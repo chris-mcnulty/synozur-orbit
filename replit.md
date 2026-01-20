@@ -145,3 +145,12 @@ After completing significant features or bug fixes, update the following files:
 
 ### Deferred (Pending User Demand)
 - **LinkedIn content integration**: Deep LinkedIn post content tracking (beyond basic profile metrics). Requires LinkedIn Marketing API access ($69-159/mo third-party services or official API partnership). Current implementation captures profile URLs and engagement numbers only.
+
+### Long-Range / Future (May Become Separate App)
+- **Product Management Module**: Comprehensive product planning and roadmap intelligence. May live in Orbit or become its own application. Features:
+  - **Feature Ingestion**: Use projects/products object to ingest current feature set and proposed roadmap
+  - **Market Analysis Comparison**: Compare product features and roadmap against competitive market analysis data
+  - **AI Roadmap Recommendations**: Propose changes and additions to the roadmap based on market conditions, competitive gaps, and trends
+  - **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
+  - **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
+  - **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
