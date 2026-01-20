@@ -54,6 +54,13 @@ async function runWebsiteCrawlJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        // Skip competitors with manual research to avoid triggering bot detection
+        const existingAnalysis = competitor.analysisData as any;
+        if (existingAnalysis?.source === "manual") {
+          console.log(`[Scheduled Job] Skipping ${competitor.name} - has manual research`);
+          continue;
+        }
+
         const lastCrawl = competitor.lastFullCrawl 
           ? new Date(competitor.lastFullCrawl).getTime() 
           : 0;
