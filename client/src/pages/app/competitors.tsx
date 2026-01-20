@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -33,6 +33,13 @@ export default function Competitors() {
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
   const [urlError, setUrlError] = useState("");
+  
+  // Blog URL editing state
+  const [blogEditOpen, setBlogEditOpen] = useState(false);
+  const [blogEditTarget, setBlogEditTarget] = useState<{ id: string; name: string; blogUrl: string } | null>(null);
+  const [blogUrlInput, setBlogUrlInput] = useState("");
+  const [isBlogTesting, setIsBlogTesting] = useState(false);
+  const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
 
   // Validate and normalize URL - basic frontend validation, backend does authoritative security checks
   const normalizeAndValidateUrl = (inputUrl: string): { valid: boolean; normalized: string; error: string } => {
@@ -241,6 +248,59 @@ export default function Competitors() {
       });
     },
   });
+
+  // Blog URL testing and saving
+  const testAndSaveBlogUrl = async (save: boolean) => {
+    if (!blogEditTarget || !blogUrlInput.trim()) return;
+    
+    setIsBlogTesting(true);
+    setBlogTestResult(null);
+    
+    try {
+      const response = await fetch(`/api/competitors/${blogEditTarget.id}/test-blog`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blogUrl: blogUrlInput.trim(), save }),
+        credentials: "include",
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to test blog URL");
+      }
+      
+      setBlogTestResult(result);
+      
+      if (save && result.valid) {
+        queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+        toast({
+          title: "Blog URL Saved",
+          description: `Found ${result.postCount} blog posts. Orbit will now monitor this feed for updates.`,
+        });
+        setBlogEditOpen(false);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsBlogTesting(false);
+    }
+  };
+
+  const openBlogEdit = (competitor: any) => {
+    setBlogEditTarget({
+      id: competitor.id,
+      name: competitor.name,
+      blogUrl: competitor.blogUrl || "",
+    });
+    setBlogUrlInput(competitor.blogUrl || "");
+    setBlogTestResult(null);
+    setBlogEditOpen(true);
+  };
 
   const handleAddCompetitor = (e: React.FormEvent) => {
     e.preventDefault();
@@ -742,6 +802,13 @@ export default function Competitors() {
                                       <ClipboardPaste className="w-4 h-4 mr-2" />
                                       Manual AI Research
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => openBlogEdit(competitor)}
+                                      data-testid={`button-edit-blog-${competitor.id}`}
+                                    >
+                                      <Rss className="w-4 h-4 mr-2" />
+                                      {competitor.blogUrl ? "Edit Blog/RSS Feed" : "Add Blog/RSS Feed"}
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => deleteCompetitor.mutate(competitor.id)}
@@ -839,6 +906,88 @@ export default function Competitors() {
           entityUrl={manualResearchTarget.url}
         />
       )}
+
+      {/* Blog/RSS URL Edit Dialog */}
+      <Dialog open={blogEditOpen} onOpenChange={setBlogEditOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rss className="w-5 h-5 text-primary" />
+              {blogEditTarget?.blogUrl ? "Edit" : "Add"} Blog/RSS Feed
+            </DialogTitle>
+            <DialogDescription>
+              Enter a direct link to {blogEditTarget?.name}'s blog or RSS feed. 
+              This is useful for companies that block web crawlers.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="blogUrl">Blog or RSS Feed URL</Label>
+              <Input
+                id="blogUrl"
+                placeholder="https://example.com/blog or https://example.com/feed.xml"
+                value={blogUrlInput}
+                onChange={(e) => {
+                  setBlogUrlInput(e.target.value);
+                  setBlogTestResult(null);
+                }}
+                data-testid="input-blog-url"
+              />
+              <p className="text-xs text-muted-foreground">
+                Supported: RSS feeds, Atom feeds, or direct blog page URLs
+              </p>
+            </div>
+            
+            {blogTestResult && (
+              <div className={`p-3 rounded-lg border ${blogTestResult.valid ? "bg-green-500/10 border-green-500/30" : "bg-destructive/10 border-destructive/30"}`}>
+                {blogTestResult.valid ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-green-500">
+                      <Check className="w-4 h-4" />
+                      <span className="font-medium">Feed detected ({blogTestResult.feedType})</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Found {blogTestResult.postCount} posts
+                    </p>
+                    {blogTestResult.sampleTitles.length > 0 && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Latest: </span>
+                        <span className="text-foreground">{blogTestResult.sampleTitles[0]}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-destructive">
+                    <X className="w-4 h-4" />
+                    <span>{blogTestResult.error || "Could not parse feed"}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button 
+              variant="outline" 
+              onClick={() => testAndSaveBlogUrl(false)}
+              disabled={isBlogTesting || !blogUrlInput.trim()}
+              data-testid="button-test-blog"
+            >
+              {isBlogTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Test URL
+            </Button>
+            <Button 
+              onClick={() => testAndSaveBlogUrl(true)}
+              disabled={isBlogTesting || !blogUrlInput.trim()}
+              data-testid="button-save-blog"
+            >
+              {isBlogTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Test & Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Database table for tracking all AI API calls (provider, model, tokens, costs)
 - Backlog.md file with comprehensive MVP feature tracking
 
+### Added
+- Blog/RSS Feed Monitoring for Manual Competitors - Add direct links to competitor blogs or RSS feeds
+  - New "Add Blog/RSS Feed" option in competitor dropdown menu
+  - Test blog URLs before saving to verify they can be parsed
+  - Supports RSS feeds, Atom feeds, and direct blog page HTML parsing
+  - Detects new blog posts and creates activity entries when competitors publish
+  - Useful for companies that block web crawlers but have accessible blogs
+
 ### Fixed
 - "Regenerate All" now preserves manual research - competitors with manually entered research (source === "manual") are no longer overwritten during full regeneration, protecting hand-entered data for companies that block web crawlers
 

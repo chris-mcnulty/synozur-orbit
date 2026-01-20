@@ -27,6 +27,7 @@ import { startFullRegeneration, getRegenerationStatus } from "./services/full-re
 import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
+import { testBlogUrl, monitorBlogForCompetitor } from "./services/rss-service";
 
 // Helper to log AI usage after any AI call
 async function logAiUsage(
@@ -684,6 +685,95 @@ export async function registerRoutes(
 
       const updated = await storage.updateCompetitor(req.params.id, updateData);
       res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Test blog/RSS URL and optionally save to competitor
+  app.post("/api/competitors/:id/test-blog", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+      
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+      
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const { blogUrl, save } = req.body;
+      
+      if (!blogUrl) {
+        return res.status(400).json({ error: "Blog URL is required" });
+      }
+      
+      // Test the blog URL
+      const result = await testBlogUrl(blogUrl);
+      
+      // If save is true and test was successful, update the competitor
+      if (save && result.valid) {
+        await storage.updateCompetitor(competitor.id, { blogUrl });
+        
+        // Also update the blog snapshot with initial data
+        if (result.postCount > 0) {
+          await storage.updateCompetitor(competitor.id, {
+            blogSnapshot: {
+              postCount: result.postCount,
+              latestTitles: result.sampleTitles,
+              feedType: result.feedType,
+              capturedAt: new Date().toISOString(),
+              blogUrl,
+            }
+          });
+        }
+      }
+      
+      res.json({
+        ...result,
+        saved: save && result.valid,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Monitor blog for a specific competitor (trigger immediate check)
+  app.post("/api/competitors/:id/monitor-blog", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+      
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+      
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      if (!competitor.blogUrl) {
+        return res.status(400).json({ error: "No blog URL configured for this competitor" });
+      }
+      
+      const result = await monitorBlogForCompetitor(
+        competitor.id,
+        competitor.blogUrl,
+        competitor.name,
+        ctx.userId,
+        ctx.tenantDomain,
+        ctx.marketId
+      );
+      
+      res.json(result);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
