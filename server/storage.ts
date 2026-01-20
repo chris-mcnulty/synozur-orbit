@@ -87,6 +87,32 @@ import {
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
 
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 100
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      const is412 = error?.code === 412 || error?.message?.includes('412') || error?.message?.includes('Precondition Failed');
+      const isConnectionError = error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT';
+      
+      if ((is412 || isConnectionError) && attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        console.log(`[DB Retry] Attempt ${attempt}/${maxRetries} failed with ${error?.code || 'error'}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 export interface ContextFilter {
   tenantId: string;
   marketId: string;
@@ -449,26 +475,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor> {
-    const [competitor] = await db
-      .update(competitors)
-      .set(data)
-      .where(eq(competitors.id, id))
-      .returning();
-    return competitor;
+    return await withRetry(async () => {
+      const [competitor] = await db
+        .update(competitors)
+        .set(data)
+        .where(eq(competitors.id, id))
+        .returning();
+      return competitor;
+    });
   }
 
   async updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void> {
-    await db
-      .update(competitors)
-      .set({ lastCrawl })
-      .where(eq(competitors.id, id));
+    await withRetry(async () => {
+      await db
+        .update(competitors)
+        .set({ lastCrawl })
+        .where(eq(competitors.id, id));
+    });
   }
 
   async updateCompetitorAnalysis(id: string, analysisData: any): Promise<void> {
-    await db
-      .update(competitors)
-      .set({ analysisData })
-      .where(eq(competitors.id, id));
+    await withRetry(async () => {
+      await db
+        .update(competitors)
+        .set({ analysisData })
+        .where(eq(competitors.id, id));
+    });
   }
 
   async deleteCompetitor(id: string): Promise<void> {
@@ -698,12 +730,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile> {
-    const [profile] = await db
-      .update(companyProfiles)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(companyProfiles.id, id))
-      .returning();
-    return profile;
+    return await withRetry(async () => {
+      const [profile] = await db
+        .update(companyProfiles)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(companyProfiles.id, id))
+        .returning();
+      return profile;
+    });
   }
 
   async deleteCompanyProfile(id: string): Promise<void> {
