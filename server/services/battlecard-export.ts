@@ -153,25 +153,26 @@ function generateBattlecardHtml(
     .header {
       background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor});
       color: white;
-      padding: 24px 32px;
+      padding: 24px 1in;
       margin: 0 -0.75in 24px -0.75in;
       display: flex;
       align-items: center;
       gap: 20px;
     }
     .header-logo {
-      width: 48px;
-      height: 48px;
+      width: 56px;
+      height: 56px;
       background: white;
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     .header-logo img {
-      max-width: 40px;
-      max-height: 40px;
+      max-width: 48px;
+      max-height: 48px;
       object-fit: contain;
     }
     .header-content { flex: 1; }
@@ -680,25 +681,26 @@ function generateProductBattlecardHtml(
     .header {
       background: linear-gradient(135deg, ${primaryColor}, ${secondaryColor});
       color: white;
-      padding: 24px 32px;
+      padding: 24px 1in;
       margin: 0 -0.75in 24px -0.75in;
       display: flex;
       align-items: center;
       gap: 20px;
     }
     .header-logo {
-      width: 48px;
-      height: 48px;
+      width: 56px;
+      height: 56px;
       background: white;
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     .header-logo img {
-      max-width: 40px;
-      max-height: 40px;
+      max-width: 48px;
+      max-height: 48px;
       object-fit: contain;
     }
     .header-content { flex: 1; }
