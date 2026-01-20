@@ -122,6 +122,7 @@ After completing significant features or bug fixes, update the following files:
 ## Backlog
 
 ### High Priority
+- **Service plan feature gating**: Implement tiered access control with blurred overlays and upgrade prompts. Free tier: 1 company, 1-2 competitors, no projects/GTM/messaging rewrites. Trial (60 days): full Pro features. Pro: 7 competitors, projects, GTM, messaging. Enterprise: unlimited + markets. Each tier has RW/RO user limits. Show locked features with diamond icon and blur effect. Defer until all features are verified working.
 - **Input safety validation**: Pre-validate all user-entered URLs and uploaded data before crawling or processing. Check for malicious URLs, SSRF attempts, private IP ranges, and unsafe file content to protect the platform from security threats.
 
 ### Standard Priority
