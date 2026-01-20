@@ -70,58 +70,9 @@ export async function fetchFavicon(url: string, competitorId: string): Promise<s
 }
 
 export async function captureScreenshot(url: string, competitorId: string): Promise<string | null> {
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-      ],
-    });
-
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-
-    await page.goto(url, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const screenshot = await page.screenshot({
-      type: "jpeg",
-      quality: 80,
-      clip: {
-        x: 0,
-        y: 0,
-        width: 1280,
-        height: 800,
-      },
-    });
-
-    await browser.close();
-
-    const filename = `${competitorId}-screenshot.jpg`;
-    const uploadedUrl = await uploadToObjectStorage(
-      screenshot as Buffer,
-      filename,
-      "image/jpeg"
-    );
-
-    return uploadedUrl;
-  } catch (error) {
-    console.error("Failed to capture screenshot:", error);
-    if (browser) {
-      await browser.close();
-    }
-    return null;
-  }
+  // Screenshot capture disabled - causes puppeteer timeouts in production
+  // and is not essential for competitor analysis functionality
+  return null;
 }
 
 export async function captureVisualAssets(
