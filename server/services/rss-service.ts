@@ -176,9 +176,26 @@ export async function monitorBlogForCompetitor(
   const currentTitles = result.posts.slice(0, 10).map(p => p.title);
   const newTitles = currentTitles.filter(t => !previousTitles.includes(t));
   
+  // Get full post details for new posts (not just titles)
+  const newPostsWithDetails = result.posts
+    .filter(p => newTitles.includes(p.title))
+    .slice(0, 5)
+    .map(p => ({
+      title: p.title,
+      link: p.link || null,
+      excerpt: p.description?.slice(0, 200) || null,
+      pubDate: p.pubDate || null,
+    }));
+  
   const newSnapshot = {
     postCount: result.posts.length,
     latestTitles: currentTitles,
+    latestPosts: result.posts.slice(0, 5).map(p => ({
+      title: p.title,
+      link: p.link || null,
+      excerpt: p.description?.slice(0, 200) || null,
+      pubDate: p.pubDate || null,
+    })),
     feedType: result.feedType,
     capturedAt: new Date().toISOString(),
     blogUrl,
@@ -195,7 +212,11 @@ export async function monitorBlogForCompetitor(
       competitorId,
       competitorName,
       description: `Published ${newTitles.length} new blog post${newTitles.length > 1 ? "s" : ""}: "${newTitles[0]}"${newTitles.length > 1 ? " and more" : ""}`,
-      details: { newPosts: newTitles, feedType: result.feedType },
+      details: { 
+        newPosts: newPostsWithDetails,
+        feedType: result.feedType,
+        blogUrl,
+      },
       date: new Date().toISOString(),
       impact: newTitles.length >= 3 ? "high" : "medium",
       userId,

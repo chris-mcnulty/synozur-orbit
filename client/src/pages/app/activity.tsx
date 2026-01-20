@@ -10,13 +10,17 @@ import { formatDistanceToNow } from "date-fns";
 
 interface BlogPost {
   title: string;
-  url?: string;
+  link?: string | null;
+  excerpt?: string | null;
+  pubDate?: string | null;
 }
 
 interface BlogSnapshot {
   postCount: number;
   latestTitles: string[];
+  latestPosts?: BlogPost[];
   capturedAt: string;
+  blogUrl?: string;
 }
 
 interface SocialEngagement {
@@ -57,6 +61,12 @@ interface Activity {
   details?: {
     changeScore?: number;
     pagesMonitored?: number;
+    newPosts?: BlogPost[];
+    blogUrl?: string;
+    feedType?: string;
+    changedSections?: string[];
+    addedContent?: string[];
+    removedContent?: string[];
   };
 }
 
@@ -457,7 +467,42 @@ export default function Activity() {
                     )}
                   </CardHeader>
                   <CardContent>
-                    {competitor.blogSnapshot?.latestTitles && competitor.blogSnapshot.latestTitles.length > 0 ? (
+                    {(competitor.blogSnapshot?.latestPosts && competitor.blogSnapshot.latestPosts.length > 0) ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-medium text-muted-foreground uppercase">Recent Posts</p>
+                        <ul className="space-y-3">
+                          {competitor.blogSnapshot.latestPosts.slice(0, 5).map((post, i) => (
+                            <li key={i} className="border-l-2 border-primary/30 pl-3">
+                              <div className="flex items-start gap-2">
+                                <Rss className="h-3 w-3 mt-1 text-primary flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  {post.link ? (
+                                    <a 
+                                      href={post.link} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-sm font-medium text-primary hover:underline line-clamp-2"
+                                    >
+                                      {post.title}
+                                    </a>
+                                  ) : (
+                                    <span className="text-sm font-medium line-clamp-2">{post.title}</span>
+                                  )}
+                                  {post.excerpt && (
+                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{post.excerpt}</p>
+                                  )}
+                                  {post.pubDate && (
+                                    <p className="text-xs text-muted-foreground/70 mt-1">
+                                      {new Date(post.pubDate).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : competitor.blogSnapshot?.latestTitles && competitor.blogSnapshot.latestTitles.length > 0 ? (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-muted-foreground uppercase">Recent Topics</p>
                         <ul className="space-y-1">
@@ -564,6 +609,52 @@ export default function Activity() {
                              item.type === 'website_update' ? "Website content update detected." :
                              "Activity recorded."}
                           </p>
+                        )}
+                        
+                        {/* Show blog post links for blog activities */}
+                        {(item.type === 'blog_post' || item.type === 'blog_update') && item.details?.newPosts && item.details.newPosts.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <p className="text-xs font-medium text-muted-foreground uppercase mb-2">New Posts</p>
+                            <ul className="space-y-2">
+                              {item.details.newPosts.slice(0, 3).map((post: BlogPost, i: number) => (
+                                <li key={i} className="flex items-start gap-2">
+                                  <Rss className="h-3 w-3 mt-1 text-primary flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    {post.link ? (
+                                      <a 
+                                        href={post.link} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-primary hover:underline line-clamp-1"
+                                      >
+                                        {post.title}
+                                      </a>
+                                    ) : (
+                                      <span className="text-sm line-clamp-1">{post.title}</span>
+                                    )}
+                                    {post.excerpt && (
+                                      <p className="text-xs text-muted-foreground line-clamp-1">{post.excerpt}</p>
+                                    )}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Show website change details */}
+                        {item.type === 'website_update' && item.details?.changedSections && item.details.changedSections.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Changes Detected</p>
+                            <ul className="space-y-1">
+                              {item.details.changedSections.slice(0, 5).map((section: string, i: number) => (
+                                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                                  <RefreshCw className="h-3 w-3 mt-1 text-primary flex-shrink-0" />
+                                  <span>{section}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
