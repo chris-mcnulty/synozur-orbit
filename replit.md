@@ -17,6 +17,11 @@ Preferred communication style: Simple, everyday language.
 - **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
 - **Public GTM Assessment**: https://orion.synozur.com/gtm - Open Go-to-Market Maturity Assessment available for use in outbound emails, page footers, and marketing materials as a lead generation resource.
 
+### Constellation - Synozur SCDP
+- **Repository**: https://github.com/chris-mcnulty/synozur-scdp
+- **Purpose**: Synozur Customer Delivery Platform - estimation, time tracking, task management, expense management, invoicing, and reporting
+- **Use As Reference For**: Microsoft Planner integration via Graph API, task sync patterns, Teams/Planner connectivity
+
 ## System Architecture
 
 ### Frontend
@@ -126,7 +131,7 @@ After completing significant features or bug fixes, update the following files:
 - **Input safety validation**: Pre-validate all user-entered URLs and uploaded data before crawling or processing. Check for malicious URLs, SSRF attempts, private IP ranges, and unsafe file content to protect the platform from security threats.
 
 ### Standard Priority
-- **Marketing Planner**: Break down AI-generated GTM plan into actionable tasks that can be accepted/removed. Features: (1) Task extraction from GTM with category assignment (Themes, Digital, Outbound, Partners, Events), (2) Quarter/time period alignment (Constant, Q1-Q4, Future/Next Year), (3) Matrix view showing categories as rows and time periods as columns matching Synozur marketing plan format, (4) Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks. Reference Constellation project (another Replit project in this account) for Planner sync code patterns.
+- **Marketing Planner**: Break down AI-generated GTM plan into actionable tasks that can be accepted/removed. Features: (1) Task extraction from GTM with category assignment (Themes, Digital, Outbound, Partners, Events), (2) Quarter/time period alignment (Constant, Q1-Q4, Future/Next Year), (3) Matrix view showing categories as rows and time periods as columns matching Synozur marketing plan format, (4) Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks. Reference Constellation project for Planner sync code patterns. Uses comprehensive marketing activities document as grounding.
 - **Competitor document uploads**: Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence, similar to company grounding documents
 - **Headless browser crawling**: Replace HTTP-based crawling with Puppeteer headless browser to bypass bot detection, handle JavaScript-rendered content, and improve crawl success rate for protected sites
 - **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
