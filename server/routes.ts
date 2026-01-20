@@ -128,6 +128,72 @@ const grantConsultantAccessSchema = z.object({
   consultantUserId: z.string().uuid("Invalid user ID format"),
 });
 
+// Parse manual AI research content into structured analysis data
+function parseManualResearch(content: string, entityName: string): any {
+  const extractSection = (content: string, header: string): string => {
+    const patterns = [
+      new RegExp(`\\*\\*${header}[:\\s]*\\*\\*[:\\s]*([\\s\\S]*?)(?=\\*\\*[A-Z]|$)`, 'i'),
+      new RegExp(`${header}[:\\s]*([\\s\\S]*?)(?=\\n[A-Z][a-z]+[:\\s]|$)`, 'i'),
+      new RegExp(`##?\\s*${header}[:\\s]*([\\s\\S]*?)(?=##?\\s|$)`, 'i'),
+    ];
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match && match[1]?.trim()) {
+        return match[1].trim();
+      }
+    }
+    return "";
+  };
+
+  const extractList = (content: string, header: string): string[] => {
+    const section = extractSection(content, header);
+    if (!section) return [];
+    
+    const items = section.split(/\n/).filter(line => {
+      const trimmed = line.trim();
+      return trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.match(/^\d+\./);
+    }).map(line => line.replace(/^[-•\d.]+\s*/, '').trim()).filter(Boolean);
+    
+    return items.length > 0 ? items : section.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  };
+
+  const summary = extractSection(content, "Company Summary") || 
+                  extractSection(content, "Summary") ||
+                  extractSection(content, "Overview") ||
+                  `${entityName} - Intelligence gathered via manual AI research`;
+
+  const valueProposition = extractSection(content, "Value Proposition") ||
+                           extractSection(content, "Main Value Proposition");
+
+  const targetAudience = extractSection(content, "Target Audience") ||
+                         extractSection(content, "Target Market");
+
+  const keyMessages = extractList(content, "Key Messages") ||
+                      extractList(content, "Main Messages");
+
+  const keywords = extractSection(content, "Keywords") ||
+                   extractSection(content, "Themes");
+  const keywordsList = keywords ? keywords.split(/[,\n]/).map(k => k.replace(/^[-•]\s*/, '').trim()).filter(Boolean) : [];
+
+  const tone = extractSection(content, "Tone") ||
+               extractSection(content, "Brand Voice");
+
+  const strengths = extractList(content, "Strengths");
+  const weaknesses = extractList(content, "Weaknesses");
+
+  return {
+    summary: summary.substring(0, 500),
+    valueProposition: valueProposition.substring(0, 500),
+    targetAudience: targetAudience.substring(0, 500),
+    keyMessages: keyMessages.slice(0, 5),
+    keywords: keywordsList.slice(0, 10),
+    tone: tone.substring(0, 200),
+    strengths: strengths.slice(0, 5),
+    weaknesses: weaknesses.slice(0, 5),
+    rawContent: content.substring(0, 5000),
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -690,8 +756,18 @@ export async function registerRoutes(
       // Use the robust web crawler service
       const crawlResult = await crawlCompetitorWebsite(competitor.url);
       
+      // Check if competitor has existing manual research data
+      const existingAnalysis = competitor.analysisData as any;
+      const hasManualResearch = existingAnalysis?.source === "manual";
+      
       if (crawlResult.pages.length === 0) {
-        return res.json({ success: false, message: "Website could not be crawled" });
+        // Return with manual research option flag
+        return res.json({ 
+          success: false, 
+          message: "Website could not be crawled",
+          canUseManualResearch: true,
+          hasExistingManualResearch: hasManualResearch,
+        });
       }
 
       // Capture visual assets (favicon and screenshot) in background
@@ -792,7 +868,13 @@ export async function registerRoutes(
           );
           
           // Store analysis data on the competitor record
-          await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          // But protect manual research data from being overwritten
+          if (hasManualResearch) {
+            // Preserve manual research, only update crawl metadata
+            console.log(`Skipping analysis update for ${competitor.name} - has manual research data`);
+          } else {
+            await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          }
           
           // Create activity entry for the crawl
           await storage.createActivity({
@@ -841,6 +923,51 @@ export async function registerRoutes(
         res.json({ success: true, lastCrawl, analysisType, message: "Website content could not be extracted" });
       }
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Save manual AI research for a competitor (when crawl fails)
+  app.post("/api/competitors/:id/manual-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+      
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { researchContent } = req.body;
+      if (!researchContent || researchContent.trim().length < 100) {
+        return res.status(400).json({ error: "Research content is required (minimum 100 characters)" });
+      }
+
+      // Parse the manual research content into structured data
+      const analysisData = parseManualResearch(researchContent, competitor.name);
+      
+      // Mark as manual source to protect from crawl overwrites
+      analysisData.source = "manual";
+      analysisData.manualResearchDate = new Date().toISOString();
+
+      await storage.updateCompetitorAnalysis(competitor.id, analysisData);
+      
+      // Create activity entry
+      await storage.createActivity({
+        type: "manual_research",
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        description: `Manual AI research saved: ${analysisData.summary?.substring(0, 100) || "Company intelligence gathered via external AI assistant"}...`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+      });
+
+      res.json({ success: true, analysisData });
+    } catch (error: any) {
+      console.error("Manual research save error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -2656,8 +2783,18 @@ Return ONLY valid JSON, no markdown or explanations.`;
       // Use the robust multi-page web crawler (same as competitors)
       const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
       
+      // Check if profile has existing manual research data
+      const existingAnalysis = profile.analysisData as any;
+      const hasManualResearch = existingAnalysis?.source === "manual";
+      
       if (crawlResult.pages.length === 0) {
-        return res.status(400).json({ error: "Could not crawl website. Please check the URL." });
+        // Return with manual research option flag (like competitors)
+        return res.json({ 
+          success: false, 
+          message: "Website could not be crawled",
+          canUseManualResearch: true,
+          hasExistingManualResearch: hasManualResearch,
+        });
       }
 
       // Update social links if discovered
@@ -2712,10 +2849,22 @@ Return ONLY valid JSON, no markdown or explanations.`;
       );
 
       // Update profile with analysis data
-      const updated = await storage.updateCompanyProfile(profile.id, {
-        lastAnalysis: new Date(),
-        analysisData: analysisResult,
-      });
+      // But protect manual research data from being overwritten
+      if (hasManualResearch) {
+        // Preserve manual research, only update crawl metadata
+        console.log(`Skipping analysis update for ${profile.companyName} - has manual research data`);
+        await storage.updateCompanyProfile(profile.id, {
+          lastAnalysis: new Date(),
+        });
+      } else {
+        await storage.updateCompanyProfile(profile.id, {
+          lastAnalysis: new Date(),
+          analysisData: analysisResult,
+        });
+      }
+      
+      // Refetch the profile for response
+      const updated = await storage.getCompanyProfileByContext(toContextFilter(ctx));
 
       res.json({
         ...updated,
@@ -2746,6 +2895,51 @@ Return ONLY valid JSON, no markdown or explanations.`;
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Save manual AI research for company profile (when crawl fails)
+  app.post("/api/company-profile/manual-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      const { researchContent } = req.body;
+      if (!researchContent || researchContent.trim().length < 100) {
+        return res.status(400).json({ error: "Research content is required (minimum 100 characters)" });
+      }
+
+      // Parse the manual research content into structured data
+      const analysisData = parseManualResearch(researchContent, profile.companyName);
+      
+      // Mark as manual source to protect from crawl overwrites
+      analysisData.source = "manual";
+      analysisData.manualResearchDate = new Date().toISOString();
+
+      await storage.updateCompanyProfile(profile.id, {
+        analysisData,
+        lastAnalysis: new Date(),
+      });
+      
+      // Create activity entry
+      await storage.createActivity({
+        type: "manual_research",
+        sourceType: "baseline",
+        companyProfileId: profile.id,
+        competitorName: profile.companyName,
+        description: `Manual AI research saved for baseline: ${analysisData.summary?.substring(0, 100) || "Company intelligence gathered"}...`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+      });
+
+      res.json({ success: true, analysisData });
+    } catch (error: any) {
+      console.error("Manual research save error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -3584,7 +3778,7 @@ Respond in JSON format:
       // If the deleted market was the active market, switch to default
       if (req.session.activeMarketId === req.params.id) {
         const defaultMarket = await storage.getDefaultMarket(market.tenantId);
-        req.session.activeMarketId = defaultMarket?.id || null;
+        req.session.activeMarketId = defaultMarket?.id || undefined;
       }
 
       res.json({ success: true, message: "Market deleted successfully" });

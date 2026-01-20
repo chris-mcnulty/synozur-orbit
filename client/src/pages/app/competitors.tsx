@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste } from "lucide-react";
+import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -29,6 +30,8 @@ export default function Competitors() {
   const [suggestions, setSuggestions] = useState<Array<{ name: string; url: string; description: string; rationale: string }>>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
+  const [manualResearchOpen, setManualResearchOpen] = useState(false);
+  const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
 
   const handleFaviconError = (competitorId: string) => {
     setFaviconErrors(prev => new Set(prev).add(competitorId));
@@ -144,9 +147,32 @@ export default function Competitors() {
       }
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       setAnalyzingCompetitor(null);
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      
+      // Check if crawl failed and manual research is available
+      if (data.success === false && data.canUseManualResearch) {
+        const competitor = competitors.find((c: any) => c.id === variables.id);
+        if (competitor) {
+          setManualResearchTarget({ id: competitor.id, name: competitor.name, url: competitor.url });
+          toast({
+            title: "Website Could Not Be Crawled",
+            description: "You can use AI-assisted manual research instead.",
+            action: (
+              <Button 
+                size="sm" 
+                onClick={() => setManualResearchOpen(true)}
+                className="gap-1"
+              >
+                <ClipboardPaste className="h-3 w-3" /> Use AI Research
+              </Button>
+            ),
+          });
+          return;
+        }
+      }
+      
       const typeLabels: Record<string, string> = {
         quick: "Quick Refresh",
         full: "Full Analysis", 
@@ -647,6 +673,16 @@ export default function Competitors() {
                                     <DropdownMenuItem onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}>
                                       Re-analyze Website
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => {
+                                        setManualResearchTarget({ id: competitor.id, name: competitor.name, url: competitor.url });
+                                        setManualResearchOpen(true);
+                                      }}
+                                      data-testid={`button-manual-research-${competitor.id}`}
+                                    >
+                                      <ClipboardPaste className="w-4 h-4 mr-2" />
+                                      Manual AI Research
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => deleteCompetitor.mutate(competitor.id)}
@@ -733,6 +769,17 @@ export default function Competitors() {
           )}
         </div>
       </div>
+
+      {manualResearchTarget && (
+        <ManualResearchDialog
+          open={manualResearchOpen}
+          onOpenChange={setManualResearchOpen}
+          entityType="competitor"
+          entityId={manualResearchTarget.id}
+          entityName={manualResearchTarget.name}
+          entityUrl={manualResearchTarget.url}
+        />
+      )}
     </AppLayout>
   );
 }

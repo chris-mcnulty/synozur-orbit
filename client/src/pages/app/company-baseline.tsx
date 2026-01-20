@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste } from "lucide-react";
+import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -21,6 +22,7 @@ export default function CompanyBaseline() {
   const [logoUploadTab, setLogoUploadTab] = useState<"url" | "upload">("url");
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
     companyName: "",
     websiteUrl: "",
@@ -88,12 +90,26 @@ export default function CompanyBaseline() {
       if (!response.ok) throw new Error("Failed to analyze company website");
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
-      toast({
-        title: "Analysis Complete",
-        description: "Your company website has been analyzed.",
-      });
+      if (data.canUseManualResearch) {
+        toast({
+          title: "Website Could Not Be Crawled",
+          description: "Use AI to research this company manually instead.",
+          action: (
+            <Button size="sm" variant="outline" onClick={() => setManualResearchOpen(true)}>
+              <ClipboardPaste className="w-4 h-4 mr-2" />
+              Use AI Research
+            </Button>
+          ),
+          duration: 10000,
+        });
+      } else {
+        toast({
+          title: "Analysis Complete",
+          description: "Your company website has been analyzed.",
+        });
+      }
     },
     onError: (error: any) => {
       toast({
@@ -464,6 +480,15 @@ export default function CompanyBaseline() {
                           <RefreshCw className="w-4 h-4 mr-2" />
                         )}
                         Analyze Website
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setManualResearchOpen(true)}
+                        data-testid="button-manual-research"
+                      >
+                        <ClipboardPaste className="w-4 h-4 mr-2" />
+                        Manual Research
                       </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
@@ -837,6 +862,16 @@ export default function CompanyBaseline() {
           </div>
         )}
       </div>
+      {companyProfile && (
+        <ManualResearchDialog
+          open={manualResearchOpen}
+          onOpenChange={setManualResearchOpen}
+          entityType="company"
+          entityId={companyProfile.id}
+          entityName={companyProfile.companyName}
+          entityUrl={companyProfile.websiteUrl}
+        />
+      )}
     </AppLayout>
   );
 }
