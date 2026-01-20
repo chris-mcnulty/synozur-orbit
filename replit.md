@@ -135,3 +135,6 @@ After completing significant features or bug fixes, update the following files:
 - **Active social/blog monitoring**: Scheduled monitoring of competitor social media accounts and blog posts with configurable check intervals, change detection, and AI-summarized diffs highlighting what changed
 - **Visual competitor assets**: Screenshot capture and visual analysis
 - **Domain blocklist**: Prevent signups from specific email domains
+
+### Deferred (Pending User Demand)
+- **LinkedIn content integration**: Deep LinkedIn post content tracking (beyond basic profile metrics). Requires LinkedIn Marketing API access ($69-159/mo third-party services or official API partnership). Current implementation captures profile URLs and engagement numbers only.
