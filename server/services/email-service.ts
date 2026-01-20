@@ -587,7 +587,7 @@ export async function sendTrialReminderEmail(
       bodyContent = `
         <p>${t.greeting(name)}</p>
         <p>${t.intro(companyName)}</p>
-        <p style="margin-top: 24px;">If you've found value in Orbit's competitive intelligence capabilities, we'd love to continue working with you.</p>
+        <p style="margin-top: 24px;">${t.closing}</p>
       `;
       break;
     }
@@ -599,8 +599,8 @@ export async function sendTrialReminderEmail(
       bodyContent = `
         <p>${t.greeting(name)}</p>
         <p>${t.intro(companyName)}</p>
-        <p style="margin-top: 24px;">After your trial ends, you'll still have access to Orbit on our Free tier, but with limited functionality (1 competitor, 1 analysis).</p>
-        <p style="margin-top: 24px;">If you want to continue using all of Orbit's features, reach out to us today.</p>
+        <p style="margin-top: 24px;">${t.postTrialNote}</p>
+        <p style="margin-top: 24px;">${t.closing}</p>
       `;
       break;
     }
@@ -613,9 +613,9 @@ export async function sendTrialReminderEmail(
       bodyContent = `
         <p>${t.greeting(name)}</p>
         <p>${t.intro(companyName)}</p>
-        <p style="margin-top: 24px;">Your account has been transitioned to our <span class="highlight">Free tier</span>. You can still access Orbit with limited functionality:</p>
+        <p style="margin-top: 24px;">${t.transitionNote}</p>
         ${featuresHtml}
-        <p style="margin-top: 24px;">We'd love to hear about your experience and how we can better serve your competitive intelligence needs.</p>
+        <p style="margin-top: 24px;">${t.closing}</p>
       `;
       break;
     }
@@ -625,7 +625,7 @@ export async function sendTrialReminderEmail(
   const contactCtaHtml = includeContactCta ? `
     <div class="divider"></div>
     <p style="color: #ffffff; font-weight: 500;">${contactCtaCopy.title}</p>
-    <p>If you'd like to continue using Orbit's full competitive intelligence capabilities, we'd be happy to discuss how we can support your organization.</p>
+    <p>${contactCtaCopy.body}</p>
     <p style="margin-top: 16px;">${contactCtaCopy.description(contactEmail)}</p>
   ` : '';
   
@@ -634,16 +634,12 @@ export async function sendTrialReminderEmail(
     ${bodyContent}
     ${contactCtaHtml}
     <div class="button-container">
-      <a href="${loginLink}" class="button">Log in to Orbit</a>
+      <a href="${loginLink}" class="button">${templates.loginButton}</a>
     </div>
-    <p class="muted" style="font-size: 13px; margin-top: 32px;">If you have any questions, contact us at <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>.</p>
+    <p class="muted" style="font-size: 13px; margin-top: 32px;">${templates.footerContact(contactEmail)}</p>
   `;
   
-  const plainTextContact = includeContactCta 
-    ? `\n\nTo continue using Orbit's full features, establish a client relationship with Synozur. Contact us at ${contactEmail}.`
-    : '';
-  
-  const text = `Hi ${name},\n\n${heading}\n\nYou have ${daysRemaining} days remaining in your Orbit trial for ${companyName}.${plainTextContact}\n\nLog in: ${loginLink}\n\nContact: ${contactEmail}`;
+  const text = templates.plainText.general(name, heading, daysRemaining, companyName, loginLink, contactEmail, includeContactCta);
 
   return sendEmail({
     to: email,

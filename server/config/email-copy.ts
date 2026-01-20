@@ -280,6 +280,7 @@ export const TRIAL_REMINDER_EMAILS = {
     heading: 'Only 3 Days Remaining',
     greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
     intro: (companyName: string) => `Your Orbit trial for <span class="highlight">${companyName}</span> ends in <span class="highlight">3 days</span>. After that, your account will automatically transition to the Free tier.`,
+    closing: `If you've found value in Orbit's competitive intelligence capabilities, we'd love to continue working with you.`,
     includeContactCta: true,
   },
   
@@ -288,6 +289,8 @@ export const TRIAL_REMINDER_EMAILS = {
     heading: 'Your Trial Ends Tomorrow',
     greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
     intro: (companyName: string) => `This is a final reminder that your Orbit trial for <span class="highlight">${companyName}</span> expires <span class="highlight">tomorrow</span>.`,
+    postTrialNote: `After your trial ends, you'll still have access to Orbit on our Free tier, but with limited functionality (1 competitor, 1 analysis).`,
+    closing: `If you want to continue using all of Orbit's features, reach out to us today.`,
     includeContactCta: true,
   },
   
@@ -296,6 +299,7 @@ export const TRIAL_REMINDER_EMAILS = {
     heading: 'Your Trial Has Expired',
     greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
     intro: (companyName: string) => `Your 60-day Orbit trial for <span class="highlight">${companyName}</span> has ended. Your account has been transitioned to the Free tier.`,
+    transitionNote: `Your account has been transitioned to our <span class="highlight">Free tier</span>. You can still access Orbit with limited functionality:`,
     tipsTitle: 'What this means:',
     features: [
       {
@@ -307,12 +311,29 @@ export const TRIAL_REMINDER_EMAILS = {
         description: 'All your existing data, reports, and analysis remain accessible in read-only mode.',
       },
     ],
+    closing: `We'd love to hear about your experience and how we can better serve your competitive intelligence needs.`,
     includeContactCta: true,
   },
   
+  // Contact CTA shown in final 14 days
   contactCta: {
     title: 'Ready to upgrade?',
+    body: `If you'd like to continue using Orbit's full competitive intelligence capabilities, we'd be happy to discuss how we can support your organization.`,
     description: (contactEmail: string) => `Contact us at <a href="mailto:${contactEmail}" class="link" style="font-size: 14px;">${contactEmail}</a> to discuss upgrading to a Pro or Enterprise plan.`,
+  },
+  
+  // Common elements
+  loginButton: 'Log in to Orbit',
+  footerContact: (contactEmail: string) => `If you have any questions, contact us at <a href="mailto:${contactEmail}" class="link">${contactEmail}</a>.`,
+  
+  // Plain text templates for trial reminders
+  plainText: {
+    general: (name: string, heading: string, daysRemaining: number, companyName: string, loginLink: string, contactEmail: string, includeContactCta: boolean) => {
+      const contactText = includeContactCta 
+        ? `\n\nTo continue using Orbit's full features, contact us at ${contactEmail}.`
+        : '';
+      return `Hi ${name},\n\n${heading}\n\nYou have ${daysRemaining} days remaining in your Orbit trial for ${companyName}.${contactText}\n\nLog in: ${loginLink}\n\nContact: ${contactEmail}`;
+    },
   },
 };
 
