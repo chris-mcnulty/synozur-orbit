@@ -232,6 +232,10 @@ export const recommendations = pgTable("recommendations", {
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  // Feedback and prioritization
+  thumbsUp: integer("thumbs_up").notNull().default(0),
+  thumbsDown: integer("thumbs_down").notNull().default(0),
+  isPriority: boolean("is_priority").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
