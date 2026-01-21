@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Marketing Planner (Enterprise-only) - AI-powered marketing planning module
+  - Create quarterly, half-year, or annual marketing plans
+  - Organize activities across 19 marketing categories (Events, Digital Marketing, Outbound, etc.)
+  - Track tasks with priority levels and status workflow
+  - Enterprise feature with Diamond (Gem) icon in navigation
+  - Defense-in-depth security with market context filtering on all operations
+- Redesigned Homepage - New "Go-to-Market Intelligence Platform" positioning
+  - New tagline: "From insight to action in one platform"
+  - Three Pillars section: Competitive Intelligence, Marketing Planner, Product Management
+  - "How It Works" flow diagram: Monitor → Analyze → Plan → Execute
+  - Updated capabilities tabs with Marketing Planner and Product Roadmap
+  - New "Who It's For" section targeting four audience types
+  - Updated pricing preview with 60-day trial messaging
+  - Added GTM Maturity Assessment link (https://orion.synozur.com/gtm)
 - Organization Filter for User Management - Global Admins can now filter users by organization
   - Filter dropdown appears in Team Members section when logged in as Global Admin
   - Filter by any accessible tenant organization

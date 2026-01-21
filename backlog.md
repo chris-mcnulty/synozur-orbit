@@ -95,12 +95,17 @@
 ## Priority 3: Nice to Have (Can Ship Without)
 
 ### 3.1 Orbit Promotional Landing Page
-**Status**: Landing page exists
+**Status**: Redesigned with expanded platform positioning
 **Spec Requirement**: "Promotional homepage with screenshots, 'Start Free Trial' CTA"
+- [x] Three Pillars section (Competitive Intelligence, Marketing Planner, Product Management)
+- [x] "How It Works" flow diagram (Monitor → Analyze → Plan → Execute)
+- [x] Updated capabilities tabs with 7 capability areas
+- [x] "Who It's For" section (Marketing Leaders, Sales Teams, Product Managers, GTM Consultants)
+- [x] Enhanced 60-day trial messaging with contactus@synozur.com
+- [x] GTM Maturity Assessment link (https://orion.synozur.com/gtm)
 - [ ] Add product screenshots to capabilities section
 - [ ] Customer testimonials (when available)
 - [ ] Video walkthrough/demo
-- [ ] Enhanced 60-day trial messaging
 
 ### 3.2 Expert Review Upsell
 **Status**: Not implemented
@@ -233,16 +238,20 @@ Pre-validate all user-entered URLs and uploaded data before crawling or processi
 ### Standard Priority
 
 #### Marketing Planner
-**Status**: Planned
+**Status**: Phase 1 Complete (Enterprise-only)
 Break down AI-generated GTM plan into actionable tasks that can be accepted/removed:
-- [ ] Task extraction from GTM with category assignment (Themes, Digital, Outbound, Partners, Events)
-- [ ] Quarter/time period alignment (Constant, Q1-Q4, Future/Next Year)
+- [x] Marketing plan CRUD with timeframe selection (quarterly, half-year, annual)
+- [x] Task management with 19 activity categories (Events, Digital Marketing, Outbound, etc.)
+- [x] Enterprise plan gating with upgrade prompt for non-Enterprise users
+- [x] Navigation integration with Diamond (Gem) icon
+- [x] Defense-in-depth security with market context filtering on all operations
+- [ ] AI-generated task suggestions from competitive intelligence
 - [ ] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
 - [ ] Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks
 - [ ] Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs
-- [ ] Uses comprehensive marketing activities document as grounding
+- [x] Uses comprehensive marketing activities document as grounding (19 categories stored)
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
-**Effort**: High
+**Effort**: High (Phase 1 complete, remaining phases in progress)
 
 #### Competitor Document Uploads
 **Status**: Not implemented

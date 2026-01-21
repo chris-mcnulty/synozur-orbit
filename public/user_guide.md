@@ -9,10 +9,11 @@
 6. [Running Analysis](#running-analysis)
 7. [Battlecards & Reports](#battlecards--reports)
 8. [Client Projects](#client-projects)
-9. [Team Management](#team-management)
-10. [Settings & Configuration](#settings--configuration)
-11. [Administrator Guide](#administrator-guide)
-12. [Troubleshooting & FAQs](#troubleshooting--faqs)
+9. [Marketing Planner](#marketing-planner)
+10. [Team Management](#team-management)
+11. [Settings & Configuration](#settings--configuration)
+12. [Administrator Guide](#administrator-guide)
+13. [Troubleshooting & FAQs](#troubleshooting--faqs)
 
 ---
 
@@ -20,7 +21,11 @@
 
 ### What is Synozur Orbit?
 
-Synozur Orbit is an AI-powered competitive intelligence platform designed to help organizations understand their competitive landscape, identify positioning gaps, and develop strategic responses. The platform automates competitor monitoring, provides AI-driven analysis, and generates actionable insights for marketing, sales, and product teams.
+Synozur Orbit is an AI-powered go-to-market intelligence platform designed to help organizations understand their competitive landscape, plan marketing activities, and align product development with market reality. The platform unifies three core pillars:
+
+- **Competitive Intelligence**: Analyze competitors, identify positioning gaps, and generate battlecards
+- **Marketing Planner**: AI-powered quarterly and annual marketing planning with activity-based organization
+- **Product Management**: Roadmap prioritization aligned with competitive market intelligence
 
 ### Key Capabilities
 
@@ -28,6 +33,7 @@ Synozur Orbit is an AI-powered competitive intelligence platform designed to hel
 - **AI-Powered Analysis**: Get intelligent competitive positioning analysis and gap identification
 - **Strategic Recommendations**: Receive AI-generated insights for messaging, positioning, and go-to-market strategy
 - **Sales Enablement**: Generate battlecards to prepare your sales team for competitive conversations
+- **Marketing Planning**: Create and manage marketing plans with AI-suggested activities (Enterprise)
 - **Project Management**: Organize complex multi-competitor, multi-product analyses
 - **Professional Reporting**: Export branded PDF reports for stakeholders
 - **Change Monitoring**: Automatic detection of competitor website updates, social media activity, and blog posts
@@ -641,6 +647,103 @@ Each project can generate:
 - Competitive analysis summaries
 - Recommendations
 - Supporting data and insights
+
+---
+
+## Marketing Planner
+
+### Overview
+
+The Marketing Planner (Enterprise plan only) transforms competitive insights into actionable marketing plans. Create quarterly, half-year, or annual marketing plans organized around proven activity categories.
+
+**Key Features:**
+- **Timeframe Selection**: Choose quarterly (Q1-Q4), half-year (H1/H2), or annual planning periods
+- **Activity Categories**: 19 marketing activity types organized into logical groups
+- **Task Management**: Create, assign, and track marketing tasks with priority levels
+- **AI Suggestions**: Get AI-generated task recommendations based on competitive intelligence (coming soon)
+
+### Accessing Marketing Planner
+
+1. **Navigate to Marketing Planner** in the left navigation (Diamond icon)
+2. **Enterprise plan required**: Non-Enterprise users see an upgrade prompt
+
+**Note:** Marketing Planner is only visible for Enterprise plan tenants.
+
+### Creating a Marketing Plan
+
+1. **Click "New Plan"** on the Marketing Planner page
+2. **Fill in plan details**:
+   - Plan name (e.g., "2026 Annual Marketing Plan")
+   - Timeframe (Quarterly, Half-Year, or Annual)
+   - Description (optional)
+   - Focus area (optional)
+   - Year (defaults to current year)
+3. **Click "Create Plan"**
+
+### Activity Categories
+
+Marketing tasks are organized into 19 activity categories across 5 groups:
+
+**Brand & Thought Leadership:**
+- Thematic Campaigns
+- Thought Leadership Content
+
+**Digital Marketing:**
+- Website & Landing Pages
+- SEO & Content Marketing
+- Paid Digital Advertising
+- Email Marketing
+- Social Media Marketing
+
+**Outbound & Sales Enablement:**
+- Outbound Campaigns
+- Sales Enablement Materials
+- Customer Marketing
+
+**Partnerships & Channel:**
+- Partner Marketing
+- Channel Programs
+- Co-Marketing Initiatives
+
+**Events & Community:**
+- Industry Events
+- Webinars & Virtual Events
+- User Conferences
+- Community Building
+- Analyst Relations
+- PR & Media Relations
+
+### Managing Tasks
+
+**Adding Tasks:**
+1. Open a marketing plan
+2. Click "Add Task"
+3. Enter task details:
+   - Title
+   - Activity category
+   - Timeframe (which quarter/period)
+   - Priority (High, Medium, Low)
+   - Description (optional)
+4. Click "Save"
+
+**Task Status Workflow:**
+- **Suggested**: AI-recommended task (pending acceptance)
+- **Planned**: Accepted and scheduled
+- **In Progress**: Currently being worked on
+- **Completed**: Task finished
+- **Cancelled**: Task removed from plan
+
+**Editing Tasks:**
+- Click on any task to edit its details
+- Change status, priority, or reassign to different timeframes
+- Add due dates and assignees
+
+### Multi-Market Support
+
+For Enterprise tenants with multi-market enabled:
+- Each market has its own set of marketing plans
+- Plans are scoped to the currently active market
+- Switch markets using the market selector to see different plans
 
 ---
 
