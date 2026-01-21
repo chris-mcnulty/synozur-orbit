@@ -9484,7 +9484,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
       });
 
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-5",
         max_tokens: 2000,
         messages: [
           { 
@@ -9529,7 +9529,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
       }
 
       // Log AI usage
-      await logAiUsage(ctx, "generate_marketing_tasks", "anthropic", "claude-sonnet-4-20250514", message.usage);
+      await logAiUsage(ctx, "generate_marketing_tasks", "anthropic", "claude-sonnet-4-5", message.usage);
 
       res.json({ success: true, tasksCreated });
     } catch (error: any) {
