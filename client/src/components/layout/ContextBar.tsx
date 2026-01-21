@@ -186,6 +186,9 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/scores"] });
+      // Invalidate baseline recommendations (GTM plan, messaging framework)
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/gtm_plan"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/messaging_framework"] });
     },
   });
 
@@ -212,6 +215,9 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/scores"] });
+      // Invalidate baseline recommendations (GTM plan, messaging framework)
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/gtm_plan"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/messaging_framework"] });
     },
   });
 
