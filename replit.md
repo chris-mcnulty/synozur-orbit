@@ -1,8 +1,12 @@
-# Orbit - Marketing Intelligence Platform
+# Orbit - Go-to-Market Intelligence Platform
 
 ## Overview
 
-Orbit is an AI-driven marketing intelligence platform designed for The Synozur Alliance LLC. Its primary purpose is to analyze a customer's website and positioning documents against competitors, identify messaging gaps, and provide AI-generated recommendations. The platform is a multi-tenant SaaS application featuring role-based access control (RBAC), advanced competitive analysis tools, and branded PDF reporting capabilities. Orbit also offers competitor change monitoring with AI-summarized diffs, a dedicated module for grounding documents, and tenant demographics collection during signup. A key capability is company profile baselining, allowing users to analyze their own website against competitors. The platform emphasizes a dark mode default with Synozur's brand colors.
+Orbit is an AI-driven go-to-market intelligence platform designed for The Synozur Alliance LLC. The platform unifies three core pillars: **Competitive Intelligence** (analyze competitors, identify gaps, generate battlecards), **Marketing Planner** (AI-powered quarterly/annual planning with activity-based organization), and **Product Management** (roadmap prioritization aligned with market intelligence).
+
+The platform is a multi-tenant SaaS application featuring role-based access control (RBAC), advanced competitive analysis tools, and branded PDF reporting capabilities. Orbit also offers competitor change monitoring with AI-summarized diffs, a dedicated module for grounding documents, and tenant demographics collection during signup. A key capability is company profile baselining, allowing users to analyze their own website against competitors. The platform emphasizes a dark mode default with Synozur's brand colors.
+
+**Homepage Positioning:** "From insight to action in one platform" - emphasizing the flow from Monitor → Analyze → Plan → Execute.
 
 ## User Preferences
 
