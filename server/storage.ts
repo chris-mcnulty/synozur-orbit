@@ -154,7 +154,11 @@ export interface IStorage {
   // Activity methods
   getAllActivity(): Promise<Activity[]>;
   getActivityByTenant(tenantDomain: string): Promise<Activity[]>;
+  getWeeklyActivityByTenant(tenantDomain: string, marketId?: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  
+  // Weekly Digest methods
+  getUsersWithDigestEnabled(): Promise<User[]>;
   
   // Recommendation methods
   getAllRecommendations(): Promise<Recommendation[]>;
@@ -516,6 +520,33 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(activity)
       .where(eq(activity.tenantDomain, tenantDomain))
       .orderBy(desc(activity.createdAt));
+  }
+
+  async getWeeklyActivityByTenant(tenantDomain: string, marketId?: string): Promise<Activity[]> {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const conditions = [
+      eq(activity.tenantDomain, tenantDomain),
+      gte(activity.createdAt, oneWeekAgo)
+    ];
+    
+    if (marketId) {
+      conditions.push(eq(activity.marketId, marketId));
+    }
+    
+    return await db.select().from(activity)
+      .where(and(...conditions))
+      .orderBy(desc(activity.createdAt));
+  }
+
+  async getUsersWithDigestEnabled(): Promise<User[]> {
+    return await db.select().from(users)
+      .where(and(
+        eq(users.weeklyDigestEnabled, true),
+        eq(users.emailVerified, true),
+        eq(users.status, "active")
+      ));
   }
 
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {

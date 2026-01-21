@@ -20,6 +20,7 @@ export const users = pgTable("users", {
   authProvider: text("auth_provider").default("local"),
   emailVerified: boolean("email_verified").default(false),
   status: text("status").default("active"), // active, pending_verification, suspended
+  weeklyDigestEnabled: boolean("weekly_digest_enabled").default(true), // Opt-in for weekly competitor digest emails
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

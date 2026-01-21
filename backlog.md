@@ -48,8 +48,8 @@
 
 ## Priority 2: Important (Required for Launch)
 
-### 2.1 Email Notification Service
-**Status**: Partially implemented
+### 2.1 Email Notification Service ✅
+**Status**: Implemented
 **Spec Requirement**: "Notification service for email alerts (trial onboarding, competitor updates)"
 - [x] Email service integration (SendGrid via Replit integration)
 - [x] Email verification emails
@@ -59,9 +59,9 @@
 - [x] Vega-inspired email styling (purple gradients, dark mode, Synozur branding)
 - [x] Trial nudge cadence emails (60-day trial with reminders at days 7, 30, 46, 53, 57, 59, 60)
 - [x] Centralized email text management system (`server/config/email-copy.ts` - all subjects, headings, body content)
-- [ ] Weekly competitor update digest
-- [ ] Alert emails for significant changes
-**Effort**: Medium (remaining: digests, alert emails)
+- [x] Weekly competitor update digest (scheduled job runs Sundays, user opt-in/out in Settings)
+- [ ] Alert emails for significant changes (backlogged for future)
+**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
 
 ### 2.2 Dark/Light Mode Toggle
 **Status**: Dark mode default, no toggle
@@ -94,13 +94,13 @@
 
 ## Priority 3: Nice to Have (Can Ship Without)
 
-### 3.1 Marketing Site Enhancements
+### 3.1 Orbit Promotional Landing Page
 **Status**: Landing page exists
 **Spec Requirement**: "Promotional homepage with screenshots, 'Start Free Trial' CTA"
-- [ ] Add product screenshots
-- [ ] Trust badges and testimonials
-- [ ] Video walkthrough
-- [ ] Clear 14-day trial messaging
+- [ ] Add product screenshots to capabilities section
+- [ ] Customer testimonials (when available)
+- [ ] Video walkthrough/demo
+- [ ] Enhanced 60-day trial messaging
 
 ### 3.2 Expert Review Upsell
 **Status**: Not implemented

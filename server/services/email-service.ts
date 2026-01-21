@@ -648,3 +648,88 @@ export async function sendTrialReminderEmail(
     text
   });
 }
+
+// Weekly Digest Email
+interface ActivitySummary {
+  competitorName: string;
+  type: string;
+  description: string;
+  summary?: string;
+}
+
+interface WeeklyDigestParams {
+  email: string;
+  name: string;
+  companyName: string;
+  activities: ActivitySummary[];
+  baseUrl: string;
+}
+
+export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise<boolean> {
+  const { email, name, companyName, activities, baseUrl } = params;
+  const copy = WEEKLY_DIGEST_EMAIL;
+  const loginLink = `${baseUrl}/app/activity`;
+  const settingsLink = `${baseUrl}/app/settings`;
+  
+  const hasChanges = activities.length > 0;
+  
+  // Build activity list HTML
+  let activitiesHtml = '';
+  if (hasChanges) {
+    activitiesHtml = `
+      <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.changesFoundHeading(activities.length)}</p>
+      <div class="feature-list">
+        ${activities.slice(0, 10).map(act => {
+          const typeLabel = act.type === 'change' ? copy.websiteChangeLabel :
+                           act.type === 'social_update' ? copy.socialUpdateLabel :
+                           act.type === 'blog_post' ? copy.blogPostLabel : act.type;
+          return `
+            <div class="feature">
+              <div class="feature-title">${act.competitorName} - ${typeLabel}</div>
+              <p class="feature-desc">${act.summary || act.description}</p>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ${activities.length > 10 ? `<p class="muted" style="margin-top: 16px;">...and ${activities.length - 10} more updates</p>` : ''}
+    `;
+  } else {
+    activitiesHtml = `
+      <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.noChangesHeading}</p>
+      <p class="muted">${copy.noChangesMessage}</p>
+    `;
+  }
+  
+  const content = `
+    <h1>${copy.heading}</h1>
+    
+    <p>${copy.greeting(name)}</p>
+    
+    <p>${copy.intro}</p>
+    
+    ${activitiesHtml}
+    
+    <div class="button-container">
+      <a href="${loginLink}" class="button">${copy.buttonText}</a>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <p class="muted" style="font-size: 12px;">${copy.footerMessage}</p>
+    <p class="muted" style="font-size: 12px;"><a href="${settingsLink}" class="link">${copy.unsubscribeText}</a></p>
+  `;
+  
+  // Plain text summary
+  const changesSummary = hasChanges 
+    ? activities.slice(0, 10).map(a => `- ${a.competitorName}: ${a.description}`).join('\n')
+    : copy.noChangesMessage;
+  
+  const text = copy.plainText(name, companyName, changesSummary, loginLink, settingsLink);
+
+  return sendEmail({
+    to: email,
+    subject: copy.subject(companyName),
+    html: wrapEmailContent(content),
+    text
+  });
+}

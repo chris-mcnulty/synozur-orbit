@@ -14,6 +14,7 @@ interface User {
   industry?: string;
   country?: string;
   authProvider?: string;
+  weeklyDigestEnabled?: boolean;
 }
 
 interface UserContextType {

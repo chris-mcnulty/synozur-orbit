@@ -595,6 +595,35 @@ export async function registerRoutes(
     }
   });
 
+  // Update user notification preferences (weekly digest opt-in/out)
+  app.patch("/api/me/notifications", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const { weeklyDigestEnabled } = req.body;
+
+      if (typeof weeklyDigestEnabled !== "boolean") {
+        return res.status(400).json({ error: "weeklyDigestEnabled must be a boolean" });
+      }
+
+      const updatedUser = await storage.updateUser(req.session.userId, {
+        weeklyDigestEnabled,
+      });
+
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("Error updating notification preferences:", error);
+      res.status(500).json({ error: "Failed to update notification preferences" });
+    }
+  });
+
   // ==================== COMPETITOR ROUTES ====================
 
   app.get("/api/competitors", async (req, res) => {

@@ -5,6 +5,7 @@ import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia } from "
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
+import { sendWeeklyDigestEmail } from "./email-service";
 
 interface JobStatus {
   lastRun: Date | null;
@@ -17,6 +18,7 @@ const jobStatus: Record<string, JobStatus> = {
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
   websiteMonitor: { lastRun: null, isRunning: false, nextRun: null },
   trialReminder: { lastRun: null, isRunning: false, nextRun: null },
+  weeklyDigest: { lastRun: null, isRunning: false, nextRun: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -372,10 +374,84 @@ async function runTrialReminderJob(): Promise<void> {
   }
 }
 
+async function runWeeklyDigestJob(): Promise<void> {
+  if (jobStatus.weeklyDigest.isRunning) {
+    console.log("[Scheduled Job] Weekly digest already running, skipping...");
+    return;
+  }
+
+  jobStatus.weeklyDigest.isRunning = true;
+  console.log("[Scheduled Job] Starting weekly digest job...");
+
+  try {
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.REPLIT_DEPLOYMENT_URL 
+        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+        : 'https://orbit.synozur.com';
+    
+    // Get all users with digest enabled
+    const usersWithDigest = await storage.getUsersWithDigestEnabled();
+    console.log(`[Scheduled Job] Found ${usersWithDigest.length} users with digest enabled`);
+    
+    let sentCount = 0;
+    let errorCount = 0;
+    
+    for (const user of usersWithDigest) {
+      try {
+        // Extract domain from user email
+        const domain = user.email.split('@')[1];
+        if (!domain) continue;
+        
+        // Get tenant for this user
+        const tenant = await storage.getTenantByDomain(domain);
+        if (!tenant || tenant.status !== 'active') continue;
+        
+        // Get weekly activity for this tenant
+        const weeklyActivity = await storage.getWeeklyActivityByTenant(domain);
+        
+        // Transform activity for email
+        const activities = weeklyActivity.map(act => ({
+          competitorName: act.competitorName,
+          type: act.type,
+          description: act.description,
+          summary: act.summary || undefined,
+        }));
+        
+        // Send digest email
+        const success = await sendWeeklyDigestEmail({
+          email: user.email,
+          name: user.name,
+          companyName: tenant.name,
+          activities,
+          baseUrl,
+        });
+        
+        if (success) {
+          sentCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (userError) {
+        console.error(`[Scheduled Job] Failed to send digest to ${user.email}:`, userError);
+        errorCount++;
+      }
+    }
+    
+    console.log(`[Scheduled Job] Weekly digest job completed: ${sentCount} sent, ${errorCount} errors`);
+  } catch (error) {
+    console.error("[Scheduled Job] Weekly digest job failed:", error);
+  } finally {
+    jobStatus.weeklyDigest.isRunning = false;
+    jobStatus.weeklyDigest.lastRun = new Date();
+  }
+}
+
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
 let trialReminderInterval: NodeJS.Timeout | null = null;
+let weeklyDigestInterval: NodeJS.Timeout | null = null;
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
@@ -384,6 +460,7 @@ export function startScheduledJobs(): void {
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
   if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
   if (trialReminderInterval) clearInterval(trialReminderInterval);
+  if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
 
   websiteCrawlInterval = setInterval(() => {
     runWebsiteCrawlJob();
@@ -401,6 +478,16 @@ export function startScheduledJobs(): void {
     runTrialReminderJob();
   }, 6 * 60 * 60 * 1000);
 
+  // Weekly digest runs once per week (every 7 days)
+  // Check daily, but only send on Sundays at the scheduled time
+  weeklyDigestInterval = setInterval(() => {
+    const now = new Date();
+    // Run on Sunday (day 0) between 9-10 AM
+    if (now.getDay() === 0 && now.getHours() >= 9 && now.getHours() < 10) {
+      runWeeklyDigestJob();
+    }
+  }, 60 * 60 * 1000); // Check every hour
+
   setTimeout(() => {
     runWebsiteCrawlJob();
   }, 30 * 1000);
@@ -417,7 +504,7 @@ export function startScheduledJobs(): void {
     runTrialReminderJob();
   }, 120 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website change monitor (hourly), trial reminders (every 6 hours)");
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website change monitor (hourly), trial reminders (every 6 hours), weekly digest (Sundays)");
 }
 
 export function stopScheduledJobs(): void {
@@ -437,7 +524,15 @@ export function stopScheduledJobs(): void {
     clearInterval(trialReminderInterval);
     trialReminderInterval = null;
   }
+  if (weeklyDigestInterval) {
+    clearInterval(weeklyDigestInterval);
+    weeklyDigestInterval = null;
+  }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
+}
+
+export async function triggerWeeklyDigestNow(): Promise<void> {
+  runWeeklyDigestJob();
 }
 
 export function getJobStatus(): Record<string, JobStatus> {

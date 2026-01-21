@@ -338,16 +338,24 @@ export const TRIAL_REMINDER_EMAILS = {
 };
 
 // ============================================
-// WEEKLY DIGEST EMAIL (FUTURE)
+// WEEKLY DIGEST EMAIL
 // ============================================
 export const WEEKLY_DIGEST_EMAIL = {
   subject: (companyName: string) => `Weekly Competitive Intelligence Update - ${companyName}`,
   heading: 'Your Weekly Competitive Update',
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
   intro: `Here's what changed in your competitive landscape this week:`,
+  noChangesHeading: 'All Quiet This Week',
   noChangesMessage: `No significant competitor changes were detected this week. We'll keep monitoring and alert you when something important happens.`,
+  changesFoundHeading: (count: number) => `${count} Update${count === 1 ? '' : 's'} Detected`,
+  websiteChangeLabel: 'Website Change',
+  socialUpdateLabel: 'Social Update',
+  blogPostLabel: 'Blog Post',
   buttonText: 'View Full Details',
   unsubscribeText: 'Manage your notification preferences',
+  footerMessage: `You're receiving this email because you opted in to weekly competitive intelligence digests.`,
+  plainText: (name: string, companyName: string, changesSummary: string, loginLink: string, settingsLink: string) => 
+    `Hi ${name},\n\nYour Weekly Competitive Update for ${companyName}\n\n${changesSummary}\n\nView full details: ${loginLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`,
 };
 
 // ============================================

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -81,6 +81,9 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   
+  // Notification preferences
+  const [weeklyDigestEnabled, setWeeklyDigestEnabled] = useState(user?.weeklyDigestEnabled ?? true);
+  
   // Entra ID configuration state (simplified - only enable toggle, tenant ID is auto-populated)
   const [entraEnabled, setEntraEnabled] = useState(false);
 
@@ -139,6 +142,12 @@ export default function Settings() {
       setEntraEnabled(tenant.entraEnabled || false);
     }
   }, [tenant]);
+
+  React.useEffect(() => {
+    if (user) {
+      setWeeklyDigestEnabled(user.weeklyDigestEnabled ?? true);
+    }
+  }, [user]);
 
   const sendInviteMutation = useMutation({
     mutationFn: async () => {
@@ -280,6 +289,36 @@ export default function Settings() {
       toast.error(error.message);
     },
   });
+
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/me/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ weeklyDigestEnabled: enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update notification preferences");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      toast.success("Notification preferences updated");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+      // Revert UI state on error
+      setWeeklyDigestEnabled(!weeklyDigestEnabled);
+    },
+  });
+
+  const handleDigestToggle = (checked: boolean) => {
+    setWeeklyDigestEnabled(checked);
+    updateNotificationsMutation.mutate(checked);
+  };
 
   const updateEntraMutation = useMutation({
     mutationFn: async () => {
@@ -611,6 +650,34 @@ export default function Settings() {
             </CardFooter>
           </Card>
         )}
+
+        {/* Notification Preferences */}
+        <Card data-testid="card-notifications">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Notification Preferences
+            </CardTitle>
+            <CardDescription>Manage your email notification settings.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="weekly-digest">Weekly Digest</Label>
+                <p className="text-sm text-muted-foreground">
+                  Receive a weekly email summarizing competitor activity and changes.
+                </p>
+              </div>
+              <Switch
+                id="weekly-digest"
+                checked={weeklyDigestEnabled}
+                onCheckedChange={handleDigestToggle}
+                disabled={updateNotificationsMutation.isPending}
+                data-testid="switch-weekly-digest"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <Card id="plan-usage" data-testid="card-plan">
           <CardHeader>
