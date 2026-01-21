@@ -9485,7 +9485,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
 
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
-        max_tokens: 2000,
+        max_tokens: 8000,
         messages: [
           { 
             role: "user", 
@@ -9497,17 +9497,41 @@ Only use these timeframe values: ${periods.join(", ")}`;
 
       const aiResponse = message.content[0].type === "text" ? message.content[0].text : "";
 
-      // Parse AI response
+      // Parse AI response with more robust handling
       let generatedTasks: any[] = [];
       try {
-        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        // Try to find and parse JSON from the response
+        const jsonMatch = aiResponse.match(/\{[\s\S]*"tasks"\s*:\s*\[[\s\S]*?\]\s*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           generatedTasks = parsed.tasks || [];
+        } else {
+          // Fallback: try to extract tasks array directly
+          const tasksMatch = aiResponse.match(/\[[\s\S]*?\]/);
+          if (tasksMatch) {
+            generatedTasks = JSON.parse(tasksMatch[0]);
+          }
         }
       } catch (parseError) {
         console.error("Failed to parse AI response:", parseError);
-        return res.status(500).json({ error: "Failed to parse AI suggestions" });
+        console.error("AI Response (first 1000 chars):", aiResponse.substring(0, 1000));
+        // Try a more lenient extraction - look for individual task objects
+        try {
+          const taskPattern = /\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"description"\s*:\s*"[^"]*"\s*,\s*"activityGroup"\s*:\s*"[^"]+"\s*,\s*"priority"\s*:\s*"[^"]+"\s*,\s*"timeframe"\s*:\s*"[^"]+"\s*\}/g;
+          const taskMatches = Array.from(aiResponse.matchAll(taskPattern));
+          for (const match of taskMatches) {
+            try {
+              const task = JSON.parse(match[0]);
+              if (task.title) {
+                generatedTasks.push(task);
+              }
+            } catch {}
+          }
+        } catch {}
+        
+        if (generatedTasks.length === 0) {
+          return res.status(500).json({ error: "Failed to parse AI suggestions. Please try again." });
+        }
       }
 
       // Create the tasks in the database
