@@ -61,7 +61,7 @@ export default function Landing() {
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
             Win on positioning<br />
-            <span className="text-primary">not guesswork.</span>
+            <span className="text-primary">not guesswork</span>
           </h1>
           
           <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
@@ -102,7 +102,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Built on Synozur Framework */}
       <section className="py-16 px-6 bg-card/30 border-y border-border">
         <div className="max-w-4xl mx-auto text-center">
@@ -116,7 +115,6 @@ export default function Landing() {
           </p>
         </div>
       </section>
-
       {/* First 15 Minutes */}
       <section className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
@@ -147,7 +145,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Capabilities - Tabbed Section */}
       <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
@@ -184,7 +181,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Three Outcomes */}
       <section className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
@@ -225,7 +221,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* How Orbit is Different */}
       <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
@@ -258,7 +253,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Is Orbit Right For You */}
       <section className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
@@ -308,7 +302,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Five Integrated Modules */}
       <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
@@ -342,7 +335,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Enterprise Ready */}
       <section className="py-24 px-6">
         <div className="max-w-4xl mx-auto text-center">
@@ -365,7 +357,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
       {/* Final CTA */}
       <section className="py-24 px-6 bg-gradient-to-b from-card/50 to-background border-t border-border">
         <div className="max-w-4xl mx-auto text-center">
