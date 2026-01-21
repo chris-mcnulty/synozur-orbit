@@ -37,6 +37,7 @@ import AppAbout from "@/pages/app/about";
 import DataSourcesPage from "@/pages/app/data-sources";
 import CompanyBaseline from "@/pages/app/company-baseline";
 import MarketingPlannerPage from "@/pages/app/marketing-planner";
+import Pricing from "@/pages/pricing";
 
 function Router() {
   return (
@@ -45,7 +46,7 @@ function Router() {
       <Route path="/about" component={About} />
       <Route path="/changelog" component={Changelog} />
       <Route path="/roadmap" component={Roadmap} />
-      <Route path="/pricing" component={Landing} /> {/* Placeholder */}
+      <Route path="/pricing" component={Pricing} />
       <Route path="/auth/signin" component={AuthPage} />
       <Route path="/auth/signup" component={AuthPage} />
       <Route path="/auth/verify-pending" component={VerifyPending} />
