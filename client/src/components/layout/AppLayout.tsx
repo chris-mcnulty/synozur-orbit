@@ -133,9 +133,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const { data: tenantSettings } = useQuery<{ plan: string; multiMarketEnabled: boolean }>({
-    queryKey: ["/api/settings"],
+    queryKey: ["/api/tenant/settings"],
     queryFn: async () => {
-      const response = await fetch("/api/settings", { credentials: "include" });
+      const response = await fetch("/api/tenant/settings", { credentials: "include" });
       if (!response.ok) return { plan: "free", multiMarketEnabled: false };
       return response.json();
     },
