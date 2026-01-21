@@ -9376,5 +9376,170 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Generate AI-suggested marketing tasks
+  app.post("/api/marketing-plans/:planId/generate-tasks", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+
+      const { categories = [], periods = [] } = req.body;
+      
+      if (!categories.length || !periods.length) {
+        return res.status(400).json({ error: "Please select at least one category and one time period" });
+      }
+
+      // Get competitive intelligence context
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      
+      // Category labels for the prompt
+      const categoryLabels: Record<string, string> = {
+        events: "Events & Trade Shows",
+        digital_marketing: "Digital Marketing",
+        outbound_campaigns: "Outbound Campaigns",
+        content_marketing: "Content Marketing",
+        social_media: "Social Media",
+        email_marketing: "Email Marketing",
+        seo_sem: "SEO/SEM",
+        pr_comms: "PR & Communications",
+        analyst_relations: "Analyst Relations",
+        partner_marketing: "Partner Marketing",
+        customer_marketing: "Customer Marketing",
+        product_marketing: "Product Marketing",
+        brand: "Brand",
+        website: "Website",
+        webinars: "Webinars",
+        podcasts: "Podcasts",
+        video: "Video",
+        research: "Research & Insights",
+        other: "Other",
+      };
+
+      const periodLabels: Record<string, string> = {
+        q1: "Q1",
+        q2: "Q2",
+        q3: "Q3",
+        q4: "Q4",
+        h1: "H1 (First Half)",
+        h2: "H2 (Second Half)",
+        annual: "Full Year",
+      };
+
+      const selectedCategoryNames = categories.map((c: string) => categoryLabels[c] || c);
+      const selectedPeriodNames = periods.map((p: string) => periodLabels[p] || p);
+
+      // Build context for AI
+      const companyName = companyProfile?.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || "Unknown";
+      let contextInfo = `Company: ${companyName}\n`;
+      if (companyProfile?.description) {
+        contextInfo += `Description: ${companyProfile.description}\n`;
+      }
+      if (competitors.length > 0) {
+        contextInfo += `Key Competitors: ${competitors.slice(0, 5).map((c: any) => c.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || c.id).join(", ")}\n`;
+      }
+
+      const prompt = `Generate marketing tasks for a ${plan.fiscalYear} marketing plan.
+
+Context:
+${contextInfo}
+
+Selected Activity Categories: ${selectedCategoryNames.join(", ")}
+Time Periods: ${selectedPeriodNames.join(", ")}
+
+Generate 2-3 specific, actionable marketing tasks for EACH selected category. Each task should:
+1. Be specific and measurable
+2. Align with the company's competitive positioning
+3. Include a suggested priority (High, Medium, or Low)
+4. Be assigned to one of the selected time periods
+
+Respond in JSON format:
+{
+  "tasks": [
+    {
+      "title": "Task title",
+      "description": "Brief description of the task",
+      "activityGroup": "category_value",
+      "priority": "High|Medium|Low",
+      "timeframe": "period_value"
+    }
+  ]
+}
+
+Only use these activityGroup values: ${categories.join(", ")}
+Only use these timeframe values: ${periods.join(", ")}`;
+
+      // Call AI to generate tasks
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        messages: [
+          { 
+            role: "user", 
+            content: prompt 
+          }
+        ],
+        system: "You are a marketing strategy expert. Generate practical, actionable marketing tasks based on the company's competitive landscape. Always respond with valid JSON only, no additional text.",
+      });
+
+      const aiResponse = message.content[0].type === "text" ? message.content[0].text : "";
+
+      // Parse AI response
+      let generatedTasks: any[] = [];
+      try {
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          generatedTasks = parsed.tasks || [];
+        }
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", parseError);
+        return res.status(500).json({ error: "Failed to parse AI suggestions" });
+      }
+
+      // Create the tasks in the database
+      let tasksCreated = 0;
+      for (const task of generatedTasks) {
+        if (task.title && categories.includes(task.activityGroup) && periods.includes(task.timeframe)) {
+          await storage.createMarketingTask({
+            planId: plan.id,
+            title: task.title,
+            description: task.description || null,
+            activityGroup: task.activityGroup,
+            priority: task.priority || "Medium",
+            status: "suggested",
+            timeframe: task.timeframe,
+            aiGenerated: true,
+          }, toContextFilter(ctx));
+          tasksCreated++;
+        }
+      }
+
+      // Log AI usage
+      await logAiUsage(ctx, "generate_marketing_tasks", "anthropic", "claude-sonnet-4-20250514", message.usage);
+
+      res.json({ success: true, tasksCreated });
+    } catch (error: any) {
+      console.error("Generate tasks error:", error);
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
