@@ -1,9 +1,51 @@
 import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
-import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb } from "lucide-react";
+import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
+
+const platformPillars = [
+  {
+    id: "intelligence",
+    icon: Radar,
+    title: "Competitive Intelligence",
+    tagline: "Know your battlefield",
+    description: "AI-powered analysis of competitor positioning, messaging, and market movements. Track changes, identify gaps, and stay ahead of the competition.",
+    features: [
+      "Automated competitor monitoring",
+      "Claude-powered positioning analysis",
+      "Messaging gap identification",
+      "Competitive battlecards"
+    ]
+  },
+  {
+    id: "marketing",
+    icon: CalendarDays,
+    title: "Marketing Planner",
+    tagline: "Plan with precision",
+    description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations.",
+    features: [
+      "AI-suggested marketing activities",
+      "Quarterly & annual planning",
+      "Activity-based organization",
+      "Progress tracking"
+    ]
+  },
+  {
+    id: "product",
+    icon: GitBranch,
+    title: "Product Management",
+    tagline: "Build what matters",
+    description: "Align product development with market reality. Manage roadmaps, track competitive features, and prioritize based on intelligence—not intuition.",
+    features: [
+      "Product roadmap management",
+      "Competitive feature tracking",
+      "Market-driven prioritization",
+      "Release planning"
+    ]
+  }
+];
 
 const capabilities = [
   {
@@ -35,10 +77,24 @@ const capabilities = [
     image: "/images/capabilities/battlecards.png"
   },
   {
+    id: "planning",
+    label: "Marketing Planner",
+    title: "Plan your GTM activities",
+    description: "Transform insights into action with AI-powered marketing planning. Generate quarterly, half-year, or annual marketing plans based on competitive intelligence and industry best practices.",
+    image: "/images/capabilities/planning.png"
+  },
+  {
+    id: "roadmap",
+    label: "Product Roadmap",
+    title: "Prioritize with market context",
+    description: "Align product development with competitive reality. Track feature gaps, manage your roadmap, and make data-driven prioritization decisions based on market intelligence.",
+    image: "/images/capabilities/roadmap.png"
+  },
+  {
     id: "reporting",
     label: "Reporting",
     title: "Share insights across the org",
-    description: "Export branded PDF reports for leadership, sales enablement, or board presentations. Track positioning changes over time with assessment snapshots.",
+    description: "Export branded PDF reports for leadership, sales enablement, or board presentations. Track positioning changes over time with assessment snapshots and share intelligence that drives decisions.",
     image: "/images/capabilities/reporting.png"
   }
 ];
@@ -46,7 +102,9 @@ const capabilities = [
 export default function Landing() {
   usePageTracking("/");
   const [activeCapability, setActiveCapability] = useState("intelligence");
+  const [activePillar, setActivePillar] = useState("intelligence");
   const currentCapability = capabilities.find(c => c.id === activeCapability) || capabilities[0];
+  const currentPillar = platformPillars.find(p => p.id === activePillar) || platformPillars[0];
 
   return (
     <PublicLayout>
@@ -58,19 +116,24 @@ export default function Landing() {
         />
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         
-        <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="max-w-5xl mx-auto text-center relative z-10">
+          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <Gem size={16} />
+            <span>Go-to-Market Intelligence Platform</span>
+          </div>
+          
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-            Win on positioning<br />
-            <span className="text-primary">not guesswork</span>
+            From insight to action<br />
+            <span className="text-primary">in one platform</span>
           </h1>
           
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-            Orbit is an AI-driven marketing intelligence platform that analyzes your competitive landscape and generates actionable positioning recommendations.
+          <p className="text-xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed">
+            Orbit unifies competitive intelligence, marketing planning, and product management—giving GTM teams the clarity to compete, plan, and build with confidence.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 flex items-center justify-center gap-2">
-              Get started now <ArrowRight size={20} />
+              Start your 60-day trial <ArrowRight size={20} />
             </Link>
             <Link href="/auth/signin" className="bg-muted hover:bg-muted/80 text-primary px-8 py-4 rounded-lg text-lg font-medium transition-all">
               Log in
@@ -78,7 +141,7 @@ export default function Landing() {
           </div>
 
           <p className="text-sm text-muted-foreground mb-12">
-            Start using Orbit today — no purchase, no credit card, and no sales call required.
+            No credit card required. No sales call needed. Full access for 60 days.
           </p>
 
           {/* Trust Badges */}
@@ -96,60 +159,130 @@ export default function Landing() {
               <span>Role-based access</span>
             </div>
             <div className="flex items-center gap-2">
+              <Brain size={16} className="text-primary" />
+              <span>Claude AI powered</span>
+            </div>
+            <div className="flex items-center gap-2">
               <FileText size={16} className="text-primary" />
               <span>Audit trails</span>
             </div>
           </div>
         </div>
       </section>
-      {/* Built on Synozur Framework */}
-      <section className="py-16 px-6 bg-card/30 border-y border-border">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-lg text-muted-foreground leading-relaxed">
-            <span className="font-semibold text-foreground">Built on our proven GTM intelligence framework.</span>{" "}
-            Orbit is built on methodologies developed by Synozur through decades of go-to-market consulting work. It reflects how real marketing and sales teams understand competitive positioning—refined through hands-on work with dozens of organizations.
+
+      {/* Platform Pillars - The Big Three */}
+      <section className="py-24 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">The Platform</p>
+          <h2 className="text-3xl font-bold text-center mb-6">Three pillars of GTM excellence</h2>
+          <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
+            Most tools give you data. Orbit gives you a complete system—from understanding your market to planning your response to building what wins.
           </p>
-          <p className="text-sm text-muted-foreground mt-4">
-            See how this approach has been applied in practice:{" "}
-            <a href="https://www.synozur.com/case-studies" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">View case studies</a>
-          </p>
+          
+          {/* Pillar Selector */}
+          <div className="flex flex-wrap justify-center gap-4 mb-12">
+            {platformPillars.map((pillar) => (
+              <button
+                key={pillar.id}
+                onClick={() => setActivePillar(pillar.id)}
+                className={cn(
+                  "px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-3",
+                  activePillar === pillar.id
+                    ? "bg-primary text-white shadow-lg shadow-primary/25"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
+                )}
+              >
+                <pillar.icon size={20} />
+                {pillar.title}
+              </button>
+            ))}
+          </div>
+
+          {/* Pillar Content */}
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-primary font-medium mb-2">{currentPillar.tagline}</p>
+              <h3 className="text-2xl font-bold mb-4">{currentPillar.title}</h3>
+              <p className="text-muted-foreground leading-relaxed mb-6">{currentPillar.description}</p>
+              <ul className="space-y-3">
+                {currentPillar.features.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
+                    <span className="text-sm">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-muted/50 rounded-xl p-8 aspect-video flex items-center justify-center border border-border">
+              <div className="text-center">
+                <currentPillar.icon size={48} className="mx-auto mb-4 text-primary/50" />
+                <p className="text-sm text-muted-foreground">[Screenshot: {currentPillar.title}]</p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
-      {/* First 15 Minutes */}
-      <section className="py-24 px-6">
+
+      {/* Built on Synozur Framework */}
+      <section className="py-16 px-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <p className="text-lg text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">Built on proven GTM methodology.</span>{" "}
+            Orbit reflects how real marketing, sales, and product teams work together—refined through decades of go-to-market consulting by Synozur. It's not just software; it's a system.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 mt-6 text-sm">
+            <a href="https://www.synozur.com/case-studies" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">View case studies</a>
+            <span className="text-muted-foreground">|</span>
+            <a href="https://orion.synozur.com/gtm" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Take the GTM Maturity Assessment</a>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works - The Flow */}
+      <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-16">What you'll do in your first 15 minutes</h2>
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">How It Works</p>
+          <h2 className="text-3xl font-bold text-center mb-16">Intelligence that flows into action</h2>
           
-          <div className="grid md:grid-cols-4 gap-8">
-            {[
-              { step: 1, title: "Add your competitors", desc: "Enter competitor URLs and Orbit crawls their websites automatically" },
-              { step: 2, title: "Upload your positioning docs", desc: "Add your messaging guidelines, brand docs, or pitch decks" },
-              { step: 3, title: "Run AI analysis", desc: "Claude analyzes your positioning vs competitors in real-time" },
-              { step: 4, title: "Get recommendations", desc: "See gaps, opportunities, and specific messaging improvements" }
-            ].map((item) => (
-              <div key={item.step} className="text-center">
-                <div className="w-12 h-12 rounded-full bg-primary text-white flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                  {item.step}
+          <div className="relative">
+            {/* Connection Line */}
+            <div className="hidden md:block absolute top-12 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
+            
+            <div className="grid md:grid-cols-4 gap-8">
+              {[
+                { step: 1, icon: Radar, title: "Monitor", desc: "Track competitor websites, messaging, and market changes automatically" },
+                { step: 2, icon: Brain, title: "Analyze", desc: "Claude AI identifies positioning gaps and competitive opportunities" },
+                { step: 3, icon: CalendarDays, title: "Plan", desc: "Generate marketing plans with AI-suggested activities and timelines" },
+                { step: 4, icon: Rocket, title: "Execute", desc: "Align product roadmaps and campaigns with market intelligence" }
+              ].map((item) => (
+                <div key={item.step} className="text-center relative">
+                  <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/25">
+                    <item.icon size={36} />
+                  </div>
+                  <div className="absolute top-0 right-0 md:right-auto md:left-1/2 md:-translate-x-1/2 -translate-y-2 bg-background text-primary text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center border-2 border-primary">
+                    {item.step}
+                  </div>
+                  <h3 className="font-semibold mb-2">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground">{item.desc}</p>
                 </div>
-                <h3 className="font-semibold mb-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.desc}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           <div className="text-center mt-12">
             <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-all items-center gap-2">
-              Get started now <ArrowRight size={18} />
+              Start your 60-day trial <ArrowRight size={18} />
             </Link>
             <p className="text-xs text-muted-foreground mt-3">No credit card required</p>
           </div>
         </div>
       </section>
+
       {/* Capabilities - Tabbed Section */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section className="py-24 px-6">
         <div className="max-w-6xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Capabilities</p>
-          <h2 className="text-3xl font-bold text-center mb-16">Discover how Orbit puts intelligence to work</h2>
+          <h2 className="text-3xl font-bold text-center mb-16">Everything you need to compete and win</h2>
           
           {/* Capability Tabs */}
           <div className="flex flex-wrap justify-center gap-2 mb-12">
@@ -181,68 +314,102 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
       {/* Three Outcomes */}
-      <section className="py-24 px-6">
+      <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
-          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">What You'll Achieve</p>
-          <h2 className="text-3xl font-bold text-center mb-16">Three outcomes that matter</h2>
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Outcomes</p>
+          <h2 className="text-3xl font-bold text-center mb-16">What you'll achieve</h2>
           
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
                 icon: Eye,
-                title: "See",
-                desc: "Understand exactly how competitors position themselves—messaging, value props, target audience, and tone."
+                title: "See clearly",
+                desc: "Understand exactly how competitors position themselves—and where you have the advantage."
               },
               {
                 icon: Target,
-                title: "Differentiate",
-                desc: "Identify gaps in your positioning and opportunities to stand out in crowded markets."
+                title: "Act decisively",
+                desc: "Transform intelligence into marketing plans and product priorities—not just reports."
               },
               {
                 icon: TrendingUp,
-                title: "Win",
-                desc: "Arm sales with battlecards, improve conversion with better messaging, and track competitive changes over time."
+                title: "Win consistently",
+                desc: "Arm teams with battlecards, align roadmaps to market reality, and outmaneuver the competition."
               }
             ].map((outcome, i) => (
-              <div key={i} className="text-center p-8 rounded-2xl bg-card border border-border">
+              <div key={i} className="text-center p-8 rounded-2xl bg-background border border-border">
                 <outcome.icon size={40} className="mx-auto mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-3">{outcome.title}</h3>
                 <p className="text-muted-foreground text-sm leading-relaxed">{outcome.desc}</p>
               </div>
             ))}
           </div>
+        </div>
+      </section>
 
-          <div className="text-center mt-12">
-            <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-all items-center gap-2">
-              Get started now <ArrowRight size={18} />
-            </Link>
-            <p className="text-xs text-muted-foreground mt-3">No credit card required. Be set up in minutes.</p>
+      {/* Who It's For */}
+      <section className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Who It's For</p>
+          <h2 className="text-3xl font-bold text-center mb-16">Built for the entire GTM team</h2>
+          
+          <div className="grid md:grid-cols-4 gap-6">
+            {[
+              {
+                icon: BarChart3,
+                title: "Marketing Leaders",
+                desc: "Competitive positioning, messaging strategy, and campaign planning"
+              },
+              {
+                icon: Users,
+                title: "Sales Teams",
+                desc: "Battlecards, competitive objection handling, and deal intelligence"
+              },
+              {
+                icon: Layers,
+                title: "Product Managers",
+                desc: "Roadmap prioritization, feature gap analysis, and market context"
+              },
+              {
+                icon: MapPin,
+                title: "GTM Consultants",
+                desc: "Multi-client analysis, assessment frameworks, and branded deliverables"
+              }
+            ].map((role, i) => (
+              <div key={i} className="p-6 rounded-xl bg-card border border-border text-center">
+                <role.icon size={28} className="mx-auto mb-3 text-primary" />
+                <h3 className="font-semibold text-sm mb-2">{role.title}</h3>
+                <p className="text-xs text-muted-foreground">{role.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
+
       {/* How Orbit is Different */}
       <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Why Orbit</p>
-          <h2 className="text-3xl font-bold text-center mb-4">How Orbit is Different</h2>
+          <h2 className="text-3xl font-bold text-center mb-4">Not another dashboard. A decision engine.</h2>
           <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
-            Unlike generic competitive intelligence tools, Orbit combines AI analysis with your own positioning documents to deliver actionable insights.
+            Other tools stop at data collection. Orbit turns intelligence into plans, priorities, and action.
           </p>
           
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
-                title: "Not just monitoring",
-                desc: "We don't just track changes—we analyze what they mean for your positioning and recommend responses."
+                title: "Intelligence + Action",
+                desc: "We don't just show you competitors—we help you respond with marketing plans and roadmap priorities."
               },
               {
-                title: "AI that grounds in your context",
-                desc: "Upload your positioning docs, brand guidelines, and messaging. AI recommendations are tailored to who you are."
+                title: "Grounded in your context",
+                desc: "Upload positioning docs and brand guidelines. Every AI recommendation is tailored to who you are."
               },
               {
-                title: "Built for GTM teams",
-                desc: "Battlecards, assessment snapshots, and exportable reports designed for real sales and marketing workflows."
+                title: "One platform, full workflow",
+                desc: "From competitive monitoring to marketing planning to product roadmaps—it's all connected."
               }
             ].map((item, i) => (
               <div key={i} className="p-6 rounded-xl bg-background border border-border">
@@ -253,166 +420,108 @@ export default function Landing() {
           </div>
         </div>
       </section>
-      {/* Is Orbit Right For You */}
-      <section className="py-24 px-6">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-16">Is Orbit right for you?</h2>
-          
-          <div className="grid md:grid-cols-2 gap-12">
-            <div className="p-8 rounded-2xl bg-card border border-primary/30">
-              <h3 className="font-bold text-lg mb-6 text-primary">Built for</h3>
-              <ul className="space-y-4">
-                {[
-                  "Marketing leaders who need competitive positioning clarity",
-                  "Sales teams who want data-driven battlecards",
-                  "Product marketers tracking competitive messaging",
-                  "GTM consultants running multi-client competitive analysis"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <CheckCircle2 size={18} className="text-primary mt-0.5 flex-shrink-0" />
-                    <span className="text-sm">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            
-            <div className="p-8 rounded-2xl bg-muted/30 border border-border">
-              <h3 className="font-bold text-lg mb-6 text-muted-foreground">Not designed for</h3>
-              <ul className="space-y-4 text-muted-foreground">
-                {[
-                  "Real-time social media monitoring",
-                  "SEO keyword tracking",
-                  "Ad spend intelligence",
-                  "Generic web scraping"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm">
-                    <span className="text-muted-foreground">•</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
 
-          <div className="text-center mt-12">
-            <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-all items-center gap-2">
-              Get started now <ArrowRight size={18} />
-            </Link>
-            <p className="text-xs text-muted-foreground mt-3">No credit card required. Be set up in minutes.</p>
-          </div>
-        </div>
-      </section>
-      {/* Five Integrated Modules */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">The Platform</p>
-          <h2 className="text-3xl font-bold text-center mb-16">Five integrated modules</h2>
-          
-          <div className="grid md:grid-cols-5 gap-6">
-            {[
-              { icon: Target, title: "Company Profile", desc: "Your baseline positioning and website" },
-              { icon: Users, title: "Competitors", desc: "Track and analyze competitor websites" },
-              { icon: Brain, title: "AI Analysis", desc: "Claude-powered competitive insights" },
-              { icon: Lightbulb, title: "Recommendations", desc: "Actionable positioning improvements" },
-              { icon: FileText, title: "Battlecards", desc: "Sales enablement materials" }
-            ].map((module, i) => (
-              <div key={i} className="text-center p-6 rounded-xl bg-background border border-border">
-                <module.icon size={28} className="mx-auto mb-3 text-primary" />
-                <h3 className="font-semibold text-sm mb-2">{module.title}</h3>
-                <p className="text-xs text-muted-foreground">{module.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-center mt-12 pt-8 border-t border-border">
-            <p className="text-sm text-muted-foreground mb-6">
-              <span className="font-medium text-foreground">Powered by Claude AI</span> | Grounding documents | Multi-tenant isolation
-            </p>
-            <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-all items-center gap-2">
-              Get started now <ArrowRight size={18} />
-            </Link>
-            <p className="text-xs text-muted-foreground mt-3">No credit card required. Be set up in minutes.</p>
-          </div>
-        </div>
-      </section>
       {/* Enterprise Ready */}
       <section className="py-24 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Enterprise Grade</p>
-          <h2 className="text-3xl font-bold mb-12">Enterprise-ready by design</h2>
-          
-          <div className="flex flex-wrap justify-center gap-8 text-sm">
-            {[
-              "SOC 2 Type II",
-              "Encryption in transit and at rest",
-              "Microsoft Entra SSO + RBAC",
-              "Audit logging",
-              "Multi-tenant isolation"
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-primary" />
-                <span>{item}</span>
+        <div className="max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Enterprise Grade</p>
+              <h2 className="text-3xl font-bold mb-6">Enterprise-ready by design</h2>
+              <p className="text-muted-foreground mb-8">
+                Built for organizations that take security, compliance, and governance seriously. Multi-tenant isolation, SSO, and audit trails come standard.
+              </p>
+              <div className="space-y-4">
+                {[
+                  "SOC 2 Type II certified",
+                  "Microsoft Entra ID SSO",
+                  "Role-based access control",
+                  "Multi-tenant isolation",
+                  "Encryption in transit and at rest",
+                  "Complete audit logging"
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
+                    <span className="text-sm">{item}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-8 border border-primary/20">
+              <div className="grid grid-cols-2 gap-6">
+                {[
+                  { label: "Multi-market support", desc: "Manage multiple clients/brands" },
+                  { label: "Consultant access", desc: "Cross-tenant collaboration" },
+                  { label: "Branded reports", desc: "White-label PDF exports" },
+                  { label: "API access", desc: "Integration ready" }
+                ].map((feature, i) => (
+                  <div key={i}>
+                    <Gem size={16} className="text-primary mb-2" />
+                    <p className="font-medium text-sm">{feature.label}</p>
+                    <p className="text-xs text-muted-foreground">{feature.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
-      {/* Final CTA */}
-      <section className="py-24 px-6 bg-gradient-to-b from-card/50 to-background border-t border-border">
+
+      {/* Pricing Preview */}
+      <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl font-bold mb-6">Ready to win on positioning?</h2>
+          <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Get Started</p>
+          <h2 className="text-3xl font-bold mb-6">Start with a 60-day free trial</h2>
+          <p className="text-muted-foreground mb-10 max-w-2xl mx-auto">
+            Full access to Orbit's competitive intelligence, marketing planning, and product management capabilities. No credit card required.
+          </p>
+          
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
+            {[
+              { plan: "Free", desc: "Basic competitive monitoring", features: ["1 competitor", "1 analysis/month", "Core features"] },
+              { plan: "Pro", desc: "Full intelligence suite", features: ["Up to 10 competitors", "Unlimited analysis", "Marketing Planner"], highlight: true },
+              { plan: "Enterprise", desc: "Complete GTM platform", features: ["Unlimited competitors", "Product Management", "Multi-market support"] }
+            ].map((tier, i) => (
+              <div key={i} className={cn(
+                "p-6 rounded-xl border",
+                tier.highlight 
+                  ? "bg-primary/5 border-primary/30" 
+                  : "bg-background border-border"
+              )}>
+                <h3 className="font-bold text-lg mb-1">{tier.plan}</h3>
+                <p className="text-sm text-muted-foreground mb-4">{tier.desc}</p>
+                <ul className="space-y-2 text-sm">
+                  {tier.features.map((f, j) => (
+                    <li key={j} className="flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          
+          <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
+            Start your 60-day trial <ArrowRight size={20} />
+          </Link>
+          <p className="text-sm text-muted-foreground mt-4">Questions? Contact us at <a href="mailto:contactus@synozur.com" className="text-primary hover:underline">contactus@synozur.com</a></p>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="py-24 px-6 bg-gradient-to-b from-background to-card/50">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-4xl font-bold mb-6">Ready to transform your GTM?</h2>
           <p className="text-xl text-muted-foreground mb-10">
-            Join marketing teams who compete with clarity—not guesswork.
+            Join teams who compete with intelligence, plan with precision, and build what wins.
           </p>
           <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
-            Get started now <ArrowRight size={20} />
+            Start your 60-day trial <ArrowRight size={20} />
           </Link>
-          <p className="text-sm text-muted-foreground mt-4">No credit card required. Be set up in minutes.</p>
+          <p className="text-sm text-muted-foreground mt-4">No credit card required. Full access for 60 days.</p>
         </div>
       </section>
     </PublicLayout>
   );
 }
-
-/*
-=============================================================================
-GRAPHICS NEEDED TO ENRICH THIS HOME PAGE
-=============================================================================
-
-1. HERO SECTION
-   - hero-background.png: Abstract space/orbit themed background (existing)
-   - Optional: Animated orbit/satellite illustration
-
-2. CAPABILITIES SECTION SCREENSHOTS (5 images)
-   - /images/capabilities/market-intelligence.png: Screenshot of competitor list with analysis data
-   - /images/capabilities/ai-analysis.png: Screenshot of AI analysis results
-   - /images/capabilities/recommendations.png: Screenshot of recommendations page
-   - /images/capabilities/battlecards.png: Mockup of competitive battlecard with Harvey Balls
-   - /images/capabilities/reporting.png: Screenshot of PDF report or assessment view
-
-3. TRUST/SOCIAL PROOF
-   - Customer logos (if available)
-   - SOC 2 Type II badge
-
-4. MODULE ICONS (optional custom)
-   - Custom icons for each of the 5 modules if desired over Lucide icons
-
-5. VIDEO
-   - 2-minute walkthrough video (like Vega has)
-   - Video thumbnail/poster image
-
-6. BRAND ASSETS
-   - synozur-mark.png: Already exists
-   - orbit-logo.png: Product logo if different from mark
-
-7. ENTERPRISE SECTION
-   - Security/compliance badge illustrations
-   - Partner logos (Microsoft, etc.)
-
-8. OPTIONAL ENHANCEMENTS
-   - Animated GIF showing AI analysis in action
-   - Before/after positioning comparison illustration
-   - Competitor landscape visualization graphic
-   - Battlecard preview mockup
-=============================================================================
-*/
