@@ -37,6 +37,7 @@ import AppAbout from "@/pages/app/about";
 import DataSourcesPage from "@/pages/app/data-sources";
 import CompanyBaseline from "@/pages/app/company-baseline";
 import MarketingPlannerPage from "@/pages/app/marketing-planner";
+import MarketingPlanDetail from "@/pages/app/marketing-plan-detail";
 import Pricing from "@/pages/pricing";
 
 function Router() {
@@ -79,6 +80,7 @@ function Router() {
       <Route path="/app/battlecards" component={BattleCardsPage} />
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
+      <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />
