@@ -36,6 +36,7 @@ import UsagePage from "@/pages/app/usage";
 import AppAbout from "@/pages/app/about";
 import DataSourcesPage from "@/pages/app/data-sources";
 import CompanyBaseline from "@/pages/app/company-baseline";
+import MarketingPlannerPage from "@/pages/app/marketing-planner";
 
 function Router() {
   return (
@@ -76,6 +77,7 @@ function Router() {
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />
       <Route path="/app/usage" component={UsagePage} />
+      <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />

@@ -24,7 +24,8 @@ import {
   Building2,
   Swords,
   Database,
-  Info
+  Info,
+  Gem
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     },
     enabled: !!user,
   });
+
+  const { data: tenantSettings } = useQuery<{ plan: string; multiMarketEnabled: boolean }>({
+    queryKey: ["/api/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/settings", { credentials: "include" });
+      if (!response.ok) return { plan: "free", multiMarketEnabled: false };
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const isEnterprise = tenantSettings?.plan === "enterprise";
 
   const getLastVisited = (path: string): number => {
     try {
@@ -247,6 +260,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Reports", icon: FileText, href: "/app/reports" },
         { label: "Projects", icon: FolderKanban, href: "/app/projects" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
+        ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
       ]
     },
     {

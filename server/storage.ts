@@ -23,6 +23,8 @@ import {
   markets,
   consultantAccess,
   aiUsage,
+  marketingPlans,
+  marketingTasks,
   type User, 
   type InsertUser,
   type Tenant,
@@ -80,6 +82,10 @@ import {
   type InsertConsultantAccess,
   type AiUsage,
   type InsertAiUsage,
+  type MarketingPlan,
+  type InsertMarketingPlan,
+  type MarketingTask,
+  type InsertMarketingTask,
   competitorScores,
   socialMetrics,
   executiveSummaries
@@ -2006,6 +2012,144 @@ export class DatabaseStorage implements IStorage {
       dailyUsage,
       recentLogs,
     };
+  }
+
+  // Marketing Plans methods
+  async getMarketingPlans(ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingPlan[]> {
+    const marketCondition = ctx.marketId 
+      ? eq(marketingPlans.marketId, ctx.marketId)
+      : isNull(marketingPlans.marketId);
+    
+    return db.select().from(marketingPlans)
+      .where(and(
+        eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .orderBy(desc(marketingPlans.createdAt));
+  }
+
+  async getMarketingPlan(id: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingPlan | null> {
+    const marketCondition = ctx.marketId 
+      ? eq(marketingPlans.marketId, ctx.marketId)
+      : isNull(marketingPlans.marketId);
+    
+    const [plan] = await db.select().from(marketingPlans)
+      .where(and(
+        eq(marketingPlans.id, id),
+        eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ));
+    return plan || null;
+  }
+
+  async createMarketingPlan(plan: InsertMarketingPlan): Promise<MarketingPlan> {
+    const [created] = await db.insert(marketingPlans).values(plan).returning();
+    return created;
+  }
+
+  async updateMarketingPlan(id: string, updates: Partial<InsertMarketingPlan>, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingPlan | null> {
+    const marketCondition = ctx.marketId 
+      ? eq(marketingPlans.marketId, ctx.marketId)
+      : isNull(marketingPlans.marketId);
+    
+    const [updated] = await db.update(marketingPlans)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(marketingPlans.id, id),
+        eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .returning();
+    return updated || null;
+  }
+
+  async deleteMarketingPlan(id: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<boolean> {
+    const marketCondition = ctx.marketId 
+      ? eq(marketingPlans.marketId, ctx.marketId)
+      : isNull(marketingPlans.marketId);
+    
+    const result = await db.delete(marketingPlans)
+      .where(and(
+        eq(marketingPlans.id, id),
+        eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .returning();
+    return result.length > 0;
+  }
+
+  // Marketing Tasks methods
+  // Note: All task methods require a validated plan from getMarketingPlan() which enforces context filtering.
+  // Tasks are only accessible after the plan's tenant/market context is verified at the API layer.
+  async getMarketingTasks(planId: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingTask[]> {
+    // Verify plan belongs to context first (defense-in-depth)
+    const plan = await this.getMarketingPlan(planId, ctx);
+    if (!plan) return [];
+    
+    return db.select().from(marketingTasks)
+      .where(eq(marketingTasks.planId, planId))
+      .orderBy(marketingTasks.timeframe, marketingTasks.priority);
+  }
+
+  async createMarketingTask(task: InsertMarketingTask, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingTask | null> {
+    // Verify plan belongs to context first
+    const plan = await this.getMarketingPlan(task.planId, ctx);
+    if (!plan) return null;
+    
+    const [created] = await db.insert(marketingTasks).values(task).returning();
+    return created;
+  }
+
+  async createMarketingTasks(tasks: InsertMarketingTask[], ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingTask[]> {
+    if (tasks.length === 0) return [];
+    
+    // Verify plan belongs to context (all tasks should belong to same plan)
+    const planId = tasks[0].planId;
+    const plan = await this.getMarketingPlan(planId, ctx);
+    if (!plan) return [];
+    
+    const created = await db.insert(marketingTasks).values(tasks).returning();
+    return created;
+  }
+
+  async updateMarketingTask(id: string, planId: string, updates: Partial<InsertMarketingTask>, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingTask | null> {
+    // Verify plan belongs to context first
+    const plan = await this.getMarketingPlan(planId, ctx);
+    if (!plan) return null;
+    
+    const [updated] = await db.update(marketingTasks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(marketingTasks.id, id),
+        eq(marketingTasks.planId, planId)
+      ))
+      .returning();
+    return updated || null;
+  }
+
+  async deleteMarketingTask(id: string, planId: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<boolean> {
+    // Verify plan belongs to context first
+    const plan = await this.getMarketingPlan(planId, ctx);
+    if (!plan) return false;
+    
+    const result = await db.delete(marketingTasks)
+      .where(and(
+        eq(marketingTasks.id, id),
+        eq(marketingTasks.planId, planId)
+      ))
+      .returning();
+    return result.length > 0;
+  }
+
+  async deleteAllMarketingTasks(planId: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<number> {
+    // Verify plan belongs to context first
+    const plan = await this.getMarketingPlan(planId, ctx);
+    if (!plan) return 0;
+    
+    const result = await db.delete(marketingTasks)
+      .where(eq(marketingTasks.planId, planId))
+      .returning();
+    return result.length;
   }
 }
 

@@ -9131,5 +9131,250 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Marketing Plans API - Enterprise feature
+  app.get("/api/marketing-plans", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      // Check if tenant is enterprise
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plans = await storage.getMarketingPlans(toContextFilter(ctx));
+      res.json(plans);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/marketing-plans/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      // Get tasks for this plan
+      const tasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      
+      res.json({ ...plan, tasks });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/marketing-plans", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const { name, fiscalYear, description, configMatrix } = req.body;
+      
+      if (!name || !fiscalYear) {
+        return res.status(400).json({ error: "Name and fiscal year are required" });
+      }
+      
+      const plan = await storage.createMarketingPlan({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name,
+        fiscalYear,
+        description: description || null,
+        configMatrix: configMatrix || null,
+        status: "draft",
+        createdBy: ctx.userId,
+      });
+      
+      res.json(plan);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/marketing-plans/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const { name, description, configMatrix, status } = req.body;
+      
+      const updated = await storage.updateMarketingPlan(
+        req.params.id,
+        { name, description, configMatrix, status },
+        toContextFilter(ctx)
+      );
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/marketing-plans/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const deleted = await storage.deleteMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!deleted) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Marketing Tasks API
+  app.post("/api/marketing-plans/:planId/tasks", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      const { title, description, activityGroup, timeframe, priority, aiGenerated, sourceRecommendationId } = req.body;
+      
+      if (!title || !activityGroup || !timeframe) {
+        return res.status(400).json({ error: "Title, activity group, and timeframe are required" });
+      }
+      
+      const task = await storage.createMarketingTask({
+        planId: plan.id,
+        title,
+        description: description || null,
+        activityGroup,
+        timeframe,
+        priority: priority || "Medium",
+        status: "suggested",
+        aiGenerated: aiGenerated ?? false,
+        sourceRecommendationId: sourceRecommendationId || null,
+      }, toContextFilter(ctx));
+      
+      if (!task) {
+        return res.status(404).json({ error: "Marketing plan not found or access denied" });
+      }
+      
+      res.json(task);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/marketing-plans/:planId/tasks/:taskId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      const { title, description, activityGroup, timeframe, priority, status, assignedTo, dueDate } = req.body;
+      
+      const updated = await storage.updateMarketingTask(
+        req.params.taskId,
+        plan.id,
+        { title, description, activityGroup, timeframe, priority, status, assignedTo, dueDate },
+        toContextFilter(ctx)
+      );
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/marketing-plans/:planId/tasks/:taskId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      const deleted = await storage.deleteMarketingTask(req.params.taskId, plan.id, toContextFilter(ctx));
+      if (!deleted) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
