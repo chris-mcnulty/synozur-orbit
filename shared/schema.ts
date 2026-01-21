@@ -866,3 +866,74 @@ export const insertAiUsageSchema = createInsertSchema(aiUsage).omit({
 
 export type AiUsage = typeof aiUsage.$inferSelect;
 export type InsertAiUsage = z.infer<typeof insertAiUsageSchema>;
+
+// Marketing Plans - Enterprise feature for GTM task management
+export const marketingPlans = pgTable("marketing_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  fiscalYear: text("fiscal_year").notNull(), // e.g., "2026"
+  description: text("description"),
+  configMatrix: jsonb("config_matrix"), // Stores activity group × timeframe × priority selections
+  status: text("status").notNull().default("draft"), // draft, active, archived
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const marketingPlansRelations = relations(marketingPlans, ({ many }) => ({
+  tasks: many(marketingTasks),
+}));
+
+export const insertMarketingPlanSchema = createInsertSchema(marketingPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type MarketingPlan = typeof marketingPlans.$inferSelect;
+export type InsertMarketingPlan = z.infer<typeof insertMarketingPlanSchema>;
+
+// Marketing Tasks - Individual tasks within a marketing plan
+export const marketingTasks = pgTable("marketing_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => marketingPlans.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  activityGroup: text("activity_group").notNull(), // Themes, Digital, Outbound, Partners, Events
+  timeframe: text("timeframe").notNull(), // Ongoing, Q1, Q2, Q3, Q4, Future
+  priority: text("priority").notNull().default("Medium"), // High, Medium, Low
+  status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, completed, removed
+  aiGenerated: boolean("ai_generated").notNull().default(true),
+  sourceRecommendationId: varchar("source_recommendation_id").references(() => recommendations.id, { onDelete: "set null" }),
+  assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  dueDate: timestamp("due_date"),
+  plannerTaskId: text("planner_task_id"), // Microsoft Planner task ID for sync
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const marketingTasksRelations = relations(marketingTasks, ({ one }) => ({
+  plan: one(marketingPlans, {
+    fields: [marketingTasks.planId],
+    references: [marketingPlans.id],
+  }),
+  sourceRecommendation: one(recommendations, {
+    fields: [marketingTasks.sourceRecommendationId],
+    references: [recommendations.id],
+  }),
+  assignee: one(users, {
+    fields: [marketingTasks.assignedTo],
+    references: [users.id],
+  }),
+}));
+
+export const insertMarketingTaskSchema = createInsertSchema(marketingTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type MarketingTask = typeof marketingTasks.$inferSelect;
+export type InsertMarketingTask = z.infer<typeof insertMarketingTaskSchema>;
