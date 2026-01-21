@@ -60,7 +60,7 @@ export default function Landing() {
         
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-            Win on positioning—<br />
+            Win on positioning<br />
             <span className="text-primary">not guesswork.</span>
           </h1>
           
