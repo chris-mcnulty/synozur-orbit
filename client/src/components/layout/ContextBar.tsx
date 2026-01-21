@@ -295,7 +295,7 @@ export default function ContextBar() {
 
   const updateMarketMutation = useMutation({
     mutationFn: async ({ marketId, name, description }: { marketId: string; name: string; description?: string }) => {
-      const response = await apiRequest("PATCH", `/api/context/markets/${marketId}`, { name, description });
+      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || "Failed to update market");
