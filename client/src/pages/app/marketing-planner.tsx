@@ -104,9 +104,9 @@ export default function MarketingPlanner() {
   });
 
   const { data: tenantSettings } = useQuery<{ plan: string }>({
-    queryKey: ["/api/settings"],
+    queryKey: ["/api/tenant/settings"],
     queryFn: async () => {
-      const response = await fetch("/api/settings", { credentials: "include" });
+      const response = await fetch("/api/tenant/settings", { credentials: "include" });
       if (!response.ok) return { plan: "free" };
       return response.json();
     },
