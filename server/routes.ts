@@ -9499,39 +9499,49 @@ Only use these timeframe values: ${periods.join(", ")}`;
 
       // Parse AI response with more robust handling
       let generatedTasks: any[] = [];
+      console.log("AI Response length:", aiResponse.length);
+      console.log("AI Response (first 500 chars):", aiResponse.substring(0, 500));
+      
       try {
-        // Try to find and parse JSON from the response
-        const jsonMatch = aiResponse.match(/\{[\s\S]*"tasks"\s*:\s*\[[\s\S]*?\]\s*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
+        // First, try to parse the entire response as JSON
+        const trimmedResponse = aiResponse.trim();
+        if (trimmedResponse.startsWith("{")) {
+          const parsed = JSON.parse(trimmedResponse);
           generatedTasks = parsed.tasks || [];
-        } else {
-          // Fallback: try to extract tasks array directly
-          const tasksMatch = aiResponse.match(/\[[\s\S]*?\]/);
-          if (tasksMatch) {
-            generatedTasks = JSON.parse(tasksMatch[0]);
-          }
+        } else if (trimmedResponse.startsWith("[")) {
+          generatedTasks = JSON.parse(trimmedResponse);
         }
-      } catch (parseError) {
-        console.error("Failed to parse AI response:", parseError);
-        console.error("AI Response (first 1000 chars):", aiResponse.substring(0, 1000));
-        // Try a more lenient extraction - look for individual task objects
+      } catch (firstParseError) {
+        console.log("Direct parse failed, trying regex extraction...");
         try {
-          const taskPattern = /\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"description"\s*:\s*"[^"]*"\s*,\s*"activityGroup"\s*:\s*"[^"]+"\s*,\s*"priority"\s*:\s*"[^"]+"\s*,\s*"timeframe"\s*:\s*"[^"]+"\s*\}/g;
-          const taskMatches = Array.from(aiResponse.matchAll(taskPattern));
-          for (const match of taskMatches) {
-            try {
-              const task = JSON.parse(match[0]);
-              if (task.title) {
-                generatedTasks.push(task);
-              }
-            } catch {}
+          // Try to find JSON object with tasks array (greedy match for the array)
+          const jsonMatch = aiResponse.match(/\{[\s\S]*"tasks"\s*:\s*\[([\s\S]*)\]\s*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            generatedTasks = parsed.tasks || [];
           }
-        } catch {}
-        
-        if (generatedTasks.length === 0) {
-          return res.status(500).json({ error: "Failed to parse AI suggestions. Please try again." });
+        } catch (parseError) {
+          console.error("Failed to parse AI response:", parseError);
+          console.error("AI Response (first 1000 chars):", aiResponse.substring(0, 1000));
+          // Try a more lenient extraction - look for individual task objects
+          try {
+            const taskPattern = /\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"description"\s*:\s*"[^"]*"\s*,\s*"activityGroup"\s*:\s*"[^"]+"\s*,\s*"priority"\s*:\s*"[^"]+"\s*,\s*"timeframe"\s*:\s*"[^"]+"\s*\}/g;
+            const taskMatches = Array.from(aiResponse.matchAll(taskPattern));
+            for (const match of taskMatches) {
+              try {
+                const task = JSON.parse(match[0]);
+                if (task.title) {
+                  generatedTasks.push(task);
+                }
+              } catch {}
+            }
+          } catch {}
         }
+      }
+      
+      if (generatedTasks.length === 0) {
+        console.error("No tasks extracted from AI response");
+        return res.status(500).json({ error: "Failed to parse AI suggestions. Please try again." });
       }
 
       // Create the tasks in the database
