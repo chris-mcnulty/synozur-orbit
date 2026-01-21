@@ -33,11 +33,8 @@ const allowlist = [
 ];
 
 // ESM-only modules that must be kept external (not bundled into CJS)
-const esmOnlyModules = [
-  "p-limit",
-  "p-retry",
-  "yocto-queue",
-];
+// Note: p-limit, p-retry, yocto-queue were removed - using inline CJS-compatible implementations
+const esmOnlyModules: string[] = [];
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
