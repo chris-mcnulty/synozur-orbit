@@ -2029,15 +2029,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMarketingPlan(id: string, ctx: { tenantDomain: string; marketId: string | null }): Promise<MarketingPlan | null> {
-    const marketCondition = ctx.marketId 
-      ? eq(marketingPlans.marketId, ctx.marketId)
-      : isNull(marketingPlans.marketId);
-    
+    // When fetching by specific ID, allow access if plan belongs to tenant
+    // This enables direct navigation to plan detail pages
     const [plan] = await db.select().from(marketingPlans)
       .where(and(
         eq(marketingPlans.id, id),
-        eq(marketingPlans.tenantDomain, ctx.tenantDomain),
-        marketCondition
+        eq(marketingPlans.tenantDomain, ctx.tenantDomain)
       ));
     return plan || null;
   }
