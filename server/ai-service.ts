@@ -393,3 +393,135 @@ Return ONLY valid JSON array, no additional text.`,
     return [];
   }
 }
+
+// Feature extraction from URL content or pasted text
+export interface ExtractedFeature {
+  name: string;
+  description: string | null;
+  category: string | null;
+  status: "backlog" | "planned" | "in_progress" | "released";
+}
+
+export async function extractFeaturesFromContent(
+  content: string,
+  sourceType: "url" | "text",
+  productName?: string
+): Promise<ExtractedFeature[]> {
+  const contextInfo = productName ? `for the product "${productName}"` : "";
+  
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 4096,
+    messages: [
+      {
+        role: "user",
+        content: `You are a product analyst extracting features from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+
+Analyze the following content and extract distinct product features. For each feature, determine:
+1. A clear, concise name (max 60 characters)
+2. A brief description (1-2 sentences)
+3. A category: Core, Security, Analytics, Integration, UX, Performance, API, or Other
+4. Status: "released" if it appears to be live/available, "planned" if mentioned as upcoming/roadmap, "in_progress" if in beta/preview, "backlog" if just mentioned as an idea
+
+CONTENT:
+${content.slice(0, 15000)}
+
+Return a JSON array of features. Each feature should have:
+- name: string (concise feature name)
+- description: string or null
+- category: string or null (one of: Core, Security, Analytics, Integration, UX, Performance, API, Other)
+- status: "backlog" | "planned" | "in_progress" | "released"
+
+Extract 5-20 features. Focus on distinct, meaningful product capabilities.
+Return ONLY valid JSON array, no additional text.`,
+      },
+    ],
+  });
+
+  const responseContent = message.content[0];
+  if (responseContent.type !== "text") {
+    throw new Error("Unexpected response type");
+  }
+
+  try {
+    let text = responseContent.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse extracted features:", responseContent.text, e);
+    return [];
+  }
+}
+
+// Roadmap item extraction from content
+export interface ExtractedRoadmapItem {
+  title: string;
+  description: string | null;
+  quarter: string | null;
+  effort: "xs" | "s" | "m" | "l" | "xl" | null;
+}
+
+export async function extractRoadmapFromContent(
+  content: string,
+  sourceType: "url" | "text",
+  productName?: string
+): Promise<ExtractedRoadmapItem[]> {
+  const contextInfo = productName ? `for the product "${productName}"` : "";
+  
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 4096,
+    messages: [
+      {
+        role: "user",
+        content: `You are a product analyst extracting roadmap items from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+
+Analyze the following content and extract roadmap items, upcoming features, or planned work. For each item:
+1. A clear title (max 80 characters)
+2. A brief description
+3. Target quarter if mentioned (Q1, Q2, Q3, Q4) or null
+4. Estimated effort if inferable: xs (hours), s (1-2 days), m (3-5 days), l (1-2 weeks), xl (3+ weeks), or null
+
+CONTENT:
+${content.slice(0, 15000)}
+
+Return a JSON array of roadmap items. Each should have:
+- title: string
+- description: string or null
+- quarter: "Q1" | "Q2" | "Q3" | "Q4" | null
+- effort: "xs" | "s" | "m" | "l" | "xl" | null
+
+Extract 3-15 roadmap items. Focus on planned or upcoming work.
+Return ONLY valid JSON array, no additional text.`,
+      },
+    ],
+  });
+
+  const responseContent = message.content[0];
+  if (responseContent.type !== "text") {
+    throw new Error("Unexpected response type");
+  }
+
+  try {
+    let text = responseContent.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse extracted roadmap:", responseContent.text, e);
+    return [];
+  }
+}

@@ -4748,6 +4748,106 @@ Respond in JSON format:
     }
   });
 
+  // Import features from URL
+  app.post("/api/products/:productId/features/import-url", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const { url } = req.body;
+      if (!url) return res.status(400).json({ error: "URL is required" });
+      
+      // Fetch and extract content from URL
+      const { extractFeaturesFromContent } = await import("./ai-service");
+      
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+      
+      if (!response.ok) {
+        return res.status(400).json({ error: "Failed to fetch URL" });
+      }
+      
+      const html = await response.text();
+      // Extract text content from HTML
+      const textContent = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      
+      const extractedFeatures = await extractFeaturesFromContent(textContent, "url", product.name);
+      
+      // Create features in database
+      const createdFeatures = [];
+      for (const feature of extractedFeatures) {
+        const created = await storage.createProductFeature({
+          productId: req.params.productId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          name: feature.name,
+          description: feature.description,
+          category: feature.category,
+          status: feature.status,
+          sourceType: "scraped",
+        });
+        createdFeatures.push(created);
+      }
+      
+      res.json({ imported: createdFeatures.length, features: createdFeatures });
+    } catch (error: any) {
+      console.error("Feature import from URL failed:", error);
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Import features from pasted text
+  app.post("/api/products/:productId/features/import-text", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const { text } = req.body;
+      if (!text || text.trim().length < 50) {
+        return res.status(400).json({ error: "Text must be at least 50 characters" });
+      }
+      
+      const { extractFeaturesFromContent } = await import("./ai-service");
+      const extractedFeatures = await extractFeaturesFromContent(text, "text", product.name);
+      
+      // Create features in database
+      const createdFeatures = [];
+      for (const feature of extractedFeatures) {
+        const created = await storage.createProductFeature({
+          productId: req.params.productId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          name: feature.name,
+          description: feature.description,
+          category: feature.category,
+          status: feature.status,
+          sourceType: "parsed",
+        });
+        createdFeatures.push(created);
+      }
+      
+      res.json({ imported: createdFeatures.length, features: createdFeatures });
+    } catch (error: any) {
+      console.error("Feature import from text failed:", error);
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // === Roadmap Items CRUD ===
   
   // Get roadmap items for a product
@@ -4823,6 +4923,105 @@ Respond in JSON format:
       
       await storage.deleteRoadmapItem(req.params.itemId);
       res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Import roadmap items from URL
+  app.post("/api/products/:productId/roadmap/import-url", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const { url } = req.body;
+      if (!url) return res.status(400).json({ error: "URL is required" });
+      
+      const { extractRoadmapFromContent } = await import("./ai-service");
+      
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+      
+      if (!response.ok) {
+        return res.status(400).json({ error: "Failed to fetch URL" });
+      }
+      
+      const html = await response.text();
+      const textContent = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      
+      const extractedItems = await extractRoadmapFromContent(textContent, "url", product.name);
+      
+      const createdItems = [];
+      const currentYear = new Date().getFullYear();
+      for (const item of extractedItems) {
+        const created = await storage.createRoadmapItem({
+          productId: req.params.productId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: item.title,
+          description: item.description,
+          quarter: item.quarter,
+          year: currentYear,
+          effort: item.effort,
+          status: "planned",
+        });
+        createdItems.push(created);
+      }
+      
+      res.json({ imported: createdItems.length, items: createdItems });
+    } catch (error: any) {
+      console.error("Roadmap import from URL failed:", error);
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Import roadmap items from pasted text
+  app.post("/api/products/:productId/roadmap/import-text", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const { text } = req.body;
+      if (!text || text.trim().length < 50) {
+        return res.status(400).json({ error: "Text must be at least 50 characters" });
+      }
+      
+      const { extractRoadmapFromContent } = await import("./ai-service");
+      const extractedItems = await extractRoadmapFromContent(text, "text", product.name);
+      
+      const createdItems = [];
+      const currentYear = new Date().getFullYear();
+      for (const item of extractedItems) {
+        const created = await storage.createRoadmapItem({
+          productId: req.params.productId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: item.title,
+          description: item.description,
+          quarter: item.quarter,
+          year: currentYear,
+          effort: item.effort,
+          status: "planned",
+        });
+        createdItems.push(created);
+      }
+      
+      res.json({ imported: createdItems.length, items: createdItems });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
