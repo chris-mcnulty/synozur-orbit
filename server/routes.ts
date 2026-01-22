@@ -4401,7 +4401,7 @@ Respond in JSON format:
         clientName: clientName.trim(),
         clientDomain: clientDomain?.trim().toLowerCase() || null,
         description: description?.trim() || null,
-        analysisType: analysisType === "product" ? "product" : "company",
+        analysisType: "product",
         notifyOnUpdates: notifyOnUpdates === true,
         status: "active",
         tenantDomain: ctx.tenantDomain,

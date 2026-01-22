@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -44,7 +43,6 @@ export default function Products() {
     clientName: "",
     clientDomain: "",
     description: "",
-    analysisType: "company" as "company" | "product",
     notifyOnUpdates: false,
   });
 
@@ -83,7 +81,7 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", clientName: "", clientDomain: "", description: "", analysisType: "company", notifyOnUpdates: false });
+      setFormData({ name: "", clientName: "", clientDomain: "", description: "", notifyOnUpdates: false });
       toast({
         title: "Product Created",
         description: "Your product analysis has been created.",
@@ -186,7 +184,6 @@ export default function Products() {
       clientName: project.clientName,
       clientDomain: project.clientDomain || "",
       description: project.description || "",
-      analysisType: project.analysisType || "company",
       notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
@@ -266,35 +263,6 @@ export default function Products() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label>Analysis Type</Label>
-                      <RadioGroup
-                        value={formData.analysisType}
-                        onValueChange={(value: "company" | "product") => setFormData({ ...formData, analysisType: value })}
-                        className="grid grid-cols-2 gap-4"
-                        data-testid="radio-analysis-type"
-                      >
-                        <div className="flex items-center space-x-2 rounded-lg border p-3 cursor-pointer hover:bg-accent">
-                          <RadioGroupItem value="company" id="company" />
-                          <Label htmlFor="company" className="flex items-center gap-2 cursor-pointer">
-                            <Building className="h-4 w-4" />
-                            Company vs Company
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2 rounded-lg border p-3 cursor-pointer hover:bg-accent">
-                          <RadioGroupItem value="product" id="product" />
-                          <Label htmlFor="product" className="flex items-center gap-2 cursor-pointer">
-                            <Package className="h-4 w-4" />
-                            Product vs Product
-                          </Label>
-                        </div>
-                      </RadioGroup>
-                      <p className="text-xs text-muted-foreground">
-                        {formData.analysisType === "company" 
-                          ? "Compare company websites, positioning, and market presence" 
-                          : "Compare specific products against competitor products"}
-                      </p>
-                    </div>
                     <div className="grid gap-2">
                       <Label htmlFor="name">Product Name</Label>
                       <Input
@@ -541,17 +509,6 @@ export default function Products() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="flex items-center gap-2 rounded-lg border p-3 bg-muted/50">
-                <Label className="text-sm text-muted-foreground">Analysis Type:</Label>
-                <Badge variant="outline" className="text-xs">
-                  {formData.analysisType === "product" ? (
-                    <><Package className="h-3 w-3 mr-1" /> Product vs Product</>
-                  ) : (
-                    <><Building className="h-3 w-3 mr-1" /> Company vs Company</>
-                  )}
-                </Badge>
-                <span className="text-xs text-muted-foreground">(cannot be changed)</span>
-              </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-name">Project Name</Label>
                 <Input

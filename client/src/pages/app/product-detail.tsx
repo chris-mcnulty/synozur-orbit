@@ -2510,20 +2510,20 @@ export default function ProductDetail() {
 
             {/* Features Tab Content */}
             <TabsContent value="features" className="mt-6">
-              {project.baselineProductId && (
+              {baselineProduct && (
                 <FeaturesTab 
-                  productId={project.baselineProductId} 
-                  product={baselineProduct || undefined}
+                  productId={baselineProduct.productId} 
+                  product={baselineProduct.product}
                 />
               )}
             </TabsContent>
 
             {/* Roadmap Tab Content */}
             <TabsContent value="roadmap" className="mt-6">
-              {project.baselineProductId && (
+              {baselineProduct && (
                 <RoadmapTab 
-                  productId={project.baselineProductId} 
-                  product={baselineProduct || undefined}
+                  productId={baselineProduct.productId} 
+                  product={baselineProduct.product}
                 />
               )}
             </TabsContent>
