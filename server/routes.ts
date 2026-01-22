@@ -5977,6 +5977,164 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
     }
   });
 
+  // Generate product one sheet (marketing copy draft)
+  app.post("/api/projects/:projectId/recommendations/product_one_sheet/generate", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const project = await storage.getClientProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!validateResourceContext(project, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { targetAudience, keyBenefits, toneOfVoice, customGuidance } = req.body;
+      const savedPrompts = { targetAudience, keyBenefits, toneOfVoice, customGuidance };
+
+      // Get product context
+      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+      const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+      if (!baselineProduct) {
+        return res.status(400).json({ error: "No baseline product set. Please add a baseline product first." });
+      }
+
+      // Get product features for context
+      const features = await storage.getProductFeaturesByProduct(baselineProduct.productId);
+      const releasedFeatures = features.filter((f: { status: string }) => f.status === "released");
+
+      // Get battlecards for competitive differentiation
+      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
+
+      let productContext = `
+Product: ${baselineProduct.product.name}
+Company: ${baselineProduct.product.companyName || project.clientName}
+Description: ${baselineProduct.product.description || "N/A"}
+URL: ${baselineProduct.product.url || "N/A"}`;
+
+      if (releasedFeatures.length > 0) {
+        productContext += `\n\nKey Features:\n${releasedFeatures.slice(0, 10).map((f: { name: string; description: string | null }) => `- ${f.name}: ${f.description || ""}`).join("\n")}`;
+      }
+
+      let competitiveContext = "";
+      if (competitorProducts.length > 0) {
+        competitiveContext = "\n\nCompetitors:";
+        for (const cp of competitorProducts) {
+          competitiveContext += `\n- ${cp.product.name} (${cp.product.companyName || "Unknown"})`;
+        }
+      }
+
+      if (battlecards.length > 0) {
+        const bc = battlecards[0];
+        const advantages = bc.ourAdvantages as string[] | null;
+        const differentiators = bc.keyDifferentiators as { feature: string; ours: string; theirs: string }[] | null;
+        if (advantages?.length) {
+          competitiveContext += `\n\nOur Key Advantages:\n${advantages.slice(0, 5).map((a: string) => `- ${a}`).join("\n")}`;
+        }
+        if (differentiators?.length) {
+          competitiveContext += `\n\nKey Differentiators:\n${differentiators.slice(0, 5).map((d: { feature: string; ours: string }) => `- ${d.feature}: ${d.ours}`).join("\n")}`;
+        }
+      }
+
+      const prompt = `You are an expert product marketing copywriter. Create a compelling Product One Sheet (single-page marketing document) in markdown format.
+
+${productContext}
+${competitiveContext}
+
+User Guidance:
+- Target Audience: ${targetAudience || "Not specified - suggest appropriate audience"}
+- Key Benefits to Highlight: ${keyBenefits || "Not specified - identify top benefits"}
+- Tone of Voice: ${toneOfVoice || "Professional and compelling"}
+- Custom Guidance: ${customGuidance || "None"}
+
+Create a complete Product One Sheet with the following structure:
+
+# ${baselineProduct.product.name}
+
+## Headline
+A compelling tagline (8-12 words max)
+
+## The Challenge
+2-3 sentences describing the problem your audience faces
+
+## The Solution
+2-3 sentences describing how this product solves that problem
+
+## Key Benefits
+- Benefit 1 with specific value proposition
+- Benefit 2 with specific value proposition  
+- Benefit 3 with specific value proposition
+(3-5 bullet points, each with a clear business outcome)
+
+## Key Features
+- Feature 1: Brief description
+- Feature 2: Brief description
+- Feature 3: Brief description
+(Top 3-5 features with concise descriptions)
+
+## Why Choose ${baselineProduct.product.companyName || "Us"}
+3-4 sentences on competitive differentiation and credibility
+
+## Call to Action
+Clear next step for the reader
+
+---
+
+Make this compelling, concise, and suitable for a one-page PDF. Use active voice and focus on customer outcomes over features.`;
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      await logAiUsage(ctx, "generate_product_one_sheet", "anthropic", "claude-sonnet-4-5", message.usage);
+
+      const content = message.content[0].type === "text" ? message.content[0].text : "";
+
+      const existing = await storage.getLongFormRecommendationByType("product_one_sheet", req.params.projectId);
+
+      if (existing) {
+        const updated = await storage.updateLongFormRecommendation(existing.id, {
+          content,
+          savedPrompts,
+          status: "generated",
+          lastGeneratedAt: new Date(),
+          generatedBy: ctx.userId,
+        });
+        res.json(updated);
+      } else {
+        const created = await storage.createLongFormRecommendation({
+          type: "product_one_sheet",
+          projectId: req.params.projectId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          content,
+          savedPrompts,
+          status: "generated",
+          generatedBy: ctx.userId,
+          lastGeneratedAt: new Date(),
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Product one sheet generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Generate project-level gap analysis
   app.post("/api/projects/:projectId/recommendations/gap_analysis/generate", async (req, res) => {
     try {
