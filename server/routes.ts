@@ -9449,6 +9449,12 @@ Generate a comprehensive battlecard in this JSON format:
       };
 
       const periodLabels: Record<string, string> = {
+        steady_state: "Steady State (Ongoing)",
+        Q1: "Q1",
+        Q2: "Q2",
+        Q3: "Q3",
+        Q4: "Q4",
+        future: "Future",
         q1: "Q1",
         q2: "Q2",
         q3: "Q3",

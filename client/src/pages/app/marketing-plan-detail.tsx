@@ -36,21 +36,14 @@ const ACTIVITY_CATEGORIES = [
   { value: "other", label: "Other", description: "Other marketing activities" },
 ];
 
-const TIMEFRAME_PERIODS: Record<string, { value: string; label: string }[]> = {
-  quarterly: [
-    { value: "q1", label: "Q1" },
-    { value: "q2", label: "Q2" },
-    { value: "q3", label: "Q3" },
-    { value: "q4", label: "Q4" },
-  ],
-  half_year: [
-    { value: "h1", label: "H1 (First Half)" },
-    { value: "h2", label: "H2 (Second Half)" },
-  ],
-  annual: [
-    { value: "annual", label: "Full Year" },
-  ],
-};
+const QUARTER_OPTIONS = [
+  { value: "steady_state", label: "Steady State", description: "Ongoing activities" },
+  { value: "Q1", label: "Q1", description: "January - March" },
+  { value: "Q2", label: "Q2", description: "April - June" },
+  { value: "Q3", label: "Q3", description: "July - September" },
+  { value: "Q4", label: "Q4", description: "October - December" },
+  { value: "future", label: "Future", description: "Beyond this fiscal year" },
+];
 
 const PRIORITY_OPTIONS = [
   { value: "high", label: "High", color: "text-red-500" },
@@ -92,7 +85,8 @@ interface MarketingPlan {
   fiscalYear: string;
   status: string;
   configMatrix: { 
-    timeframeSelection?: string;
+    selectedQuarters?: string[];
+    quarters?: string[];
     selectedCategories?: string[];
     selectedPeriods?: string[];
     configured?: boolean;
@@ -143,8 +137,10 @@ export default function MarketingPlanDetail() {
     enabled: !!id,
   });
 
-  const timeframeType = plan?.configMatrix?.timeframeSelection || "annual";
-  const availablePeriods = TIMEFRAME_PERIODS[timeframeType] || TIMEFRAME_PERIODS.annual;
+  const planQuarters = plan?.configMatrix?.selectedQuarters || plan?.configMatrix?.quarters || ["steady_state", "Q1", "Q2", "Q3", "Q4"];
+  const availablePeriods = QUARTER_OPTIONS.filter(q => 
+    planQuarters.includes(q.value) || q.value === "future"
+  );
   const isConfigured = plan?.configMatrix?.configured === true;
 
   useEffect(() => {
@@ -366,7 +362,7 @@ export default function MarketingPlanDetail() {
             <div>
               <h1 className="text-2xl font-bold">{plan.name}</h1>
               <p className="text-sm text-muted-foreground">
-                {plan.fiscalYear} • {timeframeType === "quarterly" ? "Quarterly" : timeframeType === "half_year" ? "Half-Year" : "Annual"} Plan
+                {plan.fiscalYear} • {planQuarters.length === 5 ? "Full Year" : planQuarters.map(q => q === "steady_state" ? "Steady State" : q).join(", ")}
               </p>
             </div>
           </div>
@@ -483,7 +479,7 @@ export default function MarketingPlanDetail() {
                   Select Time Periods
                 </CardTitle>
                 <CardDescription>
-                  Choose which {timeframeType === "quarterly" ? "quarters" : timeframeType === "half_year" ? "half-years" : "period"} to plan for in {plan.fiscalYear}.
+                  Choose which periods to plan for in {plan.fiscalYear}. You can select from the quarters included in your plan.
                 </CardDescription>
               </CardHeader>
               <CardContent>

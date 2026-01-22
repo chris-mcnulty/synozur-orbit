@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -45,15 +46,25 @@ interface MarketingTask {
   createdAt: string;
 }
 
-const TIMEFRAME_OPTIONS = [
-  { value: "q1", label: "Q1 Only", quarters: ["Q1"] },
-  { value: "q2", label: "Q2 Only", quarters: ["Q2"] },
-  { value: "q3", label: "Q3 Only", quarters: ["Q3"] },
-  { value: "q4", label: "Q4 Only", quarters: ["Q4"] },
-  { value: "h1", label: "First Half (Q1-Q2)", quarters: ["Q1", "Q2"] },
-  { value: "h2", label: "Second Half (Q3-Q4)", quarters: ["Q3", "Q4"] },
-  { value: "annual", label: "Annual (Full Year)", quarters: ["Q1", "Q2", "Q3", "Q4", "Ongoing"] },
+const QUARTER_OPTIONS = [
+  { value: "steady_state", label: "Steady State", description: "Ongoing activities throughout the year" },
+  { value: "Q1", label: "Q1", description: "January - March" },
+  { value: "Q2", label: "Q2", description: "April - June" },
+  { value: "Q3", label: "Q3", description: "July - September" },
+  { value: "Q4", label: "Q4", description: "October - December" },
 ];
+
+function formatSelectedQuarters(quarters: string[]): string {
+  if (quarters.length === 0) return "No periods selected";
+  if (quarters.length === 5) return "All periods";
+  
+  const sorted = [...quarters].sort((a, b) => {
+    const order = ["steady_state", "Q1", "Q2", "Q3", "Q4"];
+    return order.indexOf(a) - order.indexOf(b);
+  });
+  
+  return sorted.map(q => q === "steady_state" ? "Steady State" : q).join(", ");
+}
 
 const ACTIVITY_CATEGORIES = [
   "Market Research",
@@ -100,8 +111,17 @@ export default function MarketingPlanner() {
     name: "",
     fiscalYear: String(currentYear),
     description: "",
-    timeframeSelection: "annual",
+    selectedQuarters: ["steady_state", "Q1", "Q2", "Q3", "Q4"] as string[],
   });
+
+  const toggleQuarter = (quarter: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedQuarters: prev.selectedQuarters.includes(quarter)
+        ? prev.selectedQuarters.filter(q => q !== quarter)
+        : [...prev.selectedQuarters, quarter],
+    }));
+  };
 
   const { data: tenantSettings } = useQuery<{ plan: string }>({
     queryKey: ["/api/tenant/settings"],
@@ -132,7 +152,6 @@ export default function MarketingPlanner() {
 
   const createPlan = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const timeframeConfig = TIMEFRAME_OPTIONS.find(t => t.value === data.timeframeSelection);
       const response = await fetch("/api/marketing-plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,8 +160,8 @@ export default function MarketingPlanner() {
           fiscalYear: data.fiscalYear,
           description: data.description || null,
           configMatrix: {
-            timeframeSelection: data.timeframeSelection,
-            quarters: timeframeConfig?.quarters || [],
+            selectedQuarters: data.selectedQuarters,
+            quarters: data.selectedQuarters,
             categories: {},
           },
         }),
@@ -157,7 +176,7 @@ export default function MarketingPlanner() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/marketing-plans"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", fiscalYear: String(currentYear), description: "", timeframeSelection: "annual" });
+      setFormData({ name: "", fiscalYear: String(currentYear), description: "", selectedQuarters: ["steady_state", "Q1", "Q2", "Q3", "Q4"] });
       toast({
         title: "Plan Created",
         description: "Your marketing plan has been created.",
@@ -322,42 +341,50 @@ export default function MarketingPlanner() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fiscalYear">Fiscal Year</Label>
-                      <Select
-                        value={formData.fiscalYear}
-                        onValueChange={(value) => setFormData({ ...formData, fiscalYear: value })}
-                      >
-                        <SelectTrigger data-testid="select-fiscal-year">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {FISCAL_YEARS.map((year) => (
-                            <SelectItem key={year} value={year}>{year}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="fiscalYear">Fiscal Year</Label>
+                    <Select
+                      value={formData.fiscalYear}
+                      onValueChange={(value) => setFormData({ ...formData, fiscalYear: value })}
+                    >
+                      <SelectTrigger data-testid="select-fiscal-year">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FISCAL_YEARS.map((year) => (
+                          <SelectItem key={year} value={year}>{year}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
+                  <div className="space-y-3">
+                    <Label>Planning Periods</Label>
+                    <p className="text-xs text-muted-foreground">Select which periods this plan covers. Tasks will be generated for selected periods.</p>
                     <div className="space-y-2">
-                      <Label htmlFor="timeframe">Planning Period</Label>
-                      <Select
-                        value={formData.timeframeSelection}
-                        onValueChange={(value) => setFormData({ ...formData, timeframeSelection: value })}
-                      >
-                        <SelectTrigger data-testid="select-timeframe">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIMEFRAME_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                      {QUARTER_OPTIONS.map((option) => (
+                        <div key={option.value} className="flex items-center space-x-3">
+                          <Checkbox
+                            id={`quarter-${option.value}`}
+                            checked={formData.selectedQuarters.includes(option.value)}
+                            onCheckedChange={() => toggleQuarter(option.value)}
+                            data-testid={`checkbox-quarter-${option.value}`}
+                          />
+                          <div className="flex-1">
+                            <label
+                              htmlFor={`quarter-${option.value}`}
+                              className="text-sm font-medium cursor-pointer"
+                            >
                               {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                            </label>
+                            <p className="text-xs text-muted-foreground">{option.description}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
+                    {formData.selectedQuarters.length === 0 && (
+                      <p className="text-xs text-destructive">Please select at least one period</p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -376,7 +403,7 @@ export default function MarketingPlanner() {
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={createPlan.isPending || !formData.name}>
+                  <Button type="submit" disabled={createPlan.isPending || !formData.name || formData.selectedQuarters.length === 0}>
                     {createPlan.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -427,9 +454,9 @@ export default function MarketingPlanner() {
                       <CardDescription className="flex items-center gap-2">
                         <Calendar className="w-3 h-3" />
                         {plan.fiscalYear}
-                        {plan.configMatrix?.timeframeSelection && (
+                        {plan.configMatrix?.selectedQuarters && (
                           <span className="text-xs">
-                            ({TIMEFRAME_OPTIONS.find(t => t.value === plan.configMatrix.timeframeSelection)?.label || plan.configMatrix.timeframeSelection})
+                            ({formatSelectedQuarters(plan.configMatrix.selectedQuarters)})
                           </span>
                         )}
                       </CardDescription>
