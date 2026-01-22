@@ -388,6 +388,7 @@ export interface IStorage {
   createFeatureRecommendation(recommendation: InsertFeatureRecommendation): Promise<FeatureRecommendation>;
   updateFeatureRecommendation(id: string, data: Partial<FeatureRecommendation>): Promise<FeatureRecommendation>;
   deleteFeatureRecommendation(id: string): Promise<void>;
+  addRecommendationToRoadmap(recId: string, roadmapData: InsertRoadmapItem): Promise<{ roadmapItem: RoadmapItem; recommendation: FeatureRecommendation }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2306,6 +2307,17 @@ export class DatabaseStorage implements IStorage {
 
   async deleteFeatureRecommendation(id: string): Promise<void> {
     await db.delete(featureRecommendations).where(eq(featureRecommendations.id, id));
+  }
+
+  async addRecommendationToRoadmap(recId: string, roadmapData: InsertRoadmapItem): Promise<{ roadmapItem: RoadmapItem; recommendation: FeatureRecommendation }> {
+    return await db.transaction(async (tx) => {
+      const [roadmapItem] = await tx.insert(roadmapItems).values(roadmapData).returning();
+      const [recommendation] = await tx.update(featureRecommendations)
+        .set({ status: "accepted" })
+        .where(eq(featureRecommendations.id, recId))
+        .returning();
+      return { roadmapItem, recommendation };
+    });
   }
 }
 

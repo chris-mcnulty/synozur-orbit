@@ -5097,6 +5097,55 @@ Respond in JSON format:
     }
   });
 
+  // Add recommendation to roadmap
+  app.post("/api/products/:productId/recommendations/:recId/add-to-roadmap", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const rec = await storage.getFeatureRecommendation(req.params.recId);
+      if (!rec || rec.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+      
+      // Parse suggested quarter (e.g., "Q1 2026" -> { quarter: "Q1", year: 2026 })
+      let quarter: string | null = null;
+      let year = new Date().getFullYear();
+      if (rec.suggestedQuarter) {
+        const match = rec.suggestedQuarter.match(/^(Q[1-4])(?:\s+(\d{4}))?$/i);
+        if (match) {
+          quarter = match[1].toUpperCase();
+          if (match[2]) year = parseInt(match[2]);
+        }
+      }
+      
+      // Map priority to effort
+      const effortMap: Record<string, string> = { high: "l", medium: "m", low: "s" };
+      const effort = rec.suggestedPriority ? effortMap[rec.suggestedPriority] || "m" : "m";
+      
+      // Create roadmap item and mark recommendation as accepted atomically
+      const { roadmapItem } = await storage.addRecommendationToRoadmap(req.params.recId, {
+        productId: req.params.productId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        title: rec.title,
+        description: rec.explanation,
+        quarter,
+        year,
+        effort,
+        status: "planned",
+        aiRecommended: true,
+      });
+      
+      res.json({ roadmapItem, message: "Added to roadmap" });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Generate AI roadmap recommendations for a product
   app.post("/api/products/:productId/recommendations/generate", async (req, res) => {
     try {

@@ -212,6 +212,25 @@ export default function ProductRoadmap() {
     },
   });
 
+  const addToRoadmap = useMutation({
+    mutationFn: async (recId: string) => {
+      const response = await fetch(`/api/products/${id}/recommendations/${recId}/add-to-roadmap`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to add to roadmap");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products", id, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", id, "recommendations"] });
+      toast({ title: "Added to Roadmap", description: "The recommendation has been added to your roadmap." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       title: "",
@@ -638,8 +657,20 @@ export default function ProductRoadmap() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => addToRoadmap.mutate(rec.id)}
+                            className="text-primary hover:text-primary/80"
+                            title="Add to Roadmap"
+                            disabled={addToRoadmap.isPending}
+                            data-testid={`add-to-roadmap-${rec.id}`}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => updateRecommendation.mutate({ recId: rec.id, status: "accepted" })}
                             className="text-green-500 hover:text-green-600"
+                            title="Accept (without adding to roadmap)"
                             data-testid={`accept-${rec.id}`}
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -649,6 +680,7 @@ export default function ProductRoadmap() {
                             size="sm"
                             onClick={() => updateRecommendation.mutate({ recId: rec.id, status: "dismissed" })}
                             className="text-muted-foreground"
+                            title="Dismiss"
                             data-testid={`dismiss-${rec.id}`}
                           >
                             <Trash2 className="h-4 w-4" />
