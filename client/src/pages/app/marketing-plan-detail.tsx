@@ -12,7 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 const ACTIVITY_CATEGORIES = [
   { value: "events", label: "Events & Trade Shows", description: "Trade shows, conferences, industry events" },
@@ -118,6 +121,8 @@ export default function MarketingPlanDetail() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterTimeframe, setFilterTimeframe] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"list" | "matrix">("list");
+  const [selectedTask, setSelectedTask] = useState<MarketingTask | null>(null);
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
     queryKey: [`/api/marketing-plans/${id}`],
@@ -242,7 +247,7 @@ export default function MarketingPlanDetail() {
 
   const updateTaskStatus = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      const response = await fetch(`/api/marketing-tasks/${taskId}`, {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -317,6 +322,29 @@ export default function MarketingPlanDetail() {
     }
     return acc;
   }, {} as Record<string, { label: string; tasks: MarketingTask[] }>);
+
+  // Matrix columns: use configured plan quarters or default to all
+  const matrixColumns = QUARTER_OPTIONS.filter(q => 
+    planQuarters.includes(q.value) || q.value === "future"
+  );
+
+  // Matrix data: tasks organized by category (row) and timeframe (column)
+  const matrixData = ACTIVITY_CATEGORIES.filter(cat => selectedCategories.includes(cat.value)).map(cat => {
+    const row: Record<string, MarketingTask[]> = {};
+    matrixColumns.forEach(q => {
+      row[q.value] = tasks.filter(t => t.activityGroup === cat.value && t.timeframe === q.value);
+    });
+    return { category: cat, tasks: row };
+  });
+
+  const getMatrixPriorityColor = (priority: string) => {
+    switch (priority?.toLowerCase()) {
+      case "high": return "bg-red-500/20 border-red-500/50 text-red-700 dark:text-red-300";
+      case "medium": return "bg-yellow-500/20 border-yellow-500/50 text-yellow-700 dark:text-yellow-300";
+      case "low": return "bg-green-500/20 border-green-500/50 text-green-700 dark:text-green-300";
+      default: return "bg-muted border-border";
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     const opt = STATUS_OPTIONS.find(s => s.value === status);
@@ -693,46 +721,72 @@ export default function MarketingPlanDetail() {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={filterTimeframe} onValueChange={setFilterTimeframe}>
-            <SelectTrigger className="w-40" data-testid="select-filter-timeframe">
-              <SelectValue placeholder="Time Period" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Periods</SelectItem>
-              {QUARTER_OPTIONS.map(q => (
-                <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-52" data-testid="select-filter-category">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {ACTIVITY_CATEGORIES.filter(cat => selectedCategories.includes(cat.value)).map(cat => (
-                <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterPriority} onValueChange={setFilterPriority}>
-            <SelectTrigger className="w-36" data-testid="select-filter-priority">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-              Clear filters
+          <div className="flex items-center border rounded-lg p-1">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="h-8 px-3"
+              data-testid="button-view-list"
+            >
+              <List className="w-4 h-4 mr-1" />
+              List
             </Button>
+            <Button
+              variant={viewMode === "matrix" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("matrix")}
+              className="h-8 px-3"
+              data-testid="button-view-matrix"
+            >
+              <LayoutGrid className="w-4 h-4 mr-1" />
+              Matrix
+            </Button>
+          </div>
+          {viewMode === "list" && (
+            <>
+              <Select value={filterTimeframe} onValueChange={setFilterTimeframe}>
+                <SelectTrigger className="w-40" data-testid="select-filter-timeframe">
+                  <SelectValue placeholder="Time Period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Periods</SelectItem>
+                  {QUARTER_OPTIONS.map(q => (
+                    <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-52" data-testid="select-filter-category">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {ACTIVITY_CATEGORIES.filter(cat => selectedCategories.includes(cat.value)).map(cat => (
+                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterPriority} onValueChange={setFilterPriority}>
+                <SelectTrigger className="w-36" data-testid="select-filter-priority">
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priorities</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                  Clear filters
+                </Button>
+              )}
+            </>
           )}
           <span className="text-sm text-muted-foreground ml-auto">
-            {filteredTasks.length} of {tasks.length} task{tasks.length !== 1 ? "s" : ""}
+            {viewMode === "list" ? `${filteredTasks.length} of ${tasks.length}` : tasks.length} task{tasks.length !== 1 ? "s" : ""}
           </span>
           {isGenerating && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -746,7 +800,7 @@ export default function MarketingPlanDetail() {
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
-        ) : Object.keys(groupedTasks).length === 0 ? (
+        ) : tasks.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -762,6 +816,173 @@ export default function MarketingPlanDetail() {
                   Generate AI Suggestions
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        ) : viewMode === "matrix" ? (
+          <TooltipProvider>
+            <Card>
+              <CardContent className="p-0">
+                <ScrollArea className="w-full">
+                  <div className="min-w-[900px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="w-48 font-semibold sticky left-0 bg-muted/50 z-10">Activity</TableHead>
+                          {matrixColumns.map(q => (
+                            <TableHead key={q.value} className="text-center min-w-[140px] font-semibold">
+                              {q.label}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {matrixData.map(({ category, tasks: rowTasks }) => (
+                          <TableRow key={category.value} className="hover:bg-muted/30">
+                            <TableCell className="font-medium text-sm sticky left-0 bg-background z-10 border-r">
+                              {category.label}
+                            </TableCell>
+                            {matrixColumns.map(q => {
+                              const cellTasks = rowTasks[q.value] || [];
+                              return (
+                                <TableCell key={q.value} className="p-2 align-top">
+                                  <div className="space-y-1 min-h-[40px]">
+                                    {cellTasks.length === 0 ? (
+                                      <div className="text-xs text-muted-foreground/50 text-center py-2">-</div>
+                                    ) : (
+                                      cellTasks.map(task => (
+                                        <Tooltip key={task.id}>
+                                          <TooltipTrigger asChild>
+                                            <div
+                                              className={`text-xs px-2 py-1.5 rounded border cursor-pointer truncate ${getMatrixPriorityColor(task.priority)} ${task.status === "completed" ? "line-through opacity-60" : ""}`}
+                                              onClick={() => setSelectedTask(task)}
+                                              data-testid={`matrix-task-${task.id}`}
+                                            >
+                                              {task.title}
+                                            </div>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top" className="max-w-xs">
+                                            <div className="space-y-1">
+                                              <p className="font-medium">{task.title}</p>
+                                              {task.description && (
+                                                <p className="text-xs text-muted-foreground">{task.description}</p>
+                                              )}
+                                              <div className="flex gap-2 text-xs">
+                                                <span>Priority: {task.priority}</span>
+                                                <span>Status: {task.status}</span>
+                                              </div>
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      ))
+                                    )}
+                                  </div>
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Task Detail Dialog for Matrix View */}
+            <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {selectedTask?.title}
+                    {selectedTask && getPriorityBadge(selectedTask.priority)}
+                  </DialogTitle>
+                  {selectedTask?.description && (
+                    <DialogDescription>{selectedTask.description}</DialogDescription>
+                  )}
+                </DialogHeader>
+                {selectedTask && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Category:</span>
+                        <p className="font-medium">{ACTIVITY_CATEGORIES.find(c => c.value === selectedTask.activityGroup)?.label}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Time Period:</span>
+                        <p className="font-medium">{QUARTER_OPTIONS.find(q => q.value === selectedTask.timeframe)?.label || "Not set"}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Status:</span>
+                        <div className="mt-1">
+                          <Select 
+                            value={selectedTask.status} 
+                            onValueChange={(status) => {
+                              updateTaskStatus.mutate({ taskId: selectedTask.id, status });
+                              setSelectedTask({ ...selectedTask, status });
+                            }}
+                          >
+                            <SelectTrigger className="w-full h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATUS_OPTIONS.map(s => (
+                                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {selectedTask.dueDate && (
+                        <div>
+                          <span className="text-muted-foreground">Due Date:</span>
+                          <p className="font-medium">{new Date(selectedTask.dueDate).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between pt-4 border-t">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm">
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Task
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete "{selectedTask.title}". This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteTask.mutate(selectedTask.id);
+                                setSelectedTask(null);
+                              }}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      <Button variant="outline" onClick={() => setSelectedTask(null)}>Close</Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </TooltipProvider>
+        ) : Object.keys(groupedTasks).length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Tasks Match Filters</h3>
+              <p className="text-muted-foreground mb-4">Try adjusting your filters or add new tasks.</p>
+              <Button variant="ghost" onClick={clearFilters}>Clear Filters</Button>
             </CardContent>
           </Card>
         ) : (

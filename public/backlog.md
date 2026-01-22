@@ -246,7 +246,7 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 - [x] Navigation integration with Diamond (Gem) icon
 - [x] Defense-in-depth security with market context filtering on all operations
 - [x] AI-generated task suggestions informed by GTM Plan, Recommendations, and Competitor Insights
-- [ ] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
+- [x] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
 - [ ] Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks
 - [ ] Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs
 - [x] Uses comprehensive marketing activities document as grounding (19 categories stored)
