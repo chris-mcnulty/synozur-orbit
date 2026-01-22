@@ -32,7 +32,7 @@ interface ClientProject {
   competitors?: any[];
 }
 
-export default function Projects() {
+export default function Products() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -84,8 +84,8 @@ export default function Projects() {
       setIsDialogOpen(false);
       setFormData({ name: "", clientName: "", clientDomain: "", description: "", analysisType: "company", notifyOnUpdates: false });
       toast({
-        title: "Project Created",
-        description: "Your client project has been created.",
+        title: "Product Created",
+        description: "Your product analysis has been created.",
       });
     },
     onError: (error: Error) => {
@@ -116,8 +116,8 @@ export default function Projects() {
       setIsEditDialogOpen(false);
       setEditingProject(null);
       toast({
-        title: "Project Updated",
-        description: "Your project has been updated.",
+        title: "Product Updated",
+        description: "Your product has been updated.",
       });
     },
     onError: (error: Error) => {
@@ -144,8 +144,8 @@ export default function Projects() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({
-        title: "Project Deleted",
-        description: "The project has been removed.",
+        title: "Product Deleted",
+        description: "The product has been removed.",
       });
     },
     onError: (error: Error) => {
@@ -217,11 +217,11 @@ export default function Projects() {
           <div className="max-w-6xl mx-auto">
             <Card className="border-dashed border-2 bg-card/50">
               <CardContent className="flex flex-col items-center justify-center py-16">
-                <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold mb-2">Client Projects</h3>
+                <Package className="h-16 w-16 text-muted-foreground mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Products</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-6">
-                  Client Projects allow you to analyze client companies and their competitors 
-                  without creating separate tenants. This feature is available on Professional 
+                  Products allow you to manage your product catalog, features, and roadmap 
+                  with AI-powered competitive recommendations. This feature is available on Professional 
                   and Enterprise plans.
                 </p>
                 <Link href="/app/settings">
@@ -243,25 +243,25 @@ export default function Projects() {
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-page-title">Client Projects</h1>
+              <h1 className="text-2xl font-bold" data-testid="text-page-title">Products</h1>
               <p className="text-muted-foreground">
-                Analyze client companies and competitors without creating new tenants
+                Manage your products, features, and roadmap with competitive intelligence
               </p>
             </div>
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="button-new-project">
+                <Button data-testid="button-new-product">
                   <Plus className="mr-2 h-4 w-4" />
-                  New Project
+                  New Product
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <form onSubmit={handleSubmit}>
                   <DialogHeader>
-                    <DialogTitle>Create Client Project</DialogTitle>
+                    <DialogTitle>Create Product</DialogTitle>
                     <DialogDescription>
-                      Create a new project to analyze a client's competitive landscape.
+                      Create a new product to manage features and roadmap with competitive insights.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
@@ -295,11 +295,11 @@ export default function Projects() {
                       </p>
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="name">Project Name</Label>
+                      <Label htmlFor="name">Product Name</Label>
                       <Input
                         id="name"
-                        data-testid="input-project-name"
-                        placeholder="e.g., Rightpoint Q1 2026 Analysis"
+                        data-testid="input-product-name"
+                        placeholder="e.g., Orbit Platform"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         required
@@ -331,7 +331,7 @@ export default function Projects() {
                       <Textarea
                         id="description"
                         data-testid="input-description"
-                        placeholder="Brief description of the project scope..."
+                        placeholder="Brief description of the product..."
                         value={formData.description}
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         rows={3}
@@ -355,9 +355,9 @@ export default function Projects() {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button type="submit" data-testid="button-create-project" disabled={createProject.isPending}>
+                    <Button type="submit" data-testid="button-create-product" disabled={createProject.isPending}>
                       {createProject.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Create Project
+                      Create Product
                     </Button>
                   </DialogFooter>
                 </form>
@@ -372,14 +372,14 @@ export default function Projects() {
           ) : projects.length === 0 ? (
             <Card className="border-dashed border-2 bg-card/50">
               <CardContent className="flex flex-col items-center justify-center py-16">
-                <FolderOpen className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Projects Yet</h3>
+                <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Products Yet</h3>
                 <p className="text-muted-foreground text-center max-w-md mb-4">
-                  Create your first client project to start analyzing their competitive landscape.
+                  Create your first product to manage features and roadmap with competitive insights.
                 </p>
-                <Button data-testid="button-create-first-project" onClick={() => setIsDialogOpen(true)}>
+                <Button data-testid="button-create-first-product" onClick={() => setIsDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Create Your First Project
+                  Create Your First Product
                 </Button>
               </CardContent>
             </Card>
@@ -411,7 +411,7 @@ export default function Projects() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEditDialog(project)} data-testid={`menu-edit-${project.id}`}>
                             <Edit2 className="mr-2 h-4 w-4" />
-                            Edit Project
+                            Edit Product
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {project.status !== "active" && (
@@ -437,14 +437,14 @@ export default function Projects() {
                             <AlertDialogTrigger asChild>
                               <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive" data-testid={`menu-delete-${project.id}`}>
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete Project
+                                Delete Product
                               </DropdownMenuItem>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will delete the project "{project.name}". Competitors will be unlinked but not deleted. This action cannot be undone.
+                                  This will delete the product "{project.name}" and all associated features and roadmap items. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -500,11 +500,23 @@ export default function Projects() {
                       <span className="text-xs text-muted-foreground">
                         Created {new Date(project.createdAt).toLocaleDateString()}
                       </span>
-                      <Link href={`/app/projects/${project.id}`}>
-                        <Button variant="outline" size="sm" data-testid={`button-view-${project.id}`}>
-                          View Project
-                        </Button>
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/app/products/${project.id}/features`}>
+                          <Button variant="ghost" size="sm" data-testid={`button-features-${project.id}`}>
+                            Features
+                          </Button>
+                        </Link>
+                        <Link href={`/app/products/${project.id}/roadmap`}>
+                          <Button variant="ghost" size="sm" data-testid={`button-roadmap-${project.id}`}>
+                            Roadmap
+                          </Button>
+                        </Link>
+                        <Link href={`/app/products/${project.id}`}>
+                          <Button variant="outline" size="sm" data-testid={`button-view-${project.id}`}>
+                            View Product
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -518,9 +530,9 @@ export default function Projects() {
         <DialogContent>
           <form onSubmit={handleEditSubmit}>
             <DialogHeader>
-              <DialogTitle>Edit Project</DialogTitle>
+              <DialogTitle>Edit Product</DialogTitle>
               <DialogDescription>
-                Update the project details.
+                Update the product details.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">

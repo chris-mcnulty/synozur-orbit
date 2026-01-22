@@ -308,3 +308,88 @@ Return ONLY valid JSON, no additional text.`,
     return { hasChanges: false, description: "", impact: "Low" };
   }
 }
+
+export interface RoadmapRecommendation {
+  type: "gap" | "opportunity" | "priority" | "risk";
+  title: string;
+  explanation: string;
+  suggestedPriority: "high" | "medium" | "low";
+  suggestedQuarter: string | null;
+  relatedCompetitors: string[];
+}
+
+export async function generateRoadmapRecommendations(
+  productName: string,
+  productDescription: string,
+  existingFeatures: { name: string; status: string; category: string | null }[],
+  competitorData: { name: string; analysis: string }[]
+): Promise<RoadmapRecommendation[]> {
+  const featuresContext = existingFeatures.length > 0
+    ? existingFeatures.map(f => `- ${f.name} (${f.status}${f.category ? `, ${f.category}` : ""})`).join("\n")
+    : "No features documented yet.";
+
+  const competitorContext = competitorData.length > 0
+    ? competitorData.map(c => `Competitor: ${c.name}\nAnalysis: ${c.analysis}`).join("\n\n")
+    : "No competitor analysis available yet.";
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 2048,
+    messages: [
+      {
+        role: "user",
+        content: `You are a product strategy advisor. Based on competitive intelligence, suggest roadmap recommendations for the following product.
+
+PRODUCT: ${productName}
+${productDescription ? `Description: ${productDescription}` : ""}
+
+CURRENT FEATURES:
+${featuresContext}
+
+COMPETITIVE INTELLIGENCE:
+${competitorContext.slice(0, 10000)}
+
+Analyze the competitive landscape and suggest 3-5 roadmap recommendations. Each recommendation should be one of these types:
+- "gap": Feature gaps where competitors have capabilities the product lacks
+- "opportunity": Market opportunities to differentiate from competitors
+- "priority": Suggestions to reprioritize existing planned features
+- "risk": Risks if certain features are not addressed
+
+Return a JSON array with recommendations in this format:
+[
+  {
+    "type": "gap|opportunity|priority|risk",
+    "title": "Recommendation title",
+    "explanation": "Detailed explanation of why this is important and how it relates to competitive positioning (2-3 sentences)",
+    "suggestedPriority": "high|medium|low",
+    "suggestedQuarter": "Q1|Q2|Q3|Q4" or null,
+    "relatedCompetitors": ["CompetitorName1", "CompetitorName2"]
+  }
+]
+
+Return ONLY valid JSON array, no additional text.`,
+      },
+    ],
+  });
+
+  const content = message.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type");
+  }
+
+  try {
+    let text = content.text.trim();
+    if (text.startsWith("```json")) {
+      text = text.slice(7);
+    } else if (text.startsWith("```")) {
+      text = text.slice(3);
+    }
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error("Failed to parse roadmap recommendations:", content.text, e);
+    return [];
+  }
+}

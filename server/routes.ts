@@ -11,7 +11,7 @@ import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "./ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -4650,6 +4650,273 @@ Respond in JSON format:
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // === Product Features CRUD ===
+  
+  // Get features for a product
+  app.get("/api/products/:productId/features", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const features = await storage.getProductFeaturesByProduct(req.params.productId);
+      res.json(features);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create feature for a product
+  app.post("/api/products/:productId/features", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const feature = await storage.createProductFeature({
+        ...req.body,
+        productId: req.params.productId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+      res.status(201).json(feature);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update feature
+  app.patch("/api/products/:productId/features/:featureId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const feature = await storage.getProductFeature(req.params.featureId);
+      if (!feature || feature.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Feature not found" });
+      }
+      
+      const updated = await storage.updateProductFeature(req.params.featureId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete feature
+  app.delete("/api/products/:productId/features/:featureId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const feature = await storage.getProductFeature(req.params.featureId);
+      if (!feature || feature.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Feature not found" });
+      }
+      
+      await storage.deleteProductFeature(req.params.featureId);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // === Roadmap Items CRUD ===
+  
+  // Get roadmap items for a product
+  app.get("/api/products/:productId/roadmap", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const items = await storage.getRoadmapItemsByProduct(req.params.productId);
+      res.json(items);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create roadmap item
+  app.post("/api/products/:productId/roadmap", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const item = await storage.createRoadmapItem({
+        ...req.body,
+        productId: req.params.productId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update roadmap item
+  app.patch("/api/products/:productId/roadmap/:itemId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const item = await storage.getRoadmapItem(req.params.itemId);
+      if (!item || item.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Roadmap item not found" });
+      }
+      
+      const updated = await storage.updateRoadmapItem(req.params.itemId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete roadmap item
+  app.delete("/api/products/:productId/roadmap/:itemId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const item = await storage.getRoadmapItem(req.params.itemId);
+      if (!item || item.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Roadmap item not found" });
+      }
+      
+      await storage.deleteRoadmapItem(req.params.itemId);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // === Feature Recommendations CRUD ===
+  
+  // Get recommendations for a product
+  app.get("/api/products/:productId/recommendations", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const recommendations = await storage.getFeatureRecommendationsByProduct(req.params.productId);
+      res.json(recommendations);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update recommendation status (accept/dismiss)
+  app.patch("/api/products/:productId/recommendations/:recId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      const rec = await storage.getFeatureRecommendation(req.params.recId);
+      if (!rec || rec.productId !== req.params.productId) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+      
+      const updated = await storage.updateFeatureRecommendation(req.params.recId, { status: req.body.status });
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate AI roadmap recommendations for a product
+  app.post("/api/products/:productId/recommendations/generate", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+      
+      // Get existing features for this product
+      const features = await storage.getProductFeaturesByProduct(req.params.productId);
+      const featuresContext = features.map(f => ({
+        name: f.name,
+        status: f.status,
+        category: f.category,
+      }));
+      
+      // Get competitor data from assessments/analyses
+      const competitors = await storage.getCompetitorsByContext(ctx.tenantDomain, ctx.marketId);
+      const competitorData: { name: string; analysis: string }[] = [];
+      
+      for (const comp of competitors.slice(0, 5)) {
+        const analyses = await storage.getAnalysesByCompetitor(comp.id, ctx.tenantDomain, ctx.marketId);
+        if (analyses.length > 0 && analyses[0].content) {
+          competitorData.push({
+            name: comp.name,
+            analysis: typeof analyses[0].content === 'string' 
+              ? analyses[0].content 
+              : JSON.stringify(analyses[0].content),
+          });
+        }
+      }
+      
+      // Generate recommendations using AI
+      const recommendations = await generateRoadmapRecommendations(
+        product.name,
+        product.description || "",
+        featuresContext,
+        competitorData
+      );
+      
+      // Save recommendations to database
+      const savedRecs = [];
+      for (const rec of recommendations) {
+        const saved = await storage.createFeatureRecommendation({
+          productId: req.params.productId,
+          type: rec.type,
+          title: rec.title,
+          explanation: rec.explanation,
+          suggestedPriority: rec.suggestedPriority,
+          suggestedQuarter: rec.suggestedQuarter,
+          relatedCompetitors: rec.relatedCompetitors,
+          status: "pending",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+        });
+        savedRecs.push(saved);
+      }
+      
+      res.json(savedRecs);
+    } catch (error: any) {
+      console.error("Failed to generate recommendations:", error);
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
     }
   });

@@ -86,6 +86,15 @@ import {
   type InsertMarketingPlan,
   type MarketingTask,
   type InsertMarketingTask,
+  productFeatures,
+  roadmapItems,
+  featureRecommendations,
+  type ProductFeature,
+  type InsertProductFeature,
+  type RoadmapItem,
+  type InsertRoadmapItem,
+  type FeatureRecommendation,
+  type InsertFeatureRecommendation,
   competitorScores,
   socialMetrics,
   executiveSummaries
@@ -355,6 +364,30 @@ export interface IStorage {
     dailyUsage: Record<string, number>;
     recentLogs: AiUsage[];
   }>;
+  
+  // Product Feature methods
+  getProductFeature(id: string): Promise<ProductFeature | undefined>;
+  getProductFeaturesByProduct(productId: string): Promise<ProductFeature[]>;
+  getProductFeaturesByContext(ctx: ContextFilter): Promise<ProductFeature[]>;
+  createProductFeature(feature: InsertProductFeature): Promise<ProductFeature>;
+  updateProductFeature(id: string, data: Partial<ProductFeature>): Promise<ProductFeature>;
+  deleteProductFeature(id: string): Promise<void>;
+  
+  // Roadmap Item methods
+  getRoadmapItem(id: string): Promise<RoadmapItem | undefined>;
+  getRoadmapItemsByProduct(productId: string): Promise<RoadmapItem[]>;
+  getRoadmapItemsByContext(ctx: ContextFilter): Promise<RoadmapItem[]>;
+  createRoadmapItem(item: InsertRoadmapItem): Promise<RoadmapItem>;
+  updateRoadmapItem(id: string, data: Partial<RoadmapItem>): Promise<RoadmapItem>;
+  deleteRoadmapItem(id: string): Promise<void>;
+  
+  // Feature Recommendation methods
+  getFeatureRecommendation(id: string): Promise<FeatureRecommendation | undefined>;
+  getFeatureRecommendationsByProduct(productId: string): Promise<FeatureRecommendation[]>;
+  getFeatureRecommendationsByContext(ctx: ContextFilter): Promise<FeatureRecommendation[]>;
+  createFeatureRecommendation(recommendation: InsertFeatureRecommendation): Promise<FeatureRecommendation>;
+  updateFeatureRecommendation(id: string, data: Partial<FeatureRecommendation>): Promise<FeatureRecommendation>;
+  deleteFeatureRecommendation(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2147,6 +2180,132 @@ export class DatabaseStorage implements IStorage {
       .where(eq(marketingTasks.planId, planId))
       .returning();
     return result.length;
+  }
+
+  // Product Feature methods
+  async getProductFeature(id: string): Promise<ProductFeature | undefined> {
+    const [feature] = await db.select().from(productFeatures).where(eq(productFeatures.id, id));
+    return feature || undefined;
+  }
+
+  async getProductFeaturesByProduct(productId: string): Promise<ProductFeature[]> {
+    return db.select().from(productFeatures)
+      .where(eq(productFeatures.productId, productId))
+      .orderBy(productFeatures.priority, productFeatures.name);
+  }
+
+  async getProductFeaturesByContext(ctx: ContextFilter): Promise<ProductFeature[]> {
+    const marketCondition = ctx.marketId 
+      ? eq(productFeatures.marketId, ctx.marketId)
+      : isNull(productFeatures.marketId);
+    
+    return db.select().from(productFeatures)
+      .where(and(
+        eq(productFeatures.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .orderBy(productFeatures.name);
+  }
+
+  async createProductFeature(feature: InsertProductFeature): Promise<ProductFeature> {
+    const [created] = await db.insert(productFeatures).values(feature).returning();
+    return created;
+  }
+
+  async updateProductFeature(id: string, data: Partial<ProductFeature>): Promise<ProductFeature> {
+    const [updated] = await db.update(productFeatures)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(productFeatures.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProductFeature(id: string): Promise<void> {
+    await db.delete(productFeatures).where(eq(productFeatures.id, id));
+  }
+
+  // Roadmap Item methods
+  async getRoadmapItem(id: string): Promise<RoadmapItem | undefined> {
+    const [item] = await db.select().from(roadmapItems).where(eq(roadmapItems.id, id));
+    return item || undefined;
+  }
+
+  async getRoadmapItemsByProduct(productId: string): Promise<RoadmapItem[]> {
+    return db.select().from(roadmapItems)
+      .where(eq(roadmapItems.productId, productId))
+      .orderBy(roadmapItems.year, roadmapItems.quarter);
+  }
+
+  async getRoadmapItemsByContext(ctx: ContextFilter): Promise<RoadmapItem[]> {
+    const marketCondition = ctx.marketId 
+      ? eq(roadmapItems.marketId, ctx.marketId)
+      : isNull(roadmapItems.marketId);
+    
+    return db.select().from(roadmapItems)
+      .where(and(
+        eq(roadmapItems.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .orderBy(roadmapItems.year, roadmapItems.quarter);
+  }
+
+  async createRoadmapItem(item: InsertRoadmapItem): Promise<RoadmapItem> {
+    const [created] = await db.insert(roadmapItems).values(item).returning();
+    return created;
+  }
+
+  async updateRoadmapItem(id: string, data: Partial<RoadmapItem>): Promise<RoadmapItem> {
+    const [updated] = await db.update(roadmapItems)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(roadmapItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRoadmapItem(id: string): Promise<void> {
+    await db.delete(roadmapItems).where(eq(roadmapItems.id, id));
+  }
+
+  // Feature Recommendation methods
+  async getFeatureRecommendation(id: string): Promise<FeatureRecommendation | undefined> {
+    const [rec] = await db.select().from(featureRecommendations).where(eq(featureRecommendations.id, id));
+    return rec || undefined;
+  }
+
+  async getFeatureRecommendationsByProduct(productId: string): Promise<FeatureRecommendation[]> {
+    return db.select().from(featureRecommendations)
+      .where(eq(featureRecommendations.productId, productId))
+      .orderBy(desc(featureRecommendations.createdAt));
+  }
+
+  async getFeatureRecommendationsByContext(ctx: ContextFilter): Promise<FeatureRecommendation[]> {
+    const marketCondition = ctx.marketId 
+      ? eq(featureRecommendations.marketId, ctx.marketId)
+      : isNull(featureRecommendations.marketId);
+    
+    return db.select().from(featureRecommendations)
+      .where(and(
+        eq(featureRecommendations.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .orderBy(desc(featureRecommendations.createdAt));
+  }
+
+  async createFeatureRecommendation(recommendation: InsertFeatureRecommendation): Promise<FeatureRecommendation> {
+    const [created] = await db.insert(featureRecommendations).values(recommendation).returning();
+    return created;
+  }
+
+  async updateFeatureRecommendation(id: string, data: Partial<FeatureRecommendation>): Promise<FeatureRecommendation> {
+    const [updated] = await db.update(featureRecommendations)
+      .set(data)
+      .where(eq(featureRecommendations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteFeatureRecommendation(id: string): Promise<void> {
+    await db.delete(featureRecommendations).where(eq(featureRecommendations.id, id));
   }
 }
 

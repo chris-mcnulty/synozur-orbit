@@ -150,6 +150,7 @@ export const products = pgTable("products", {
   url: text("url"), // Product page URL
   companyName: text("company_name"), // Company that makes this product
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
+  isBaseline: boolean("is_baseline").default(false), // True for your products, false for competitor products
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   createdBy: varchar("created_by").notNull().references(() => users.id),
@@ -157,6 +158,59 @@ export const products = pgTable("products", {
   analysisData: jsonb("analysis_data"), // AI analysis of product
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Product Features - for tracking product capabilities
+export const productFeatures = pgTable("product_features", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"), // e.g., Security, Analytics, UX, Integration
+  status: text("status").notNull().default("planned"), // backlog, planned, in_progress, released
+  priority: text("priority").default("medium"), // high, medium, low
+  targetQuarter: text("target_quarter"), // Q1, Q2, Q3, Q4 or null
+  targetYear: integer("target_year"),
+  competitorParity: jsonb("competitor_parity"), // JSON array of competitor IDs that have similar features
+  sourceType: text("source_type").notNull().default("manual"), // manual, csv, parsed, scraped
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Roadmap Items - for product roadmap management
+export const roadmapItems = pgTable("roadmap_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  featureId: varchar("feature_id").references(() => productFeatures.id, { onDelete: "set null" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  quarter: text("quarter"), // Q1, Q2, Q3, Q4, or null for unscheduled
+  year: integer("year"),
+  effort: text("effort"), // xs, s, m, l, xl
+  status: text("status").notNull().default("planned"), // planned, in_progress, completed, deferred
+  aiRecommended: boolean("ai_recommended").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Feature Recommendations - AI-generated suggestions
+export const featureRecommendations = pgTable("feature_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  type: text("type").notNull(), // gap, opportunity, priority, risk
+  title: text("title").notNull(),
+  explanation: text("explanation").notNull(), // Detailed AI rationale
+  relatedCompetitors: jsonb("related_competitors"), // JSON array of competitor IDs
+  suggestedPriority: text("suggested_priority"), // high, medium, low
+  suggestedQuarter: text("suggested_quarter"),
+  status: text("status").notNull().default("pending"), // pending, accepted, dismissed
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const projectProducts = pgTable("project_products", {
@@ -444,6 +498,23 @@ export const insertProjectProductSchema = createInsertSchema(projectProducts).om
   createdAt: true,
 });
 
+export const insertProductFeatureSchema = createInsertSchema(productFeatures).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRoadmapItemSchema = createInsertSchema(roadmapItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFeatureRecommendationSchema = createInsertSchema(featureRecommendations).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertBattlecardSchema = createInsertSchema(battlecards).omit({
   id: true,
   createdAt: true,
@@ -486,6 +557,12 @@ export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 export type InsertProjectProduct = z.infer<typeof insertProjectProductSchema>;
 export type ProjectProduct = typeof projectProducts.$inferSelect;
+export type InsertProductFeature = z.infer<typeof insertProductFeatureSchema>;
+export type ProductFeature = typeof productFeatures.$inferSelect;
+export type InsertRoadmapItem = z.infer<typeof insertRoadmapItemSchema>;
+export type RoadmapItem = typeof roadmapItems.$inferSelect;
+export type InsertFeatureRecommendation = z.infer<typeof insertFeatureRecommendationSchema>;
+export type FeatureRecommendation = typeof featureRecommendations.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;

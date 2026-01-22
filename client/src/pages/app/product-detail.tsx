@@ -100,7 +100,7 @@ interface LongFormRecommendation {
   updatedAt?: string;
 }
 
-export default function ProjectDetail() {
+export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -344,7 +344,7 @@ export default function ProjectDetail() {
       document.body.removeChild(a);
       toast({
         title: "Export Complete",
-        description: "Project report has been downloaded.",
+        description: "Product report has been downloaded.",
       });
     } catch (error: any) {
       toast({
@@ -987,9 +987,9 @@ export default function ProjectDetail() {
           <div className="max-w-6xl mx-auto">
             <Card>
               <CardContent className="py-16 text-center">
-                <p>Project not found</p>
-                <Link href="/app/projects">
-                  <Button variant="outline" className="mt-4">Back to Projects</Button>
+                <p>Product not found</p>
+                <Link href="/app/products">
+                  <Button variant="outline" className="mt-4">Back to Products</Button>
                 </Link>
               </CardContent>
             </Card>
@@ -1005,13 +1005,13 @@ export default function ProjectDetail() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              <Link href="/app/projects">
+              <Link href="/app/products">
                 <Button variant="ghost" size="icon" data-testid="button-back">
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
               </Link>
               <div>
-                <h1 className="text-2xl font-bold" data-testid="text-project-name">{project.name}</h1>
+                <h1 className="text-2xl font-bold" data-testid="text-product-name">{project.name}</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <Badge variant="outline" className="text-xs">
                     {project.analysisType === "product" ? (
@@ -1052,7 +1052,7 @@ export default function ProjectDetail() {
                 )}
                 Export
               </Button>
-              <Link href={`/app/projects/${project.id}/executive-summary`}>
+              <Link href={`/app/products/${project.id}/executive-summary`}>
                 <Button variant="outline" className="gap-2" data-testid="button-executive-summary">
                   <FileText className="h-4 w-4" />
                   Executive Summary
