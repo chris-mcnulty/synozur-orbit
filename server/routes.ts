@@ -9502,14 +9502,25 @@ Only use these timeframe values: ${periods.join(", ")}`;
       console.log("AI Response length:", aiResponse.length);
       console.log("AI Response (first 500 chars):", aiResponse.substring(0, 500));
       
+      // Strip markdown code fences if present
+      let cleanedResponse = aiResponse.trim();
+      if (cleanedResponse.startsWith("```json")) {
+        cleanedResponse = cleanedResponse.slice(7);
+      } else if (cleanedResponse.startsWith("```")) {
+        cleanedResponse = cleanedResponse.slice(3);
+      }
+      if (cleanedResponse.endsWith("```")) {
+        cleanedResponse = cleanedResponse.slice(0, -3);
+      }
+      cleanedResponse = cleanedResponse.trim();
+      
       try {
         // First, try to parse the entire response as JSON
-        const trimmedResponse = aiResponse.trim();
-        if (trimmedResponse.startsWith("{")) {
-          const parsed = JSON.parse(trimmedResponse);
+        if (cleanedResponse.startsWith("{")) {
+          const parsed = JSON.parse(cleanedResponse);
           generatedTasks = parsed.tasks || [];
-        } else if (trimmedResponse.startsWith("[")) {
-          generatedTasks = JSON.parse(trimmedResponse);
+        } else if (cleanedResponse.startsWith("[")) {
+          generatedTasks = JSON.parse(cleanedResponse);
         }
       } catch (firstParseError) {
         console.log("Direct parse failed, trying regex extraction...");
