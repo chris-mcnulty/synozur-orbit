@@ -30,6 +30,7 @@ interface ClientProject {
   createdAt: string;
   updatedAt: string;
   competitors?: any[];
+  baselineProductId?: string | null;
 }
 
 export default function Products() {
@@ -501,16 +502,20 @@ export default function Products() {
                         Created {new Date(project.createdAt).toLocaleDateString()}
                       </span>
                       <div className="flex items-center gap-2">
-                        <Link href={`/app/products/${project.id}/features`}>
-                          <Button variant="ghost" size="sm" data-testid={`button-features-${project.id}`}>
-                            Features
-                          </Button>
-                        </Link>
-                        <Link href={`/app/products/${project.id}/roadmap`}>
-                          <Button variant="ghost" size="sm" data-testid={`button-roadmap-${project.id}`}>
-                            Roadmap
-                          </Button>
-                        </Link>
+                        {project.baselineProductId && (
+                          <>
+                            <Link href={`/app/products/${project.baselineProductId}/features`}>
+                              <Button variant="ghost" size="sm" data-testid={`button-features-${project.id}`}>
+                                Features
+                              </Button>
+                            </Link>
+                            <Link href={`/app/products/${project.baselineProductId}/roadmap`}>
+                              <Button variant="ghost" size="sm" data-testid={`button-roadmap-${project.id}`}>
+                                Roadmap
+                              </Button>
+                            </Link>
+                          </>
+                        )}
                         <Link href={`/app/products/${project.id}`}>
                           <Button variant="outline" size="sm" data-testid={`button-view-${project.id}`}>
                             View Product

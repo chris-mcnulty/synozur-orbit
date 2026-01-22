@@ -4327,7 +4327,20 @@ Respond in JSON format:
       }
 
       const projects = await storage.getClientProjectsByContext(toContextFilter(ctx));
-      res.json(projects);
+      
+      // Enrich projects with their baseline product ID for Features/Roadmap links
+      const enrichedProjects = await Promise.all(
+        projects.map(async (project) => {
+          const projectProducts = await storage.getProjectProducts(project.id);
+          const baselineProduct = projectProducts.find((pp: { role: string }) => pp.role === "baseline");
+          return {
+            ...project,
+            baselineProductId: baselineProduct?.productId || null,
+          };
+        })
+      );
+      
+      res.json(enrichedProjects);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -4871,18 +4884,19 @@ Respond in JSON format:
         category: f.category,
       }));
       
-      // Get competitor data from assessments/analyses
-      const competitors = await storage.getCompetitorsByContext(ctx.tenantDomain, ctx.marketId);
+      // Get competitor data from their stored analysis data
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       const competitorData: { name: string; analysis: string }[] = [];
       
       for (const comp of competitors.slice(0, 5)) {
-        const analyses = await storage.getAnalysesByCompetitor(comp.id, ctx.tenantDomain, ctx.marketId);
-        if (analyses.length > 0 && analyses[0].content) {
+        // Use the competitor's stored analysis data if available
+        if (comp.analysisData) {
+          const analysisText = typeof comp.analysisData === 'string' 
+            ? comp.analysisData 
+            : JSON.stringify(comp.analysisData);
           competitorData.push({
             name: comp.name,
-            analysis: typeof analyses[0].content === 'string' 
-              ? analyses[0].content 
-              : JSON.stringify(analyses[0].content),
+            analysis: analysisText,
           });
         }
       }
