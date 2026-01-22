@@ -4800,12 +4800,12 @@ Respond in JSON format:
       console.log(`[Feature Import] URL: ${url}, HTML length: ${html.length}, Text length: ${textContent.length}`);
       console.log(`[Feature Import] Text preview: ${textContent.slice(0, 500)}...`);
       
-      if (textContent.length < 100) {
-        return res.status(400).json({ error: "Could not extract sufficient content from URL. The page may use JavaScript rendering. Try pasting the content directly instead." });
-      }
-      
       const extractedFeatures = await extractFeaturesFromContent(textContent, "url", product.name);
       console.log(`[Feature Import] Extracted ${extractedFeatures.length} features`);
+      
+      if (extractedFeatures.length === 0) {
+        return res.status(400).json({ error: "No features could be extracted from the URL. The page may use JavaScript rendering. Try pasting the content directly instead." });
+      }
       
       // Create features in database
       const createdFeatures = [];
