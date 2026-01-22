@@ -46,6 +46,28 @@ interface ProjectSummary {
   productCount: number;
 }
 
+interface ProductFeatureData {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  status: string;
+  priority: string | null;
+  targetQuarter: string | null;
+  targetYear: number | null;
+}
+
+interface RoadmapItemData {
+  id: string;
+  title: string;
+  description: string | null;
+  quarter: string | null;
+  year: number | null;
+  effort: string | null;
+  status: string;
+  aiRecommended: boolean;
+}
+
 interface ReportData {
   companyProfile: CompanyProfile | null;
   companyName: string;
@@ -67,6 +89,9 @@ interface ReportData {
   projectName?: string;
   gtmPlan?: string | null;
   messagingFramework?: string | null;
+  baselineProductName?: string;
+  productFeatures?: ProductFeatureData[];
+  roadmapItems?: RoadmapItemData[];
 }
 
 function escapeHtml(text: string): string {
@@ -243,6 +268,55 @@ function generateReportHtml(data: ReportData): string {
       </div>
       <div style="color: #D1D5DB; font-size: 14px;">${escapeHtml(rec.description)}</div>
       <div style="color: #9CA3AF; font-size: 12px; margin-top: 8px;">Area: ${escapeHtml(rec.area)}</div>
+    </div>
+  `).join("");
+
+  const getStatusColor = (status: string): string => {
+    switch (status) {
+      case "released": case "completed": return "#10B981";
+      case "in_progress": return "#3B82F6";
+      case "planned": return "#F59E0B";
+      default: return "#6B7280";
+    }
+  };
+
+  const getEffortLabel = (effort: string | null): string => {
+    const labels: Record<string, string> = {
+      xs: "XS (1-2 days)", s: "S (1 week)", m: "M (2-4 weeks)",
+      l: "L (1-2 months)", xl: "XL (3+ months)"
+    };
+    return effort ? labels[effort] || effort.toUpperCase() : "";
+  };
+
+  const featureCards = (data.productFeatures || []).map((f) => `
+    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div style="font-weight: 600; color: #F9FAFB;">${escapeHtml(f.name)}</div>
+        <span style="background: ${getStatusColor(f.status)}20; color: ${getStatusColor(f.status)}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(f.status.replace("_", " "))}</span>
+      </div>
+      ${f.description ? `<div style="color: #D1D5DB; font-size: 14px; margin-bottom: 8px;">${escapeHtml(f.description)}</div>` : ""}
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        ${f.category ? `<span style="color: #9CA3AF; font-size: 12px;">Category: ${escapeHtml(f.category)}</span>` : ""}
+        ${f.priority ? `<span style="color: #9CA3AF; font-size: 12px;">Priority: ${escapeHtml(f.priority)}</span>` : ""}
+        ${f.targetQuarter ? `<span style="color: #9CA3AF; font-size: 12px;">Target: ${escapeHtml(f.targetQuarter)} ${f.targetYear || ""}</span>` : ""}
+      </div>
+    </div>
+  `).join("");
+
+  const roadmapCards = (data.roadmapItems || []).map((r) => `
+    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div style="font-weight: 600; color: #F9FAFB;">
+          ${escapeHtml(r.title)}
+          ${r.aiRecommended ? `<span style="background: #818CF820; color: #818CF8; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 8px;">AI</span>` : ""}
+        </div>
+        <span style="background: ${getStatusColor(r.status)}20; color: ${getStatusColor(r.status)}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(r.status.replace("_", " "))}</span>
+      </div>
+      ${r.description ? `<div style="color: #D1D5DB; font-size: 14px; margin-bottom: 8px;">${escapeHtml(r.description)}</div>` : ""}
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        ${r.quarter ? `<span style="color: #9CA3AF; font-size: 12px;">Quarter: ${escapeHtml(r.quarter)} ${r.year || ""}</span>` : "<span style=\"color: #9CA3AF; font-size: 12px;\">Unscheduled</span>"}
+        ${r.effort ? `<span style="color: #9CA3AF; font-size: 12px;">Effort: ${escapeHtml(getEffortLabel(r.effort))}</span>` : ""}
+      </div>
     </div>
   `).join("");
 
@@ -576,6 +650,46 @@ function generateReportHtml(data: ReportData): string {
   </div>
   ` : ""}
 
+  ${data.productFeatures && data.productFeatures.length > 0 ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Product Features</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">${data.baselineProductName ? escapeHtml(data.baselineProductName) + " - " : ""}Features (${data.productFeatures.length})</div>
+      ${featureCards}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ""}
+
+  ${data.roadmapItems && data.roadmapItems.length > 0 ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Product Roadmap</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">${data.baselineProductName ? escapeHtml(data.baselineProductName) + " - " : ""}Roadmap (${data.roadmapItems.length})</div>
+      ${roadmapCards}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ""}
+
   ${socialWebCards ? `
   <div class="page-break"></div>
   <div class="content-wrapper">
@@ -698,6 +812,11 @@ export async function generatePdfReport(
     marketName = market?.name;
   }
 
+  let baselineProductId: string | null = null;
+  let baselineProductName: string | undefined;
+  let productFeatures: ProductFeatureData[] = [];
+  let roadmapItems: RoadmapItemData[] = [];
+
   if (scope === "project" && projectId) {
     const project = await storage.getClientProject(projectId);
     if (!project) {
@@ -706,6 +825,37 @@ export async function generatePdfReport(
     projectName = project.name;
     competitors = await storage.getCompetitorsByProject(projectId);
     companyProfile = (await storage.getCompanyProfileByContext(contextFilter)) || null;
+    
+    const projectProducts = await storage.getProjectProducts(projectId);
+    const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+    if (baselineProduct) {
+      baselineProductId = baselineProduct.productId;
+      baselineProductName = baselineProduct.product.name;
+      
+      const features = await storage.getProductFeaturesByProduct(baselineProductId);
+      productFeatures = features.map(f => ({
+        id: f.id,
+        name: f.name,
+        description: f.description,
+        category: f.category,
+        status: f.status,
+        priority: f.priority,
+        targetQuarter: f.targetQuarter,
+        targetYear: f.targetYear,
+      }));
+      
+      const roadmap = await storage.getRoadmapItemsByProduct(baselineProductId);
+      roadmapItems = roadmap.map(r => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        quarter: r.quarter,
+        year: r.year,
+        effort: r.effort,
+        status: r.status,
+        aiRecommended: r.aiRecommended || false,
+      }));
+    }
   } else {
     companyProfile = (await storage.getCompanyProfileByContext(contextFilter)) || null;
     competitors = await storage.getCompetitorsByContext(contextFilter);
@@ -817,6 +967,9 @@ export async function generatePdfReport(
     projectName,
     gtmPlan,
     messagingFramework,
+    baselineProductName,
+    productFeatures: productFeatures.length > 0 ? productFeatures : undefined,
+    roadmapItems: roadmapItems.length > 0 ? roadmapItems : undefined,
   };
 
   const html = generateReportHtml(reportData);
