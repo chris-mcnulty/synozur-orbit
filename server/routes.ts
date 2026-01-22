@@ -9424,6 +9424,13 @@ Generate a comprehensive battlecard in this JSON format:
       // Get competitive intelligence context
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      const recommendations = await storage.getRecommendationsByContext(toContextFilter(ctx));
+      
+      // Get GTM plan (long-form recommendation) if available
+      let gtmPlan: any = null;
+      if (companyProfile) {
+        gtmPlan = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
+      }
       
       // Category labels for the prompt
       const categoryLabels: Record<string, string> = {
@@ -9476,27 +9483,66 @@ Generate a comprehensive battlecard in this JSON format:
       if (competitors.length > 0) {
         contextInfo += `Key Competitors: ${competitors.slice(0, 5).map((c: any) => c.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || c.id).join(", ")}\n`;
       }
+      
+      // Add GTM Plan context (most important input)
+      let gtmPlanContext = "";
+      if (gtmPlan?.content && gtmPlan.status === "generated") {
+        // Truncate to ~3000 chars to leave room for other context
+        const truncatedGtm = gtmPlan.content.length > 3000 
+          ? gtmPlan.content.substring(0, 3000) + "..." 
+          : gtmPlan.content;
+        gtmPlanContext = `\n## Draft GTM Plan (Key Strategic Input)\n${truncatedGtm}\n`;
+      }
+      
+      // Add AI Recommendations context
+      let recommendationsContext = "";
+      const activeRecs = recommendations.filter((r: any) => r.status !== "dismissed").slice(0, 10);
+      if (activeRecs.length > 0) {
+        recommendationsContext = `\n## Strategic Recommendations\n`;
+        activeRecs.forEach((r: any) => {
+          recommendationsContext += `- [${r.area}] ${r.title}: ${r.description?.substring(0, 150) || ""}...\n`;
+        });
+      }
+      
+      // Add competitor insights if available
+      let competitorInsights = "";
+      const competitorsWithData = competitors.filter((c: any) => c.strengthsWeaknesses || c.lastAnalysisDate).slice(0, 3);
+      if (competitorsWithData.length > 0) {
+        competitorInsights = `\n## Competitor Insights\n`;
+        competitorsWithData.forEach((c: any) => {
+          const name = c.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || "Competitor";
+          if (c.strengthsWeaknesses) {
+            const sw = typeof c.strengthsWeaknesses === 'string' ? c.strengthsWeaknesses : JSON.stringify(c.strengthsWeaknesses);
+            competitorInsights += `${name}: ${sw.substring(0, 200)}...\n`;
+          }
+        });
+      }
 
       const prompt = `Generate marketing tasks for a ${plan.fiscalYear} marketing plan.
 
-Context:
+## Company Context
 ${contextInfo}
+${gtmPlanContext}
+${recommendationsContext}
+${competitorInsights}
 
+## Task Generation Request
 Selected Activity Categories: ${selectedCategoryNames.join(", ")}
 Time Periods: ${selectedPeriodNames.join(", ")}
 
 Generate 2-3 specific, actionable marketing tasks for EACH selected category. Each task should:
 1. Be specific and measurable
-2. Align with the company's competitive positioning
-3. Include a suggested priority (High, Medium, or Low)
-4. Be assigned to one of the selected time periods
+2. DIRECTLY ALIGN with the Draft GTM Plan strategies and recommendations above
+3. Address competitive gaps or opportunities identified in the strategic recommendations
+4. Include a suggested priority (High, Medium, or Low)
+5. Be assigned to one of the selected time periods (use "steady_state" for ongoing activities)
 
 Respond in JSON format:
 {
   "tasks": [
     {
       "title": "Task title",
-      "description": "Brief description of the task",
+      "description": "Brief description of the task and how it supports the GTM strategy",
       "activityGroup": "category_value",
       "priority": "High|Medium|Low",
       "timeframe": "period_value"

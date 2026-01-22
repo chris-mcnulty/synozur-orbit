@@ -240,18 +240,29 @@ Pre-validate all user-entered URLs and uploaded data before crawling or processi
 #### Marketing Planner
 **Status**: Phase 1 Complete (Enterprise-only)
 Break down AI-generated GTM plan into actionable tasks that can be accepted/removed:
-- [x] Marketing plan CRUD with timeframe selection (quarterly, half-year, annual)
+- [x] Marketing plan CRUD with multi-select quarter/period selection (Steady State, Q1-Q4, Future)
 - [x] Task management with 19 activity categories (Events, Digital Marketing, Outbound, etc.)
 - [x] Enterprise plan gating with upgrade prompt for non-Enterprise users
 - [x] Navigation integration with Diamond (Gem) icon
 - [x] Defense-in-depth security with market context filtering on all operations
-- [ ] AI-generated task suggestions from competitive intelligence
+- [x] AI-generated task suggestions informed by GTM Plan, Recommendations, and Competitor Insights
 - [ ] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
 - [ ] Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks
 - [ ] Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs
 - [x] Uses comprehensive marketing activities document as grounding (19 categories stored)
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
 **Effort**: High (Phase 1 complete, remaining phases in progress)
+
+#### Editable GTM Plan
+**Status**: Not implemented
+The draft GTM plan is the primary strategic input for Marketing Planner task generation. Users should be able to edit it directly:
+- [ ] View GTM plan in editable markdown/rich text editor
+- [ ] Add, edit, and delete strategic elements (goals, initiatives, messaging pillars)
+- [ ] Track version history of GTM plan changes
+- [ ] Manual save vs auto-save options
+- [ ] Indicate which elements are AI-generated vs user-edited
+- [ ] Re-generate specific sections while preserving user edits
+**Effort**: Medium
 
 #### Competitor Document Uploads
 **Status**: Not implemented
