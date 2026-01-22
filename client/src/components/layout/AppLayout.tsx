@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -25,11 +25,17 @@ import {
   Swords,
   Database,
   Info,
-  Gem
+  Gem,
+  ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useUser } from "@/lib/userContext";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -43,12 +49,39 @@ type NavIndicator = {
   count?: number;
 };
 
+// Default expanded sections - Setup and Insights are expanded by default
+const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights'];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
   const { user, logout, loading, refetch: refetchUser } = useUser();
+  
+  // Load expanded sections from localStorage or use defaults
+  const [expandedSections, setExpandedSections] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_EXPANDED_SECTIONS;
+    const saved = localStorage.getItem('orbit-expanded-nav-sections');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return DEFAULT_EXPANDED_SECTIONS;
+      }
+    }
+    return DEFAULT_EXPANDED_SECTIONS;
+  });
+
+  const toggleSection = useCallback((sectionId: string) => {
+    setExpandedSections(prev => {
+      const newSections = prev.includes(sectionId)
+        ? prev.filter(s => s !== sectionId)
+        : [...prev, sectionId];
+      localStorage.setItem('orbit-expanded-nav-sections', JSON.stringify(newSections));
+      return newSections;
+    });
+  }, []);
   
   // Fetch markets data first to get activeMarketId for other queries
   const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null; multiMarketEnabled: boolean }>({
@@ -335,51 +368,71 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Navigation */}
         <ScrollArea className="flex-1 px-4 py-2">
-          <div className="space-y-6">
-            {navigation.map((group, i) => (
-              <div key={i}>
-                <h3 className="px-2 mb-2 text-xs font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
-                  {group.group}
-                </h3>
-                <div className="space-y-1">
-                  {group.items.map((item) => {
-                    const isActive = location === item.href;
-                    const indicator = navIndicators[item.href];
-                    return (
-                      <Link 
-                        key={item.href} 
-                        href={item.href}
+          <div className="space-y-2">
+            {navigation.map((group, i) => {
+              const isExpanded = expandedSections.includes(group.group);
+              const hasActivePage = group.items.some(item => location === item.href);
+              
+              return (
+                <Collapsible 
+                  key={i} 
+                  open={isExpanded || hasActivePage} 
+                  onOpenChange={() => toggleSection(group.group)}
+                >
+                  <CollapsibleTrigger asChild>
+                    <button className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider hover:bg-sidebar-accent/30 rounded-md transition-colors">
+                      <span>{group.group}</span>
+                      <ChevronDown 
+                        size={14} 
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",
-                          isActive 
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
-                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                        )}
-                      >
-                        <div className="relative">
-                          <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
-                          {indicator?.type === "action" && (
-                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
-                          )}
-                          {indicator?.type === "new" && (
-                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
-                          )}
-                        </div>
-                        <span className="flex-1">{item.label}</span>
-                        {indicator?.type === "count" && indicator.count && indicator.count > 0 && (
-                          <Badge 
-                            variant="secondary" 
-                            className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                          "transition-transform duration-200",
+                          (isExpanded || hasActivePage) && "rotate-180"
+                        )} 
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="space-y-1 mt-1">
+                      {group.items.map((item) => {
+                        const isActive = location === item.href;
+                        const indicator = navIndicators[item.href];
+                        return (
+                          <Link 
+                            key={item.href} 
+                            href={item.href}
+                            className={cn(
+                              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
+                              isActive 
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
+                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                            )}
                           >
-                            {indicator.count > 99 ? "99+" : indicator.count}
-                          </Badge>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                            <div className="relative">
+                              <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                              {indicator?.type === "action" && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                              )}
+                              {indicator?.type === "new" && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
+                              )}
+                            </div>
+                            <span className="flex-1">{item.label}</span>
+                            {indicator?.type === "count" && indicator.count && indicator.count > 0 && (
+                              <Badge 
+                                variant="secondary" 
+                                className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                              >
+                                {indicator.count > 99 ? "99+" : indicator.count}
+                              </Badge>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </div>
         </ScrollArea>
 
