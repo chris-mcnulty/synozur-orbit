@@ -116,6 +116,8 @@ export default function MarketingPlanDetail() {
     timeframe: "",
   });
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterTimeframe, setFilterTimeframe] = useState<string>("all");
+  const [filterPriority, setFilterPriority] = useState<string>("all");
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
     queryKey: [`/api/marketing-plans/${id}`],
@@ -256,7 +258,7 @@ export default function MarketingPlanDetail() {
 
   const deleteTask = useMutation({
     mutationFn: async (taskId: string) => {
-      const response = await fetch(`/api/marketing-tasks/${taskId}`, {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -293,9 +295,20 @@ export default function MarketingPlanDetail() {
     setSelectedCategories([]);
   };
 
-  const filteredTasks = filterCategory === "all" 
-    ? tasks 
-    : tasks.filter(t => t.activityGroup === filterCategory);
+  const filteredTasks = tasks.filter(task => {
+    if (filterCategory !== "all" && task.activityGroup !== filterCategory) return false;
+    if (filterTimeframe !== "all" && task.timeframe !== filterTimeframe) return false;
+    if (filterPriority !== "all" && task.priority?.toLowerCase() !== filterPriority.toLowerCase()) return false;
+    return true;
+  });
+
+  const clearFilters = () => {
+    setFilterCategory("all");
+    setFilterTimeframe("all");
+    setFilterPriority("all");
+  };
+
+  const hasActiveFilters = filterCategory !== "all" || filterTimeframe !== "all" || filterPriority !== "all";
 
   const groupedTasks = ACTIVITY_CATEGORIES.reduce((acc, cat) => {
     const categoryTasks = filteredTasks.filter(t => t.activityGroup === cat.value);
@@ -679,10 +692,21 @@ export default function MarketingPlanDetail() {
           </Card>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={filterTimeframe} onValueChange={setFilterTimeframe}>
+            <SelectTrigger className="w-40" data-testid="select-filter-timeframe">
+              <SelectValue placeholder="Time Period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Periods</SelectItem>
+              {QUARTER_OPTIONS.map(q => (
+                <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-64" data-testid="select-filter-category">
-              <SelectValue placeholder="Filter by category" />
+            <SelectTrigger className="w-52" data-testid="select-filter-category">
+              <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
@@ -691,8 +715,24 @@ export default function MarketingPlanDetail() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-sm text-muted-foreground">
-            {filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""}
+          <Select value={filterPriority} onValueChange={setFilterPriority}>
+            <SelectTrigger className="w-36" data-testid="select-filter-priority">
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Priorities</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+              Clear filters
+            </Button>
+          )}
+          <span className="text-sm text-muted-foreground ml-auto">
+            {filteredTasks.length} of {tasks.length} task{tasks.length !== 1 ? "s" : ""}
           </span>
           {isGenerating && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
