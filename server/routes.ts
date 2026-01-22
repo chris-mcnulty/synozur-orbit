@@ -9267,6 +9267,30 @@ Generate a comprehensive battlecard in this JSON format:
   });
 
   // Marketing Tasks API
+  app.get("/api/marketing-plans/:planId/tasks", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant || tenant.plan !== "enterprise") {
+        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
+      }
+      
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+      
+      const tasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      res.json(tasks);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/marketing-plans/:planId/tasks", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
