@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 
 interface Product {
   id: string;
@@ -170,8 +170,20 @@ export default function ProductDetail() {
   const [generatingBattlecardFor, setGeneratingBattlecardFor] = useState<string | null>(null);
   const [selectedBattlecard, setSelectedBattlecard] = useState<ProductBattlecard | null>(null);
   
-  // Long-form recommendations state
-  const [activeTab, setActiveTab] = useState("overview");
+  const [location, setLocation] = useLocation();
+  
+  const validTabs = ["overview", "gaps", "recommendations", "summary", "gtm_plan", "messaging", "features", "roadmap"];
+  const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const tabFromUrl = urlParams.get("tab");
+  const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "overview";
+  
+  const [activeTab, setActiveTabState] = useState(initialTab);
+  
+  const setActiveTab = (newTab: string) => {
+    setActiveTabState(newTab);
+    const newUrl = newTab === "overview" ? `/app/products/${id}` : `/app/products/${id}?tab=${newTab}`;
+    window.history.replaceState(null, "", newUrl);
+  };
   const [gtmPrompts, setGtmPrompts] = useState({
     targetRoles: "",
     distributionChannels: "",

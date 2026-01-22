@@ -472,12 +472,12 @@ export default function Products() {
                       <div className="flex items-center gap-2">
                         {project.baselineProductId && (
                           <>
-                            <Link href={`/app/products/${project.baselineProductId}/features`}>
+                            <Link href={`/app/products/${project.id}?tab=features`}>
                               <Button variant="ghost" size="sm" data-testid={`button-features-${project.id}`}>
                                 Features
                               </Button>
                             </Link>
-                            <Link href={`/app/products/${project.baselineProductId}/roadmap`}>
+                            <Link href={`/app/products/${project.id}?tab=roadmap`}>
                               <Button variant="ghost" size="sm" data-testid={`button-roadmap-${project.id}`}>
                                 Roadmap
                               </Button>

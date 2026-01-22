@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useParams, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -29,8 +29,6 @@ import UsersPage from "@/pages/app/users";
 import AdminPage from "@/pages/app/admin";
 import ProductsPage from "@/pages/app/products";
 import ProductDetail from "@/pages/app/product-detail";
-import ProductFeatures from "@/pages/app/product-features";
-import ProductRoadmap from "@/pages/app/product-roadmap";
 import ExecutiveSummary from "@/pages/app/executive-summary";
 import UserGuidePage from "@/pages/app/user-guide";
 import BattleCardsPage from "@/pages/app/battlecards";
@@ -41,6 +39,16 @@ import CompanyBaseline from "@/pages/app/company-baseline";
 import MarketingPlannerPage from "@/pages/app/marketing-planner";
 import MarketingPlanDetail from "@/pages/app/marketing-plan-detail";
 import Pricing from "@/pages/pricing";
+
+function ProductFeaturesRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Redirect to={`/app/products/${id}?tab=features`} />;
+}
+
+function ProductRoadmapRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Redirect to={`/app/products/${id}?tab=roadmap`} />;
+}
 
 function Router() {
   return (
@@ -74,8 +82,8 @@ function Router() {
       <Route path="/app/users" component={UsersPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products" component={ProductsPage} />
-      <Route path="/app/products/:id/features" component={ProductFeatures} />
-      <Route path="/app/products/:id/roadmap" component={ProductRoadmap} />
+      <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />
+      <Route path="/app/products/:id/roadmap" component={ProductRoadmapRedirect} />
       <Route path="/app/products/:productId/executive-summary" component={ExecutiveSummary} />
       <Route path="/app/products/:id" component={ProductDetail} />
       <Route path="/app/guide" component={UserGuidePage} />
