@@ -4608,10 +4608,19 @@ Respond in JSON format:
   app.post("/api/products", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, url, companyName, competitorId, isBaseline } = req.body;
+      const { name, description, url, companyName, competitorId, isBaseline, companyProfileId } = req.body;
 
       if (!name) {
         return res.status(400).json({ error: "Product name is required" });
+      }
+
+      // If creating a baseline product, automatically link to company profile
+      let finalCompanyProfileId = companyProfileId;
+      if (isBaseline === true && !finalCompanyProfileId) {
+        const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+        if (profile) {
+          finalCompanyProfileId = profile.id;
+        }
       }
 
       const product = await storage.createProduct({
@@ -4620,6 +4629,7 @@ Respond in JSON format:
         url,
         companyName,
         competitorId,
+        companyProfileId: finalCompanyProfileId,
         isBaseline: isBaseline === true,
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
