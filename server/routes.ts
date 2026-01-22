@@ -4782,15 +4782,30 @@ Respond in JSON format:
       }
       
       const html = await response.text();
-      // Extract text content from HTML
+      // Extract text content from HTML - also decode HTML entities
       const textContent = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "")
         .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
         .replace(/\s+/g, " ")
         .trim();
       
+      console.log(`[Feature Import] URL: ${url}, HTML length: ${html.length}, Text length: ${textContent.length}`);
+      console.log(`[Feature Import] Text preview: ${textContent.slice(0, 500)}...`);
+      
+      if (textContent.length < 100) {
+        return res.status(400).json({ error: "Could not extract sufficient content from URL. The page may use JavaScript rendering. Try pasting the content directly instead." });
+      }
+      
       const extractedFeatures = await extractFeaturesFromContent(textContent, "url", product.name);
+      console.log(`[Feature Import] Extracted ${extractedFeatures.length} features`);
       
       // Create features in database
       const createdFeatures = [];
