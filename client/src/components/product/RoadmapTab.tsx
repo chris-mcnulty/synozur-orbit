@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText } from "lucide-react";
+import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -86,6 +86,8 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
     effort: "m",
     status: "planned",
   });
+  const [viewMode, setViewMode] = useState<"quarter" | "effort">("quarter");
+  const [sortOrder, setSortOrder] = useState<"title" | "status" | "effort">("title");
 
   const { data: roadmapItems = [], isLoading } = useQuery<RoadmapItem[]>({
     queryKey: ["/api/products", productId, "roadmap"],
@@ -301,10 +303,60 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
     return effort ? <Badge className={colors[effort] || ""}>{effort.toUpperCase()}</Badge> : null;
   };
 
+  const sortedRoadmapItems = React.useMemo(() => {
+    const sorted = [...roadmapItems];
+    const effortOrder = { xs: 0, s: 1, m: 2, l: 3, xl: 4 };
+    const statusOrder = { in_progress: 0, planned: 1, completed: 2, deferred: 3 };
+    
+    sorted.sort((a, b) => {
+      switch (sortOrder) {
+        case "title":
+          return a.title.localeCompare(b.title);
+        case "status":
+          return (statusOrder[a.status as keyof typeof statusOrder] ?? 99) - 
+                 (statusOrder[b.status as keyof typeof statusOrder] ?? 99);
+        case "effort":
+          return (effortOrder[a.effort as keyof typeof effortOrder] ?? 99) - 
+                 (effortOrder[b.effort as keyof typeof effortOrder] ?? 99);
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  }, [roadmapItems, sortOrder]);
+
   const itemsByQuarter: Record<string, RoadmapItem[]> = {};
   QUARTERS.forEach(q => {
-    itemsByQuarter[q] = roadmapItems.filter(item => item.quarter === q && item.year === selectedYear);
+    const filtered = sortedRoadmapItems.filter(item => item.quarter === q && item.year === selectedYear);
+    itemsByQuarter[q] = filtered;
   });
+
+  const itemsByEffort = React.useMemo(() => {
+    const groups: Record<string, RoadmapItem[]> = {};
+    const effortOrder = ["xs", "s", "m", "l", "xl", "unassigned"];
+    
+    for (const item of sortedRoadmapItems.filter(item => item.year === selectedYear)) {
+      const key = item.effort || "unassigned";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    }
+    
+    return effortOrder
+      .filter(e => groups[e]?.length > 0)
+      .map(e => [e, groups[e] || []] as [string, RoadmapItem[]]);
+  }, [sortedRoadmapItems, selectedYear]);
+
+  const getEffortLabel = (effort: string) => {
+    const labels: Record<string, string> = {
+      xs: "XS (1-2 days)",
+      s: "S (1 week)",
+      m: "M (2-4 weeks)",
+      l: "L (1-2 months)",
+      xl: "XL (3+ months)",
+      unassigned: "No Effort Assigned"
+    };
+    return labels[effort] || effort.toUpperCase();
+  };
 
   const unscheduledItems = roadmapItems.filter(item => !item.quarter || !item.year);
 
@@ -506,28 +558,64 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       </Card>
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={selectedYear === currentYear - 1 ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedYear(currentYear - 1)}
-          >
-            {currentYear - 1}
-          </Button>
-          <Button
-            variant={selectedYear === currentYear ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedYear(currentYear)}
-          >
-            {currentYear}
-          </Button>
-          <Button
-            variant={selectedYear === currentYear + 1 ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedYear(currentYear + 1)}
-          >
-            {currentYear + 1}
-          </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Button
+              variant={selectedYear === currentYear - 1 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedYear(currentYear - 1)}
+            >
+              {currentYear - 1}
+            </Button>
+            <Button
+              variant={selectedYear === currentYear ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedYear(currentYear)}
+            >
+              {currentYear}
+            </Button>
+            <Button
+              variant={selectedYear === currentYear + 1 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedYear(currentYear + 1)}
+            >
+              {currentYear + 1}
+            </Button>
+          </div>
+          <div className="border-l h-6" />
+          <div className="flex items-center border rounded-lg">
+            <Button
+              variant={viewMode === "quarter" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("quarter")}
+              className="rounded-r-none"
+              data-testid="button-view-quarter"
+              title="View by Quarter"
+            >
+              <Calendar className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "effort" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("effort")}
+              className="rounded-l-none"
+              data-testid="button-view-effort"
+              title="View by Effort"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </div>
+          <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as typeof sortOrder)}>
+            <SelectTrigger className="w-[130px]" data-testid="select-sort-roadmap">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="title">Title</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="effort">Effort</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex gap-2">
           <Dialog open={isImportOpen} onOpenChange={(open) => {
@@ -635,47 +723,98 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        {QUARTERS.map((quarter) => (
-          <Card key={quarter} className="min-h-[300px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center justify-between">
-                {quarter} {selectedYear}
-                <Badge variant="outline">{itemsByQuarter[quarter]?.length || 0}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {itemsByQuarter[quarter]?.map((item) => (
-                <div key={item.id} className="p-2 rounded border bg-card hover:bg-accent/50 transition-colors" data-testid={`roadmap-item-${item.id}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(item.status)}
-                      <span className="text-sm font-medium">{item.title}</span>
+      {viewMode === "quarter" ? (
+        <div className="grid grid-cols-4 gap-4">
+          {QUARTERS.map((quarter) => (
+            <Card key={quarter} className="min-h-[300px]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center justify-between">
+                  {quarter} {selectedYear}
+                  <Badge variant="outline">{itemsByQuarter[quarter]?.length || 0}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {itemsByQuarter[quarter]?.map((item) => (
+                  <div key={item.id} className="p-2 rounded border bg-card hover:bg-accent/50 transition-colors" data-testid={`roadmap-item-${item.id}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(item.status)}
+                        <span className="text-sm font-medium">{item.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEdit(item)}>
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => deleteItem.mutate(item.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEdit(item)}>
-                        <Edit2 className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => deleteItem.mutate(item.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                    <div className="flex items-center gap-2 mt-1">
+                      {getEffortBadge(item.effort)}
+                      {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    {getEffortBadge(item.effort)}
-                    {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
+                ))}
+                {(!itemsByQuarter[quarter] || itemsByQuarter[quarter].length === 0) && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No items</p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {itemsByEffort.map(([effort, items]) => (
+            <Card key={effort}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {getEffortBadge(effort !== "unassigned" ? effort : null)}
+                    <span>{getEffortLabel(effort)}</span>
                   </div>
-                </div>
-              ))}
-              {(!itemsByQuarter[quarter] || itemsByQuarter[quarter].length === 0) && (
-                <p className="text-sm text-muted-foreground text-center py-4">No items</p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  <Badge variant="outline">{items.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {items.map((item) => (
+                  <div key={item.id} className="p-2 rounded border bg-card hover:bg-accent/50 transition-colors" data-testid={`roadmap-item-${item.id}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(item.status)}
+                        <span className="text-sm font-medium">{item.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleEdit(item)}>
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => deleteItem.mutate(item.id)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {item.quarter && (
+                        <Badge variant="outline" className="text-xs">{item.quarter} {item.year}</Badge>
+                      )}
+                      {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+          {itemsByEffort.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">No roadmap items for {selectedYear}</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
-      {unscheduledItems.length > 0 && (
+      {unscheduledItems.length > 0 && viewMode === "quarter" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Unscheduled</CardTitle>

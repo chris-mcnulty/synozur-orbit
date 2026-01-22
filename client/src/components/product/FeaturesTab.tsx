@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Trash2, Edit2, Wand2, Globe, FileText } from "lucide-react";
+import { Plus, Loader2, Trash2, Edit2, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -84,6 +84,8 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
     targetQuarter: "",
     targetYear: new Date().getFullYear(),
   });
+  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
+  const [sortOrder, setSortOrder] = useState<"name" | "status" | "priority" | "category">("name");
 
   const { data: features = [], isLoading } = useQuery<ProductFeature[]>({
     queryKey: ["/api/products", productId, "features"],
@@ -235,6 +237,49 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
     }
   };
 
+  const sortedFeatures = React.useMemo(() => {
+    const sorted = [...features];
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const statusOrder = { released: 0, in_progress: 1, planned: 2, backlog: 3 };
+    
+    sorted.sort((a, b) => {
+      switch (sortOrder) {
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "status":
+          return (statusOrder[a.status as keyof typeof statusOrder] ?? 99) - 
+                 (statusOrder[b.status as keyof typeof statusOrder] ?? 99);
+        case "priority":
+          return (priorityOrder[a.priority as keyof typeof priorityOrder] ?? 99) - 
+                 (priorityOrder[b.priority as keyof typeof priorityOrder] ?? 99);
+        case "category":
+          return (a.category || "zzz").localeCompare(b.category || "zzz");
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  }, [features, sortOrder]);
+
+  const groupedFeatures = React.useMemo(() => {
+    const groups: Record<string, ProductFeature[]> = {};
+    for (const feature of sortedFeatures) {
+      const key = feature.category || "uncategorized";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(feature);
+    }
+    const categoryOrder = CATEGORIES.map(c => c.value);
+    return Object.entries(groups).sort((a, b) => {
+      const aIdx = categoryOrder.indexOf(a[0]);
+      const bIdx = categoryOrder.indexOf(b[0]);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+  }, [sortedFeatures]);
+
+  const getCategoryLabel = (value: string) => {
+    return CATEGORIES.find(c => c.value === value)?.label || "Uncategorized";
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "released": return <Badge className="bg-green-500/20 text-green-400">Released</Badge>;
@@ -362,6 +407,38 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
           </p>
         </div>
         <div className="flex gap-2">
+          <div className="flex items-center border rounded-lg">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="rounded-r-none"
+              data-testid="button-view-list"
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "grouped" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("grouped")}
+              className="rounded-l-none"
+              data-testid="button-view-grouped"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </div>
+          <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as typeof sortOrder)}>
+            <SelectTrigger className="w-[140px]" data-testid="select-sort-features">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="priority">Priority</SelectItem>
+              <SelectItem value="category">Category</SelectItem>
+            </SelectContent>
+          </Select>
           <Dialog open={isImportOpen} onOpenChange={(open) => {
             setIsImportOpen(open);
             if (!open) {
@@ -474,7 +551,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : viewMode === "list" ? (
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -489,7 +566,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {features.map((feature) => (
+                {sortedFeatures.map((feature) => (
                   <TableRow key={feature.id} data-testid={`feature-row-${feature.id}`}>
                     <TableCell>
                       <div>
@@ -541,6 +618,81 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
             </Table>
           </CardContent>
         </Card>
+      ) : (
+        <div className="space-y-4">
+          {groupedFeatures.map(([category, categoryFeatures]) => (
+            <Card key={category}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  {getCategoryBadge(category)}
+                  <span className="text-muted-foreground font-normal">({categoryFeatures.length})</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Feature</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Target</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {categoryFeatures.map((feature) => (
+                      <TableRow key={feature.id} data-testid={`feature-row-${feature.id}`}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{feature.name}</p>
+                            {feature.description && (
+                              <p className="text-sm text-muted-foreground line-clamp-1">{feature.description}</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(feature.status)}</TableCell>
+                        <TableCell>
+                          {feature.priority && (
+                            <Badge variant="outline" className={
+                              feature.priority === "high" ? "border-red-500/50 text-red-400" :
+                              feature.priority === "medium" ? "border-yellow-500/50 text-yellow-400" :
+                              "border-green-500/50 text-green-400"
+                            }>
+                              {feature.priority}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {feature.targetQuarter && (
+                            <span className="text-sm text-muted-foreground">
+                              {feature.targetQuarter} {feature.targetYear}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => handleEdit(feature)} data-testid={`edit-feature-${feature.id}`}>
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteFeature.mutate(feature.id)}
+                              className="text-destructive"
+                              data-testid={`delete-feature-${feature.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
