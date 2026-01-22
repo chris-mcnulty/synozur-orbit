@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -481,6 +481,25 @@ export default function ContextBar() {
                     >
                       <Plus className="w-4 h-4 mr-2" />
                       Create New Market
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {context?.activeMarketId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.open(`/api/markets/${context.activeMarketId}/export`, '_blank');
+                        toast({
+                          title: "Export Started",
+                          description: "Your market export file is being downloaded.",
+                        });
+                      }}
+                      className="cursor-pointer"
+                      data-testid="btn-export-market"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Market (Markdown)
                     </DropdownMenuItem>
                   </>
                 )}

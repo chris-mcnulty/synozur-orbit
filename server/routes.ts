@@ -3997,6 +3997,365 @@ Respond in JSON format:
     }
   });
 
+  // Comprehensive market export - exports everything in a market to markdown
+  app.get("/api/markets/:marketId/export", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const market = await storage.getMarket(req.params.marketId);
+      if (!market) {
+        return res.status(404).json({ error: "Market not found" });
+      }
+
+      // Validate market belongs to current tenant
+      if (market.tenantId !== ctx.tenantId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Build context filter for the requested market
+      const marketCtx = {
+        tenantId: ctx.tenantId,
+        marketId: req.params.marketId,
+        tenantDomain: ctx.tenantDomain,
+        isDefaultMarket: market.isDefault,
+      };
+
+      // Gather all market data
+      // For default market, include profiles with null marketId (legacy data)
+      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
+      const marketCompanyProfiles = market.isDefault 
+        ? companyProfiles.filter(p => p.marketId === req.params.marketId || p.marketId === null)
+        : companyProfiles.filter(p => p.marketId === req.params.marketId);
+      const competitors = await storage.getCompetitorsByContext(marketCtx);
+      const projects = await storage.getClientProjectsByContext(marketCtx);
+      const products = await storage.getProductsByContext(marketCtx);
+
+      // Build comprehensive markdown
+      let md = `# ${market.name} - Complete Market Intelligence Export\n\n`;
+      md += `**Tenant:** ${ctx.tenantDomain}\n`;
+      md += `**Generated:** ${new Date().toISOString()}\n\n`;
+      md += `---\n\n`;
+
+      // Table of Contents
+      md += `## Table of Contents\n\n`;
+      md += `1. [Market Overview](#market-overview)\n`;
+      md += `2. [Company Profiles](#company-profiles)\n`;
+      md += `3. [Competitors](#competitors)\n`;
+      md += `4. [Projects](#projects) (includes battlecards, gap analysis, GTM plans, messaging)\n`;
+      md += `5. [Products](#products) (includes features, roadmaps)\n\n`;
+      md += `---\n\n`;
+
+      // Market Overview
+      md += `## Market Overview\n\n`;
+      md += `**Name:** ${market.name}\n`;
+      if (market.description) {
+        md += `**Description:** ${market.description}\n`;
+      }
+      md += `**Status:** ${market.status || "active"}\n`;
+      md += `**Created:** ${market.createdAt ? new Date(market.createdAt).toLocaleDateString() : "N/A"}\n\n`;
+      md += `### Summary Statistics\n\n`;
+      md += `- **Company Profiles:** ${marketCompanyProfiles.length}\n`;
+      md += `- **Competitors Tracked:** ${competitors.length}\n`;
+      md += `- **Active Projects:** ${projects.length}\n`;
+      md += `- **Products:** ${products.length}\n\n`;
+      md += `---\n\n`;
+
+      // Company Profiles
+      md += `## Company Profiles\n\n`;
+      if (marketCompanyProfiles.length === 0) {
+        md += `*No company profiles defined in this market.*\n\n`;
+      } else {
+        for (const profile of marketCompanyProfiles) {
+          md += `### ${profile.companyName}\n\n`;
+          if (profile.websiteUrl) md += `- **Website:** ${profile.websiteUrl}\n`;
+          if (profile.description) md += `\n${profile.description}\n`;
+          
+          // Include analysis if available
+          if (profile.analysisData) {
+            const analysis = typeof profile.analysisData === "string" 
+              ? JSON.parse(profile.analysisData) 
+              : profile.analysisData;
+            if (analysis.summary) {
+              md += `\n#### Analysis Summary\n\n${analysis.summary}\n`;
+            }
+            if (analysis.strengths?.length > 0) {
+              md += `\n**Strengths:**\n`;
+              analysis.strengths.forEach((s: string) => md += `- ${s}\n`);
+            }
+            if (analysis.weaknesses?.length > 0) {
+              md += `\n**Weaknesses:**\n`;
+              analysis.weaknesses.forEach((w: string) => md += `- ${w}\n`);
+            }
+          }
+          md += `\n`;
+        }
+      }
+      md += `---\n\n`;
+
+      // Competitors
+      md += `## Competitors\n\n`;
+      if (competitors.length === 0) {
+        md += `*No competitors tracked in this market.*\n\n`;
+      } else {
+        for (const comp of competitors) {
+          md += `### ${comp.name}\n\n`;
+          if (comp.url) md += `- **Website:** ${comp.url}\n`;
+          md += `- **Status:** ${comp.status || "active"}\n`;
+          
+          // Include analysis if available
+          if (comp.analysisData) {
+            const analysis = typeof comp.analysisData === "string" 
+              ? JSON.parse(comp.analysisData) 
+              : comp.analysisData;
+            if (analysis.summary) {
+              md += `\n#### Analysis Summary\n\n${analysis.summary}\n`;
+            }
+            if (analysis.strengths?.length > 0) {
+              md += `\n**Strengths:**\n`;
+              analysis.strengths.forEach((s: string) => md += `- ${s}\n`);
+            }
+            if (analysis.weaknesses?.length > 0) {
+              md += `\n**Weaknesses:**\n`;
+              analysis.weaknesses.forEach((w: string) => md += `- ${w}\n`);
+            }
+            if (analysis.opportunities?.length > 0) {
+              md += `\n**Opportunities:**\n`;
+              analysis.opportunities.forEach((o: string) => md += `- ${o}\n`);
+            }
+            if (analysis.threats?.length > 0) {
+              md += `\n**Threats:**\n`;
+              analysis.threats.forEach((t: string) => md += `- ${t}\n`);
+            }
+          }
+          md += `\n`;
+        }
+      }
+      md += `---\n\n`;
+
+      // Projects with full details
+      md += `## Projects\n\n`;
+      if (projects.length === 0) {
+        md += `*No projects in this market.*\n\n`;
+      } else {
+        for (const project of projects) {
+          md += `### ${project.name}\n\n`;
+          md += `- **Client:** ${project.clientName}\n`;
+          md += `- **Type:** ${project.analysisType === "product" ? "Product Analysis" : "Company Analysis"}\n`;
+          md += `- **Status:** ${project.status}\n`;
+          if (project.description) md += `\n${project.description}\n`;
+          md += `\n`;
+
+          // Get project products
+          const projectProducts = await storage.getProjectProducts(project.id);
+          const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+          const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+
+          if (baselineProduct) {
+            md += `#### Baseline Product\n`;
+            md += `- **${baselineProduct.product?.name || "Unnamed"}** (${baselineProduct.product?.companyName || "Unknown"})\n\n`;
+          }
+
+          if (competitorProducts.length > 0) {
+            md += `#### Competitor Products (${competitorProducts.length})\n`;
+            for (const cp of competitorProducts) {
+              md += `- ${cp.product?.name || "Unnamed"} (${cp.product?.companyName || "Unknown"})\n`;
+            }
+            md += `\n`;
+          }
+
+          // Get long-form recommendations for project
+          const recommendations = await storage.getLongFormRecommendationsByProject(project.id);
+          
+          const gapAnalysis = recommendations.find(r => r.type === "gap_analysis");
+          const strategicRecs = recommendations.find(r => r.type === "strategic_recommendations");
+          const competitiveSummary = recommendations.find(r => r.type === "competitive_summary");
+          const gtmPlan = recommendations.find(r => r.type === "gtm_plan");
+          const messagingFramework = recommendations.find(r => r.type === "messaging_framework");
+          const productOneSheet = recommendations.find(r => r.type === "product_one_sheet");
+
+          if (gapAnalysis?.status === "generated" && gapAnalysis.content) {
+            md += `#### Gap Analysis\n\n`;
+            md += `*Generated: ${gapAnalysis.lastGeneratedAt ? new Date(gapAnalysis.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += gapAnalysis.content + `\n\n`;
+          }
+
+          if (strategicRecs?.status === "generated" && strategicRecs.content) {
+            md += `#### Strategic Recommendations\n\n`;
+            md += `*Generated: ${strategicRecs.lastGeneratedAt ? new Date(strategicRecs.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += strategicRecs.content + `\n\n`;
+          }
+
+          if (competitiveSummary?.status === "generated" && competitiveSummary.content) {
+            md += `#### Competitive Summary\n\n`;
+            md += `*Generated: ${competitiveSummary.lastGeneratedAt ? new Date(competitiveSummary.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += competitiveSummary.content + `\n\n`;
+          }
+
+          if (gtmPlan?.status === "generated" && gtmPlan.content) {
+            md += `#### Go-to-Market Plan\n\n`;
+            md += `*Generated: ${gtmPlan.lastGeneratedAt ? new Date(gtmPlan.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += gtmPlan.content + `\n\n`;
+          }
+
+          if (messagingFramework?.status === "generated" && messagingFramework.content) {
+            md += `#### Messaging Framework\n\n`;
+            md += `*Generated: ${messagingFramework.lastGeneratedAt ? new Date(messagingFramework.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += messagingFramework.content + `\n\n`;
+          }
+
+          if (productOneSheet?.status === "generated" && productOneSheet.content) {
+            md += `#### Product One Sheet\n\n`;
+            md += `*Generated: ${productOneSheet.lastGeneratedAt ? new Date(productOneSheet.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            md += productOneSheet.content + `\n\n`;
+          }
+
+          // Get battlecards for this project
+          const battlecards = await storage.getProductBattlecardsByProject(project.id);
+          const publishedBattlecards = battlecards.filter(bc => 
+            bc.status === "published" || (Array.isArray(bc.strengths) && (bc.strengths as string[]).length > 0)
+          );
+
+          if (publishedBattlecards.length > 0) {
+            md += `#### Battlecards\n\n`;
+            for (const bc of publishedBattlecards) {
+              const competitor = competitorProducts.find(cp => cp.productId === bc.competitorProductId);
+              md += `##### ${competitor?.product?.name || "Competitor"}\n\n`;
+
+              const strengths = bc.strengths as string[] | null;
+              const weaknesses = bc.weaknesses as string[] | null;
+              const ourAdvantages = bc.ourAdvantages as string[] | null;
+              const keyDifferentiators = bc.keyDifferentiators as { feature: string; ours: string; theirs: string }[] | null;
+              const objections = bc.objections as { objection: string; response: string }[] | null;
+              const talkTracks = bc.talkTracks as { scenario: string; script: string }[] | null;
+
+              if (strengths?.length) {
+                md += `**Their Strengths:**\n`;
+                strengths.forEach(s => md += `- ${s}\n`);
+                md += `\n`;
+              }
+              if (weaknesses?.length) {
+                md += `**Their Weaknesses:**\n`;
+                weaknesses.forEach(w => md += `- ${w}\n`);
+                md += `\n`;
+              }
+              if (ourAdvantages?.length) {
+                md += `**Our Advantages:**\n`;
+                ourAdvantages.forEach(a => md += `- ${a}\n`);
+                md += `\n`;
+              }
+              if (keyDifferentiators?.length) {
+                md += `**Key Differentiators:**\n`;
+                keyDifferentiators.forEach(d => md += `- **${d.feature}**: Ours: ${d.ours} | Theirs: ${d.theirs}\n`);
+                md += `\n`;
+              }
+              if (objections?.length) {
+                md += `**Objection Handling:**\n`;
+                objections.forEach(o => md += `- *"${o.objection}"* → ${o.response}\n`);
+                md += `\n`;
+              }
+              if (talkTracks?.length) {
+                md += `**Talk Tracks:**\n`;
+                talkTracks.forEach(t => md += `- **${t.scenario}**: "${t.script}"\n`);
+                md += `\n`;
+              }
+            }
+          }
+        }
+      }
+      md += `---\n\n`;
+
+      // Products with Features and Roadmap
+      md += `## Products\n\n`;
+      if (products.length === 0) {
+        md += `*No products defined in this market.*\n\n`;
+      } else {
+        for (const product of products) {
+          md += `### ${product.name}\n\n`;
+          if (product.companyName) md += `- **Company:** ${product.companyName}\n`;
+          if (product.url) md += `- **URL:** ${product.url}\n`;
+          md += `- **Type:** ${product.isBaseline ? "Baseline" : (product.competitorId ? "Competitor" : "Product")}\n`;
+          if (product.description) md += `\n${product.description}\n`;
+          md += `\n`;
+
+          // Get features
+          const features = await storage.getProductFeaturesByProduct(product.id);
+          if (features.length > 0) {
+            md += `#### Features (${features.length})\n\n`;
+            
+            // Group by category
+            const byCategory: Record<string, typeof features> = {};
+            for (const f of features) {
+              const cat = f.category || "Uncategorized";
+              if (!byCategory[cat]) byCategory[cat] = [];
+              byCategory[cat].push(f);
+            }
+            
+            for (const [category, catFeatures] of Object.entries(byCategory)) {
+              md += `**${category}**\n`;
+              for (const f of catFeatures) {
+                const statusIcon = f.status === "available" ? "✅" : f.status === "planned" ? "🔜" : f.status === "beta" ? "🧪" : "❌";
+                md += `- ${statusIcon} **${f.name}**`;
+                if (f.priority) md += ` [${f.priority}]`;
+                if (f.description) md += `: ${f.description}`;
+                md += `\n`;
+              }
+              md += `\n`;
+            }
+          }
+
+          // Get roadmap items
+          const roadmapItems = await storage.getRoadmapItemsByProduct(product.id);
+          if (roadmapItems.length > 0) {
+            md += `#### Roadmap (${roadmapItems.length} items)\n\n`;
+            
+            // Group by quarter
+            const byQuarter: Record<string, typeof roadmapItems> = {};
+            for (const item of roadmapItems) {
+              const q = item.quarter ? `${item.quarter} ${item.year}` : "Unscheduled";
+              if (!byQuarter[q]) byQuarter[q] = [];
+              byQuarter[q].push(item);
+            }
+            
+            for (const [quarter, items] of Object.entries(byQuarter)) {
+              md += `**${quarter}**\n`;
+              for (const item of items) {
+                const statusIcon = item.status === "completed" ? "✅" : item.status === "in_progress" ? "🔄" : "📋";
+                md += `- ${statusIcon} **${item.title}**`;
+                if (item.effort) md += ` [${item.effort}]`;
+                if (item.description) md += `: ${item.description}`;
+                md += `\n`;
+              }
+              md += `\n`;
+            }
+          }
+
+          // Include product analysis if available
+          if (product.analysisData) {
+            const analysis = typeof product.analysisData === "string" 
+              ? JSON.parse(product.analysisData) 
+              : product.analysisData;
+            if (analysis.summary) {
+              md += `#### Analysis\n\n${analysis.summary}\n\n`;
+            }
+          }
+        }
+      }
+
+      md += `---\n\n`;
+      md += `*Report generated by Orbit - Synozur Go-to-Market Intelligence Platform*\n`;
+      md += `*Export Date: ${new Date().toISOString()}*\n`;
+
+      // Send as downloadable markdown file
+      const filename = `${market.name.replace(/[^a-z0-9]/gi, "_")}_complete_export.md`;
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(md);
+    } catch (error: any) {
+      console.error("Market export error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Switch active market context
   app.post("/api/context/market", async (req, res) => {
     try {
