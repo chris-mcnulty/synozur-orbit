@@ -268,6 +268,7 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   getProductsByTenant(tenantDomain: string): Promise<Product[]>;
   getProductsByCompetitor(competitorId: string): Promise<Product[]>;
+  getProductsByCompanyProfile(companyProfileId: string): Promise<Product[]>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, data: Partial<Product>): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
@@ -1101,6 +1102,12 @@ export class DatabaseStorage implements IStorage {
   async getProductsByCompetitor(competitorId: string): Promise<Product[]> {
     return await db.select().from(products)
       .where(eq(products.competitorId, competitorId))
+      .orderBy(desc(products.createdAt));
+  }
+
+  async getProductsByCompanyProfile(companyProfileId: string): Promise<Product[]> {
+    return await db.select().from(products)
+      .where(eq(products.companyProfileId, companyProfileId))
       .orderBy(desc(products.createdAt));
   }
 

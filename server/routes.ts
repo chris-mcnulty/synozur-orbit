@@ -2872,6 +2872,24 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // Get products owned by the baseline company profile
+  app.get("/api/company-profile/products", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) {
+        return res.json([]);
+      }
+      const companyProducts = await storage.getProductsByCompanyProfile(profile.id);
+      res.json(companyProducts);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Create or update company profile
   app.post("/api/company-profile", async (req, res) => {
     try {
