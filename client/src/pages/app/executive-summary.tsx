@@ -117,7 +117,8 @@ function ScoreBar({ score, label }: { score: number; label: string }) {
 }
 
 export default function ExecutiveSummary() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { productId, projectId: routeProjectId } = useParams<{ productId?: string; projectId?: string }>();
+  const projectId = productId || routeProjectId;
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
