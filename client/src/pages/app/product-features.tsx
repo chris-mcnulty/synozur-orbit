@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Trash2, Edit2, Upload, FileText, Wand2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Trash2, Edit2, Upload, FileText, Wand2, CheckCircle, Link2, Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
@@ -67,9 +67,12 @@ export default function ProductFeatures() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingFeature, setEditingFeature] = useState<ProductFeature | null>(null);
-  const [isPasteOpen, setIsPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const [isParsing, setIsParsing] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importText, setImportText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importTab, setImportTab] = useState<"url" | "text">("url");
+  const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -170,6 +173,51 @@ export default function ProductFeatures() {
       targetQuarter: "",
       targetYear: new Date().getFullYear(),
     });
+  };
+
+  const handleImport = async () => {
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const endpoint = importTab === "url" 
+        ? `/api/products/${id}/features/import-url`
+        : `/api/products/${id}/features/import-text`;
+      
+      const body = importTab === "url" 
+        ? { url: importUrl }
+        : { text: importText };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Import failed");
+      }
+
+      const result = await response.json();
+      setImportResult({ imported: result.imported });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", id, "features"] });
+      toast({ 
+        title: "Features Imported", 
+        description: `Successfully imported ${result.imported} features using AI extraction.` 
+      });
+    } catch (error: any) {
+      toast({ title: "Import Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const resetImport = () => {
+    setImportUrl("");
+    setImportText("");
+    setImportResult(null);
+    setIsImportOpen(false);
   };
 
   const openEdit = (feature: ProductFeature) => {
@@ -360,6 +408,102 @@ export default function ProductFeatures() {
                   View Roadmap
                 </Button>
               </Link>
+              <Dialog open={isImportOpen} onOpenChange={(open) => { if (!open) resetImport(); else setIsImportOpen(true); }}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" data-testid="button-import-features">
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Import
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Import Features with AI</DialogTitle>
+                    <DialogDescription>
+                      Extract features from a competitor's website or paste text from product documentation.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {importResult ? (
+                    <div className="py-8 text-center">
+                      <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                      <p className="text-lg font-semibold">{importResult.imported} features imported</p>
+                      <p className="text-muted-foreground text-sm mt-2">
+                        Features have been added to your catalog.
+                      </p>
+                      <Button onClick={resetImport} className="mt-4" data-testid="button-done-import">
+                        Done
+                      </Button>
+                    </div>
+                  ) : (
+                    <Tabs value={importTab} onValueChange={(v) => setImportTab(v as "url" | "text")}>
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="url" data-testid="tab-import-url">
+                          <Globe className="mr-2 h-4 w-4" />
+                          From URL
+                        </TabsTrigger>
+                        <TabsTrigger value="text" data-testid="tab-import-text">
+                          <FileText className="mr-2 h-4 w-4" />
+                          Paste Text
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="url" className="mt-4">
+                        <div className="grid gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="import-url">Website URL</Label>
+                            <Input
+                              id="import-url"
+                              type="url"
+                              placeholder="https://competitor.com/features"
+                              value={importUrl}
+                              onChange={(e) => setImportUrl(e.target.value)}
+                              data-testid="input-import-url"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Enter a competitor's features page or product documentation URL.
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <TabsContent value="text" className="mt-4">
+                        <div className="grid gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="import-text">Feature Text</Label>
+                            <Textarea
+                              id="import-text"
+                              placeholder="Paste feature descriptions, product documentation, or release notes..."
+                              value={importText}
+                              onChange={(e) => setImportText(e.target.value)}
+                              rows={8}
+                              data-testid="input-import-text"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              AI will analyze the text and extract individual features.
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <DialogFooter className="mt-4">
+                        <Button 
+                          onClick={handleImport} 
+                          disabled={isImporting || (importTab === "url" ? !importUrl : importText.length < 50)}
+                          data-testid="button-run-import"
+                        >
+                          {isImporting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Extracting...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="mr-2 h-4 w-4" />
+                              Extract Features
+                            </>
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </Tabs>
+                  )}
+                </DialogContent>
+              </Dialog>
               <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                 <DialogTrigger asChild>
                   <Button data-testid="button-add-feature">

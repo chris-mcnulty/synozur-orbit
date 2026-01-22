@@ -4759,6 +4759,13 @@ Respond in JSON format:
       const { url } = req.body;
       if (!url) return res.status(400).json({ error: "URL is required" });
       
+      // Validate URL for SSRF protection
+      const { validateUrlSoft } = await import("./utils/url-validator");
+      const urlValidation = await validateUrlSoft(url);
+      if (!urlValidation.isValid) {
+        return res.status(400).json({ error: urlValidation.error || "Invalid URL" });
+      }
+      
       // Fetch and extract content from URL
       const { extractFeaturesFromContent } = await import("./ai-service");
       
@@ -4939,6 +4946,13 @@ Respond in JSON format:
       
       const { url } = req.body;
       if (!url) return res.status(400).json({ error: "URL is required" });
+      
+      // Validate URL for SSRF protection
+      const { validateUrlSoft } = await import("./utils/url-validator");
+      const urlValidation = await validateUrlSoft(url);
+      if (!urlValidation.isValid) {
+        return res.status(400).json({ error: urlValidation.error || "Invalid URL" });
+      }
       
       const { extractRoadmapFromContent } = await import("./ai-service");
       

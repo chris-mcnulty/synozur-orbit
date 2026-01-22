@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, Loader2, Map, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Map, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
@@ -69,6 +70,12 @@ export default function ProductRoadmap() {
   const [editingItem, setEditingItem] = useState<RoadmapItem | null>(null);
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importText, setImportText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importTab, setImportTab] = useState<"url" | "text">("url");
+  const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -214,6 +221,51 @@ export default function ProductRoadmap() {
       effort: "m",
       status: "planned",
     });
+  };
+
+  const handleImport = async () => {
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const endpoint = importTab === "url" 
+        ? `/api/products/${id}/roadmap/import-url`
+        : `/api/products/${id}/roadmap/import-text`;
+      
+      const body = importTab === "url" 
+        ? { url: importUrl }
+        : { text: importText };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Import failed");
+      }
+
+      const result = await response.json();
+      setImportResult({ imported: result.imported });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", id, "roadmap"] });
+      toast({ 
+        title: "Roadmap Items Imported", 
+        description: `Successfully imported ${result.imported} roadmap items using AI extraction.` 
+      });
+    } catch (error: any) {
+      toast({ title: "Import Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const resetImport = () => {
+    setImportUrl("");
+    setImportText("");
+    setImportResult(null);
+    setIsImportOpen(false);
   };
 
   const openEdit = (item: RoadmapItem) => {
@@ -380,6 +432,102 @@ export default function ProductRoadmap() {
                   View Features
                 </Button>
               </Link>
+              <Dialog open={isImportOpen} onOpenChange={(open) => { if (!open) resetImport(); else setIsImportOpen(true); }}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" data-testid="button-import-roadmap">
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Import
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Import Roadmap with AI</DialogTitle>
+                    <DialogDescription>
+                      Extract roadmap items from a competitor's website or paste text from product announcements.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {importResult ? (
+                    <div className="py-8 text-center">
+                      <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                      <p className="text-lg font-semibold">{importResult.imported} roadmap items imported</p>
+                      <p className="text-muted-foreground text-sm mt-2">
+                        Items have been added to your roadmap.
+                      </p>
+                      <Button onClick={resetImport} className="mt-4" data-testid="button-done-import">
+                        Done
+                      </Button>
+                    </div>
+                  ) : (
+                    <Tabs value={importTab} onValueChange={(v) => setImportTab(v as "url" | "text")}>
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="url" data-testid="tab-import-url">
+                          <Globe className="mr-2 h-4 w-4" />
+                          From URL
+                        </TabsTrigger>
+                        <TabsTrigger value="text" data-testid="tab-import-text">
+                          <FileText className="mr-2 h-4 w-4" />
+                          Paste Text
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="url" className="mt-4">
+                        <div className="grid gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="import-url">Website URL</Label>
+                            <Input
+                              id="import-url"
+                              type="url"
+                              placeholder="https://competitor.com/roadmap"
+                              value={importUrl}
+                              onChange={(e) => setImportUrl(e.target.value)}
+                              data-testid="input-import-url"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Enter a competitor's roadmap page or product announcements URL.
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <TabsContent value="text" className="mt-4">
+                        <div className="grid gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="import-text">Roadmap Text</Label>
+                            <Textarea
+                              id="import-text"
+                              placeholder="Paste roadmap items, product announcements, or release notes..."
+                              value={importText}
+                              onChange={(e) => setImportText(e.target.value)}
+                              rows={8}
+                              data-testid="input-import-text"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              AI will analyze the text and extract roadmap items.
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <DialogFooter className="mt-4">
+                        <Button 
+                          onClick={handleImport} 
+                          disabled={isImporting || (importTab === "url" ? !importUrl : importText.length < 50)}
+                          data-testid="button-run-import"
+                        >
+                          {isImporting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Extracting...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="mr-2 h-4 w-4" />
+                              Extract Items
+                            </>
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </Tabs>
+                  )}
+                </DialogContent>
+              </Dialog>
               <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                 <DialogTrigger asChild>
                   <Button data-testid="button-add-item">
