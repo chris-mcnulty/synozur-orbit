@@ -150,6 +150,7 @@ export const products = pgTable("products", {
   url: text("url"), // Product page URL
   companyName: text("company_name"), // Company that makes this product
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "set null" }), // Link to baseline company (for your products)
   isBaseline: boolean("is_baseline").default(false), // True for your products, false for competitor products
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
