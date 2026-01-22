@@ -4590,7 +4590,7 @@ Respond in JSON format:
   app.post("/api/products", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, url, companyName, competitorId } = req.body;
+      const { name, description, url, companyName, competitorId, isBaseline } = req.body;
 
       if (!name) {
         return res.status(400).json({ error: "Product name is required" });
@@ -4602,6 +4602,7 @@ Respond in JSON format:
         url,
         companyName,
         competitorId,
+        isBaseline: isBaseline === true,
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
         createdBy: ctx.userId,

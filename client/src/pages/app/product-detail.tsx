@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
@@ -116,6 +117,7 @@ export default function ProductDetail() {
     description: "",
     url: "",
     companyName: "",
+    isBaseline: false,
   });
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -666,11 +668,11 @@ export default function ProductDetail() {
     onSuccess: async (product) => {
       await addProductToProject.mutateAsync({
         productId: product.id,
-        role: projectProducts.some(pp => pp.role === "baseline") ? "competitor" : "baseline",
+        role: product.isBaseline ? "baseline" : "competitor",
         source: "manual",
       });
       setIsAddProductOpen(false);
-      setProductFormData({ name: "", description: "", url: "", companyName: "" });
+      setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false });
       toast({
         title: "Product Added",
         description: "Product has been created and added to the project.",
@@ -1224,7 +1226,12 @@ export default function ProductDetail() {
                       <div className="text-center py-8 border-2 border-dashed rounded-lg">
                         <Package className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                         <p className="text-muted-foreground mb-4">No baseline product set</p>
-                        <Dialog open={isAddProductOpen} onOpenChange={setIsAddProductOpen}>
+                        <Dialog open={isAddProductOpen} onOpenChange={(open) => {
+                          setIsAddProductOpen(open);
+                          if (open) {
+                            setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: true });
+                          }
+                        }}>
                           <DialogTrigger asChild>
                             <Button data-testid="button-add-baseline">
                               <Plus className="mr-2 h-4 w-4" />
@@ -1298,6 +1305,24 @@ export default function ProductDetail() {
                                     onChange={(e) => setProductFormData({ ...productFormData, description: e.target.value })}
                                     rows={3}
                                   />
+                                </div>
+                                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                                  <Switch
+                                    id="isBaseline"
+                                    checked={productFormData.isBaseline}
+                                    onCheckedChange={(checked) => setProductFormData({ ...productFormData, isBaseline: checked })}
+                                    data-testid="switch-is-baseline"
+                                  />
+                                  <div className="flex flex-col">
+                                    <Label htmlFor="isBaseline" className="font-medium">
+                                      {productFormData.isBaseline ? "This is our product" : "This is a competitor product"}
+                                    </Label>
+                                    <span className="text-xs text-muted-foreground">
+                                      {productFormData.isBaseline 
+                                        ? "Mark as baseline for this market" 
+                                        : "Competitor product for analysis"}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                               <DialogFooter>
@@ -1380,7 +1405,11 @@ export default function ProductDetail() {
                         Products to compare against the baseline
                       </CardDescription>
                     </div>
-                    <Dialog>
+                    <Dialog onOpenChange={(open) => {
+                      if (open) {
+                        setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false });
+                      }
+                    }}>
                       <DialogTrigger asChild>
                         <Button data-testid="button-add-competitor">
                           <Plus className="mr-2 h-4 w-4" />
@@ -1457,6 +1486,24 @@ export default function ProductDetail() {
                                 onChange={(e) => setProductFormData({ ...productFormData, description: e.target.value })}
                                 rows={3}
                               />
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                              <Switch
+                                id="comp-isBaseline"
+                                checked={productFormData.isBaseline}
+                                onCheckedChange={(checked) => setProductFormData({ ...productFormData, isBaseline: checked })}
+                                data-testid="switch-competitor-is-baseline"
+                              />
+                              <div className="flex flex-col">
+                                <Label htmlFor="comp-isBaseline" className="font-medium">
+                                  {productFormData.isBaseline ? "This is our product" : "This is a competitor product"}
+                                </Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {productFormData.isBaseline 
+                                    ? "Mark as baseline for this market" 
+                                    : "Competitor product for analysis"}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <DialogFooter>
