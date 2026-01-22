@@ -1,0 +1,172 @@
+Vega
+Vega
+Beta
+Features
+Security
+Modules
+Get started
+Log in
+
+Vega Company OS
+Turn strategy into action—every week, not once a year.
+Vega is an AI-augmented Company Operating System™ that connects strategy, OKRs, and leadership cadence in one place.
+
+Get started now
+Log in
+Start using Vega today — no purchase, no credit card, and no sales call required.
+
+Create an account or sign in with Microsoft Entra SSO.
+
+Watch 2-minute walkthrough
+SOC 2 Type II
+Microsoft Entra SSO
+Role-based access
+Audit trails
+Built on our proven Company Operating System™
+
+Vega is built on the Company Operating System™ created by Synozur with former Microsoft product leadership, and shaped by decades of strategy consulting. It reflects how real leadership teams align strategy, planning, and execution—refined through hands-on work with dozens of organizations, from growing mid-market companies to complex global enterprises.
+
+See how this approach has been applied in practice: Microsoft management frameworks • Luxury brand leadership transformation
+
+What you'll do in your first 15 minutes
+1
+Define 1–3 strategic priorities (with AI prompts)
+2
+Create your first OKRs
+3
+Link initiatives and meetings to what matters
+4
+See what's at risk—automatically
+Get started now
+No credit card required
+
+Capabilities
+Discover how Vega puts strategy to work
+Explore the core capabilities that power Vega’s Company Operating System—designed to align leaders, focus teams, and drive measurable progress.
+
+Company Operating System
+Leadership Alignment
+Strategy to Execution
+Stay on Course
+AI-Powered Insights
+Define how the company runs
+Vega establishes a clear Company Operating System by anchoring mission, values, and long-term direction in a shared operating model. This is the foundation leaders use to align decisions, priorities, and behaviors across the organization.
+
+Define how the company runs
+How access works
+1
+Create a free account or use Microsoft Entra SSO
+2
+Start with your own workspace instantly
+What You'll Achieve
+Three outcomes that matter
+Align
+Connect mission, strategy, and priorities so everyone rows in the same direction.
+
+Execute
+Turn plans into weekly focus with OKRs, initiatives, and clear ownership.
+
+Adjust
+Spot drift early with AI insights, check-ins, and decision logs.
+
+Get started now
+No credit card required. Be set up in minutes.
+
+Why Vega
+How Vega is Different
+Unlike generic tools, Vega codifies the Company OS developed by Synozur through real strategy and transformation work.
+
+Not another dashboard
+One system that links strategy, OKRs, initiatives, and leadership rhythm.
+
+AI that supports—not replaces
+Recommendations and risk signals you control.
+
+Built for real adoption
+Cadence, meeting workflows, and accountability people actually use.
+
+Is Vega right for you?
+Built for
+CEOs & COOs scaling beyond ad-hoc leadership
+Strategy & Transformation leaders tired of slideware
+Consultants running multi-client operating cadences
+Not designed for
+Task-only project management
+Individual productivity tracking
+Lightweight to-do apps
+Get started now
+No credit card required. Be set up in minutes.
+
+The Platform
+Five integrated modules
+Foundations
+Define mission, vision, values, and goals
+
+Strategy
+Strategic priorities aligned to annual goals
+
+Outcomes (OKRs)
+Objectives, weighted key results, check-ins
+
+Focus Rhythm
+Meeting cadences, agendas, decisions, action items
+
+AI Assistant
+At-risk detection, summaries, reporting exports
+
+Native Microsoft 365 integration
+|
+Outlook Calendar
+•
+Excel binding
+•
+Planner sync
+•
+Copilot Agent
+Get started now
+No credit card required. Be set up in minutes.
+
+Enterprise Grade
+Enterprise-ready by design
+SOC 2 Type II
+Encryption in transit and at rest
+Microsoft Entra SSO + RBAC
+Audit logging
+Multi-tenant isolation
+See Vega in Action
+From business plan to AI-powered check-in in less than 90 seconds
+
+Ready to turn strategy into action?
+Join leaders who align, execute, and adapt—every week.
+
+Get started now
+No credit card required. Be set up in minutes.
+
+Synozur Alliance - The Transformation Company
+Synozur – the transformation company – is proud to be a woman-owned advisory firm focused on transforming business for clients, making the desirable achievable. Built on our proven Company Operating System™, Vega was designed by former Microsoft product leadership.
+
+Synozur helps clients reimagine how they do business today and evolve to succeed. Our empathetic approach is tailored to your unique journey, navigating the complexities of transformation and strategy with ease. We drive strategic leadership, culture change and design for business, technology, experiences, and market development.
+
+Our consultants have decades of experience delivering global strategic advisory services that elevate you to achieve breakthrough innovation.
+
+Learn more about Synozur
+Vega Company OS
+Designed by former Microsoft Viva product leadership
+
+Microsoft Preferred Content AI Partner
+Product
+Features
+Modules
+Security
+Pricing
+Company
+About Synozur
+Contact
+Blog
+Legal
+Privacy Policy
+Terms of Service
+Security
+© 2026 The Synozur Alliance LLC. All rights reserved.
+
+www.synozur.com

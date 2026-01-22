@@ -415,11 +415,25 @@ export async function extractFeaturesFromContent(
     messages: [
       {
         role: "user",
-        content: `You are a product analyst extracting features from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+        content: `You are a product analyst extracting ALL product features and capabilities from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
 
-Analyze the following content and extract distinct product features. For each feature, determine:
+IMPORTANT: Be thorough and extract EVERY distinct feature, capability, module, and functionality mentioned. Marketing pages often describe many features - capture them all.
+
+Look for and extract:
+- Named modules or product components (e.g., "Strategy Module", "AI Assistant")
+- Core capabilities and workflows
+- Integrations with other platforms (each integration is a separate feature)
+- Security features and compliance certifications (SOC 2, encryption, SSO, RBAC, audit logs)
+- User experience features
+- Platform features (access control, multi-tenant, etc.)
+- AI-powered features and automation
+- Analytics, reporting, and dashboard capabilities
+- Meeting/collaboration features
+- Any feature mentioned in bullet points or feature lists
+
+For each feature found, determine:
 1. A clear, concise name (max 60 characters)
-2. A brief description (1-2 sentences)
+2. A brief description (1-2 sentences explaining what it does)
 3. A category: Core, Security, Analytics, Integration, UX, Performance, API, or Other
 4. Status: "released" if it appears to be live/available, "planned" if mentioned as upcoming/roadmap, "in_progress" if in beta/preview, "backlog" if just mentioned as an idea
 
@@ -432,7 +446,7 @@ Return a JSON array of features. Each feature should have:
 - category: string or null (one of: Core, Security, Analytics, Integration, UX, Performance, API, Other)
 - status: "backlog" | "planned" | "in_progress" | "released"
 
-Extract 5-20 features. Focus on distinct, meaningful product capabilities.
+Be comprehensive! Extract 10-30 features if the content has that many. Each distinct capability, module, integration, or security feature should be its own entry. Do not be conservative - if something sounds like a feature, include it.
 Return ONLY valid JSON array, no additional text.`,
       },
     ],
