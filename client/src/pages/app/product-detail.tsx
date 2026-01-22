@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart } from "lucide-react";
 import FeaturesTab from "@/components/product/FeaturesTab";
 import RoadmapTab from "@/components/product/RoadmapTab";
 import { MarkdownContent } from "@/components/MarkdownViewer";
@@ -195,6 +195,12 @@ export default function ProductDetail() {
     targetAudience: "",
     toneOfVoice: "",
     keyMessages: "",
+    customGuidance: "",
+  });
+  const [oneSheetPrompts, setOneSheetPrompts] = useState({
+    targetAudience: "",
+    keyBenefits: "",
+    toneOfVoice: "",
     customGuidance: "",
   });
   const [isExporting, setIsExporting] = useState(false);
@@ -395,6 +401,17 @@ export default function ProductDetail() {
     enabled: !!id,
   });
 
+  // Fetch Product One Sheet
+  const { data: productOneSheet, isLoading: oneSheetLoading } = useQuery<LongFormRecommendation>({
+    queryKey: ["/api/projects", id, "recommendations", "product_one_sheet"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/product_one_sheet`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch product one sheet");
+      return response.json();
+    },
+    enabled: !!id,
+  });
+
   // Fetch Gap Analysis
   const { data: gapAnalysis, isLoading: gapLoading } = useQuery<LongFormRecommendation>({
     queryKey: ["/api/projects", id, "recommendations", "gap_analysis"],
@@ -488,6 +505,17 @@ export default function ProductDetail() {
     }
   }, [messagingFramework]);
 
+  React.useEffect(() => {
+    if (productOneSheet?.savedPrompts) {
+      setOneSheetPrompts({
+        targetAudience: (productOneSheet.savedPrompts as any).targetAudience || "",
+        keyBenefits: (productOneSheet.savedPrompts as any).keyBenefits || "",
+        toneOfVoice: (productOneSheet.savedPrompts as any).toneOfVoice || "",
+        customGuidance: (productOneSheet.savedPrompts as any).customGuidance || "",
+      });
+    }
+  }, [productOneSheet]);
+
   const generateGtmPlan = useMutation({
     mutationFn: async () => {
       const response = await fetch(`/api/projects/${id}/recommendations/gtm_plan/generate`, {
@@ -537,6 +565,36 @@ export default function ProductDetail() {
       toast({
         title: "Messaging Framework Generated",
         description: "Your messaging and positioning framework has been created.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateProductOneSheet = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/projects/${id}/recommendations/product_one_sheet/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(oneSheetPrompts),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to generate product one sheet");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "recommendations", "product_one_sheet"] });
+      toast({
+        title: "Product One Sheet Generated",
+        description: "Your marketing copy draft has been created.",
       });
     },
     onError: (error: Error) => {
@@ -1168,6 +1226,15 @@ export default function ProductDetail() {
                 <MessageCircle className="h-4 w-4" />
                 Messaging
                 {messagingFramework?.status === "generated" && (
+                  <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                    <Check className="h-3 w-3" />
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="one_sheet" className="flex items-center gap-1">
+                <FileBarChart className="h-4 w-4" />
+                One Sheet
+                {productOneSheet?.status === "generated" && (
                   <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
                     <Check className="h-3 w-3" />
                   </Badge>
@@ -2514,6 +2581,152 @@ export default function ProductDetail() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Product One Sheet Tab Content */}
+            <TabsContent value="one_sheet" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileBarChart className="h-5 w-5 text-primary" />
+                        Product One Sheet
+                      </CardTitle>
+                      <CardDescription>
+                        AI-generated marketing copy draft for a single-page product overview
+                      </CardDescription>
+                    </div>
+                    {productOneSheet?.lastGeneratedAt && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 mr-1" />
+                        Last updated: {new Date(productOneSheet.lastGeneratedAt).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* One Sheet Prompts Form */}
+                  <div className="border rounded-lg p-4 bg-muted/30">
+                    <h4 className="font-medium mb-4">Guidance for AI Generation</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="os-audience">Target Audience</Label>
+                        <Input
+                          id="os-audience"
+                          placeholder="e.g., Enterprise IT leaders, SMB owners"
+                          value={oneSheetPrompts.targetAudience}
+                          onChange={(e) => setOneSheetPrompts({ ...oneSheetPrompts, targetAudience: e.target.value })}
+                          data-testid="input-os-audience"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="os-tone">Tone of Voice</Label>
+                        <Input
+                          id="os-tone"
+                          placeholder="e.g., Professional, Friendly, Bold"
+                          value={oneSheetPrompts.toneOfVoice}
+                          onChange={(e) => setOneSheetPrompts({ ...oneSheetPrompts, toneOfVoice: e.target.value })}
+                          data-testid="input-os-tone"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="os-benefits">Key Benefits to Highlight</Label>
+                        <Input
+                          id="os-benefits"
+                          placeholder="e.g., Cost savings, Ease of use, Security"
+                          value={oneSheetPrompts.keyBenefits}
+                          onChange={(e) => setOneSheetPrompts({ ...oneSheetPrompts, keyBenefits: e.target.value })}
+                          data-testid="input-os-benefits"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="os-guidance">Additional Guidance</Label>
+                        <Textarea
+                          id="os-guidance"
+                          placeholder="Any specific requirements, brand guidelines, or focus areas..."
+                          value={oneSheetPrompts.customGuidance}
+                          onChange={(e) => setOneSheetPrompts({ ...oneSheetPrompts, customGuidance: e.target.value })}
+                          data-testid="input-os-guidance"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button 
+                        onClick={() => generateProductOneSheet.mutate()} 
+                        disabled={generateProductOneSheet.isPending}
+                        data-testid="button-generate-one-sheet"
+                      >
+                        {generateProductOneSheet.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : productOneSheet?.status === "generated" ? (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Regenerate One Sheet
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Generate One Sheet
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* One Sheet Content Display */}
+                  {oneSheetLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : productOneSheet?.status === "generated" && productOneSheet.content ? (
+                    <div className="space-y-4">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const blob = new Blob([productOneSheet.content || ""], { type: "text/markdown" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `product_one_sheet_${new Date().toISOString().split('T')[0]}.md`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          data-testid="button-download-os-md"
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Download Markdown
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/recommendations/${productOneSheet.id}/download/docx`, "_blank")}
+                          data-testid="button-download-os-docx"
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Download Word
+                        </Button>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
+                        <MarkdownContent content={productOneSheet.content} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <FileBarChart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Product One Sheet Generated Yet</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Fill in the guidance above and click generate to create your product marketing copy.
+                      </p>
                     </div>
                   )}
                 </CardContent>
