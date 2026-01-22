@@ -19,7 +19,7 @@ import {
   ClipboardList,
   Crown,
   Loader2,
-  FolderKanban,
+  Package,
   HelpCircle,
   Building2,
   Swords,
@@ -291,7 +291,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Outputs",
       items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
-        { label: "Projects", icon: FolderKanban, href: "/app/projects" },
+        { label: "Products", icon: Package, href: "/app/products" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
       ]
