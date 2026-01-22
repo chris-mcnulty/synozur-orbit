@@ -264,6 +264,59 @@ The draft GTM plan is the primary strategic input for Marketing Planner task gen
 - [ ] Re-generate specific sections while preserving user edits
 **Effort**: Medium
 
+#### Microsoft Planner Integration
+**Status**: Planned (not implemented)
+Sync marketing plan tasks bidirectionally with Microsoft Planner for execution tracking in Teams.
+
+**Architecture** (based on Constellation patterns):
+1. **Authentication Layer** (`server/services/planner-graph-client.ts`)
+   - Client credentials flow (app-only authentication)
+   - Token caching with automatic refresh
+   - Support system credentials (`PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, `PLANNER_CLIENT_SECRET`)
+   - Optional BYOA (Bring Your Own App) for tenant-specific credentials
+
+2. **Planner Service** (`server/services/planner-service.ts`)
+   - List Microsoft 365 groups (Teams) user belongs to
+   - Create/list Planner plans within a group
+   - Create buckets for task organization (by quarter or activity category)
+   - CRUD operations on Planner tasks with assignments
+
+3. **Data Model Updates**:
+   - [ ] Add `microsoftTeamId` to marketing plans (target Team for sync)
+   - [ ] Add `plannerPlanId` to marketing plans (linked Planner plan)
+   - [ ] Add `plannerTaskId` to marketing tasks (already exists, needs implementation)
+   - [ ] Add `plannerBucketId` for bucket mapping
+
+4. **UI Components**:
+   - [ ] "Connect to Planner" button on marketing plan detail page
+   - [ ] Team/Group selector dropdown (paginated with search)
+   - [ ] Channel selector for where to pin the Planner tab
+   - [ ] Sync status indicator (last synced, sync errors)
+   - [ ] Manual "Sync Now" button
+
+5. **Sync Logic**:
+   - [ ] One-way push: Orbit → Planner (initial implementation)
+   - [ ] Map task status: `accepted`/`in_progress` → 50%, `completed` → 100%
+   - [ ] Map priority: High/Medium/Low
+   - [ ] Sync due dates and descriptions
+   - [ ] Create buckets by quarter (Steady State, Q1, Q2, Q3, Q4, Future)
+   - [ ] Handle task deletions (mark removed vs delete in Planner)
+
+6. **Future: Bidirectional Sync**:
+   - [ ] Webhook or polling for Planner changes
+   - [ ] Update Orbit task status when completed in Planner
+   - [ ] Conflict resolution strategy (last-write-wins or prompt user)
+
+**Azure AD Permissions Required**:
+- `Group.Read.All` - List groups/teams
+- `Tasks.ReadWrite` - Create/update Planner tasks
+- `TeamsTab.Create` - Pin Planner tab to Teams channel
+- `Channel.ReadBasic.All` - List channels in a Team
+
+**Reference**: Constellation (`server/services/planner-service.ts`, `planner-graph-client.ts`)
+**Effort**: High
+**Dependencies**: Tenant must have Microsoft Entra ID configured with admin consent
+
 #### Competitor Document Uploads
 **Status**: Not implemented
 Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence:
