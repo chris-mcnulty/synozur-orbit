@@ -436,14 +436,24 @@ export async function generateBattlecardPdf(
         "--mute-audio",
         "--disable-web-security",
         "--disable-features=IsolateOrigins,site-per-process",
+        "--js-flags=--max-old-space-size=256",
+        "--disable-software-rasterizer",
       ],
-      timeout: 120000,
-      protocolTimeout: 120000,
+      timeout: 180000,
+      protocolTimeout: 180000,
     });
     
     console.log(`[Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);
     
     const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
     
     // Set smaller viewport for faster rendering
     await page.setViewport({ width: 800, height: 600 });
@@ -908,14 +918,24 @@ export async function generateProductBattlecardPdf(
         "--mute-audio",
         "--disable-web-security",
         "--disable-features=IsolateOrigins,site-per-process",
+        "--js-flags=--max-old-space-size=256",
+        "--disable-software-rasterizer",
       ],
-      timeout: 120000,
-      protocolTimeout: 120000,
+      timeout: 180000,
+      protocolTimeout: 180000,
     });
     
     console.log(`[Product Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);
     
     const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
     await page.setViewport({ width: 800, height: 600 });
     
     await page.setContent(html, { 
