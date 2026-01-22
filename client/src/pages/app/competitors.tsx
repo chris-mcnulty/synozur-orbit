@@ -371,7 +371,7 @@ export default function Competitors() {
     addCompetitor.mutate({ 
       name, 
       url: validation.normalized,
-      projectId: selectedProjectId || undefined
+      projectId: selectedProjectId === "__none__" ? undefined : (selectedProjectId || undefined)
     });
   };
 
@@ -520,7 +520,7 @@ export default function Competitors() {
                         <SelectValue placeholder="None (own analysis)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None (own analysis)</SelectItem>
+                        <SelectItem value="__none__">None (own analysis)</SelectItem>
                         {activeProjects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             <span className="flex items-center gap-2">

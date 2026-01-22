@@ -345,7 +345,7 @@ export default function ProductRoadmap() {
                 <SelectValue placeholder="Select quarter" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Unscheduled</SelectItem>
+                <SelectItem value="__unscheduled__">Unscheduled</SelectItem>
                 {QUARTERS.map((q) => (
                   <SelectItem key={q} value={q}>{q}</SelectItem>
                 ))}
@@ -540,7 +540,11 @@ export default function ProductRoadmap() {
                     <DialogTitle>Add Roadmap Item</DialogTitle>
                     <DialogDescription>Add a new item to your product roadmap.</DialogDescription>
                   </DialogHeader>
-                  <RoadmapForm onSubmit={(e) => { e.preventDefault(); createItem.mutate(formData); }} />
+                  <RoadmapForm onSubmit={(e) => { 
+                    e.preventDefault(); 
+                    const submitData = { ...formData, quarter: formData.quarter === "__unscheduled__" ? "" : formData.quarter };
+                    createItem.mutate(submitData); 
+                  }} />
                 </DialogContent>
               </Dialog>
             </div>
@@ -754,7 +758,13 @@ export default function ProductRoadmap() {
             <DialogTitle>Edit Roadmap Item</DialogTitle>
             <DialogDescription>Update the roadmap item details.</DialogDescription>
           </DialogHeader>
-          <RoadmapForm onSubmit={(e) => { e.preventDefault(); if (editingItem) updateItem.mutate({ itemId: editingItem.id, data: formData }); }} isEdit />
+          <RoadmapForm onSubmit={(e) => { 
+          e.preventDefault(); 
+          if (editingItem) {
+            const submitData = { ...formData, quarter: formData.quarter === "__unscheduled__" ? "" : formData.quarter };
+            updateItem.mutate({ itemId: editingItem.id, data: submitData }); 
+          }
+        }} isEdit />
         </DialogContent>
       </Dialog>
     </AppLayout>

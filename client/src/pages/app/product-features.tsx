@@ -236,13 +236,21 @@ export default function ProductFeatures() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createFeature.mutate(formData);
+    const submitData = {
+      ...formData,
+      targetQuarter: formData.targetQuarter === "__none__" ? "" : formData.targetQuarter
+    };
+    createFeature.mutate(submitData);
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingFeature) {
-      updateFeature.mutate({ featureId: editingFeature.id, data: formData });
+      const submitData = {
+        ...formData,
+        targetQuarter: formData.targetQuarter === "__none__" ? "" : formData.targetQuarter
+      };
+      updateFeature.mutate({ featureId: editingFeature.id, data: submitData });
     }
   };
 
@@ -348,7 +356,7 @@ export default function ProductFeatures() {
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="__none__">None</SelectItem>
                 <SelectItem value="Q1">Q1</SelectItem>
                 <SelectItem value="Q2">Q2</SelectItem>
                 <SelectItem value="Q3">Q3</SelectItem>
