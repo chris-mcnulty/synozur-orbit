@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map } from "lucide-react";
+import FeaturesTab from "@/components/product/FeaturesTab";
+import RoadmapTab from "@/components/product/RoadmapTab";
 import { MarkdownContent } from "@/components/MarkdownViewer";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -1158,6 +1160,14 @@ export default function ProductDetail() {
                     <Check className="h-3 w-3" />
                   </Badge>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="features" className="flex items-center gap-1">
+                <List className="h-4 w-4" />
+                Features
+              </TabsTrigger>
+              <TabsTrigger value="roadmap" className="flex items-center gap-1">
+                <Map className="h-4 w-4" />
+                Roadmap
               </TabsTrigger>
             </TabsList>
 
@@ -2496,6 +2506,26 @@ export default function ProductDetail() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Features Tab Content */}
+            <TabsContent value="features" className="mt-6">
+              {project.baselineProductId && (
+                <FeaturesTab 
+                  productId={project.baselineProductId} 
+                  product={baselineProduct || undefined}
+                />
+              )}
+            </TabsContent>
+
+            {/* Roadmap Tab Content */}
+            <TabsContent value="roadmap" className="mt-6">
+              {project.baselineProductId && (
+                <RoadmapTab 
+                  productId={project.baselineProductId} 
+                  product={baselineProduct || undefined}
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
