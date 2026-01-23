@@ -302,10 +302,7 @@ export default function ContextBar() {
   const updateMarketMutation = useMutation({
     mutationFn: async ({ marketId, name, description }: { marketId: string; name: string; description?: string }) => {
       const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update market");
-      }
+      // apiRequest already throws on error, so response.ok is guaranteed here
       return response.json();
     },
     onSuccess: () => {
@@ -319,9 +316,25 @@ export default function ContextBar() {
       });
     },
     onError: (error: Error) => {
+      // Parse error message - may be JSON or plain text
+      let errorMessage = error.message;
+      if (errorMessage.includes("<!DOCTYPE")) {
+        errorMessage = "Server error - please try again";
+      } else {
+        // Try to extract JSON error if present
+        try {
+          const match = errorMessage.match(/\{.*"error".*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            errorMessage = parsed.error || errorMessage;
+          }
+        } catch {
+          // Keep original message
+        }
+      }
       toast({
         title: "Failed to update market",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     },
