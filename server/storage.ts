@@ -97,7 +97,10 @@ import {
   type InsertFeatureRecommendation,
   competitorScores,
   socialMetrics,
-  executiveSummaries
+  executiveSummaries,
+  scheduledJobRuns,
+  type ScheduledJobRun,
+  type InsertScheduledJobRun,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
@@ -2325,6 +2328,46 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return { roadmapItem, recommendation };
     });
+  }
+
+  // Scheduled Job Run methods
+  async createScheduledJobRun(data: InsertScheduledJobRun): Promise<ScheduledJobRun> {
+    const [jobRun] = await db.insert(scheduledJobRuns).values(data).returning();
+    return jobRun;
+  }
+
+  async updateScheduledJobRun(id: string, data: Partial<InsertScheduledJobRun>): Promise<ScheduledJobRun | null> {
+    const [jobRun] = await db.update(scheduledJobRuns)
+      .set(data)
+      .where(eq(scheduledJobRuns.id, id))
+      .returning();
+    return jobRun || null;
+  }
+
+  async getScheduledJobRuns(limit: number = 100): Promise<ScheduledJobRun[]> {
+    return await db.select().from(scheduledJobRuns)
+      .orderBy(desc(scheduledJobRuns.createdAt))
+      .limit(limit);
+  }
+
+  async getScheduledJobRunsByTenant(tenantDomain: string, limit: number = 50): Promise<ScheduledJobRun[]> {
+    return await db.select().from(scheduledJobRuns)
+      .where(eq(scheduledJobRuns.tenantDomain, tenantDomain))
+      .orderBy(desc(scheduledJobRuns.createdAt))
+      .limit(limit);
+  }
+
+  async getScheduledJobRunsByType(jobType: string, limit: number = 50): Promise<ScheduledJobRun[]> {
+    return await db.select().from(scheduledJobRuns)
+      .where(eq(scheduledJobRuns.jobType, jobType))
+      .orderBy(desc(scheduledJobRuns.createdAt))
+      .limit(limit);
+  }
+
+  async getRunningJobs(): Promise<ScheduledJobRun[]> {
+    return await db.select().from(scheduledJobRuns)
+      .where(eq(scheduledJobRuns.status, "running"))
+      .orderBy(desc(scheduledJobRuns.startedAt));
   }
 }
 
