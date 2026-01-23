@@ -46,6 +46,15 @@ interface ProjectSummary {
   productCount: number;
 }
 
+interface ProductSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  featureCount: number;
+  roadmapCount: number;
+}
+
 interface ProductFeatureData {
   id: string;
   name: string;
@@ -80,6 +89,7 @@ interface ReportData {
   recommendations: any[];
   battlecards: Array<{ competitorName: string; battlecard: Battlecard }>;
   projects: ProjectSummary[];
+  products: ProductSummary[];
   generatedAt: Date;
   tenantDomain: string;
   marketName?: string;
@@ -195,22 +205,22 @@ function generateReportHtml(data: ReportData): string {
   const competitorRows = data.competitors.map(c => {
     const analysisInfo = c.analysisData as { summary?: string; valueProposition?: string } | null;
     const summary = analysisInfo?.summary || analysisInfo?.valueProposition || "No analysis yet";
-    const scoreInfo = c.scores ? `<div style="font-size: 11px; color: #818CF8; margin-top: 4px;">Score: ${c.scores.overallScore.toFixed(0)}/100</div>` : "";
+    const scoreInfo = c.scores ? `<div style="font-size: 11px; color: #6366F1; margin-top: 4px;">Score: ${c.scores.overallScore.toFixed(0)}/100</div>` : "";
     return `
     <tr>
-      <td style="padding: 12px; border-bottom: 1px solid #374151;">
+      <td style="padding: 12px; border-bottom: 1px solid #E2E8F0;">
         <div style="display: flex; align-items: center; gap: 10px;">
-          ${c.faviconUrl ? `<img src="${escapeHtml(c.faviconUrl)}" alt="" style="width: 32px; height: 32px; border-radius: 4px; object-fit: contain;">` : '<div style="width: 32px; height: 32px; background: #374151; border-radius: 4px;"></div>'}
+          <div style="width: 32px; height: 32px; background: #F1F5F9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #6366F1; font-size: 14px;">${escapeHtml(c.name.substring(0, 2).toUpperCase())}</div>
           <div>
-            <div style="font-weight: 600; color: #F9FAFB;">${escapeHtml(c.name)}</div>
-            <div style="font-size: 12px; color: #9CA3AF;">${escapeHtml(c.url || "")}</div>
+            <div style="font-weight: 600; color: #1E293B;">${escapeHtml(c.name)}</div>
+            <div style="font-size: 12px; color: #64748B;">${escapeHtml(c.url || "")}</div>
             ${scoreInfo}
           </div>
         </div>
       </td>
-      <td style="padding: 12px; border-bottom: 1px solid #374151; color: #D1D5DB; max-width: 300px; font-size: 13px;">${escapeHtml(summary.slice(0, 200))}${summary.length > 200 ? "..." : ""}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #374151;">
-        <span style="background: ${c.status === "Active" ? "#065F46" : "#374151"}; color: ${c.status === "Active" ? "#34D399" : "#9CA3AF"}; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(c.status)}</span>
+      <td style="padding: 12px; border-bottom: 1px solid #E2E8F0; color: #475569; max-width: 300px; font-size: 13px;">${escapeHtml(summary.slice(0, 200))}${summary.length > 200 ? "..." : ""}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #E2E8F0;">
+        <span style="background: ${c.status === "Active" ? "#DCFCE7" : "#F1F5F9"}; color: ${c.status === "Active" ? "#059669" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(c.status)}</span>
       </td>
     </tr>
   `;
@@ -219,25 +229,27 @@ function generateReportHtml(data: ReportData): string {
   const themeCards = (data.analysis?.themes || []).map((theme: any) => {
     const themeName = theme.theme || theme.name || theme.title || "Theme";
     const themeDesc = theme.description || theme.details || theme.us || theme.observation || "";
+    const competitorRef = theme.competitorName || theme.competitor || theme.source || "";
     if (!themeDesc && !themeName) return "";
     return `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #F9FAFB; margin-bottom: 8px;">${escapeHtml(themeName)}</div>
-      ${themeDesc ? `<div style="color: #D1D5DB; font-size: 14px;">${escapeHtml(themeDesc)}</div>` : ""}
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="font-weight: 600; color: #1E293B; margin-bottom: 8px;">${escapeHtml(themeDesc || themeName)}</div>
+      ${competitorRef ? `<div style="color: #64748B; font-size: 12px; margin-top: 8px;">Based on ${escapeHtml(competitorRef)} profile</div>` : '<div style="color: #64748B; font-size: 12px; margin-top: 8px;">Based on profile</div>'}
     </div>
   `;
   }).filter(Boolean).join("");
 
   const messagingCards = (data.analysis?.messaging || []).map((msg: any) => {
-    const msgName = msg.category || msg.competitor || msg.name || "Messaging";
-    const ourMsg = msg.us || msg.ourMessage || "";
-    const compMsg = msg.competitorA || msg.keyMessage || msg.message || msg.description || "";
-    if (!ourMsg && !compMsg) return "";
+    const msgName = msg.category || msg.name || "Messaging";
+    const competitorRef = msg.competitor || msg.competitorName || msg.targetAudience || "";
+    const ourMsg = msg.us || msg.ourMessage || msg.ourPosition || "";
+    const compMsg = msg.competitorA || msg.keyMessage || msg.message || msg.them || msg.competitorPosition || msg.description || "";
+    if (!ourMsg && !compMsg && !competitorRef) return "";
     return `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #F9FAFB; margin-bottom: 8px;">${escapeHtml(msgName)}</div>
-      ${ourMsg ? `<div style="color: #34D399; font-size: 13px; margin-bottom: 6px;"><strong>Our Position:</strong> ${escapeHtml(ourMsg)}</div>` : ""}
-      ${compMsg ? `<div style="color: #D1D5DB; font-size: 14px;"><strong>Competitor:</strong> ${escapeHtml(compMsg)}</div>` : ""}
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      ${competitorRef ? `<div style="font-weight: 600; color: #1E293B; margin-bottom: 10px;">${escapeHtml(competitorRef)}</div>` : ""}
+      ${ourMsg ? `<div style="color: #059669; font-size: 13px; margin-bottom: 8px;"><strong>Our Position:</strong> ${escapeHtml(ourMsg)}</div>` : ""}
+      ${compMsg ? `<div style="color: #475569; font-size: 14px;"><strong>Competitor:</strong> ${escapeHtml(compMsg)}</div>` : ""}
     </div>
   `;
   }).filter(Boolean).join("");
@@ -249,25 +261,25 @@ function generateReportHtml(data: ReportData): string {
     const gapImpact = gap.impact || "";
     if (!gapDesc && !gapArea) return "";
     return `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 3px solid #FB923C;">
+    <div style="background: #FFFBEB; border: 1px solid #FCD34D; border-left: 3px solid #F59E0B; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="font-weight: 600; color: #F9FAFB; margin-bottom: 8px;">${escapeHtml(gapArea)}</div>
-        ${gapImpact ? `<span style="background: ${gapImpact === "High" ? "#7C3AED" : gapImpact === "Medium" ? "#2563EB" : "#374151"}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(gapImpact)}</span>` : ""}
+        <div style="font-weight: 600; color: #1E293B; margin-bottom: 8px;">${escapeHtml(gapArea)}</div>
+        ${gapImpact ? `<span style="background: ${gapImpact === "High" ? "#7C3AED" : gapImpact === "Medium" ? "#3B82F6" : "#6B7280"}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(gapImpact)}</span>` : ""}
       </div>
-      ${gapDesc ? `<div style="color: #D1D5DB; font-size: 14px;">${escapeHtml(gapDesc)}</div>` : ""}
-      ${gapOpp ? `<div style="color: #34D399; font-size: 13px; margin-top: 8px;"><strong>Opportunity:</strong> ${escapeHtml(gapOpp)}</div>` : ""}
+      ${gapDesc ? `<div style="color: #475569; font-size: 14px;">${escapeHtml(gapDesc)}</div>` : ""}
+      ${gapOpp ? `<div style="color: #059669; font-size: 13px; margin-top: 8px;"><strong>Opportunity:</strong> ${escapeHtml(gapOpp)}</div>` : ""}
     </div>
   `;
   }).filter(Boolean).join("");
 
   const recommendationCards = data.recommendations.map((rec: any) => `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-        <div style="font-weight: 600; color: #F9FAFB;">${escapeHtml(rec.title)}</div>
-        <span style="background: ${rec.impact === "High" ? "#7C3AED" : rec.impact === "Medium" ? "#2563EB" : "#374151"}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(rec.impact)} Impact</span>
+        <div style="font-weight: 600; color: #1E293B;">${escapeHtml(rec.title)}</div>
+        <span style="background: ${rec.impact === "High" ? "#7C3AED" : rec.impact === "Medium" ? "#3B82F6" : "#6B7280"}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(rec.impact)} Impact</span>
       </div>
-      <div style="color: #D1D5DB; font-size: 14px;">${escapeHtml(rec.description)}</div>
-      <div style="color: #9CA3AF; font-size: 12px; margin-top: 8px;">Area: ${escapeHtml(rec.area)}</div>
+      <div style="color: #475569; font-size: 14px;">${escapeHtml(rec.description)}</div>
+      <div style="color: #64748B; font-size: 12px; margin-top: 8px;">Area: ${escapeHtml(rec.area)}</div>
     </div>
   `).join("");
 
@@ -289,42 +301,42 @@ function generateReportHtml(data: ReportData): string {
   };
 
   const featureCards = (data.productFeatures || []).map((f) => `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-        <div style="font-weight: 600; color: #F9FAFB;">${escapeHtml(f.name)}</div>
+        <div style="font-weight: 600; color: #1E293B;">${escapeHtml(f.name)}</div>
         <span style="background: ${getStatusColor(f.status)}20; color: ${getStatusColor(f.status)}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(f.status.replace("_", " "))}</span>
       </div>
-      ${f.description ? `<div style="color: #D1D5DB; font-size: 14px; margin-bottom: 8px;">${escapeHtml(f.description)}</div>` : ""}
+      ${f.description ? `<div style="color: #475569; font-size: 14px; margin-bottom: 8px;">${escapeHtml(f.description)}</div>` : ""}
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        ${f.category ? `<span style="color: #9CA3AF; font-size: 12px;">Category: ${escapeHtml(f.category)}</span>` : ""}
-        ${f.priority ? `<span style="color: #9CA3AF; font-size: 12px;">Priority: ${escapeHtml(f.priority)}</span>` : ""}
-        ${f.targetQuarter ? `<span style="color: #9CA3AF; font-size: 12px;">Target: ${escapeHtml(f.targetQuarter)} ${f.targetYear || ""}</span>` : ""}
+        ${f.category ? `<span style="color: #64748B; font-size: 12px;">Category: ${escapeHtml(f.category)}</span>` : ""}
+        ${f.priority ? `<span style="color: #64748B; font-size: 12px;">Priority: ${escapeHtml(f.priority)}</span>` : ""}
+        ${f.targetQuarter ? `<span style="color: #64748B; font-size: 12px;">Target: ${escapeHtml(f.targetQuarter)} ${f.targetYear || ""}</span>` : ""}
       </div>
     </div>
   `).join("");
 
   const roadmapCards = (data.roadmapItems || []).map((r) => `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-        <div style="font-weight: 600; color: #F9FAFB;">
+        <div style="font-weight: 600; color: #1E293B;">
           ${escapeHtml(r.title)}
-          ${r.aiRecommended ? `<span style="background: #818CF820; color: #818CF8; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 8px;">AI</span>` : ""}
+          ${r.aiRecommended ? `<span style="background: #818CF830; color: #6366F1; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 8px;">AI</span>` : ""}
         </div>
         <span style="background: ${getStatusColor(r.status)}20; color: ${getStatusColor(r.status)}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(r.status.replace("_", " "))}</span>
       </div>
-      ${r.description ? `<div style="color: #D1D5DB; font-size: 14px; margin-bottom: 8px;">${escapeHtml(r.description)}</div>` : ""}
+      ${r.description ? `<div style="color: #475569; font-size: 14px; margin-bottom: 8px;">${escapeHtml(r.description)}</div>` : ""}
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        ${r.quarter ? `<span style="color: #9CA3AF; font-size: 12px;">Quarter: ${escapeHtml(r.quarter)} ${r.year || ""}</span>` : "<span style=\"color: #9CA3AF; font-size: 12px;\">Unscheduled</span>"}
-        ${r.effort ? `<span style="color: #9CA3AF; font-size: 12px;">Effort: ${escapeHtml(getEffortLabel(r.effort))}</span>` : ""}
+        ${r.quarter ? `<span style="color: #64748B; font-size: 12px;">Quarter: ${escapeHtml(r.quarter)} ${r.year || ""}</span>` : "<span style=\"color: #64748B; font-size: 12px;\">Unscheduled</span>"}
+        ${r.effort ? `<span style="color: #64748B; font-size: 12px;">Effort: ${escapeHtml(getEffortLabel(r.effort))}</span>` : ""}
       </div>
     </div>
   `).join("");
 
   const socialWebCards = data.competitors.filter(c => c.socialSummary || c.webUpdateSummary).map(c => `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #F9FAFB; margin-bottom: 8px;">${escapeHtml(c.name)}</div>
-      ${c.socialSummary ? `<div style="color: #D1D5DB; font-size: 13px; margin-bottom: 8px;"><strong style="color: #818CF8;">Social:</strong> ${escapeHtml(c.socialSummary)}</div>` : ""}
-      ${c.webUpdateSummary ? `<div style="color: #D1D5DB; font-size: 13px;"><strong style="color: #818CF8;">Web Updates:</strong> ${escapeHtml(c.webUpdateSummary)}</div>` : ""}
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="font-weight: 600; color: #1E293B; margin-bottom: 8px;">${escapeHtml(c.name)}</div>
+      ${c.socialSummary ? `<div style="color: #475569; font-size: 13px; margin-bottom: 8px;"><strong style="color: #6366F1;">Social:</strong> ${escapeHtml(c.socialSummary)}</div>` : ""}
+      ${c.webUpdateSummary ? `<div style="color: #475569; font-size: 13px;"><strong style="color: #6366F1;">Web Updates:</strong> ${escapeHtml(c.webUpdateSummary)}</div>` : ""}
     </div>
   `).join("");
 
@@ -333,20 +345,20 @@ function generateReportHtml(data: ReportData): string {
     const weaknesses = Array.isArray(battlecard.weaknesses) ? battlecard.weaknesses.slice(0, 3) : [];
     const advantages = Array.isArray(battlecard.ourAdvantages) ? battlecard.ourAdvantages.slice(0, 3) : [];
     return `
-    <div style="background: #1F2937; border-radius: 8px; padding: 20px; margin-bottom: 16px; page-break-inside: avoid;">
-      <div style="font-weight: 700; color: #F9FAFB; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #374151; padding-bottom: 8px;">${escapeHtml(competitorName)}</div>
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; margin-bottom: 16px; page-break-inside: avoid;">
+      <div style="font-weight: 700; color: #1E293B; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">${escapeHtml(competitorName)}</div>
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
         <div>
-          <div style="font-weight: 600; color: #EF4444; font-size: 12px; margin-bottom: 8px;">THEIR STRENGTHS</div>
-          ${strengths.map(s => `<div style="color: #D1D5DB; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(s))}</div>`).join("")}
+          <div style="font-weight: 600; color: #DC2626; font-size: 12px; margin-bottom: 8px;">THEIR STRENGTHS</div>
+          ${strengths.map(s => `<div style="color: #475569; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(s))}</div>`).join("")}
         </div>
         <div>
-          <div style="font-weight: 600; color: #F59E0B; font-size: 12px; margin-bottom: 8px;">THEIR WEAKNESSES</div>
-          ${weaknesses.map(w => `<div style="color: #D1D5DB; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(w))}</div>`).join("")}
+          <div style="font-weight: 600; color: #D97706; font-size: 12px; margin-bottom: 8px;">THEIR WEAKNESSES</div>
+          ${weaknesses.map(w => `<div style="color: #475569; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(w))}</div>`).join("")}
         </div>
         <div>
-          <div style="font-weight: 600; color: #10B981; font-size: 12px; margin-bottom: 8px;">OUR ADVANTAGES</div>
-          ${advantages.map(a => `<div style="color: #D1D5DB; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(a))}</div>`).join("")}
+          <div style="font-weight: 600; color: #059669; font-size: 12px; margin-bottom: 8px;">OUR ADVANTAGES</div>
+          ${advantages.map(a => `<div style="color: #475569; font-size: 13px; margin-bottom: 4px;">• ${escapeHtml(String(a))}</div>`).join("")}
         </div>
       </div>
     </div>
@@ -354,22 +366,37 @@ function generateReportHtml(data: ReportData): string {
   }).join("");
 
   const projectCards = data.projects.map(p => `
-    <div style="background: #1F2937; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <div style="font-weight: 600; color: #F9FAFB;">${escapeHtml(p.name)}</div>
-          ${p.clientName ? `<div style="font-size: 12px; color: #9CA3AF;">Client: ${escapeHtml(p.clientName)}</div>` : ""}
+          <div style="font-weight: 600; color: #1E293B;">${escapeHtml(p.name)}</div>
+          ${p.clientName ? `<div style="font-size: 12px; color: #64748B;">Client: ${escapeHtml(p.clientName)}</div>` : ""}
         </div>
         <div style="text-align: right;">
-          <span style="background: ${p.status === "active" ? "#065F46" : "#374151"}; color: ${p.status === "active" ? "#34D399" : "#9CA3AF"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(p.status)}</span>
-          <div style="font-size: 11px; color: #9CA3AF; margin-top: 4px;">${p.productCount} products</div>
+          <span style="background: ${p.status === "active" ? "#DCFCE7" : "#F1F5F9"}; color: ${p.status === "active" ? "#059669" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(p.status)}</span>
+          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${p.productCount} products</div>
+        </div>
+      </div>
+    </div>
+  `).join("");
+
+  const productCards = data.products.map(prod => `
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-weight: 600; color: #1E293B;">${escapeHtml(prod.name)}</div>
+          ${prod.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(prod.description.slice(0, 150))}${prod.description.length > 150 ? "..." : ""}</div>` : ""}
+        </div>
+        <div style="text-align: right;">
+          <span style="background: ${prod.status === "baseline" ? "#EDE9FE" : "#F1F5F9"}; color: ${prod.status === "baseline" ? "#7C3AED" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${prod.status === "baseline" ? "Your Product" : "Competitor"}</span>
+          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${prod.featureCount} features, ${prod.roadmapCount} roadmap items</div>
         </div>
       </div>
     </div>
   `).join("");
 
   const ORBIT_FOOTER = `
-    <div style="text-align: center; padding: 12px 0; border-top: 1px solid #374151; margin-top: 40px; font-size: 10px; color: #6B7280;">
+    <div style="text-align: center; padding: 12px 0; border-top: 1px solid #E2E8F0; margin-top: 40px; font-size: 10px; color: #64748B;">
       <div style="margin-bottom: 4px;">Orbit • orbit.synozur.com</div>
       <div>Published by The Synozur Alliance LLC • www.synozur.com • © 2026 All Rights Reserved</div>
       <div style="margin-top: 4px;">Confidential - ${escapeHtml(data.tenantDomain)} | Generated ${formattedDate}</div>
@@ -377,7 +404,7 @@ function generateReportHtml(data: ReportData): string {
   `;
 
   const headerLogo = orbitMark 
-    ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitMark}" alt="Orbit" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #F9FAFB;">Orbit</span></div>`
+    ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitMark}" alt="Orbit" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
     : `<div class="logo"><span>Orbit</span></div>`;
 
   const coverLogo = synozurLogo
@@ -402,8 +429,8 @@ function generateReportHtml(data: ReportData): string {
     }
     body {
       font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #111827;
-      color: #F9FAFB;
+      background: #FFFFFF;
+      color: #1E293B;
       margin: 0;
       padding: 0;
       line-height: 1.6;
@@ -417,20 +444,20 @@ function generateReportHtml(data: ReportData): string {
       justify-content: space-between;
       align-items: center;
       padding-bottom: 20px;
-      border-bottom: 2px solid #374151;
+      border-bottom: 2px solid #E2E8F0;
       margin-bottom: 28px;
     }
     .logo {
       font-size: 24px;
       font-weight: 700;
-      color: #818CF8;
+      color: #6366F1;
     }
     .logo span {
-      color: #F9FAFB;
+      color: #1E293B;
     }
     .report-meta {
       text-align: right;
-      color: #9CA3AF;
+      color: #64748B;
       font-size: 13px;
     }
     .section {
@@ -439,10 +466,10 @@ function generateReportHtml(data: ReportData): string {
     .section-title {
       font-size: 18px;
       font-weight: 600;
-      color: #818CF8;
+      color: #6366F1;
       margin-bottom: 14px;
       padding-bottom: 6px;
-      border-bottom: 1px solid #374151;
+      border-bottom: 1px solid #E2E8F0;
     }
     table {
       width: 100%;
@@ -450,12 +477,13 @@ function generateReportHtml(data: ReportData): string {
       margin-bottom: 16px;
     }
     th {
-      background: #374151;
-      color: #F9FAFB;
+      background: #F1F5F9;
+      color: #1E293B;
       padding: 10px;
       text-align: left;
       font-weight: 600;
       font-size: 13px;
+      border-bottom: 1px solid #E2E8F0;
     }
     .cover-page {
       min-height: 90vh;
@@ -470,27 +498,28 @@ function generateReportHtml(data: ReportData): string {
       font-size: 42px;
       font-weight: 700;
       margin-bottom: 12px;
-      color: #F9FAFB;
+      color: #1E293B;
     }
     .cover-subtitle {
       font-size: 22px;
-      color: #9CA3AF;
+      color: #64748B;
       margin-bottom: 32px;
     }
     .cover-scope {
-      background: #1F2937;
+      background: #F1F5F9;
       padding: 10px 20px;
       border-radius: 8px;
-      color: #818CF8;
+      color: #6366F1;
       font-size: 16px;
       margin-bottom: 32px;
     }
     .cover-meta {
-      color: #6B7280;
+      color: #64748B;
       font-size: 13px;
     }
     .company-profile {
-      background: #1F2937;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 20px;
@@ -499,22 +528,24 @@ function generateReportHtml(data: ReportData): string {
       font-size: 22px;
       font-weight: 600;
       margin-bottom: 6px;
+      color: #1E293B;
     }
     .company-url {
-      color: #818CF8;
+      color: #6366F1;
       margin-bottom: 12px;
       font-size: 13px;
     }
     .company-desc {
-      color: #D1D5DB;
+      color: #475569;
       font-size: 14px;
     }
     .empty-state {
-      background: #1F2937;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
       border-radius: 8px;
       padding: 24px;
       text-align: center;
-      color: #6B7280;
+      color: #64748B;
       font-size: 13px;
     }
     .content-wrapper {
@@ -529,9 +560,9 @@ function generateReportHtml(data: ReportData): string {
     <div class="cover-title">Competitive Intelligence Report</div>
     <div class="cover-subtitle">${escapeHtml(data.reportName)}</div>
     <div class="cover-scope">${scopeLabel}</div>
-    <div style="background: #1F2937; padding: 16px 32px; border-radius: 8px; margin-bottom: 24px;">
-      <div style="font-size: 14px; color: #9CA3AF;">Prepared for</div>
-      <div style="font-size: 20px; font-weight: 600; color: #F9FAFB;">${escapeHtml(data.companyName)}</div>
+    <div style="background: #F1F5F9; padding: 16px 32px; border-radius: 8px; margin-bottom: 24px;">
+      <div style="font-size: 14px; color: #64748B;">Prepared for</div>
+      <div style="font-size: 20px; font-weight: 600; color: #1E293B;">${escapeHtml(data.companyName)}</div>
     </div>
     <div class="cover-meta">
       <div>Generated on ${formattedDate}</div>
@@ -710,6 +741,26 @@ function generateReportHtml(data: ReportData): string {
   </div>
   ` : ""}
 
+  ${data.products.length > 0 ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Products</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Products (${data.products.length})</div>
+      ${productCards || '<div class="empty-state">No products defined in this market.</div>'}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ""}
+
   ${data.projects.length > 0 ? `
   <div class="page-break"></div>
   <div class="content-wrapper">
@@ -717,7 +768,7 @@ function generateReportHtml(data: ReportData): string {
       ${headerLogo}
       <div class="report-meta">
         <div>${formattedDate}</div>
-        <div>Product Projects</div>
+        <div>Product Analysis Projects</div>
       </div>
     </div>
 
@@ -742,7 +793,7 @@ function generateReportHtml(data: ReportData): string {
     </div>
     <div class="section">
       <div class="section-title">Go-To-Market Plan</div>
-      <div style="background: #1F2937; border-radius: 8px; padding: 20px; color: #D1D5DB; font-size: 13px; line-height: 1.8;">
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; color: #475569; font-size: 13px; line-height: 1.8;">
         ${escapeHtml(data.gtmPlan).replace(/\n/g, '<br>')}
       </div>
     </div>
@@ -762,7 +813,7 @@ function generateReportHtml(data: ReportData): string {
     </div>
     <div class="section">
       <div class="section-title">Messaging & Positioning Framework</div>
-      <div style="background: #1F2937; border-radius: 8px; padding: 20px; color: #D1D5DB; font-size: 13px; line-height: 1.8;">
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; color: #475569; font-size: 13px; line-height: 1.8;">
         ${escapeHtml(data.messagingFramework).replace(/\n/g, '<br>')}
       </div>
     </div>
@@ -799,6 +850,7 @@ export async function generatePdfReport(
   let projectName: string | undefined;
   let marketName: string | undefined;
   let projects: ProjectSummary[] = [];
+  let baselineProducts: ProductSummary[] = [];
 
   const contextFilter = { 
     tenantId: tenant.id, 
@@ -862,13 +914,28 @@ export async function generatePdfReport(
     
     const allProjects = await storage.getClientProjectsByContext(contextFilter);
     for (const p of allProjects) {
-      const projectProducts = await storage.getProjectProducts(p.id);
+      const projProducts = await storage.getProjectProducts(p.id);
       projects.push({
         id: p.id,
         name: p.name,
         clientName: p.clientName || undefined,
         status: p.status,
-        productCount: projectProducts.length,
+        productCount: projProducts.length,
+      });
+    }
+    
+    // Fetch all products in the market for baseline reports
+    const allProducts = await storage.getProductsByContext(contextFilter);
+    for (const prod of allProducts) {
+      const features = await storage.getProductFeaturesByProduct(prod.id);
+      const roadmap = await storage.getRoadmapItemsByProduct(prod.id);
+      baselineProducts.push({
+        id: prod.id,
+        name: prod.name,
+        description: prod.description,
+        status: prod.isBaseline ? "baseline" : "competitor",
+        featureCount: features.length,
+        roadmapCount: roadmap.length,
       });
     }
   }
@@ -958,6 +1025,7 @@ export async function generatePdfReport(
     recommendations,
     battlecards,
     projects,
+    products: baselineProducts,
     generatedAt: new Date(),
     tenantDomain,
     marketName,
