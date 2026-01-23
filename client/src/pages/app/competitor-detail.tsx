@@ -141,6 +141,41 @@ export default function CompetitorDetail() {
     },
   });
 
+  const websiteMonitorMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/monitor-website`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to monitor website");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      
+      const result = data.result || data;
+      toast({
+        title: result.hasChanges ? "Website Changes Detected" : "No Changes Found",
+        description: result.hasChanges 
+          ? `${result.summary || "Website updates have been logged to Live Signals."}`
+          : result.status === "no_content" 
+            ? "Unable to crawl website - site may be unavailable"
+            : "No significant changes detected on the website.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Monitoring Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Battlecard query and mutations
   const { data: battlecard, isLoading: battlecardLoading } = useQuery({
     queryKey: ["/api/competitors", id, "battlecard"],
@@ -369,6 +404,17 @@ export default function CompetitorDetail() {
                 disabled={crawlMutation.isPending}
               >
                 <RefreshCw className="h-4 w-4" /> {crawlMutation.isPending ? "Crawling..." : "Re-crawl"}
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={() => websiteMonitorMutation.mutate()}
+                disabled={websiteMonitorMutation.isPending}
+                data-testid="button-check-changes"
+              >
+                <Globe className="h-4 w-4" /> 
+                {websiteMonitorMutation.isPending ? "Checking..." : "Check for Changes"}
               </Button>
               
               {hasSocialUrls && (

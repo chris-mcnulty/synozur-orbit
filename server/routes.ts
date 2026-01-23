@@ -1296,14 +1296,6 @@ export async function registerRoutes(
   app.post("/api/competitors/:id/monitor-website", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-
-      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
-          upgradeRequired: true 
-        });
-      }
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
