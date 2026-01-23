@@ -7334,16 +7334,16 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       // Get competitor scores - first try project-level, then fall back to competitor-level
       let competitorScoresData = await storage.getCompetitorScoresByProject(req.params.projectId);
       
-      // If no project-specific scores, fetch by competitorId for each competitor product
+      // If no project-specific scores, fetch by competitorId or productId for each competitor product
       if (competitorScoresData.length === 0) {
-        const competitorIds = competitorProducts
-          .map(pp => pp.product?.competitorId)
-          .filter((id): id is string => !!id);
-        
-        for (const compId of competitorIds) {
-          const score = await storage.getCompetitorScore(compId);
-          if (score) {
-            competitorScoresData.push(score);
+        for (const pp of competitorProducts) {
+          // Try competitorId first, then fall back to productId (for standalone products)
+          const scoreId = pp.product?.competitorId || pp.product?.id;
+          if (scoreId) {
+            const score = await storage.getCompetitorScore(scoreId);
+            if (score) {
+              competitorScoresData.push(score);
+            }
           }
         }
       }
@@ -7366,16 +7366,19 @@ Make this a comprehensive reference document for sales and strategy teams.`;
 
       // Compute rankings from scores
       const rankedCompetitors = competitorScoresData.map(score => {
+        // Match by competitorId first, then by productId (for standalone products)
         const productInfo = competitorProducts.find(cp => 
-          cp.product?.competitorId === score.competitorId
+          (cp.product?.competitorId && cp.product.competitorId === score.competitorId) ||
+          (cp.product?.id === score.competitorId) // Score uses productId for standalone products
         );
         return {
           competitorId: score.competitorId,
+          productId: productInfo?.productId || null,
           name: productInfo?.product?.name || "Unknown",
           companyName: productInfo?.product?.companyName || "Unknown",
           overallScore: score.overallScore,
           trendDirection: score.trendDirection,
-          trendDelta: score.trendDelta,
+          trendDelta: score.trendDelta || 0,
           breakdown: {
             marketPresence: score.marketPresenceScore,
             innovation: score.innovationScore,
@@ -7446,9 +7449,12 @@ Make this a comprehensive reference document for sales and strategy teams.`;
         },
         competitors: competitorProducts.map(cp => {
           const competitorId = cp.product?.competitorId;
-          const matchedScore = competitorId 
-            ? rankedCompetitors.find(r => r.competitorId === competitorId)
-            : null;
+          const productId = cp.product?.id;
+          // Match by competitorId first, then by productId (for standalone products)
+          const matchedScore = rankedCompetitors.find(r => 
+            (competitorId && r.competitorId === competitorId) ||
+            (productId && r.competitorId === productId)
+          );
           return {
             id: cp.productId,
             competitorId: competitorId,
