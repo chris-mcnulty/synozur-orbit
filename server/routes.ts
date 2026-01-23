@@ -987,6 +987,37 @@ export async function registerRoutes(
       };
       socialUpdates.lastFullCrawl = now;
       
+      // Store blog snapshot if discovered
+      if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
+        socialUpdates.blogSnapshot = {
+          ...crawlResult.blogSnapshot,
+          capturedAt: new Date().toISOString(),
+        };
+        
+        // Create initial activity entry for blog discovery (if this is first time)
+        const existingBlogSnapshot = competitor.blogSnapshot as any;
+        if (!existingBlogSnapshot || !existingBlogSnapshot.postCount) {
+          await storage.createActivity({
+            type: "blog_activity",
+            sourceType: "competitor",
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            description: `Discovered ${crawlResult.blogSnapshot.postCount} blog post${crawlResult.blogSnapshot.postCount > 1 ? 's' : ''}`,
+            summary: crawlResult.blogSnapshot.latestTitles.length > 0 
+              ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
+              : `Found ${crawlResult.blogSnapshot.postCount} blog posts on the website`,
+            details: {
+              postCount: crawlResult.blogSnapshot.postCount,
+              latestTitles: crawlResult.blogSnapshot.latestTitles,
+            },
+            date: new Date().toISOString(),
+            impact: crawlResult.blogSnapshot.postCount >= 10 ? "High" : crawlResult.blogSnapshot.postCount >= 5 ? "Medium" : "Low",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
+          });
+        }
+      }
+      
       if (Object.keys(socialUpdates).length > 0) {
         await storage.updateCompetitor(competitor.id, socialUpdates);
       }
@@ -3178,6 +3209,37 @@ Return ONLY valid JSON, no markdown or explanations.`;
         crawledAt: crawlResult.crawledAt,
       };
       socialUpdates.lastFullCrawl = new Date();
+      
+      // Store blog snapshot if discovered
+      if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
+        socialUpdates.blogSnapshot = {
+          ...crawlResult.blogSnapshot,
+          capturedAt: new Date().toISOString(),
+        };
+        
+        // Create initial activity entry for blog discovery (if this is first time)
+        const existingBlogSnapshot = profile.blogSnapshot as any;
+        if (!existingBlogSnapshot || !existingBlogSnapshot.postCount) {
+          await storage.createActivity({
+            type: "blog_activity",
+            sourceType: "baseline",
+            companyProfileId: profile.id,
+            competitorName: profile.companyName,
+            description: `Discovered ${crawlResult.blogSnapshot.postCount} blog post${crawlResult.blogSnapshot.postCount > 1 ? 's' : ''}`,
+            summary: crawlResult.blogSnapshot.latestTitles.length > 0 
+              ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
+              : `Found ${crawlResult.blogSnapshot.postCount} blog posts on the website`,
+            details: {
+              postCount: crawlResult.blogSnapshot.postCount,
+              latestTitles: crawlResult.blogSnapshot.latestTitles,
+            },
+            date: new Date().toISOString(),
+            impact: crawlResult.blogSnapshot.postCount >= 10 ? "High" : crawlResult.blogSnapshot.postCount >= 5 ? "Medium" : "Low",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
+          });
+        }
+      }
       
       if (Object.keys(socialUpdates).length > 0) {
         await storage.updateCompanyProfile(profile.id, socialUpdates);
