@@ -177,11 +177,11 @@ export default function ExecutiveSummary() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate(`/app/projects/${projectId}`)}
+            onClick={() => navigate(`/app/products/${projectId}`)}
             data-testid="back-to-project"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Project
+            Back to Product
           </Button>
           <div>
             <h1 className="text-2xl font-bold">{project.name}</h1>

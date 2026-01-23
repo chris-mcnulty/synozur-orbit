@@ -875,7 +875,7 @@ export default function Dashboard() {
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {activeProjects.slice(0, 3).map((project: any) => (
-              <Link key={project.id} href={`/app/projects/${project.id}`}>
+              <Link key={project.id} href={`/app/products/${project.id}`}>
                 <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid={`project-card-${project.id}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between mb-2">
