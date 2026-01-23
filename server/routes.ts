@@ -7934,10 +7934,13 @@ Generate a messaging framework in markdown format with sections:
 
       for (const cp of competitorProducts) {
         const product = cp.product;
-        if (!product?.competitorId) continue;
+        if (!product) continue;
 
-        const competitor = await storage.getCompetitor(product.competitorId);
-        if (!competitor) continue;
+        // Try to get linked competitor data if available, otherwise use product data
+        let competitor = null;
+        if (product.competitorId) {
+          competitor = await storage.getCompetitor(product.competitorId);
+        }
 
         const battlecard = battlecards.find(bc => bc.competitorProductId === cp.productId);
 
@@ -7949,8 +7952,8 @@ Generate a messaging framework in markdown format with sections:
         let contentActivityScore = 50;
         let socialEngagementScore = 50;
 
-        // Adjust based on analysis data
-        if (competitor.analysisData) {
+        // Adjust based on competitor analysis data (if linked)
+        if (competitor?.analysisData) {
           const analysis = competitor.analysisData as any;
           if (analysis.marketPosition) {
             marketPresenceScore = analysis.marketPosition === "leader" ? 90 : 
@@ -7967,10 +7970,15 @@ Generate a messaging framework in markdown format with sections:
           const strengths = Array.isArray(battlecard.strengths) ? battlecard.strengths.length : 0;
           const weaknesses = Array.isArray(battlecard.weaknesses) ? battlecard.weaknesses.length : 0;
           featureBreadthScore = Math.min(100, 50 + (strengths - weaknesses) * 5);
+          
+          // Also boost innovation if battlecard shows strong differentiators
+          if (battlecard.keyDifferentiators && Array.isArray(battlecard.keyDifferentiators)) {
+            innovationScore = Math.min(100, 50 + battlecard.keyDifferentiators.length * 8);
+          }
         }
 
-        // Adjust based on social engagement
-        if (competitor.linkedInEngagement) {
+        // Adjust based on social engagement (if linked competitor)
+        if (competitor?.linkedInEngagement) {
           const engagement = competitor.linkedInEngagement as any;
           if (engagement.followers > 10000) socialEngagementScore = 80;
           else if (engagement.followers > 5000) socialEngagementScore = 65;
@@ -7986,14 +7994,17 @@ Generate a messaging framework in markdown format with sections:
           (pricingScore * 0.10)
         );
 
+        // Use productId for scoring if no competitorId (product-level scoring)
+        const scoreId = product.competitorId || product.id;
+
         // Get previous score for trend calculation
-        const existingScore = await storage.getCompetitorScore(product.competitorId, req.params.projectId);
+        const existingScore = await storage.getCompetitorScore(scoreId, req.params.projectId);
         const previousScore = existingScore?.overallScore || null;
         const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
         const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
 
         const scoreData = await storage.upsertCompetitorScore({
-          competitorId: product.competitorId,
+          competitorId: scoreId,
           projectId: req.params.projectId,
           tenantDomain,
           marketId: project.marketId || null,
