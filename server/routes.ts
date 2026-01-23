@@ -7123,8 +7123,22 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
-      // Get competitor scores
-      const competitorScoresData = await storage.getCompetitorScoresByProject(req.params.projectId);
+      // Get competitor scores - first try project-level, then fall back to competitor-level
+      let competitorScoresData = await storage.getCompetitorScoresByProject(req.params.projectId);
+      
+      // If no project-specific scores, fetch by competitorId for each competitor product
+      if (competitorScoresData.length === 0) {
+        const competitorIds = competitorProducts
+          .map(pp => pp.product?.competitorId)
+          .filter((id): id is string => !!id);
+        
+        for (const compId of competitorIds) {
+          const score = await storage.getCompetitorScore(compId);
+          if (score) {
+            competitorScoresData.push(score);
+          }
+        }
+      }
 
       // Get all long-form recommendations
       const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
