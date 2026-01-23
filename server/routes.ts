@@ -989,29 +989,42 @@ export async function registerRoutes(
       
       // Store blog snapshot if discovered
       if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
+        const existingBlogSnapshot = competitor.blogSnapshot as any;
+        const previousCount = existingBlogSnapshot?.postCount || 0;
+        const newCount = crawlResult.blogSnapshot.postCount;
+        
         socialUpdates.blogSnapshot = {
           ...crawlResult.blogSnapshot,
           capturedAt: new Date().toISOString(),
         };
         
-        // Create initial activity entry for blog discovery (if this is first time)
-        const existingBlogSnapshot = competitor.blogSnapshot as any;
-        if (!existingBlogSnapshot || !existingBlogSnapshot.postCount) {
+        // Create activity entry for blog discovery or significant changes
+        const isFirstDiscovery = !existingBlogSnapshot || !existingBlogSnapshot.postCount;
+        const hasNewPosts = newCount > previousCount;
+        
+        if (isFirstDiscovery || hasNewPosts) {
+          const newPostCount = newCount - previousCount;
           await storage.createActivity({
             type: "blog_activity",
             sourceType: "competitor",
             competitorId: competitor.id,
             competitorName: competitor.name,
-            description: `Discovered ${crawlResult.blogSnapshot.postCount} blog post${crawlResult.blogSnapshot.postCount > 1 ? 's' : ''}`,
+            description: isFirstDiscovery 
+              ? `Discovered ${newCount} blog post${newCount > 1 ? 's' : ''}`
+              : `Published ${newPostCount} new blog post${newPostCount > 1 ? 's' : ''}`,
             summary: crawlResult.blogSnapshot.latestTitles.length > 0 
               ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
-              : `Found ${crawlResult.blogSnapshot.postCount} blog posts on the website`,
+              : `Found ${newCount} blog posts on the website`,
             details: {
-              postCount: crawlResult.blogSnapshot.postCount,
+              postCount: newCount,
+              previousCount,
+              newPosts: newPostCount,
               latestTitles: crawlResult.blogSnapshot.latestTitles,
             },
             date: new Date().toISOString(),
-            impact: crawlResult.blogSnapshot.postCount >= 10 ? "High" : crawlResult.blogSnapshot.postCount >= 5 ? "Medium" : "Low",
+            impact: isFirstDiscovery 
+              ? (newCount >= 10 ? "High" : newCount >= 5 ? "Medium" : "Low")
+              : (newPostCount >= 3 ? "High" : "Medium"),
             tenantDomain: ctx.tenantDomain,
             marketId: ctx.marketId,
           });
@@ -3212,29 +3225,42 @@ Return ONLY valid JSON, no markdown or explanations.`;
       
       // Store blog snapshot if discovered
       if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
+        const existingBlogSnapshot = profile.blogSnapshot as any;
+        const previousCount = existingBlogSnapshot?.postCount || 0;
+        const newCount = crawlResult.blogSnapshot.postCount;
+        
         socialUpdates.blogSnapshot = {
           ...crawlResult.blogSnapshot,
           capturedAt: new Date().toISOString(),
         };
         
-        // Create initial activity entry for blog discovery (if this is first time)
-        const existingBlogSnapshot = profile.blogSnapshot as any;
-        if (!existingBlogSnapshot || !existingBlogSnapshot.postCount) {
+        // Create activity entry for blog discovery or significant changes
+        const isFirstDiscovery = !existingBlogSnapshot || !existingBlogSnapshot.postCount;
+        const hasNewPosts = newCount > previousCount;
+        
+        if (isFirstDiscovery || hasNewPosts) {
+          const newPostCount = newCount - previousCount;
           await storage.createActivity({
             type: "blog_activity",
             sourceType: "baseline",
             companyProfileId: profile.id,
             competitorName: profile.companyName,
-            description: `Discovered ${crawlResult.blogSnapshot.postCount} blog post${crawlResult.blogSnapshot.postCount > 1 ? 's' : ''}`,
+            description: isFirstDiscovery 
+              ? `Discovered ${newCount} blog post${newCount > 1 ? 's' : ''}`
+              : `Published ${newPostCount} new blog post${newPostCount > 1 ? 's' : ''}`,
             summary: crawlResult.blogSnapshot.latestTitles.length > 0 
               ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
-              : `Found ${crawlResult.blogSnapshot.postCount} blog posts on the website`,
+              : `Found ${newCount} blog posts on the website`,
             details: {
-              postCount: crawlResult.blogSnapshot.postCount,
+              postCount: newCount,
+              previousCount,
+              newPosts: newPostCount,
               latestTitles: crawlResult.blogSnapshot.latestTitles,
             },
             date: new Date().toISOString(),
-            impact: crawlResult.blogSnapshot.postCount >= 10 ? "High" : crawlResult.blogSnapshot.postCount >= 5 ? "Medium" : "Low",
+            impact: isFirstDiscovery 
+              ? (newCount >= 10 ? "High" : newCount >= 5 ? "Medium" : "Low")
+              : (newPostCount >= 3 ? "High" : "Medium"),
             tenantDomain: ctx.tenantDomain,
             marketId: ctx.marketId,
           });

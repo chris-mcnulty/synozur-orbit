@@ -535,7 +535,7 @@ export default function Dashboard() {
         <Link href="/app/projects">
           <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid="card-projects">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+              <CardTitle className="text-sm font-medium">Active Products</CardTitle>
               <Briefcase className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
             </CardHeader>
             <CardContent>
@@ -865,7 +865,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-primary" />
-              Active Projects
+              Active Products
             </h2>
             <Link href="/app/projects">
               <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-projects">
