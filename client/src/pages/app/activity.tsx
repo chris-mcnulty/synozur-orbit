@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useQuery } from "@tanstack/react-query";
-import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 
 interface BlogPost {
@@ -73,6 +75,8 @@ interface Activity {
 export default function Activity() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<string>("insights");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: activity = [], isLoading: loadingActivity } = useQuery<Activity[]>({
     queryKey: ["/api/activity"],
@@ -100,6 +104,52 @@ export default function Activity() {
       return response.json();
     },
   });
+
+  const { data: tenant } = useQuery({
+    queryKey: ["/api/tenant"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const checkAllMutation = useMutation({
+    mutationFn: async () => {
+      const results = [];
+      for (const comp of competitors) {
+        const response = await fetch(`/api/competitors/${comp.id}/check-changes`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (response.ok) {
+          const data = await response.json();
+          results.push({ name: comp.name, ...data });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      const changesFound = results.filter(r => r.hasChanges).length;
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      toast({
+        title: "Check Complete",
+        description: changesFound > 0 
+          ? `Found changes in ${changesFound} of ${results.length} competitors`
+          : `Checked ${results.length} competitors - no changes detected`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Check Failed",
+        description: error.message || "Failed to check competitors for changes",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const isEnterprise = tenant?.plan === "enterprise";
 
   const websiteChanges = activity.filter((item) => 
     item.type === "website_update" && 
@@ -159,9 +209,32 @@ export default function Activity() {
 
   return (
     <AppLayout>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Competitor Intelligence</h1>
-        <p className="text-muted-foreground">Track changes across websites, social channels, and content.</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Competitor Intelligence</h1>
+          <p className="text-muted-foreground">Track changes across websites, social channels, and content.</p>
+        </div>
+        {competitors.length > 0 && isEnterprise && (
+          <Button
+            onClick={() => checkAllMutation.mutate()}
+            disabled={checkAllMutation.isPending}
+            variant="outline"
+            className="gap-2"
+            data-testid="check-all-competitors"
+          >
+            {checkAllMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking {competitors.length} competitors...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4" />
+                Check All for Changes
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
