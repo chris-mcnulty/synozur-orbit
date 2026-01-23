@@ -1015,3 +1015,26 @@ export const insertMarketingTaskSchema = createInsertSchema(marketingTasks).omit
 
 export type MarketingTask = typeof marketingTasks.$inferSelect;
 export type InsertMarketingTask = z.infer<typeof insertMarketingTaskSchema>;
+
+// Scheduled Job Runs - Track background job execution history
+export const scheduledJobRuns = pgTable("scheduled_job_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobType: text("job_type").notNull(), // websiteCrawl, socialMonitor, websiteMonitor, trialReminder, weeklyDigest
+  tenantDomain: text("tenant_domain"), // null for system-wide jobs
+  targetId: varchar("target_id"), // competitorId, companyProfileId, etc.
+  targetName: text("target_name"), // Human-readable name
+  status: text("status").notNull().default("pending"), // pending, running, completed, failed
+  result: jsonb("result"), // Structured result data
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduledJobRunSchema = createInsertSchema(scheduledJobRuns).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ScheduledJobRun = typeof scheduledJobRuns.$inferSelect;
+export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
