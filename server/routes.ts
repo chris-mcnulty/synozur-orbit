@@ -4042,14 +4042,22 @@ Respond in JSON format:
         marketId: req.params.marketId 
       });
 
+      // Gather additional data
+      const activityData = await storage.getActivityByContext(marketCtx);
+      const assessmentsData = await storage.getAssessmentsByContext(marketCtx);
+      const companyBattlecardsData = await storage.getBattlecardsByContext(marketCtx);
+      const competitorScoresData = await storage.getCompetitorScoresByContext(marketCtx);
+
       // Table of Contents
       md += `## Table of Contents\n\n`;
       md += `1. [Market Overview](#market-overview)\n`;
-      md += `2. [Company Profiles](#company-profiles)\n`;
-      md += `3. [Competitors](#competitors)\n`;
+      md += `2. [Company Profiles](#company-profiles) (includes executive summaries)\n`;
+      md += `3. [Competitors](#competitors) (includes scores, battlecards)\n`;
       md += `4. [Projects](#projects) (includes battlecards, gap analysis, GTM plans, messaging)\n`;
       md += `5. [Products](#products) (includes features, roadmaps, AI recommendations)\n`;
-      md += `6. [Marketing Plans](#marketing-plans)\n\n`;
+      md += `6. [Marketing Plans](#marketing-plans)\n`;
+      md += `7. [Assessments](#assessments)\n`;
+      md += `8. [Activity Log](#activity-log)\n\n`;
       md += `---\n\n`;
 
       // Market Overview
@@ -4094,6 +4102,25 @@ Respond in JSON format:
               analysis.weaknesses.forEach((w: string) => md += `- ${w}\n`);
             }
           }
+
+          // Include executive summary if available
+          const execSummary = await storage.getExecutiveSummary(undefined, profile.id);
+          if (execSummary?.summaryData) {
+            md += `\n#### Executive Summary\n\n`;
+            md += `*Generated: ${execSummary.lastGeneratedAt ? new Date(execSummary.lastGeneratedAt).toLocaleDateString() : "N/A"}*\n\n`;
+            const summaryData = typeof execSummary.summaryData === "string" 
+              ? JSON.parse(execSummary.summaryData) 
+              : execSummary.summaryData;
+            if (summaryData.summary) md += summaryData.summary + `\n`;
+            if (execSummary.keyInsights) {
+              const insights = execSummary.keyInsights as string[];
+              if (insights?.length > 0) {
+                md += `\n**Key Insights:**\n`;
+                insights.forEach(i => md += `- ${i}\n`);
+              }
+            }
+          }
+
           md += `\n`;
         }
       }
@@ -4134,6 +4161,59 @@ Respond in JSON format:
               analysis.threats.forEach((t: string) => md += `- ${t}\n`);
             }
           }
+
+          // Include competitor score if available
+          const compScore = competitorScoresData.find(s => s.competitorId === comp.id);
+          if (compScore) {
+            md += `\n#### Orbit Score\n\n`;
+            md += `- **Overall Score:** ${compScore.overallScore || "N/A"}/100\n`;
+            if (compScore.marketPresenceScore) md += `- **Market Presence:** ${compScore.marketPresenceScore}\n`;
+            if (compScore.innovationScore) md += `- **Innovation:** ${compScore.innovationScore}\n`;
+            if (compScore.pricingScore) md += `- **Pricing:** ${compScore.pricingScore}\n`;
+            if (compScore.featureBreadthScore) md += `- **Feature Breadth:** ${compScore.featureBreadthScore}\n`;
+            if (compScore.contentActivityScore) md += `- **Content Activity:** ${compScore.contentActivityScore}\n`;
+            if (compScore.socialEngagementScore) md += `- **Social Engagement:** ${compScore.socialEngagementScore}\n`;
+            if (compScore.trendDirection) md += `- **Trend:** ${compScore.trendDirection} (${compScore.trendDelta >= 0 ? '+' : ''}${compScore.trendDelta || 0})\n`;
+            md += `\n`;
+          }
+
+          // Include company battlecard if available
+          const compBattlecard = companyBattlecardsData.find(b => b.competitorId === comp.id);
+          if (compBattlecard) {
+            md += `\n#### Battlecard\n\n`;
+            const strengths = compBattlecard.strengths as string[] | null;
+            const weaknesses = compBattlecard.weaknesses as string[] | null;
+            const ourAdvantages = compBattlecard.ourAdvantages as string[] | null;
+            const objections = compBattlecard.objections as { objection: string; response: string }[] | null;
+            const talkTracks = compBattlecard.talkTracks as { scenario: string; script: string }[] | null;
+
+            if (strengths?.length) {
+              md += `**Their Strengths:**\n`;
+              strengths.forEach(s => md += `- ${s}\n`);
+              md += `\n`;
+            }
+            if (weaknesses?.length) {
+              md += `**Their Weaknesses:**\n`;
+              weaknesses.forEach(w => md += `- ${w}\n`);
+              md += `\n`;
+            }
+            if (ourAdvantages?.length) {
+              md += `**Our Advantages:**\n`;
+              ourAdvantages.forEach(a => md += `- ${a}\n`);
+              md += `\n`;
+            }
+            if (objections?.length) {
+              md += `**Objection Handling:**\n`;
+              objections.forEach(o => md += `- *"${o.objection}"* → ${o.response}\n`);
+              md += `\n`;
+            }
+            if (talkTracks?.length) {
+              md += `**Talk Tracks:**\n`;
+              talkTracks.forEach(t => md += `- **${t.scenario}**: "${t.script}"\n`);
+              md += `\n`;
+            }
+          }
+
           md += `\n`;
         }
       }
@@ -4414,6 +4494,70 @@ Respond in JSON format:
       }
 
       md += `---\n\n`;
+
+      // Assessments section
+      md += `## Assessments\n\n`;
+      if (assessmentsData.length === 0) {
+        md += `*No assessments in this market.*\n\n`;
+      } else {
+        for (const assessment of assessmentsData) {
+          md += `### ${assessment.name}\n\n`;
+          md += `- **Type:** ${assessment.isProxy ? "Proxy Assessment" : "Competitive Assessment"}\n`;
+          md += `- **Status:** ${assessment.status}\n`;
+          md += `- **Created:** ${assessment.createdAt ? new Date(assessment.createdAt).toLocaleDateString() : "N/A"}\n`;
+          if (assessment.isProxy) {
+            if (assessment.proxyName) md += `- **Proxy Name:** ${assessment.proxyName}\n`;
+            if (assessment.proxyCompany) md += `- **Proxy Company:** ${assessment.proxyCompany}\n`;
+          }
+          if (assessment.description) md += `\n${assessment.description}\n`;
+          
+          // Include analysis snapshot if available
+          if (assessment.analysisSnapshot) {
+            const data = typeof assessment.analysisSnapshot === "string" 
+              ? JSON.parse(assessment.analysisSnapshot) 
+              : assessment.analysisSnapshot;
+            if (data.summary) {
+              md += `\n#### Analysis Summary\n\n${data.summary}\n`;
+            }
+          }
+          
+          // Include recommendations snapshot if available
+          if (assessment.recommendationsSnapshot) {
+            const recs = typeof assessment.recommendationsSnapshot === "string" 
+              ? JSON.parse(assessment.recommendationsSnapshot) 
+              : assessment.recommendationsSnapshot;
+            if (Array.isArray(recs) && recs.length > 0) {
+              md += `\n**Key Recommendations:**\n`;
+              recs.slice(0, 5).forEach((r: any) => md += `- ${r.title || r.description || r}\n`);
+            }
+          }
+          md += `\n`;
+        }
+      }
+      md += `---\n\n`;
+
+      // Activity Log section
+      md += `## Activity Log\n\n`;
+      if (activityData.length === 0) {
+        md += `*No activity recorded in this market.*\n\n`;
+      } else {
+        md += `*Showing ${Math.min(activityData.length, 50)} most recent activities*\n\n`;
+        
+        // Group by type
+        const recentActivity = activityData.slice(0, 50);
+        for (const item of recentActivity) {
+          const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "N/A";
+          const typeIcon = item.type === "website_update" ? "🌐" : 
+                          item.type === "blog_update" ? "📝" : 
+                          item.type === "social_update" ? "📱" : 
+                          item.type === "crawl" ? "🔍" : "📋";
+          md += `- ${typeIcon} **${item.competitorName || "Unknown"}** - ${item.type} (${date})\n`;
+          if (item.summary) md += `  ${item.summary}\n`;
+          else if (item.description) md += `  ${item.description}\n`;
+        }
+      }
+
+      md += `\n---\n\n`;
       md += `*Report generated by Orbit - Synozur Go-to-Market Intelligence Platform*\n`;
       md += `*Export Date: ${new Date().toISOString()}*\n`;
 
