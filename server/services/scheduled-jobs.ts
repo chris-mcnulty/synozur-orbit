@@ -13,6 +13,53 @@ interface JobStatus {
   nextRun: Date | null;
 }
 
+interface JobRunContext {
+  jobRunId: string;
+  tenantDomain?: string;
+  targetId?: string;
+}
+
+async function trackJobStart(
+  jobType: string,
+  tenantDomain?: string,
+  targetId?: string,
+  targetName?: string
+): Promise<string> {
+  try {
+    const jobRun = await storage.createScheduledJobRun({
+      jobType,
+      tenantDomain: tenantDomain || null,
+      targetId: targetId || null,
+      targetName: targetName || null,
+      status: "running",
+      startedAt: new Date(),
+    });
+    return jobRun.id;
+  } catch (error) {
+    console.error(`[Job Tracking] Failed to track job start:`, error);
+    return "";
+  }
+}
+
+async function trackJobComplete(
+  jobRunId: string,
+  status: "completed" | "failed",
+  result?: Record<string, any>,
+  errorMessage?: string
+): Promise<void> {
+  if (!jobRunId) return;
+  try {
+    await storage.updateScheduledJobRun(jobRunId, {
+      status,
+      completedAt: new Date(),
+      result: result || null,
+      errorMessage: errorMessage || null,
+    });
+  } catch (error) {
+    console.error(`[Job Tracking] Failed to track job completion:`, error);
+  }
+}
+
 const jobStatus: Record<string, JobStatus> = {
   websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
@@ -356,6 +403,7 @@ async function runTrialReminderJob(): Promise<void> {
 
   jobStatus.trialReminder.isRunning = true;
   console.log("[Scheduled Job] Starting trial reminder job...");
+  const jobRunId = await trackJobStart("trial_reminder");
 
   try {
     const baseUrl = process.env.REPLIT_DEV_DOMAIN 
@@ -366,8 +414,10 @@ async function runTrialReminderJob(): Promise<void> {
     
     const result = await processTrialReminders(baseUrl);
     console.log(`[Scheduled Job] Trial reminder job completed: ${result.processed} processed, ${result.errors} errors`);
+    await trackJobComplete(jobRunId, "completed", { processed: result.processed, errors: result.errors });
   } catch (error) {
     console.error("[Scheduled Job] Trial reminder job failed:", error);
+    await trackJobComplete(jobRunId, "failed", undefined, String(error));
   } finally {
     jobStatus.trialReminder.isRunning = false;
     jobStatus.trialReminder.lastRun = new Date();

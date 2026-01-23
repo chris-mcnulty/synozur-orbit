@@ -379,6 +379,38 @@ export default function ProductDetail() {
     }
   };
 
+  const [isMonitoringAll, setIsMonitoringAll] = useState(false);
+
+  const monitorAllProducts = async () => {
+    if (!project) return;
+    setIsMonitoringAll(true);
+    try {
+      const response = await fetch(`/api/projects/${project.id}/monitor-all`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to monitor websites");
+      }
+      const data = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      toast({
+        title: "Change Check Complete",
+        description: data.message || `Checked ${data.successCount} of ${data.successCount + data.failCount} products for changes.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsMonitoringAll(false);
+    }
+  };
+
   // Fetch GTM Plan recommendation
   const { data: gtmPlan, isLoading: gtmLoading } = useQuery<LongFormRecommendation>({
     queryKey: ["/api/projects", id, "recommendations", "gtm_plan"],
@@ -1125,6 +1157,20 @@ export default function ProductDetail() {
                   <Download className="h-4 w-4" />
                 )}
                 Export
+              </Button>
+              <Button 
+                variant="outline" 
+                className="gap-2" 
+                onClick={monitorAllProducts}
+                disabled={isMonitoringAll}
+                data-testid="button-check-all-changes"
+              >
+                {isMonitoringAll ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Check All for Changes
               </Button>
               <Link href={`/app/products/${project.id}/executive-summary`}>
                 <Button variant="outline" className="gap-2" data-testid="button-executive-summary">

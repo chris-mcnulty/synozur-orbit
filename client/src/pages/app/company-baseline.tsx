@@ -145,6 +145,36 @@ export default function CompanyBaseline() {
     },
   });
 
+  const monitorAllMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      const response = await fetch(`/api/company-profile/${profileId}/monitor-all`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to monitor websites");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      toast({
+        title: "Change Check Complete",
+        description: data.message || `Checked ${data.successCount} of ${data.successCount + data.failCount} targets for changes.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleLogoUpload = async (file: File) => {
     if (!file) return;
     
@@ -489,6 +519,20 @@ export default function CompanyBaseline() {
                       >
                         <ClipboardPaste className="w-4 h-4 mr-2" />
                         Manual Research
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => companyProfile?.id && monitorAllMutation.mutate(companyProfile.id)}
+                        disabled={!companyProfile?.id || monitorAllMutation.isPending}
+                        data-testid="button-check-all-changes"
+                      >
+                        {monitorAllMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Globe className="w-4 h-4 mr-2" />
+                        )}
+                        Check All for Changes
                       </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>

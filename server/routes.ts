@@ -18,7 +18,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
-import { monitorCompetitorWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
@@ -1348,6 +1348,152 @@ export async function registerRoutes(
     } catch (error: any) {
       if (error.message.includes("premium feature")) {
         return res.status(403).json({ error: error.message, upgradeRequired: true });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Batch monitor: Company profile + all market competitors
+  app.post("/api/company-profile/:id/monitor-all", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+
+      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
+        return res.status(403).json({ 
+          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
+          upgradeRequired: true 
+        });
+      }
+
+      const profile = await storage.getCompanyProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const results: { type: string; name: string; success: boolean; error?: string }[] = [];
+
+      // Monitor baseline company profile
+      try {
+        await monitorCompanyProfileWebsite(
+          profile.id,
+          ctx.userId,
+          ctx.tenantDomain,
+          profile.marketId || undefined
+        );
+        results.push({ type: "baseline", name: profile.companyName, success: true });
+      } catch (error: any) {
+        results.push({ type: "baseline", name: profile.companyName, success: false, error: error.message });
+      }
+
+      // Get all competitors in the same market context
+      const competitors = await storage.getCompetitorsByContext({
+        tenantId: ctx.tenantId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: profile.marketId || ctx.marketId,
+      });
+
+      for (const competitor of competitors) {
+        try {
+          await monitorCompetitorWebsite(competitor.id, ctx.userId, ctx.tenantDomain);
+          results.push({ type: "competitor", name: competitor.name, success: true });
+        } catch (error: any) {
+          results.push({ type: "competitor", name: competitor.name, success: false, error: error.message });
+        }
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      res.json({ 
+        success: true, 
+        message: `Monitored ${successCount} of ${results.length} targets`,
+        successCount,
+        failCount,
+        results 
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Batch monitor: All competitor products in a project
+  app.post("/api/projects/:id/monitor-all", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+
+      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
+        return res.status(403).json({ 
+          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
+          upgradeRequired: true 
+        });
+      }
+
+      const project = await storage.getClientProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!validateResourceContext(project, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(project.id);
+      const results: { type: string; name: string; success: boolean; error?: string }[] = [];
+
+      for (const pp of projectProducts) {
+        const product = pp.product;
+        if (!product?.url) continue;
+
+        // Check if this is a competitor product (has competitorId)
+        if (product.competitorId) {
+          try {
+            await monitorCompetitorWebsite(product.competitorId, ctx.userId, ctx.tenantDomain);
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        } else if (product.companyProfileId) {
+          // Baseline product - monitor the company profile
+          try {
+            await monitorCompanyProfileWebsite(
+              product.companyProfileId,
+              ctx.userId,
+              ctx.tenantDomain,
+              project.marketId || undefined
+            );
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        }
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      res.json({ 
+        success: true, 
+        message: `Monitored ${successCount} of ${results.length} products`,
+        successCount,
+        failCount,
+        results 
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
       }
       res.status(500).json({ error: error.message });
     }
