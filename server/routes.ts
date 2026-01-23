@@ -1296,6 +1296,14 @@ export async function registerRoutes(
   app.post("/api/competitors/:id/monitor-website", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+
+      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
+        return res.status(403).json({ 
+          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
+          upgradeRequired: true 
+        });
+      }
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
@@ -4028,13 +4036,20 @@ Respond in JSON format:
       md += `**Generated:** ${new Date().toISOString()}\n\n`;
       md += `---\n\n`;
 
+      // Gather marketing plans
+      const marketingPlansData = await storage.getMarketingPlans({ 
+        tenantDomain: ctx.tenantDomain, 
+        marketId: req.params.marketId 
+      });
+
       // Table of Contents
       md += `## Table of Contents\n\n`;
       md += `1. [Market Overview](#market-overview)\n`;
       md += `2. [Company Profiles](#company-profiles)\n`;
       md += `3. [Competitors](#competitors)\n`;
       md += `4. [Projects](#projects) (includes battlecards, gap analysis, GTM plans, messaging)\n`;
-      md += `5. [Products](#products) (includes features, roadmaps)\n\n`;
+      md += `5. [Products](#products) (includes features, roadmaps, AI recommendations)\n`;
+      md += `6. [Marketing Plans](#marketing-plans)\n\n`;
       md += `---\n\n`;
 
       // Market Overview
@@ -4321,6 +4336,24 @@ Respond in JSON format:
             }
           }
 
+          // Get AI feature recommendations for baseline products
+          if (product.isBaseline) {
+            const featureRecs = await storage.getFeatureRecommendationsByProduct(product.id);
+            const pendingRecs = featureRecs.filter(r => r.status === "pending");
+            if (pendingRecs.length > 0) {
+              md += `#### AI Roadmap Recommendations (${pendingRecs.length})\n\n`;
+              for (const rec of pendingRecs) {
+                const typeIcon = rec.type === "gap" ? "🎯" : rec.type === "opportunity" ? "💡" : rec.type === "risk" ? "⚠️" : "📊";
+                md += `- ${typeIcon} **${rec.title}** [${rec.type}]`;
+                if (rec.suggestedPriority) md += ` (${rec.suggestedPriority} priority)`;
+                if (rec.suggestedQuarter) md += ` - ${rec.suggestedQuarter}`;
+                md += `\n`;
+                if (rec.explanation) md += `  ${rec.explanation}\n`;
+                md += `\n`;
+              }
+            }
+          }
+
           // Include product analysis if available
           if (product.analysisData) {
             const analysis = typeof product.analysisData === "string" 
@@ -4328,6 +4361,53 @@ Respond in JSON format:
               : product.analysisData;
             if (analysis.summary) {
               md += `#### Analysis\n\n${analysis.summary}\n\n`;
+            }
+          }
+        }
+      }
+
+      md += `---\n\n`;
+
+      // Marketing Plans section
+      md += `## Marketing Plans\n\n`;
+      if (marketingPlansData.length === 0) {
+        md += `*No marketing plans in this market.*\n\n`;
+      } else {
+        for (const plan of marketingPlansData) {
+          md += `### ${plan.name}\n\n`;
+          if (plan.description) md += `${plan.description}\n\n`;
+          md += `- **Fiscal Year:** ${plan.fiscalYear || "Not specified"}\n`;
+          md += `- **Status:** ${plan.status || "draft"}\n`;
+          md += `- **Created:** ${plan.createdAt ? new Date(plan.createdAt).toLocaleDateString() : "N/A"}\n\n`;
+
+          // Get tasks for this plan
+          const tasks = await storage.getMarketingTasks(plan.id, { 
+            tenantDomain: ctx.tenantDomain, 
+            marketId: req.params.marketId 
+          });
+
+          if (tasks.length > 0) {
+            md += `#### Activities (${tasks.length})\n\n`;
+            
+            // Group by timeframe/quarter
+            const byTimeframe: Record<string, typeof tasks> = {};
+            for (const task of tasks) {
+              const tf = task.timeframe || "Unscheduled";
+              if (!byTimeframe[tf]) byTimeframe[tf] = [];
+              byTimeframe[tf].push(task);
+            }
+
+            for (const [timeframe, tfTasks] of Object.entries(byTimeframe)) {
+              md += `**${timeframe}**\n`;
+              for (const task of tfTasks) {
+                const statusIcon = task.status === "completed" ? "✅" : task.status === "in_progress" ? "🔄" : "📋";
+                md += `- ${statusIcon} **${task.title}**`;
+                if (task.priority) md += ` [${task.priority}]`;
+                if (task.activityGroup) md += ` (${task.activityGroup})`;
+                md += `\n`;
+                if (task.description) md += `  ${task.description}\n`;
+              }
+              md += `\n`;
             }
           }
         }
