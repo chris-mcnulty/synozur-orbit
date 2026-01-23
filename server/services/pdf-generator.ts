@@ -77,6 +77,16 @@ interface RoadmapItemData {
   aiRecommended: boolean;
 }
 
+interface MarketingPlanSummary {
+  id: string;
+  name: string;
+  fiscalYear: string;
+  description: string | null;
+  status: string;
+  taskCount: number;
+  tasksByGroup: Record<string, number>;
+}
+
 interface ReportData {
   companyProfile: CompanyProfile | null;
   companyName: string;
@@ -102,6 +112,7 @@ interface ReportData {
   baselineProductName?: string;
   productFeatures?: ProductFeatureData[];
   roadmapItems?: RoadmapItemData[];
+  marketingPlans?: MarketingPlanSummary[];
 }
 
 function escapeHtml(text: string): string {
@@ -394,6 +405,35 @@ function generateReportHtml(data: ReportData): string {
       </div>
     </div>
   `).join("");
+
+  const marketingPlanCards = (data.marketingPlans || []).map(plan => {
+    const statusColors: Record<string, { bg: string; text: string }> = {
+      draft: { bg: "#FEF3C7", text: "#92400E" },
+      active: { bg: "#DCFCE7", text: "#059669" },
+      archived: { bg: "#F1F5F9", text: "#64748B" },
+    };
+    const statusStyle = statusColors[plan.status] || statusColors.draft;
+    const groupLabels = Object.entries(plan.tasksByGroup)
+      .map(([group, count]) => `${group}: ${count}`)
+      .join(" | ");
+    
+    return `
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #1E293B;">${escapeHtml(plan.name)}</div>
+          <div style="font-size: 13px; color: #64748B; margin-top: 2px;">FY ${escapeHtml(plan.fiscalYear)}</div>
+          ${plan.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(plan.description.slice(0, 150))}${plan.description.length > 150 ? "..." : ""}</div>` : ""}
+          ${groupLabels ? `<div style="font-size: 11px; color: #64748B; margin-top: 8px;">${escapeHtml(groupLabels)}</div>` : ""}
+        </div>
+        <div style="text-align: right; margin-left: 16px;">
+          <span style="background: ${statusStyle.bg}; color: ${statusStyle.text}; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-transform: capitalize;">${escapeHtml(plan.status)}</span>
+          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${plan.taskCount} tasks</div>
+        </div>
+      </div>
+    </div>
+  `;
+  }).join("");
 
   const ORBIT_FOOTER = `
     <div style="text-align: center; padding: 12px 0; border-top: 1px solid #E2E8F0; margin-top: 40px; font-size: 10px; color: #64748B;">
@@ -781,6 +821,26 @@ function generateReportHtml(data: ReportData): string {
   </div>
   ` : ""}
 
+  ${(data.marketingPlans && data.marketingPlans.length > 0) ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Marketing Plans</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Marketing Plans (${data.marketingPlans.length})</div>
+      ${marketingPlanCards || '<div class="empty-state">No marketing plans defined.</div>'}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ""}
+
   ${data.gtmPlan ? `
   <div class="page-break"></div>
   <div class="content-wrapper">
@@ -940,6 +1000,28 @@ export async function generatePdfReport(
     }
   }
 
+  // Fetch marketing plans for baseline reports
+  let marketingPlanSummaries: MarketingPlanSummary[] = [];
+  if (scope === "baseline") {
+    const marketingPlans = await storage.getMarketingPlans({ tenantDomain, marketId: marketId || null });
+    for (const plan of marketingPlans) {
+      const tasks = await storage.getMarketingTasks(plan.id, { tenantDomain, marketId: marketId || null });
+      const tasksByGroup: Record<string, number> = {};
+      for (const task of tasks) {
+        tasksByGroup[task.activityGroup] = (tasksByGroup[task.activityGroup] || 0) + 1;
+      }
+      marketingPlanSummaries.push({
+        id: plan.id,
+        name: plan.name,
+        fiscalYear: plan.fiscalYear,
+        description: plan.description,
+        status: plan.status,
+        taskCount: tasks.length,
+        tasksByGroup,
+      });
+    }
+  }
+
   const analysis = await storage.getLatestAnalysisByContext(contextFilter);
     
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
@@ -1038,6 +1120,7 @@ export async function generatePdfReport(
     baselineProductName,
     productFeatures: productFeatures.length > 0 ? productFeatures : undefined,
     roadmapItems: roadmapItems.length > 0 ? roadmapItems : undefined,
+    marketingPlans: marketingPlanSummaries.length > 0 ? marketingPlanSummaries : undefined,
   };
 
   const html = generateReportHtml(reportData);
