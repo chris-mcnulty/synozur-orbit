@@ -935,14 +935,53 @@ export async function generatePdfReport(
       throw new Error("Project not found");
     }
     projectName = project.name;
-    competitors = await storage.getCompetitorsByProject(projectId);
     companyProfile = (await storage.getCompanyProfileByContext(contextFilter)) || null;
     
     const projectProducts = await storage.getProjectProducts(projectId);
     const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
+    const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
+    
+    // Get competitors from the project's competitor products
+    const competitorIds: string[] = [];
+    for (const pp of competitorProducts) {
+      if (pp.product.competitorId && !competitorIds.includes(pp.product.competitorId)) {
+        competitorIds.push(pp.product.competitorId);
+      }
+    }
+    
+    // Fetch the actual competitor records
+    for (const compId of competitorIds) {
+      const comp = await storage.getCompetitor(compId);
+      if (comp) {
+        competitors.push(comp);
+      }
+    }
+    
+    // Also include competitor products as summary items for display
+    for (const pp of competitorProducts) {
+      baselineProducts.push({
+        id: pp.product.id,
+        name: pp.product.name,
+        description: pp.product.description,
+        status: "competitor",
+        featureCount: (await storage.getProductFeaturesByProduct(pp.product.id)).length,
+        roadmapCount: (await storage.getRoadmapItemsByProduct(pp.product.id)).length,
+      });
+    }
+    
     if (baselineProduct) {
       baselineProductId = baselineProduct.productId;
       baselineProductName = baselineProduct.product.name;
+      
+      // Add baseline product to products list
+      baselineProducts.unshift({
+        id: baselineProduct.product.id,
+        name: baselineProduct.product.name,
+        description: baselineProduct.product.description,
+        status: "baseline",
+        featureCount: 0, // Will be set below
+        roadmapCount: 0,
+      });
       
       const features = await storage.getProductFeaturesByProduct(baselineProductId);
       productFeatures = features.map(f => ({
@@ -956,6 +995,11 @@ export async function generatePdfReport(
         targetYear: f.targetYear,
       }));
       
+      // Update baseline product counts
+      if (baselineProducts.length > 0 && baselineProducts[0].status === "baseline") {
+        baselineProducts[0].featureCount = features.length;
+      }
+      
       const roadmap = await storage.getRoadmapItemsByProduct(baselineProductId);
       roadmapItems = roadmap.map(r => ({
         id: r.id,
@@ -967,6 +1011,10 @@ export async function generatePdfReport(
         status: r.status,
         aiRecommended: r.aiRecommended || false,
       }));
+      
+      if (baselineProducts.length > 0 && baselineProducts[0].status === "baseline") {
+        baselineProducts[0].roadmapCount = roadmap.length;
+      }
     }
   } else {
     companyProfile = (await storage.getCompanyProfileByContext(contextFilter)) || null;
@@ -1022,8 +1070,11 @@ export async function generatePdfReport(
     }
   }
 
-  const analysis = await storage.getLatestAnalysisByContext(contextFilter);
+  // For project-scoped reports, don't include market-level analysis (themes/messaging)
+  // as it's not relevant to product-vs-product comparison
+  const analysis = scope === "baseline" ? await storage.getLatestAnalysisByContext(contextFilter) : null;
     
+  // Get project-specific recommendations if available, otherwise market recommendations for baseline
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
 
   const battlecards: Array<{ competitorName: string; battlecard: Battlecard }> = [];
