@@ -61,6 +61,7 @@ export default function CompetitorDetail() {
     summary?: string;
     keyMessages?: string[];
     keywords?: string[];
+    tone?: string;
   } | null;
   
   // Fetch dashboard scores to get calculated Orbit score for this competitor
@@ -619,29 +620,49 @@ export default function CompetitorDetail() {
             <div className="grid gap-6 md:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Top Keywords</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Tags className="h-4 w-4 text-primary" />
+                    Keywords & Tone
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  {analysisData?.messagingThemes && analysisData.messagingThemes.length > 0 ? (
+                <CardContent className="space-y-4">
+                  {(analysisData?.keywords && analysisData.keywords.length > 0) || (analysisData?.messagingThemes && analysisData.messagingThemes.length > 0) ? (
                     <div className="flex flex-wrap gap-2">
-                      {analysisData.messagingThemes.map((kw, i) => (
+                      {(analysisData.keywords || analysisData.messagingThemes || []).map((kw, i) => (
                         <Badge key={i} variant="secondary" className="px-3 py-1">{kw}</Badge>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-4">
-                      <Tags className="h-6 w-6 mx-auto text-muted-foreground/50 mb-2" />
+                    <div className="text-center py-2">
                       <p className="text-muted-foreground text-sm">No keywords detected yet.</p>
+                    </div>
+                  )}
+                  {analysisData?.tone && (
+                    <div className="pt-3 border-t">
+                      <p className="text-xs text-muted-foreground mb-1 font-medium">Tone</p>
+                      <p className="text-sm text-primary">{analysisData.tone}</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle>Value Propositions</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    Key Messages
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {analysisData?.valuePropositions && analysisData.valuePropositions.length > 0 ? (
+                  {analysisData?.keyMessages && analysisData.keyMessages.length > 0 ? (
+                    <ul className="space-y-3">
+                      {analysisData.keyMessages.map((msg, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <span className="text-primary font-medium shrink-0">{i + 1}.</span>
+                          <span>{msg}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : analysisData?.valuePropositions && analysisData.valuePropositions.length > 0 ? (
                     <ul className="space-y-2">
                       {analysisData.valuePropositions.map((vp, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -651,9 +672,9 @@ export default function CompetitorDetail() {
                       ))}
                     </ul>
                   ) : (
-                    <div className="h-[120px] flex flex-col items-center justify-center">
-                      <Target className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                      <p className="text-muted-foreground text-sm">No value propositions detected yet.</p>
+                    <div className="h-[80px] flex flex-col items-center justify-center">
+                      <MessageSquare className="h-6 w-6 text-muted-foreground/50 mb-2" />
+                      <p className="text-muted-foreground text-sm">No key messages detected yet.</p>
                     </div>
                   )}
                 </CardContent>
