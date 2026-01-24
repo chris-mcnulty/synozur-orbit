@@ -9995,8 +9995,8 @@ Return only the description text, no quotes or formatting.`;
         SET market_id = c.market_id
         FROM competitors c
         WHERE a.market_id IS NULL 
-          AND a.metadata->>'competitorId' IS NOT NULL
-          AND c.id = CAST(a.metadata->>'competitorId' AS INTEGER)
+          AND a.competitor_id IS NOT NULL
+          AND c.id = a.competitor_id
       `);
 
       // Also backfill from company profiles for baseline-related activities
@@ -10005,8 +10005,8 @@ Return only the description text, no quotes or formatting.`;
         SET market_id = cp.market_id
         FROM company_profiles cp
         WHERE a.market_id IS NULL 
-          AND a.metadata->>'companyProfileId' IS NOT NULL
-          AND cp.id = CAST(a.metadata->>'companyProfileId' AS INTEGER)
+          AND a.company_profile_id IS NOT NULL
+          AND cp.id = a.company_profile_id
       `);
 
       res.json({ 
