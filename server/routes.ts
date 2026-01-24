@@ -5732,7 +5732,7 @@ Respond in JSON format:
   app.post("/api/products", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, url, companyName, competitorId, isBaseline, companyProfileId } = req.body;
+      const { name, description, url, companyName, competitorId, isBaseline, companyProfileId, createAsCompetitor } = req.body;
 
       if (!name) {
         return res.status(400).json({ error: "Product name is required" });
@@ -5747,20 +5747,56 @@ Respond in JSON format:
         }
       }
 
-      const product = await storage.createProduct({
-        name,
-        description,
-        url,
-        companyName,
-        competitorId,
-        companyProfileId: finalCompanyProfileId,
-        isBaseline: isBaseline === true,
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        createdBy: ctx.userId,
-      });
+      // If createAsCompetitor is true, create a competitor company record first
+      // Server-side guard: only allowed for non-baseline products without existing competitorId
+      let finalCompetitorId = competitorId;
+      let createdCompetitorId: string | null = null;
+      if (createAsCompetitor === true && isBaseline !== true && !competitorId) {
+        // Create a competitor company for this product
+        const competitorName = companyName || name;
+        const competitorUrl = url || "";
+        
+        const competitor = await storage.createCompetitor({
+          name: competitorName,
+          url: competitorUrl,
+          status: "pending",
+          userId: ctx.userId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+        });
+        
+        finalCompetitorId = competitor.id;
+        createdCompetitorId = competitor.id;
+        console.log(`Created competitor company ${competitorName} (${competitor.id}) for product ${name}`);
+      }
 
-      res.json(product);
+      try {
+        const product = await storage.createProduct({
+          name,
+          description,
+          url,
+          companyName,
+          competitorId: finalCompetitorId,
+          companyProfileId: finalCompanyProfileId,
+          isBaseline: isBaseline === true,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          createdBy: ctx.userId,
+        });
+
+        res.json(product);
+      } catch (productError) {
+        // If product creation fails and we created a competitor, clean it up
+        if (createdCompetitorId) {
+          try {
+            await storage.deleteCompetitor(createdCompetitorId);
+            console.log(`Cleaned up orphaned competitor ${createdCompetitorId} after product creation failure`);
+          } catch (cleanupError) {
+            console.error(`Failed to cleanup competitor ${createdCompetitorId}:`, cleanupError);
+          }
+        }
+        throw productError;
+      }
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -8344,20 +8380,6 @@ Generate a messaging framework in markdown format with sections:
         const product = cp.product;
         if (!product) continue;
 
-        // Products must have a linked competitor to store scores (due to FK constraint)
-        // Skip products without competitorId - they can still have battlecards but not scores
-        if (!product.competitorId) {
-          console.log(`Skipping product ${product.name} - no linked competitor for scoring`);
-          continue;
-        }
-
-        // Get linked competitor data
-        const competitor = await storage.getCompetitor(product.competitorId);
-        if (!competitor) {
-          console.log(`Skipping product ${product.name} - competitor ${product.competitorId} not found`);
-          continue;
-        }
-
         const battlecard = battlecards.find(bc => bc.competitorProductId === cp.productId);
 
         // Calculate component scores based on available data
@@ -8368,8 +8390,14 @@ Generate a messaging framework in markdown format with sections:
         let contentActivityScore = 50;
         let socialEngagementScore = 50;
 
-        // Adjust based on competitor analysis data
-        if (competitor.analysisData) {
+        // Get linked competitor data if available
+        let competitor = null;
+        if (product.competitorId) {
+          competitor = await storage.getCompetitor(product.competitorId);
+        }
+
+        // Adjust based on competitor analysis data (if linked)
+        if (competitor?.analysisData) {
           const analysis = competitor.analysisData as any;
           if (analysis.marketPosition) {
             marketPresenceScore = analysis.marketPosition === "leader" ? 90 : 
@@ -8391,6 +8419,15 @@ Generate a messaging framework in markdown format with sections:
           if (productAnalysis.features?.length) {
             featureBreadthScore = Math.min(100, 40 + productAnalysis.features.length * 6);
           }
+          // For standalone products, use additional product analysis fields
+          if (productAnalysis.marketPosition) {
+            marketPresenceScore = productAnalysis.marketPosition === "leader" ? 90 : 
+                                  productAnalysis.marketPosition === "challenger" ? 70 : 50;
+          }
+          if (productAnalysis.innovationLevel) {
+            innovationScore = productAnalysis.innovationLevel === "high" ? 85 : 
+                             productAnalysis.innovationLevel === "medium" ? 60 : 40;
+          }
         }
 
         // Adjust based on battlecard data
@@ -8406,7 +8443,7 @@ Generate a messaging framework in markdown format with sections:
         }
 
         // Adjust based on social engagement from linked competitor
-        if (competitor.linkedInEngagement) {
+        if (competitor?.linkedInEngagement) {
           const engagement = competitor.linkedInEngagement as any;
           if (engagement.followers > 10000) socialEngagementScore = 80;
           else if (engagement.followers > 5000) socialEngagementScore = 65;
@@ -8423,16 +8460,22 @@ Generate a messaging framework in markdown format with sections:
         );
 
         // Get previous score for trend calculation
-        const existingScore = await storage.getCompetitorScore(product.competitorId, req.params.projectId);
+        // Use product score lookup for standalone products, competitor score for linked products
+        const existingScore = product.competitorId 
+          ? await storage.getCompetitorScore(product.competitorId, req.params.projectId)
+          : await storage.getProductScore(product.id, req.params.projectId);
         const previousScore = existingScore?.overallScore || null;
         const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
         const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
 
-        const scoreData = await storage.upsertCompetitorScore({
-          competitorId: product.competitorId,
+        // Build score data - use productId for standalone products, competitorId for linked
+        const scorePayload = {
+          competitorId: product.competitorId || null,
+          productId: product.competitorId ? null : product.id, // Only set productId for standalone products
           projectId: req.params.projectId,
           tenantDomain,
           marketId: project.marketId || null,
+          entityName: product.name,
           overallScore,
           marketPresenceScore,
           innovationScore,
@@ -8451,7 +8494,12 @@ Generate a messaging framework in markdown format with sections:
             socialEngagement: { score: socialEngagementScore, weight: 0.10 },
             pricing: { score: pricingScore, weight: 0.10 },
           },
-        });
+        };
+
+        // Use appropriate upsert method based on product type
+        const scoreData = product.competitorId 
+          ? await storage.upsertCompetitorScore(scorePayload)
+          : await storage.upsertProductScore(scorePayload);
 
         scores.push({
           ...scoreData,

@@ -125,6 +125,7 @@ export default function ProductDetail() {
     url: "",
     companyName: "",
     isBaseline: false,
+    createAsCompetitor: false, // Option to also create as full competitor company
   });
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -785,7 +786,7 @@ export default function ProductDetail() {
         source: "manual",
       });
       setIsAddProductOpen(false);
-      setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false });
+      setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false, createAsCompetitor: false });
       toast({
         title: "Product Added",
         description: "Product has been created and added to the project.",
@@ -1377,7 +1378,7 @@ export default function ProductDetail() {
                         <Dialog open={isAddProductOpen} onOpenChange={(open) => {
                           setIsAddProductOpen(open);
                           if (open) {
-                            setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: true });
+                            setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: true, createAsCompetitor: false });
                           }
                         }}>
                           <DialogTrigger asChild>
@@ -1555,7 +1556,7 @@ export default function ProductDetail() {
                     </div>
                     <Dialog onOpenChange={(open) => {
                       if (open) {
-                        setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false });
+                        setProductFormData({ name: "", description: "", url: "", companyName: "", isBaseline: false, createAsCompetitor: false });
                       }
                     }}>
                       <DialogTrigger asChild>
@@ -1639,7 +1640,7 @@ export default function ProductDetail() {
                               <Switch
                                 id="comp-isBaseline"
                                 checked={productFormData.isBaseline}
-                                onCheckedChange={(checked) => setProductFormData({ ...productFormData, isBaseline: checked })}
+                                onCheckedChange={(checked) => setProductFormData({ ...productFormData, isBaseline: checked, createAsCompetitor: false })}
                                 data-testid="switch-competitor-is-baseline"
                               />
                               <div className="flex flex-col">
@@ -1653,6 +1654,24 @@ export default function ProductDetail() {
                                 </span>
                               </div>
                             </div>
+                            {!productFormData.isBaseline && (
+                              <div className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                <Switch
+                                  id="comp-createAsCompetitor"
+                                  checked={productFormData.createAsCompetitor}
+                                  onCheckedChange={(checked) => setProductFormData({ ...productFormData, createAsCompetitor: checked })}
+                                  data-testid="switch-create-as-competitor"
+                                />
+                                <div className="flex flex-col">
+                                  <Label htmlFor="comp-createAsCompetitor" className="font-medium">
+                                    Also create as full competitor company
+                                  </Label>
+                                  <span className="text-xs text-muted-foreground">
+                                    Track this company's website, social media, and blog activity
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <DialogFooter>
                             <Button type="submit" data-testid="button-create-competitor-product" disabled={createProduct.isPending || isAddAutoFetching}>

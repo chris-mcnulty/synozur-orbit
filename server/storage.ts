@@ -312,7 +312,7 @@ export interface IStorage {
   
   // Competitor score methods (also supports product scores)
   getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined>;
-  getProductScore(productId: string): Promise<CompetitorScore | undefined>;
+  getProductScore(productId: string, projectId?: string): Promise<CompetitorScore | undefined>;
   getCompetitorScoresByProject(projectId: string): Promise<CompetitorScore[]>;
   getCompetitorScoresByTenant(tenantDomain: string): Promise<CompetitorScore[]>;
   getCompetitorScoresByContext(ctx: ContextFilter): Promise<CompetitorScore[]>;
@@ -1522,7 +1522,15 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getProductScore(productId: string): Promise<CompetitorScore | undefined> {
+  async getProductScore(productId: string, projectId?: string): Promise<CompetitorScore | undefined> {
+    if (projectId) {
+      const [score] = await db.select().from(competitorScores)
+        .where(and(
+          eq(competitorScores.productId, productId),
+          eq(competitorScores.projectId, projectId)
+        ));
+      return score || undefined;
+    }
     const [score] = await db.select().from(competitorScores)
       .where(eq(competitorScores.productId, productId));
     return score || undefined;
@@ -1532,7 +1540,7 @@ export class DatabaseStorage implements IStorage {
     if (!score.productId) {
       throw new Error('productId is required for product scores');
     }
-    const existing = await this.getProductScore(score.productId);
+    const existing = await this.getProductScore(score.productId, score.projectId ?? undefined);
     if (existing) {
       const [result] = await db
         .update(competitorScores)
