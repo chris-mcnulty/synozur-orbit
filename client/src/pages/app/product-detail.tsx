@@ -136,6 +136,7 @@ export default function ProductDetail() {
     linkedInUrl: "",
     instagramUrl: "",
     twitterUrl: "",
+    blogUrl: "",
     socialCheckFrequency: "daily",
   });
 
@@ -964,6 +965,7 @@ export default function ProductDetail() {
       linkedInUrl: product.linkedInUrl || "",
       instagramUrl: product.instagramUrl || "",
       twitterUrl: product.twitterUrl || "",
+      blogUrl: product.blogUrl || "",
       socialCheckFrequency: product.socialCheckFrequency || "daily",
     });
     setIsEditProductOpen(true);
@@ -2998,6 +3000,18 @@ export default function ProductDetail() {
                       placeholder="https://x.com/..."
                       value={editFormData.twitterUrl}
                       onChange={(e) => setEditFormData({ ...editFormData, twitterUrl: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-blogUrl" className="flex items-center gap-2 text-sm">
+                      <FileText className="h-4 w-4 text-orange-500" /> Blog URL
+                    </Label>
+                    <Input
+                      id="edit-blogUrl"
+                      placeholder="https://company.com/blog"
+                      value={editFormData.blogUrl}
+                      onChange={(e) => setEditFormData({ ...editFormData, blogUrl: e.target.value })}
+                      data-testid="input-edit-blog-url"
                     />
                   </div>
                   <div className="grid gap-2">
