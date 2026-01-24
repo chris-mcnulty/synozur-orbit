@@ -725,9 +725,11 @@ export default function Competitors() {
                                 </div>
                               )}
                               <div>
-                                <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                                  {competitor.name}
-                                </h3>
+                                <Link href={`/app/competitors/${competitor.id}`}>
+                                  <h3 className="font-semibold text-lg group-hover:text-primary transition-colors cursor-pointer hover:underline" data-testid={`link-competitor-${competitor.id}`}>
+                                    {competitor.name}
+                                  </h3>
+                                </Link>
                                 <div className="flex items-center gap-2">
                                   <a 
                                     href={competitor.url} 
@@ -844,6 +846,12 @@ export default function Competitors() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/app/competitors/${competitor.id}`} data-testid={`button-view-details-${competitor.id}`}>
+                                        <Target className="w-4 h-4 mr-2" />
+                                        View Details
+                                      </Link>
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}>
                                       Re-analyze Website
                                     </DropdownMenuItem>
