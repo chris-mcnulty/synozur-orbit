@@ -542,13 +542,32 @@ export default function CompetitorDetail() {
                 <CardTitle>AI Executive Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-muted-foreground leading-relaxed">
-                  {competitor.name} has recently pivoted their messaging to focus heavily on "Enterprise Automation," moving away from their previous "SMB Friendly" positioning. This directly impacts your "Enterprise Grade" differentiator. They have launched 3 new landing pages in the last month targeting CTOs specifically.
-                </p>
-                <div className="flex gap-2">
-                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">Pivot Detected</Badge>
-                  <Badge variant="outline" className="bg-orange-500/5 text-orange-500 border-orange-500/20">New Audience Segment</Badge>
-                </div>
+                {analysisData?.summary || analysisData?.positioning ? (
+                  <>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {analysisData.summary || analysisData.positioning}
+                    </p>
+                    {analysisData.targetAudience && (
+                      <p className="text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">Target Audience:</span> {analysisData.targetAudience}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {analysisData.keyDifferentiators?.slice(0, 3).map((diff, i) => (
+                        <Badge key={i} variant="outline" className="bg-primary/5 text-primary border-primary/20">
+                          {diff}
+                        </Badge>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <FileSearch className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground text-sm">
+                      No analysis data yet. Run a crawl and analysis to generate insights.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -558,23 +577,40 @@ export default function CompetitorDetail() {
                   <CardTitle>Top Keywords</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {["Automation", "Enterprise", "Security", "Scale", "API First", "Compliance", "Cloud"].map((kw) => (
-                      <Badge key={kw} variant="secondary" className="px-3 py-1">{kw}</Badge>
-                    ))}
-                  </div>
+                  {analysisData?.messagingThemes && analysisData.messagingThemes.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {analysisData.messagingThemes.map((kw, i) => (
+                        <Badge key={i} variant="secondary" className="px-3 py-1">{kw}</Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <Tags className="h-6 w-6 mx-auto text-muted-foreground/50 mb-2" />
+                      <p className="text-muted-foreground text-sm">No keywords detected yet.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle>Market Positioning</CardTitle>
+                  <CardTitle>Value Propositions</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[200px] flex items-center justify-center bg-muted/20 rounded-lg border border-dashed border-border">
-                    <span className="text-muted-foreground text-sm flex items-center gap-2">
-                      <BarChart2 className="h-4 w-4" /> Positioning Map Placeholder
-                    </span>
-                  </div>
+                  {analysisData?.valuePropositions && analysisData.valuePropositions.length > 0 ? (
+                    <ul className="space-y-2">
+                      {analysisData.valuePropositions.map((vp, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <Target className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                          <span>{vp}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="h-[120px] flex flex-col items-center justify-center">
+                      <Target className="h-6 w-6 text-muted-foreground/50 mb-2" />
+                      <p className="text-muted-foreground text-sm">No value propositions detected yet.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
