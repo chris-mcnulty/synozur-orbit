@@ -886,6 +886,46 @@ export const insertSocialMetricSchema = createInsertSchema(socialMetrics).omit({
 export type SocialMetric = typeof socialMetrics.$inferSelect;
 export type InsertSocialMetric = z.infer<typeof insertSocialMetricSchema>;
 
+// Score history for tracking Orbit Scores over time (competitors and baselines)
+export const scoreHistory = pgTable("score_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: text("entity_type").notNull(), // "competitor" or "baseline"
+  entityId: varchar("entity_id").notNull(), // competitorId or companyProfileId
+  entityName: text("entity_name").notNull(), // Cached name for display
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").notNull(), // 0-100
+  innovationScore: integer("innovation_score").default(0),
+  marketPresenceScore: integer("market_presence_score").default(0),
+  contentActivityScore: integer("content_activity_score").default(0),
+  socialEngagementScore: integer("social_engagement_score").default(0),
+  scoreBreakdown: jsonb("score_breakdown"), // Full breakdown for analysis
+  period: text("period").notNull(), // e.g., "2026-01", "2026-W04" 
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const scoreHistoryRelations = relations(scoreHistory, ({ one }) => ({
+  project: one(clientProjects, {
+    fields: [scoreHistory.projectId],
+    references: [clientProjects.id],
+  }),
+  market: one(markets, {
+    fields: [scoreHistory.marketId],
+    references: [markets.id],
+  }),
+}));
+
+export const insertScoreHistorySchema = createInsertSchema(scoreHistory).omit({
+  id: true,
+  createdAt: true,
+  recordedAt: true,
+});
+
+export type ScoreHistory = typeof scoreHistory.$inferSelect;
+export type InsertScoreHistory = z.infer<typeof insertScoreHistorySchema>;
+
 // Executive summary cache for fast dashboard loading
 export const executiveSummaries = pgTable("executive_summaries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
