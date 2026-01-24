@@ -2,6 +2,8 @@ import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
+import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { monitorCompetitorSocialMedia as monitorSocialMedia } from "./social-monitoring";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -34,7 +36,7 @@ export async function startFullRegeneration(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 6,
+    totalSteps: 7,
     startedAt: new Date(),
   };
   
@@ -91,8 +93,57 @@ async function runRegenerationInBackground(
       .map(doc => doc.extractedText)
       .join("\n\n");
 
-    progress.currentStep = "Analyzing competitors";
+    // Step 1: Crawl baseline company profile website and social media
+    progress.currentStep = "Refreshing baseline data";
     progress.stepsCompleted = 1;
+
+    if (companyProfile && companyProfile.websiteUrl) {
+      try {
+        console.log(`Full regen: Crawling baseline website for ${companyProfile.companyName}...`);
+        const crawlResult = await crawlCompetitorWebsite(companyProfile.websiteUrl);
+        
+        if (crawlResult.pages.length > 0) {
+          const combinedContent = getCombinedContent(crawlResult);
+          
+          // Update company profile with crawl data
+          await storage.updateCompanyProfile(companyProfile.id, {
+            crawlData: {
+              pagesCrawled: crawlResult.pages.map(p => ({
+                url: p.url,
+                pageType: p.pageType,
+                title: p.title,
+                wordCount: p.wordCount,
+              })),
+              totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
+              crawledAt: crawlResult.crawledAt,
+            },
+            previousWebsiteContent: combinedContent.substring(0, 100000),
+            lastCrawl: new Date(),
+            lastFullCrawl: new Date(),
+          });
+          console.log(`Full regen: Baseline website crawled - ${crawlResult.pages.length} pages`);
+        }
+      } catch (error) {
+        console.error(`Full regen: Failed to crawl baseline website:`, error);
+      }
+      
+      // Also refresh LinkedIn data if URL is configured
+      if (companyProfile.linkedInUrl) {
+        try {
+          console.log(`Full regen: Refreshing baseline LinkedIn data...`);
+          await monitorSocialMedia(
+            { id: companyProfile.id, linkedInUrl: companyProfile.linkedInUrl } as any,
+            { tenantDomain, marketId: marketId || companyProfile.marketId || undefined }
+          );
+          console.log(`Full regen: Baseline LinkedIn data refreshed`);
+        } catch (error) {
+          console.error(`Full regen: Failed to refresh baseline social:`, error);
+        }
+      }
+    }
+
+    progress.currentStep = "Analyzing competitors";
+    progress.stepsCompleted = 2;
 
     let ourPositioning = companyProfile 
       ? `${companyProfile.companyName}: ${companyProfile.description || 'No description provided'}`

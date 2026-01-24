@@ -1496,6 +1496,64 @@ export async function registerRoutes(
     }
   });
 
+  // Simple baseline refresh: Crawl company profile website and LinkedIn
+  app.post("/api/company-profile/:id/refresh", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profileId = parseInt(req.params.id);
+      const profile = await storage.getCompanyProfile(profileId);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+      
+      const results: any = { website: null, linkedin: null };
+      
+      // Crawl website
+      if (profile.websiteUrl) {
+        const { crawlCompetitorWebsite, getCombinedContent } = await import("./services/web-crawler");
+        const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
+        
+        if (crawlResult.pages.length > 0) {
+          const combinedContent = getCombinedContent(crawlResult);
+          await storage.updateCompanyProfile(profileId, {
+            crawlData: {
+              pagesCrawled: crawlResult.pages.map(p => ({
+                url: p.url,
+                pageType: p.pageType,
+                title: p.title,
+                wordCount: p.wordCount,
+              })),
+              totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
+              crawledAt: crawlResult.crawledAt,
+            },
+            previousWebsiteContent: combinedContent.substring(0, 100000),
+            lastCrawl: new Date(),
+            lastFullCrawl: new Date(),
+          });
+          results.website = { success: true, pages: crawlResult.pages.length };
+        }
+      }
+      
+      // Refresh LinkedIn
+      if (profile.linkedInUrl) {
+        const { monitorCompetitorSocialMedia } = await import("./services/social-monitoring");
+        await monitorCompetitorSocialMedia(
+          { id: profile.id, linkedInUrl: profile.linkedInUrl } as any,
+          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId }
+        );
+        results.linkedin = { success: true };
+      }
+      
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Batch monitor: All competitor products in a project
   app.post("/api/projects/:id/monitor-all", async (req, res) => {
     try {
