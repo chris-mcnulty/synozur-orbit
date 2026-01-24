@@ -738,47 +738,76 @@ export default function Dashboard() {
                     return getImpactColor(item.impact);
                   };
                   return (
-                    <Link key={item.id} href={`/app/competitors/${item.competitorId}`} data-testid={`link-signal-${item.id}`}>
-                      <div className={cn(
+                    <div 
+                      key={item.id} 
+                      onClick={() => setLocation(`/app/competitors/${item.competitorId}`)}
+                      className={cn(
                         "flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
                         isMeaningful && "border border-primary/20 bg-primary/5"
-                      )} data-testid={`signal-${item.id}`}>
-                        <div className={cn("p-1.5 rounded-full shrink-0", getIconBgColor())}>
-                          {getSignalIcon()}
+                      )} 
+                      data-testid={`signal-${item.id}`}
+                    >
+                      <div className={cn("p-1.5 rounded-full shrink-0", getIconBgColor())}>
+                        {getSignalIcon()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+                            {item.competitorName}
+                          </span>
+                          <Badge variant={isMeaningful ? "default" : "outline"} className={cn(
+                            "text-xs shrink-0",
+                            item.type === "blog_update" && "bg-orange-500/10 text-orange-600 border-orange-500/30",
+                            item.type === "social_update" && "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                          )}>
+                            {getSignalLabel()}
+                          </Badge>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-                              {item.competitorName}
-                            </span>
-                            <Badge variant={isMeaningful ? "default" : "outline"} className={cn(
-                              "text-xs shrink-0",
-                              item.type === "blog_update" && "bg-orange-500/10 text-orange-600 border-orange-500/30",
-                              item.type === "social_update" && "bg-blue-500/10 text-blue-600 border-blue-500/30"
-                            )}>
-                              {getSignalLabel()}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {item.summary || item.description}
-                          </p>
-                          {item.type === "blog_update" && item.details?.newPosts?.[0]?.title && (
-                            <p className="text-xs text-orange-600 mt-1 truncate">
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {item.summary || item.description}
+                        </p>
+                        {item.type === "blog_update" && item.details?.newPosts?.[0]?.title && (
+                          <div className="mt-1">
+                            <p className="text-xs text-orange-600 truncate">
                               "{item.details.newPosts[0].title}"
                             </p>
-                          )}
-                          {item.type === "social_update" && item.details?.latestPostTitle && (
-                            <p className="text-xs text-blue-600 mt-1 truncate">
+                            {item.details.newPosts[0].link && (
+                              <a 
+                                href={item.details.newPosts[0].link} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-orange-500 hover:text-orange-600 hover:underline mt-0.5 inline-flex items-center gap-1"
+                              >
+                                Read post →
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {item.type === "social_update" && item.details?.latestPostTitle && (
+                          <div className="mt-1">
+                            <p className="text-xs text-blue-600 truncate">
                               "{item.details.latestPostTitle}"
                             </p>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {item.date}
-                        </div>
+                            {item.details?.recentPosts?.[0]?.url && (
+                              <a 
+                                href={item.details.recentPosts[0].url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-blue-500 hover:text-blue-600 hover:underline mt-0.5 inline-flex items-center gap-1"
+                              >
+                                View on LinkedIn →
+                              </a>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </Link>
+                      <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {item.date}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

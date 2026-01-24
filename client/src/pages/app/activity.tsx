@@ -438,14 +438,21 @@ export default function Activity() {
                           <div className="pl-6 space-y-1">
                             <p className="text-xs font-medium text-muted-foreground uppercase">Recent LinkedIn Posts</p>
                             {((competitor.linkedinEngagement as any).recentPosts || []).slice(0, 3).map((post: any, i: number) => (
-                              <div key={i} className="p-2 rounded bg-blue-500/5 border border-blue-500/10 text-xs">
+                              <a 
+                                key={i} 
+                                href={post.url || competitor.linkedInUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="block p-2 rounded bg-blue-500/5 border border-blue-500/10 text-xs hover:bg-blue-500/10 hover:border-blue-500/30 transition-colors cursor-pointer"
+                              >
                                 <p className="line-clamp-2 text-muted-foreground">{post.text}</p>
                                 <div className="flex items-center gap-3 mt-1 text-blue-600">
                                   <span>{post.reactions || 0} reactions</span>
                                   <span>{post.comments || 0} comments</span>
                                   {post.postedAt && <span className="text-muted-foreground">{formatTimeAgo(post.postedAt)}</span>}
+                                  <span className="ml-auto text-blue-500">View on LinkedIn →</span>
                                 </div>
-                              </div>
+                              </a>
                             ))}
                           </div>
                         )}

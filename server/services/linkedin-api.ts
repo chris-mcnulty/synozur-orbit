@@ -241,12 +241,18 @@ export async function fetchLinkedInData(
     linkedinUrl || `https://linkedin.com/company/${companyResult.companyData?.universal_name}`
   );
 
-  const recentPosts = (postsResult.posts || []).slice(0, 5).map(post => ({
-    text: post.text || "",
-    postedAt: post.posted_at || "",
-    reactions: post.num_likes || 0,
-    comments: post.num_comments || 0,
-  }));
+  const recentPosts = (postsResult.posts || []).slice(0, 5).map(post => {
+    // LinkedIn URN format: urn:li:activity:1234567890
+    // Can be converted to URL: https://www.linkedin.com/feed/update/urn:li:activity:1234567890
+    const postUrl = post.urn ? `https://www.linkedin.com/feed/update/${post.urn}` : undefined;
+    return {
+      text: post.text || "",
+      postedAt: post.posted_at || "",
+      reactions: post.num_likes || 0,
+      comments: post.num_comments || 0,
+      url: postUrl,
+    };
+  });
 
   return {
     success: true,
