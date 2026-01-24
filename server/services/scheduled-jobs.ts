@@ -7,6 +7,34 @@ import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail } from "./email-service";
 
+// Cache for market status to avoid repeated DB queries
+const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
+const CACHE_TTL_MS = 60 * 1000; // 1 minute (reduced TTL for faster response to status changes)
+
+async function isMarketArchived(marketId: string | null): Promise<boolean> {
+  if (!marketId) return false; // Default market or no market = not archived
+  
+  // Check cache first
+  const cached = marketStatusCache.get(marketId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.status === "archived";
+  }
+  
+  // Fetch from DB
+  const market = await storage.getMarket(marketId);
+  if (market) {
+    marketStatusCache.set(marketId, { status: market.status, timestamp: Date.now() });
+    return market.status === "archived";
+  }
+  
+  return false;
+}
+
+// Invalidate cache entry when market status changes
+export function invalidateMarketStatusCache(marketId: string): void {
+  marketStatusCache.delete(marketId);
+}
+
 interface JobStatus {
   lastRun: Date | null;
   isRunning: boolean;
@@ -103,6 +131,12 @@ async function runWebsiteCrawlJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        // Skip competitors in archived markets
+        if (await isMarketArchived(competitor.marketId)) {
+          console.log(`[Scheduled Job] Skipping ${competitor.name} - market is archived`);
+          continue;
+        }
+        
         // Skip competitors with manual research to avoid triggering bot detection
         const existingAnalysis = competitor.analysisData as any;
         if (existingAnalysis?.source === "manual") {
@@ -270,6 +304,12 @@ async function runSocialMonitorJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        // Skip competitors in archived markets
+        if (await isMarketArchived(competitor.marketId)) {
+          console.log(`[Scheduled Job] Skipping social for ${competitor.name} - market is archived`);
+          continue;
+        }
+        
         if (!competitor.linkedInUrl && !competitor.instagramUrl) continue;
 
         // Use per-competitor frequency, defaulting to "daily"
@@ -299,6 +339,12 @@ async function runSocialMonitorJob(): Promise<void> {
       // Monitor company profiles (baseline) for social changes
       const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
       for (const profile of companyProfiles) {
+        // Skip profiles in archived markets
+        if (await isMarketArchived(profile.marketId)) {
+          console.log(`[Scheduled Job] Skipping baseline social for ${profile.companyName} - market is archived`);
+          continue;
+        }
+        
         if (!profile.linkedInUrl && !profile.instagramUrl && !profile.twitterUrl) continue;
 
         // Use per-profile frequency, defaulting to "daily"
@@ -398,6 +444,12 @@ async function runWebsiteMonitorJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        // Skip competitors in archived markets
+        if (await isMarketArchived(competitor.marketId)) {
+          console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - market is archived`);
+          continue;
+        }
+        
         const lastWebsiteMonitor = competitor.lastWebsiteMonitor
           ? new Date(competitor.lastWebsiteMonitor).getTime()
           : 0;
@@ -424,6 +476,12 @@ async function runWebsiteMonitorJob(): Promise<void> {
       // Monitor company profiles (baseline) for website changes
       const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
       for (const profile of companyProfiles) {
+        // Skip profiles in archived markets
+        if (await isMarketArchived(profile.marketId)) {
+          console.log(`[Scheduled Job] Skipping website monitor for ${profile.companyName} - market is archived`);
+          continue;
+        }
+        
         const lastWebsiteMonitor = profile.lastWebsiteMonitor
           ? new Date(profile.lastWebsiteMonitor).getTime()
           : 0;

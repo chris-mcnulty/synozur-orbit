@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -305,6 +305,42 @@ export default function ContextBar() {
     },
   });
 
+  const archiveMarketMutation = useMutation({
+    mutationFn: async ({ marketId, archive }: { marketId: string; archive: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { 
+        status: archive ? "archived" : "active" 
+      });
+      return response.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      toast({
+        title: variables.archive ? "Market archived" : "Market restored",
+        description: variables.archive 
+          ? "All monitoring for this market has been suspended." 
+          : "Monitoring has been resumed and data is being refreshed.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update market",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleArchiveMarket = (market: Market, e: React.MouseEvent) => {
+    e.stopPropagation();
+    archiveMarketMutation.mutate({ 
+      marketId: market.id, 
+      archive: market.status !== "archived" 
+    });
+  };
+
   const handleEditMarket = (market: Market, e: React.MouseEvent) => {
     e.stopPropagation();
     setMarketToEdit(market);
@@ -418,6 +454,9 @@ export default function ContextBar() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
+                        {market.status === "archived" && (
+                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-600/50">Archived</Badge>
+                        )}
                         {market.isDefault && (
                           <Badge variant="outline" className="text-[10px]">Default</Badge>
                         )}
@@ -432,8 +471,23 @@ export default function ContextBar() {
                               className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary hover:bg-primary/10"
                               onClick={(e) => handleEditMarket(market, e)}
                               data-testid={`btn-edit-market-${market.id}`}
+                              title="Edit market"
                             >
                               <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
+                              onClick={(e) => handleArchiveMarket(market, e)}
+                              data-testid={`btn-archive-market-${market.id}`}
+                              title={market.status === "archived" ? "Restore market" : "Archive market"}
+                            >
+                              {market.status === "archived" ? (
+                                <ArchiveRestore className="h-3.5 w-3.5" />
+                              ) : (
+                                <Archive className="h-3.5 w-3.5" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -441,6 +495,7 @@ export default function ContextBar() {
                               className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                               onClick={(e) => handleDeleteMarket(market, e)}
                               data-testid={`btn-delete-market-${market.id}`}
+                              title="Delete market"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -600,6 +655,9 @@ export default function ContextBar() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
+                      {market.status === "archived" && (
+                        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-600/50">Archived</Badge>
+                      )}
                       {market.isDefault && (
                         <Badge variant="outline" className="text-[10px]">Default</Badge>
                       )}

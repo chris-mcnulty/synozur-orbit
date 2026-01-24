@@ -23,7 +23,7 @@ import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow } from "./services/scheduled-jobs";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
@@ -4238,6 +4238,7 @@ Respond in JSON format:
 
       const { name, description, status } = req.body;
       const updates: any = {};
+      const wasArchived = market.status === "archived";
       
       if (name !== undefined) updates.name = name.trim();
       if (description !== undefined) updates.description = description?.trim() || null;
@@ -4246,6 +4247,57 @@ Respond in JSON format:
       }
 
       const updatedMarket = await storage.updateMarket(req.params.id, updates);
+      
+      // Invalidate market status cache if status was updated
+      if (status !== undefined) {
+        invalidateMarketStatusCache(req.params.id);
+      }
+      
+      // If unarchiving (was archived, now active), trigger immediate refreshes
+      if (wasArchived && status === "active") {
+        // Get tenant domain from the market's tenant
+        const tenant = await storage.getTenant(market.tenantId);
+        const tenantDomain = tenant?.domain || "";
+        
+        if (tenantDomain) {
+          // Get all competitors and company profile in this market
+          const competitors = await storage.getCompetitorsByContext({ 
+            tenantDomain,
+            marketId: market.id 
+          });
+          const companyProfile = await storage.getCompanyProfileByContext({
+            tenantDomain,
+            marketId: market.id
+          });
+          
+          console.log(`[Unarchive] Triggering refresh for market ${market.name} - ${competitors.length} competitors`);
+          
+          // Trigger website monitoring for all competitors
+          for (const competitor of competitors) {
+            monitorCompetitorWebsite(competitor, {
+              tenantDomain,
+              marketId: market.id
+            }).catch(err => console.error(`Unarchive refresh error for ${competitor.name}:`, err));
+          }
+          
+          // Trigger baseline monitoring
+          if (companyProfile) {
+            monitorCompanyProfileWebsite(companyProfile, {
+              tenantDomain,
+              marketId: market.id
+            }).catch(err => console.error(`Unarchive refresh error for baseline:`, err));
+          }
+          
+          // Trigger social monitoring for all competitors
+          for (const competitor of competitors) {
+            monitorCompetitorSocialMedia(competitor, {
+              tenantDomain,
+              marketId: market.id
+            }).catch(err => console.error(`Unarchive social refresh error for ${competitor.name}:`, err));
+          }
+        }
+      }
+      
       res.json(updatedMarket);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
