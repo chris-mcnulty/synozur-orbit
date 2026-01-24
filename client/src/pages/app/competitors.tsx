@@ -43,8 +43,9 @@ export default function Competitors() {
     twitterUrl: string; 
     instagramUrl: string;
     blogUrl: string;
+    projectId: string | null;
   } | null>(null);
-  const [linksForm, setLinksForm] = useState({ linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "" });
+  const [linksForm, setLinksForm] = useState({ linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "", projectId: "" });
   const [isBlogTesting, setIsBlogTesting] = useState(false);
   const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
@@ -325,7 +326,7 @@ export default function Competitors() {
     setIsSavingLinks(true);
     
     try {
-      // Save social links via PATCH
+      // Save social links and project association via PATCH
       const response = await fetch(`/api/competitors/${linksEditTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -334,6 +335,7 @@ export default function Competitors() {
           twitterUrl: linksForm.twitterUrl.trim() || null,
           instagramUrl: linksForm.instagramUrl.trim() || null,
           blogUrl: linksForm.blogUrl.trim() || null,
+          projectId: linksForm.projectId || null,
         }),
         credentials: "include",
       });
@@ -378,12 +380,14 @@ export default function Competitors() {
       twitterUrl: competitor.twitterUrl || "",
       instagramUrl: competitor.instagramUrl || "",
       blogUrl: competitor.blogUrl || "",
+      projectId: competitor.projectId || null,
     });
     setLinksForm({
       linkedInUrl: competitor.linkedInUrl || "",
       twitterUrl: competitor.twitterUrl || "",
       instagramUrl: competitor.instagramUrl || "",
       blogUrl: competitor.blogUrl || "",
+      projectId: competitor.projectId || "",
     });
     setBlogTestResult(null);
     setLinksEditOpen(true);
@@ -902,7 +906,7 @@ export default function Competitors() {
                                       data-testid={`button-edit-links-${competitor.id}`}
                                     >
                                       <Pencil className="w-4 h-4 mr-2" />
-                                      Edit Social & Blog Links
+                                      Edit Details
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
                                       onClick={() => checkSocials.mutate(competitor.id)}
@@ -1020,11 +1024,10 @@ export default function Competitors() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
-              Edit Links for {linksEditTarget?.name}
+              Edit {linksEditTarget?.name}
             </DialogTitle>
             <DialogDescription>
-              Add social media profiles and blog/RSS feeds for this competitor.
-              This is especially useful for companies that block web crawlers.
+              Manage social media profiles, blog/RSS feeds, and product associations for this competitor.
             </DialogDescription>
           </DialogHeader>
           
@@ -1106,6 +1109,32 @@ export default function Competitors() {
                 </div>
               )}
             </div>
+            
+            <div className="pt-4 border-t space-y-2">
+              <Label htmlFor="projectId" className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4 text-purple-500" />
+                Associated Product/Project
+              </Label>
+              <Select 
+                value={linksForm.projectId || "__none__"} 
+                onValueChange={(val) => setLinksForm(f => ({ ...f, projectId: val === "__none__" ? "" : val }))}
+              >
+                <SelectTrigger data-testid="select-edit-project">
+                  <SelectValue placeholder="Select a product/project (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No product/project</SelectItem>
+                  {projects.map((project: any) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name} ({project.clientName})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Link this competitor to a specific product analysis project
+              </p>
+            </div>
           </div>
           
           <DialogFooter>
@@ -1121,7 +1150,7 @@ export default function Competitors() {
               data-testid="button-save-links"
             >
               {isSavingLinks ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Save Links
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
