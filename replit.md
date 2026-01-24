@@ -12,6 +12,27 @@ The platform is a multi-tenant SaaS application featuring role-based access cont
 
 Preferred communication style: Simple, everyday language.
 
+## Use Case Examples
+
+### Ecosystem Partner vs Platform Provider (M365 Migration Services)
+A structural example for understanding Orbit's multi-layered competitive analysis:
+
+**Scenario:** A services provider operates as a Microsoft 365 ecosystem partner. They sell products that serve as "service accelerators" for migrations to M365 and SharePoint. However, Microsoft also publishes free lightweight migration utilities that directly compete with their paid tooling.
+
+**The Challenge:** Microsoft is simultaneously a platform partner AND a real competitor. This creates a nuanced competitive landscape:
+- **Platform Dependency:** The client's products run on/integrate with Microsoft's platform
+- **Direct Competition:** Microsoft's free tools compete for the same migration use cases
+- **Positioning Complexity:** Must differentiate against free tooling while maintaining ecosystem partnership
+
+**How Orbit Handles This:**
+1. **Company Profile (Baseline):** Track the client's migration products and service accelerators
+2. **Competitor Entry:** Add Microsoft's migration tools as a competitor (even though they're a partner)
+3. **Product-Level Analysis:** Create product entries for specific Microsoft tools (e.g., SharePoint Migration Tool)
+4. **Standalone Products:** For product-only analysis without cluttering the main competitor list, use standalone products with the "create as full competitor" option when deeper tracking is needed
+5. **Battlecards:** Generate positioning against Microsoft's free tools, emphasizing enterprise features, support, and time-to-value
+
+This pattern applies broadly to any ecosystem partner scenario (Salesforce AppExchange partners vs Salesforce native features, AWS partners vs AWS services, etc.).
+
 ## Reference Projects
 
 ### Orion - Synozur Maturity Model Platform
