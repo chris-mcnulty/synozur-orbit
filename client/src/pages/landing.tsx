@@ -120,7 +120,7 @@ export default function Landing() {
           <img 
             src="/brand/orbit-logo-white.png" 
             alt="Orbit" 
-            className="h-16 md:h-20 mx-auto mb-6 object-contain"
+            className="h-48 md:h-60 mx-auto mb-4 object-contain -mt-8"
           />
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
             <Gem size={16} />
