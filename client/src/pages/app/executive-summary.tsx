@@ -292,7 +292,10 @@ export default function ExecutiveSummary() {
                 <h3 className="font-semibold text-lg">{baseline.name}</h3>
                 <p className="text-muted-foreground">{baseline.companyName}</p>
                 {baseline.description && (
-                  <p className="text-sm text-muted-foreground mt-2">{baseline.description}</p>
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-3">
+                    {baseline.description.substring(0, 200)}
+                    {baseline.description.length > 200 ? '...' : ''}
+                  </p>
                 )}
               </div>
             </div>
