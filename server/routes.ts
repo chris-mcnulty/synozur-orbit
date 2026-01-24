@@ -7744,14 +7744,19 @@ Make this a comprehensive reference document for sales and strategy teams.`;
       const rankedCompetitors = competitorScoresData.map(score => {
         // Match by competitorId first, then by productId (for standalone products)
         const productInfo = competitorProducts.find(cp => 
-          (cp.product?.competitorId && cp.product.competitorId === score.competitorId) ||
-          (cp.product?.id === score.competitorId) // Score uses productId for standalone products
+          (score.competitorId && cp.product?.competitorId && cp.product.competitorId === score.competitorId) ||
+          (score.productId && cp.product?.id === score.productId)
         );
+        
+        // Use entityName from score if available, otherwise fall back to product info
+        const displayName = score.entityName || productInfo?.product?.name || "Unknown";
+        const companyName = productInfo?.product?.companyName || score.entityName || "Unknown";
+        
         return {
           competitorId: score.competitorId,
-          productId: productInfo?.productId || null,
-          name: productInfo?.product?.name || "Unknown",
-          companyName: productInfo?.product?.companyName || "Unknown",
+          productId: score.productId || productInfo?.productId || null,
+          name: displayName,
+          companyName: companyName,
           overallScore: score.overallScore,
           trendDirection: score.trendDirection,
           trendDelta: score.trendDelta || 0,
