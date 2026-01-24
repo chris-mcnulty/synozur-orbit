@@ -805,13 +805,16 @@ export const insertPageViewSchema = createInsertSchema(pageViews).omit({
 export type PageView = typeof pageViews.$inferSelect;
 export type InsertPageView = z.infer<typeof insertPageViewSchema>;
 
-// Competitor scores for ranking and comparison
+// Competitor/Product scores for ranking and comparison
+// Supports both company-level competitors and standalone products
 export const competitorScores = pgTable("competitor_scores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "cascade" }), // Nullable for standalone products
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }), // For product-level scoring
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  entityName: text("entity_name"), // Cached name for display (competitor or product name)
   overallScore: integer("overall_score").notNull().default(0), // 0-100 composite score
   marketPresenceScore: integer("market_presence_score").default(0), // 0-100
   innovationScore: integer("innovation_score").default(0), // 0-100
@@ -832,6 +835,10 @@ export const competitorScoresRelations = relations(competitorScores, ({ one }) =
   competitor: one(competitors, {
     fields: [competitorScores.competitorId],
     references: [competitors.id],
+  }),
+  product: one(products, {
+    fields: [competitorScores.productId],
+    references: [products.id],
   }),
   project: one(clientProjects, {
     fields: [competitorScores.projectId],
