@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter } from "lucide-react";
+import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download } from "lucide-react";
+import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DropdownMenu,
@@ -312,6 +313,24 @@ export default function Recommendations() {
                 <SelectItem value="priority">Priority Only</SelectItem>
               </SelectContent>
             </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const recsToExport: CSVExportItem[] = filteredRecs.map(rec => ({
+                  title: rec.title,
+                  description: rec.description,
+                  category: rec.area,
+                }));
+                exportToCSV(recsToExport, "AI_Recommendations");
+              }}
+              disabled={filteredRecs.length === 0}
+              data-testid="export-csv"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
           </div>
         </div>
 
