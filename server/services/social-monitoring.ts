@@ -773,6 +773,119 @@ export async function monitorCompanyProfileSocialMedia(
   return results;
 }
 
+// Product-level social monitoring result
+interface ProductSocialResult {
+  productId: string;
+  productName: string;
+  platform: "linkedin" | "instagram" | "twitter";
+  hasChanges: boolean;
+  summary?: string;
+  status: "success" | "blocked" | "error";
+  message?: string;
+  engagement?: EngagementSnapshot;
+}
+
+export async function monitorProductSocialMedia(
+  productId: string,
+  userId: string,
+  tenantDomain: string,
+  marketId?: string
+): Promise<ProductSocialResult[]> {
+  const product = await storage.getProduct(productId);
+  if (!product) {
+    throw new Error("Product not found");
+  }
+  
+  const results: ProductSocialResult[] = [];
+  const now = new Date();
+  const updates: any = { lastSocialCrawl: now, updatedAt: now };
+  
+  // Monitor LinkedIn
+  if (product.linkedInUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(product.linkedInUrl);
+    
+    if (blocked) {
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "linkedin",
+        hasChanges: false,
+        status: "blocked",
+        message: "LinkedIn requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const engagement = extractEngagementMetrics(rawHtml, "linkedin");
+      
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "linkedin",
+        hasChanges: false,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  // Monitor Instagram
+  if (product.instagramUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(product.instagramUrl);
+    
+    if (blocked) {
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "instagram",
+        hasChanges: false,
+        status: "blocked",
+        message: "Instagram requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const engagement = extractEngagementMetrics(rawHtml, "instagram");
+      
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "instagram",
+        hasChanges: false,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  // Monitor Twitter
+  if (product.twitterUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(product.twitterUrl);
+    
+    if (blocked) {
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "twitter",
+        hasChanges: false,
+        status: "blocked",
+        message: "Twitter/X requires authentication.",
+      });
+    } else if (newContent && rawHtml) {
+      const engagement = extractEngagementMetrics(rawHtml, "twitter");
+      
+      results.push({
+        productId: product.id,
+        productName: product.name,
+        platform: "twitter",
+        hasChanges: false,
+        status: "success",
+        engagement,
+      });
+    }
+  }
+  
+  await storage.updateProduct(productId, updates);
+  
+  return results;
+}
+
 export async function monitorAllCompetitorsForTenant(
   tenantDomain: string
 ): Promise<SocialMonitoringResult[]> {

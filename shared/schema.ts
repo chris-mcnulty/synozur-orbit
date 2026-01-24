@@ -157,6 +157,11 @@ export const products = pgTable("products", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   crawlData: jsonb("crawl_data"), // Crawled product page data
   analysisData: jsonb("analysis_data"), // AI analysis of product
+  linkedInUrl: text("linkedin_url"), // Product-specific LinkedIn page
+  instagramUrl: text("instagram_url"), // Product-specific Instagram
+  twitterUrl: text("twitter_url"), // Product-specific Twitter/X
+  socialCheckFrequency: text("social_check_frequency").default("daily"), // hourly, daily, weekly
+  lastSocialCrawl: timestamp("last_social_crawl"), // When social was last checked
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

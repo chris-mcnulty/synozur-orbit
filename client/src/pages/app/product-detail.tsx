@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart, Linkedin, Instagram, Twitter, Users } from "lucide-react";
 import FeaturesTab from "@/components/product/FeaturesTab";
 import RoadmapTab from "@/components/product/RoadmapTab";
 import { MarkdownContent } from "@/components/MarkdownViewer";
@@ -24,6 +24,11 @@ interface Product {
   url: string | null;
   companyName: string | null;
   competitorId: string | null;
+  linkedInUrl: string | null;
+  instagramUrl: string | null;
+  twitterUrl: string | null;
+  socialCheckFrequency: string | null;
+  lastSocialCrawl: string | null;
   tenantDomain: string;
   createdBy: string;
   createdAt: string;
@@ -126,6 +131,10 @@ export default function ProductDetail() {
     description: "",
     url: "",
     companyName: "",
+    linkedInUrl: "",
+    instagramUrl: "",
+    twitterUrl: "",
+    socialCheckFrequency: "daily",
   });
 
   const { data: project, isLoading: projectLoading } = useQuery<ClientProject>({
@@ -916,6 +925,10 @@ export default function ProductDetail() {
       description: product.description || "",
       url: product.url || "",
       companyName: product.companyName || "",
+      linkedInUrl: product.linkedInUrl || "",
+      instagramUrl: product.instagramUrl || "",
+      twitterUrl: product.twitterUrl || "",
+      socialCheckFrequency: product.socialCheckFrequency || "daily",
     });
     setIsEditProductOpen(true);
   };
@@ -2876,6 +2889,63 @@ export default function ProductDetail() {
                   onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
                   rows={4}
                 />
+              </div>
+              <div className="pt-4 border-t">
+                <Label className="text-sm font-medium mb-3 block">Social Media (Product-Specific)</Label>
+                <div className="grid gap-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-linkedin" className="flex items-center gap-2 text-sm">
+                      <Linkedin className="h-4 w-4 text-[#0077B5]" /> LinkedIn URL
+                    </Label>
+                    <Input
+                      id="edit-linkedin"
+                      data-testid="input-edit-product-linkedin"
+                      placeholder="https://linkedin.com/company/..."
+                      value={editFormData.linkedInUrl}
+                      onChange={(e) => setEditFormData({ ...editFormData, linkedInUrl: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-instagram" className="flex items-center gap-2 text-sm">
+                      <Instagram className="h-4 w-4 text-[#E4405F]" /> Instagram URL
+                    </Label>
+                    <Input
+                      id="edit-instagram"
+                      data-testid="input-edit-product-instagram"
+                      placeholder="https://instagram.com/..."
+                      value={editFormData.instagramUrl}
+                      onChange={(e) => setEditFormData({ ...editFormData, instagramUrl: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-twitter" className="flex items-center gap-2 text-sm">
+                      <Twitter className="h-4 w-4 text-[#1DA1F2]" /> Twitter/X URL
+                    </Label>
+                    <Input
+                      id="edit-twitter"
+                      data-testid="input-edit-product-twitter"
+                      placeholder="https://x.com/..."
+                      value={editFormData.twitterUrl}
+                      onChange={(e) => setEditFormData({ ...editFormData, twitterUrl: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-frequency" className="flex items-center gap-2 text-sm">
+                      <RefreshCw className="h-4 w-4 text-purple-500" /> Auto-check Frequency
+                    </Label>
+                    <select
+                      id="edit-frequency"
+                      value={editFormData.socialCheckFrequency}
+                      onChange={(e) => setEditFormData({ ...editFormData, socialCheckFrequency: e.target.value })}
+                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                      data-testid="select-edit-social-frequency"
+                    >
+                      <option value="hourly">Hourly</option>
+                      <option value="daily">Daily (default)</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
             <DialogFooter>

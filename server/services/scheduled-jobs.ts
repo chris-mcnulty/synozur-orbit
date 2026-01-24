@@ -1,7 +1,7 @@
 import { storage } from "../storage";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
-import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
+import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
@@ -309,6 +309,40 @@ async function runSocialMonitorJob(): Promise<void> {
           await new Promise(resolve => setTimeout(resolve, 3000));
         } catch (error) {
           console.error(`[Scheduled Job] Failed baseline social monitoring for ${profile.companyName}:`, error);
+        }
+      }
+
+      // Monitor products for social changes (product-level social tracking)
+      const products = await storage.getProductsByTenant(tenant.domain);
+      for (const product of products) {
+        if (!product.linkedInUrl && !product.instagramUrl && !product.twitterUrl) continue;
+
+        // Use per-product frequency, defaulting to "daily"
+        const productFrequency = (product as any).socialCheckFrequency || "daily";
+        const productIntervalMs = getIntervalMs(productFrequency);
+        if (productIntervalMs === 0) continue;
+
+        const lastSocialCrawl = product.lastSocialCrawl
+          ? new Date(product.lastSocialCrawl).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastSocialCrawl < productIntervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Monitoring product social for ${product.name} (${productFrequency})...`);
+
+        try {
+          await monitorProductSocialMedia(
+            product.id,
+            product.createdBy,
+            tenant.domain,
+            product.marketId || undefined
+          );
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          console.error(`[Scheduled Job] Failed product social monitoring for ${product.name}:`, error);
         }
       }
     }
