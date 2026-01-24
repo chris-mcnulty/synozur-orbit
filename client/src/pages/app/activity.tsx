@@ -413,17 +413,41 @@ export default function Activity() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {(competitor.linkedInUrl || competitor.linkedinEngagement) && (
-                      <div className="flex items-center justify-between p-2 rounded bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <Linkedin className="h-4 w-4 text-[#0077B5]" />
-                          <span className="text-sm">LinkedIn</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                          <div className="flex items-center gap-2">
+                            <Linkedin className="h-4 w-4 text-[#0077B5]" />
+                            <span className="text-sm">LinkedIn</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {(competitor.linkedinEngagement as any)?.posts > 0 && (
+                              <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
+                                {(competitor.linkedinEngagement as any).posts} recent posts
+                              </Badge>
+                            )}
+                            {competitor.linkedinEngagement?.followers ? (
+                              <span className="text-sm font-medium">
+                                {formatNumber(competitor.linkedinEngagement.followers)} followers
+                              </span>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">Linked</Badge>
+                            )}
+                          </div>
                         </div>
-                        {competitor.linkedinEngagement?.followers ? (
-                          <span className="text-sm font-medium">
-                            {formatNumber(competitor.linkedinEngagement.followers)} followers
-                          </span>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">Linked</Badge>
+                        {(competitor.linkedinEngagement as any)?.recentPosts?.length > 0 && (
+                          <div className="pl-6 space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground uppercase">Recent LinkedIn Posts</p>
+                            {((competitor.linkedinEngagement as any).recentPosts || []).slice(0, 3).map((post: any, i: number) => (
+                              <div key={i} className="p-2 rounded bg-blue-500/5 border border-blue-500/10 text-xs">
+                                <p className="line-clamp-2 text-muted-foreground">{post.text}</p>
+                                <div className="flex items-center gap-3 mt-1 text-blue-600">
+                                  <span>{post.reactions || 0} reactions</span>
+                                  <span>{post.comments || 0} comments</span>
+                                  {post.postedAt && <span className="text-muted-foreground">{formatTimeAgo(post.postedAt)}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     )}

@@ -11,7 +11,7 @@ import {
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
   Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
-  RefreshCw, Loader2, CheckCircle, XCircle, User
+  RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -711,39 +711,67 @@ export default function Dashboard() {
                     </Badge>
                   </div>
                 )}
-                {prioritizedActivity.slice(0, 4).map((item: any) => {
+                {prioritizedActivity.slice(0, 5).map((item: any) => {
                   const isMeaningful = item.type === "website_update" || item.type === "blog_update" || item.type === "social_update";
+                  const getSignalIcon = () => {
+                    if (item.type === "website_update") return <Globe className="w-3 h-3" />;
+                    if (item.type === "blog_update") return <Rss className="w-3 h-3" />;
+                    if (item.type === "social_update") return <Linkedin className="w-3 h-3" />;
+                    if (item.impact === "High") return <AlertCircle className="w-3 h-3" />;
+                    return <Eye className="w-3 h-3" />;
+                  };
+                  const getSignalLabel = () => {
+                    if (item.type === "website_update") return "website change";
+                    if (item.type === "blog_update") {
+                      const postCount = item.details?.newPosts?.length || item.details?.postCount;
+                      return postCount ? `${postCount} new post${postCount > 1 ? 's' : ''}` : "blog activity";
+                    }
+                    if (item.type === "social_update") {
+                      const postCount = item.details?.postCount;
+                      return postCount ? `${postCount} LinkedIn post${postCount > 1 ? 's' : ''}` : "social update";
+                    }
+                    return item.type?.replace(/_/g, ' ') || "update";
+                  };
+                  const getIconBgColor = () => {
+                    if (item.type === "blog_update") return "bg-orange-500/20 text-orange-500";
+                    if (item.type === "social_update") return "bg-blue-500/20 text-blue-500";
+                    return getImpactColor(item.impact);
+                  };
                   return (
                     <Link key={item.id} href={`/app/competitors/${item.competitorId}`} data-testid={`link-signal-${item.id}`}>
                       <div className={cn(
                         "flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
                         isMeaningful && "border border-primary/20 bg-primary/5"
                       )} data-testid={`signal-${item.id}`}>
-                        <div className={cn("p-1.5 rounded-full shrink-0", getImpactColor(item.impact))}>
-                          {item.type === "website_update" ? (
-                            <Globe className="w-3 h-3" />
-                          ) : item.type === "blog_update" ? (
-                            <FileText className="w-3 h-3" />
-                          ) : item.impact === "High" ? (
-                            <AlertCircle className="w-3 h-3" />
-                          ) : (
-                            <Eye className="w-3 h-3" />
-                          )}
+                        <div className={cn("p-1.5 rounded-full shrink-0", getIconBgColor())}>
+                          {getSignalIcon()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-sm truncate group-hover:text-primary transition-colors">
                               {item.competitorName}
                             </span>
-                            <Badge variant={isMeaningful ? "default" : "outline"} className="text-xs shrink-0">
-                              {item.type === "website_update" ? "website change" : 
-                               item.type === "blog_update" ? "new blog post" : 
-                               item.type}
+                            <Badge variant={isMeaningful ? "default" : "outline"} className={cn(
+                              "text-xs shrink-0",
+                              item.type === "blog_update" && "bg-orange-500/10 text-orange-600 border-orange-500/30",
+                              item.type === "social_update" && "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                            )}>
+                              {getSignalLabel()}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground line-clamp-2">
                             {item.summary || item.description}
                           </p>
+                          {item.type === "blog_update" && item.details?.newPosts?.[0]?.title && (
+                            <p className="text-xs text-orange-600 mt-1 truncate">
+                              "{item.details.newPosts[0].title}"
+                            </p>
+                          )}
+                          {item.type === "social_update" && item.details?.latestPostTitle && (
+                            <p className="text-xs text-blue-600 mt-1 truncate">
+                              "{item.details.latestPostTitle}"
+                            </p>
+                          )}
                         </div>
                         <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
                           <Clock className="w-3 h-3" />

@@ -369,6 +369,7 @@ export async function monitorCompetitorSocialMedia(
             summary = changes.join(". ");
             
             if (tenantDomain) {
+              const latestPost = apiResult.recentPosts?.[0];
               await storage.createActivity({
                 type: "social_update",
                 sourceType: "competitor",
@@ -381,6 +382,7 @@ export async function monitorCompetitorSocialMedia(
                   employeeCount: apiResult.employeeCount,
                   postCount: apiResult.recentPosts?.length,
                   recentPosts: apiResult.recentPosts,
+                  latestPostTitle: latestPost?.text?.substring(0, 100),
                 },
                 date: now.toISOString(),
                 impact: hasFollowerChange ? "High" : "Medium",
@@ -390,10 +392,11 @@ export async function monitorCompetitorSocialMedia(
             }
           }
           
-          const engagement: EngagementSnapshot = {
+          const engagement: EngagementSnapshot & { recentPosts?: typeof apiResult.recentPosts } = {
             followers: apiResult.followerCount,
             posts: apiResult.recentPosts?.length,
             capturedAt: now.toISOString(),
+            recentPosts: apiResult.recentPosts,
           };
           updates.linkedInEngagement = engagement;
           
