@@ -8344,10 +8344,18 @@ Generate a messaging framework in markdown format with sections:
         const product = cp.product;
         if (!product) continue;
 
-        // Try to get linked competitor data if available, otherwise use product data
-        let competitor = null;
-        if (product.competitorId) {
-          competitor = await storage.getCompetitor(product.competitorId);
+        // Products must have a linked competitor to store scores (due to FK constraint)
+        // Skip products without competitorId - they can still have battlecards but not scores
+        if (!product.competitorId) {
+          console.log(`Skipping product ${product.name} - no linked competitor for scoring`);
+          continue;
+        }
+
+        // Get linked competitor data
+        const competitor = await storage.getCompetitor(product.competitorId);
+        if (!competitor) {
+          console.log(`Skipping product ${product.name} - competitor ${product.competitorId} not found`);
+          continue;
         }
 
         const battlecard = battlecards.find(bc => bc.competitorProductId === cp.productId);
@@ -8360,8 +8368,8 @@ Generate a messaging framework in markdown format with sections:
         let contentActivityScore = 50;
         let socialEngagementScore = 50;
 
-        // Adjust based on competitor analysis data (if linked)
-        if (competitor?.analysisData) {
+        // Adjust based on competitor analysis data
+        if (competitor.analysisData) {
           const analysis = competitor.analysisData as any;
           if (analysis.marketPosition) {
             marketPresenceScore = analysis.marketPosition === "leader" ? 90 : 
@@ -8370,6 +8378,18 @@ Generate a messaging framework in markdown format with sections:
           if (analysis.innovationLevel) {
             innovationScore = analysis.innovationLevel === "high" ? 85 : 
                              analysis.innovationLevel === "medium" ? 60 : 40;
+          }
+        }
+        
+        // Also adjust based on product's own analysis data
+        if (product.analysisData) {
+          const productAnalysis = product.analysisData as any;
+          if (productAnalysis.competitiveScore) {
+            // Use product's competitive score to influence overall
+            marketPresenceScore = Math.round((marketPresenceScore + productAnalysis.competitiveScore) / 2);
+          }
+          if (productAnalysis.features?.length) {
+            featureBreadthScore = Math.min(100, 40 + productAnalysis.features.length * 6);
           }
         }
 
@@ -8385,8 +8405,8 @@ Generate a messaging framework in markdown format with sections:
           }
         }
 
-        // Adjust based on social engagement (if linked competitor)
-        if (competitor?.linkedInEngagement) {
+        // Adjust based on social engagement from linked competitor
+        if (competitor.linkedInEngagement) {
           const engagement = competitor.linkedInEngagement as any;
           if (engagement.followers > 10000) socialEngagementScore = 80;
           else if (engagement.followers > 5000) socialEngagementScore = 65;
@@ -8402,17 +8422,14 @@ Generate a messaging framework in markdown format with sections:
           (pricingScore * 0.10)
         );
 
-        // Use productId for scoring if no competitorId (product-level scoring)
-        const scoreId = product.competitorId || product.id;
-
         // Get previous score for trend calculation
-        const existingScore = await storage.getCompetitorScore(scoreId, req.params.projectId);
+        const existingScore = await storage.getCompetitorScore(product.competitorId, req.params.projectId);
         const previousScore = existingScore?.overallScore || null;
         const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
         const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
 
         const scoreData = await storage.upsertCompetitorScore({
-          competitorId: scoreId,
+          competitorId: product.competitorId,
           projectId: req.params.projectId,
           tenantDomain,
           marketId: project.marketId || null,
