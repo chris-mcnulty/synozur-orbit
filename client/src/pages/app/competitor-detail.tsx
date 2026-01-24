@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +35,30 @@ export default function CompetitorDetail() {
     },
     enabled: !!id,
   });
+
+  const { data: allActivity = [] } = useQuery({
+    queryKey: ["/api/activity"],
+    queryFn: async () => {
+      const response = await fetch("/api/activity", {
+        credentials: "include",
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const competitorActivity = allActivity.filter((a: any) => 
+    a.competitorId && id && String(a.competitorId) === String(id)
+  );
+  const crawlData = competitor?.crawlData as { pages?: Array<{ url: string; title?: string; wordCount?: number; crawledAt?: string }>; totalWordCount?: number; crawledAt?: string } | null;
+  const analysisData = competitor?.analysisData as { 
+    positioning?: string; 
+    messagingThemes?: string[];
+    targetAudience?: string;
+    valuePropositions?: string[];
+    keyDifferentiators?: string[];
+    summary?: string;
+  } | null;
 
   const crawlMutation = useMutation({
     mutationFn: async () => {
@@ -766,28 +790,283 @@ export default function CompetitorDetail() {
             )}
           </TabsContent>
           
-          <TabsContent value="messaging">
-             <Card>
-               <CardContent className="p-8 text-center text-muted-foreground">
-                 Messaging analysis content would go here.
-               </CardContent>
-             </Card>
+          <TabsContent value="messaging" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {!analysisData ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <MessageSquare className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No Messaging Analysis</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Run a full analysis to extract messaging themes, value propositions, and competitive positioning.
+                  </p>
+                  <Button 
+                    onClick={() => crawlMutation.mutate()}
+                    disabled={crawlMutation.isPending}
+                    data-testid="button-analyze-messaging"
+                  >
+                    {crawlMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...</>
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-2" /> Run Analysis</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2">
+                {analysisData.positioning && (
+                  <Card className="md:col-span-2">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Target className="h-5 w-5 text-primary" />
+                        Market Positioning
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground leading-relaxed">{analysisData.positioning}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {analysisData.targetAudience && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Eye className="h-5 w-5 text-blue-500" />
+                        Target Audience
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground">{analysisData.targetAudience}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {analysisData.messagingThemes && analysisData.messagingThemes.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Hash className="h-5 w-5 text-purple-500" />
+                        Messaging Themes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {analysisData.messagingThemes.map((theme, i) => (
+                          <Badge key={i} variant="secondary" className="px-3 py-1">{theme}</Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {analysisData.valuePropositions && analysisData.valuePropositions.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-yellow-500" />
+                        Value Propositions
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {analysisData.valuePropositions.map((vp, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                            <span className="text-muted-foreground">{vp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {analysisData.keyDifferentiators && analysisData.keyDifferentiators.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Shield className="h-5 w-5 text-green-500" />
+                        Key Differentiators
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {analysisData.keyDifferentiators.map((diff, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <TrendingUp className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                            <span className="text-muted-foreground">{diff}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
           </TabsContent>
           
-          <TabsContent value="pages">
-             <Card>
-               <CardContent className="p-8 text-center text-muted-foreground">
-                 List of tracked pages would go here.
-               </CardContent>
-             </Card>
+          <TabsContent value="pages" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {!crawlData?.pages || crawlData.pages.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <FileSearch className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No Pages Tracked</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Run a crawl to discover and track pages from this competitor's website.
+                  </p>
+                  <Button 
+                    onClick={() => crawlMutation.mutate()}
+                    disabled={crawlMutation.isPending}
+                    data-testid="button-crawl-pages"
+                  >
+                    {crawlMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Crawling...</>
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-2" /> Start Crawl</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Tracked Pages</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {crawlData.pages.length} pages discovered • {crawlData.totalWordCount?.toLocaleString() || 0} total words
+                    </p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => crawlMutation.mutate()}
+                    disabled={crawlMutation.isPending}
+                    data-testid="button-recrawl-pages"
+                  >
+                    {crawlMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-1" /> Re-crawl</>
+                    )}
+                  </Button>
+                </div>
+                <div className="grid gap-3">
+                  {crawlData.pages.map((page, i) => (
+                    <Card key={i} className="hover:border-primary/50 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium truncate">{page.title || page.url}</h4>
+                            <a 
+                              href={page.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 truncate"
+                            >
+                              <Globe className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{page.url}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {page.wordCount && (
+                              <Badge variant="secondary" className="mb-1">
+                                {page.wordCount.toLocaleString()} words
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
           </TabsContent>
           
-          <TabsContent value="history">
-             <Card>
-               <CardContent className="p-8 text-center text-muted-foreground">
-                 Crawl history log would go here.
-               </CardContent>
-             </Card>
+          <TabsContent value="history" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {competitorActivity.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Clock className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No Activity History</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Activity will appear here after crawls, monitoring checks, or detected changes.
+                  </p>
+                  <Button 
+                    onClick={() => crawlMutation.mutate()}
+                    disabled={crawlMutation.isPending}
+                    data-testid="button-first-crawl"
+                  >
+                    {crawlMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running...</>
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-2" /> Run First Crawl</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Activity Timeline</h3>
+                  <Badge variant="outline">{competitorActivity.length} events</Badge>
+                </div>
+                <div className="space-y-3">
+                  {competitorActivity.slice(0, 20).map((activity: any) => (
+                    <Card key={activity.id} className="hover:border-primary/30 transition-colors" data-testid={`activity-${activity.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            activity.activityType === "website_change" ? "bg-blue-500/20 text-blue-500" :
+                            activity.activityType === "social_update" ? "bg-purple-500/20 text-purple-500" :
+                            activity.activityType === "blog_post" ? "bg-orange-500/20 text-orange-500" :
+                            activity.activityType === "crawl" ? "bg-green-500/20 text-green-500" :
+                            "bg-muted text-muted-foreground"
+                          }`}>
+                            {activity.activityType === "website_change" ? <AlertCircle className="h-4 w-4" /> :
+                             activity.activityType === "social_update" ? <MessageSquare className="h-4 w-4" /> :
+                             activity.activityType === "blog_post" ? <Rss className="h-4 w-4" /> :
+                             <Activity className="h-4 w-4" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-sm">
+                                {activity.activityType === "website_change" ? "Website Change" :
+                                 activity.activityType === "social_update" ? "Social Update" :
+                                 activity.activityType === "blog_post" ? "Blog Post" :
+                                 activity.activityType === "crawl" ? "Crawl Completed" :
+                                 activity.activityType || "Activity"}
+                              </span>
+                              {activity.impact && (
+                                <Badge variant={
+                                  activity.impact === "high" ? "destructive" :
+                                  activity.impact === "medium" ? "default" : "secondary"
+                                } className="text-xs">
+                                  {activity.impact}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {activity.description || activity.summary || "Activity recorded"}
+                            </p>
+                            <p className="text-xs text-muted-foreground/70 mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(activity.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {competitorActivity.length > 20 && (
+                    <p className="text-center text-sm text-muted-foreground py-2">
+                      Showing 20 of {competitorActivity.length} events
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
