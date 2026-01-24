@@ -134,6 +134,15 @@ export default function AuthPage() {
         backgroundPosition: "center",
       }}
     >
+      <div 
+        className="absolute inset-0 opacity-30"
+        style={{
+          backgroundImage: "url('/images/orbit-background.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundBlendMode: "overlay",
+        }}
+      />
       <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-background/90 to-secondary/40" />
       
       <div className="absolute top-4 right-4 z-20">
@@ -142,10 +151,10 @@ export default function AuthPage() {
       
       <Card className="w-full max-w-md relative z-10 border-border/50 bg-background/95 backdrop-blur-sm shadow-2xl">
         <CardHeader className="text-center pb-2">
-          <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="flex items-center justify-center gap-3 mb-4">
             <img src="/brand/synozur-horizontal.png" alt="Synozur" className="h-8 object-contain" />
             <span className="text-foreground/50 text-xl">|</span>
-            <span className="text-2xl font-bold">Orbit</span>
+            <img src="/brand/orbit-logo.png" alt="Orbit" className="h-10 object-contain" />
           </div>
           <CardTitle className="text-xl">Welcome to Orbit</CardTitle>
           <CardDescription>Marketing intelligence, powered by AI</CardDescription>

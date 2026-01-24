@@ -99,10 +99,10 @@ export default function SignUp() {
       <div className="hidden lg:flex flex-col justify-center p-12 bg-muted relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20" />
         <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center gap-3 mb-6">
             <img src="/brand/synozur-horizontal.png" alt="Synozur" className="h-10 object-contain" />
             <span className="text-foreground/50 text-2xl">|</span>
-            <h1 className="text-3xl font-bold">Orbit</h1>
+            <img src="/brand/orbit-logo.png" alt="Orbit" className="h-12 object-contain" />
           </div>
           <h2 className="text-4xl font-bold mb-4">Join Orbit today.</h2>
           <p className="text-xl text-muted-foreground max-w-md">

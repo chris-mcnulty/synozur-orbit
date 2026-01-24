@@ -151,6 +151,19 @@ function getOrbitMarkBase64(): string {
   return "";
 }
 
+function getOrbitLogoBase64(): string {
+  try {
+    const logoPath = path.join(process.cwd(), "client/public/brand/orbit-logo.png");
+    if (fs.existsSync(logoPath)) {
+      const logoBuffer = fs.readFileSync(logoPath);
+      return `data:image/png;base64,${logoBuffer.toString("base64")}`;
+    }
+  } catch (e) {
+    console.error("Failed to load Orbit logo:", e);
+  }
+  return "";
+}
+
 function getFontBase64(fontFile: string): string {
   try {
     const fontPath = path.join(process.cwd(), "client/public/fonts", fontFile);
@@ -212,6 +225,7 @@ function generateReportHtml(data: ReportData): string {
 
   const synozurLogo = getSynozurLogoBase64();
   const orbitMark = getOrbitMarkBase64();
+  const orbitLogo = getOrbitLogoBase64();
 
   const competitorRows = data.competitors.map(c => {
     const analysisInfo = c.analysisData as { summary?: string; valueProposition?: string } | null;
@@ -443,13 +457,21 @@ function generateReportHtml(data: ReportData): string {
     </div>
   `;
 
-  const headerLogo = orbitMark 
-    ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitMark}" alt="Orbit" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
-    : `<div class="logo"><span>Orbit</span></div>`;
+  const headerLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 12px;"><img src="${synozurLogo}" alt="Synozur" style="height: 24px; width: auto;"><span style="color: #94A3B8; font-size: 20px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+      : synozurLogo
+        ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${synozurLogo}" alt="Synozur" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
+        : `<div class="logo"><span>Orbit</span></div>`;
 
-  const coverLogo = synozurLogo
-    ? `<img src="${synozurLogo}" alt="Synozur" style="height: 40px; width: auto; margin-bottom: 24px;">`
-    : "";
+  const coverLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;"><img src="${synozurLogo}" alt="Synozur" style="height: 48px; width: auto;"><span style="color: #94A3B8; font-size: 28px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="margin-bottom: 24px;"><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+      : synozurLogo
+        ? `<img src="${synozurLogo}" alt="Synozur" style="height: 40px; width: auto; margin-bottom: 24px;">`
+        : "";
 
   const fontFaces = getFontFacesCss();
   

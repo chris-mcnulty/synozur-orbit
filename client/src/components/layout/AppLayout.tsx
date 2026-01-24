@@ -501,7 +501,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           
           <footer className="py-8 border-t border-border mt-auto">
             <div className="container max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-muted-foreground">
-              <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
+              <div className="flex items-center gap-3">
+                <img src="/brand/orbit-logo.png" alt="Orbit" className="h-6 object-contain dark:hidden" />
+                <img src="/brand/orbit-logo-white.png" alt="Orbit" className="h-6 object-contain hidden dark:block" />
+                <span className="text-foreground/30">|</span>
+                <p>Published by The Synozur Alliance LLC. All Rights Reserved © 2026.</p>
+              </div>
               <div className="flex gap-4">
                 <a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GTM Services</a>
                 <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Privacy Policy</a>
