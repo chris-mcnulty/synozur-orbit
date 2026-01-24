@@ -1,52 +1,52 @@
 import { storage } from "../storage";
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = "linkedin-data-api.p.rapidapi.com";
+const RAPIDAPI_HOST = "fresh-linkedin-scraper-api.p.rapidapi.com";
 
 interface LinkedInCompanyData {
   success: boolean;
   message?: string;
+  cost?: number;
   data?: {
     id?: string;
     name?: string;
-    universalName?: string;
-    linkedinUrl?: string;
+    universal_name?: string;
+    linkedin_url?: string;
     tagline?: string;
     description?: string;
     website?: string;
     industry?: string;
-    companySize?: {
-      start?: number;
-      end?: number;
-    };
-    headquarter?: {
+    company_size?: string;
+    company_size_on_linkedin?: number;
+    hq?: {
       city?: string;
       country?: string;
-      geographicArea?: string;
+      state?: string;
     };
     logo?: string;
-    backgroundCoverImage?: string;
-    followerCount?: number;
-    staffCount?: number;
+    cover?: string;
+    follower_count?: number;
+    staff_count?: number;
     specialities?: string[];
-    founded?: {
-      year?: number;
-    };
+    founded?: number;
+    locations?: Array<{
+      city?: string;
+      country?: string;
+    }>;
   };
 }
 
 interface LinkedInCompanyPosts {
   success: boolean;
   message?: string;
+  cost?: number;
   data?: Array<{
     urn?: string;
     text?: string;
-    postedAt?: string;
-    postedDate?: string;
-    totalReactionCount?: number;
-    likeCount?: number;
-    commentsCount?: number;
-    repostsCount?: number;
+    posted_at?: string;
+    num_likes?: number;
+    num_comments?: number;
+    num_reposts?: number;
     author?: {
       name?: string;
     };
@@ -71,9 +71,10 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
 
   try {
     const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    const companyName = cleanDomain.split(".")[0];
     
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-by-domain?domain=${encodeURIComponent(cleanDomain)}`,
+      `https://${RAPIDAPI_HOST}/api/v1/company/profile?company=${encodeURIComponent(companyName)}`,
       {
         method: "GET",
         headers: {
@@ -84,7 +85,9 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
     );
 
     if (!response.ok) {
-      return { success: false, error: `API returned ${response.status}` };
+      const errorText = await response.text();
+      console.error("[LinkedIn API] Error response:", errorText);
+      return { success: false, error: `API returned ${response.status}: ${errorText}` };
     }
 
     const data: LinkedInCompanyData = await response.json();
@@ -96,8 +99,8 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
     return {
       success: true,
       companyData: data.data,
-      followerCount: data.data.followerCount,
-      employeeCount: data.data.staffCount,
+      followerCount: data.data.follower_count,
+      employeeCount: data.data.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
     console.error("[LinkedIn API] Error fetching company by domain:", error);
@@ -117,7 +120,7 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
     }
 
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-details?username=${encodeURIComponent(username)}`,
+      `https://${RAPIDAPI_HOST}/api/v1/company/profile?company=${encodeURIComponent(username)}`,
       {
         method: "GET",
         headers: {
@@ -128,7 +131,9 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
     );
 
     if (!response.ok) {
-      return { success: false, error: `API returned ${response.status}` };
+      const errorText = await response.text();
+      console.error("[LinkedIn API] Error response:", errorText);
+      return { success: false, error: `API returned ${response.status}: ${errorText}` };
     }
 
     const data: LinkedInCompanyData = await response.json();
@@ -140,8 +145,8 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
     return {
       success: true,
       companyData: data.data,
-      followerCount: data.data.followerCount,
-      employeeCount: data.data.staffCount,
+      followerCount: data.data.follower_count,
+      employeeCount: data.data.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
     console.error("[LinkedIn API] Error fetching company details:", error);
@@ -161,7 +166,7 @@ export async function getCompanyPosts(linkedinUrl: string): Promise<LinkedInApiR
     }
 
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-posts?username=${encodeURIComponent(username)}`,
+      `https://${RAPIDAPI_HOST}/api/v1/company/posts?company=${encodeURIComponent(username)}&start=0&count=10`,
       {
         method: "GET",
         headers: {
@@ -172,7 +177,9 @@ export async function getCompanyPosts(linkedinUrl: string): Promise<LinkedInApiR
     );
 
     if (!response.ok) {
-      return { success: false, error: `API returned ${response.status}` };
+      const errorText = await response.text();
+      console.error("[LinkedIn API] Posts error response:", errorText);
+      return { success: false, error: `API returned ${response.status}: ${errorText}` };
     }
 
     const data: LinkedInCompanyPosts = await response.json();
@@ -183,7 +190,7 @@ export async function getCompanyPosts(linkedinUrl: string): Promise<LinkedInApiR
 
     const posts = data.data || [];
     const totalEngagement = posts.reduce((sum, post) => {
-      return sum + (post.totalReactionCount || 0) + (post.commentsCount || 0) + (post.repostsCount || 0);
+      return sum + (post.num_likes || 0) + (post.num_comments || 0) + (post.num_reposts || 0);
     }, 0);
 
     return {
@@ -236,14 +243,14 @@ export async function fetchLinkedInData(
   }
 
   const postsResult = await getCompanyPosts(
-    linkedinUrl || `https://linkedin.com/company/${companyResult.companyData?.universalName}`
+    linkedinUrl || `https://linkedin.com/company/${companyResult.companyData?.universal_name}`
   );
 
   const recentPosts = (postsResult.posts || []).slice(0, 5).map(post => ({
     text: post.text || "",
-    postedAt: post.postedDate || post.postedAt || "",
-    reactions: post.totalReactionCount || 0,
-    comments: post.commentsCount || 0,
+    postedAt: post.posted_at || "",
+    reactions: post.num_likes || 0,
+    comments: post.num_comments || 0,
   }));
 
   return {
