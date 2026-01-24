@@ -117,6 +117,11 @@ export default function Landing() {
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         
         <div className="max-w-5xl mx-auto text-center relative z-10">
+          <img 
+            src="/brand/orbit-logo-white.png" 
+            alt="Orbit" 
+            className="h-16 md:h-20 mx-auto mb-6 object-contain"
+          />
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
             <Gem size={16} />
             <span>Go-to-Market Intelligence Platform</span>
@@ -556,8 +561,17 @@ export default function Landing() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 px-6 bg-gradient-to-b from-background to-card/50">
-        <div className="max-w-4xl mx-auto text-center">
+      <section className="py-24 px-6 relative overflow-hidden">
+        <div 
+          className="absolute inset-0 opacity-30"
+          style={{
+            backgroundImage: "url('/images/orbit-background.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/60" />
+        <div className="max-w-4xl mx-auto text-center relative z-10">
           <h2 className="text-4xl font-bold mb-6">Ready to transform your GTM?</h2>
           <p className="text-xl text-muted-foreground mb-10">
             Join teams who compete with intelligence, plan with precision, and build what wins.
