@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
+import { fetchLinkedInData } from "./linkedin-api";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -214,6 +215,91 @@ Summary:`
   }
 }
 
+async function fallbackToLinkedInScraping(
+  competitor: any,
+  results: SocialMonitoringResult[],
+  updates: any,
+  now: Date,
+  userId?: string,
+  tenantDomain?: string
+): Promise<void> {
+  if (!competitor.linkedInUrl) {
+    return;
+  }
+  
+  const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.linkedInUrl);
+  
+  if (blocked) {
+    results.push({
+      competitorId: competitor.id,
+      competitorName: competitor.name,
+      platform: "linkedin",
+      hasChanges: false,
+      status: "blocked",
+      message: "LinkedIn requires authentication. Consider configuring RapidAPI key for reliable monitoring.",
+    });
+  } else if (newContent && rawHtml) {
+    const previousContent = competitor.linkedInContent || "";
+    const changeScore = calculateChangeScore(previousContent, newContent);
+    const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+    
+    const engagement = extractEngagementMetrics(rawHtml, "linkedin");
+    updates.linkedInEngagement = engagement;
+    
+    let summary: string | undefined;
+    if (hasSignificantChanges) {
+      summary = await summarizeChanges(
+        competitor.name,
+        "LinkedIn",
+        previousContent,
+        newContent,
+        changeScore
+      );
+      
+      if (!summary.toLowerCase().includes("no significant") && tenantDomain) {
+        await storage.createActivity({
+          type: "social_update",
+          sourceType: "competitor",
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          description: `LinkedIn profile updated (${changeScore}% change detected)`,
+          summary,
+          details: {
+            platform: "linkedin",
+            changeScore,
+            url: competitor.linkedInUrl,
+          },
+          date: now.toISOString(),
+          impact: changeScore > 70 ? "High" : "Medium",
+          userId: userId || competitor.userId,
+          tenantDomain,
+        });
+      }
+    }
+    
+    updates.linkedInContent = newContent;
+    
+    results.push({
+      competitorId: competitor.id,
+      competitorName: competitor.name,
+      platform: "linkedin",
+      hasChanges: hasSignificantChanges,
+      summary,
+      status: "success",
+      engagement,
+    });
+  } else {
+    results.push({
+      competitorId: competitor.id,
+      competitorName: competitor.name,
+      platform: "linkedin",
+      hasChanges: false,
+      status: "error",
+      message: "Could not fetch LinkedIn page content",
+    });
+  }
+}
+
 export async function monitorCompetitorSocialMedia(
   competitorId: string,
   userId?: string,
@@ -228,78 +314,111 @@ export async function monitorCompetitorSocialMedia(
   const now = new Date();
   const updates: any = { lastSocialCrawl: now };
   
-  if (competitor.linkedInUrl) {
-    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.linkedInUrl);
+  if (competitor.linkedInUrl || competitor.url) {
+    // Try RapidAPI LinkedIn Data API first if configured
+    const rapidApiKey = process.env.RAPIDAPI_KEY;
     
-    if (blocked) {
-      results.push({
-        competitorId: competitor.id,
-        competitorName: competitor.name,
-        platform: "linkedin",
-        hasChanges: false,
-        status: "blocked",
-        message: "LinkedIn requires authentication. Consider using official LinkedIn API for reliable monitoring.",
-      });
-    } else if (newContent && rawHtml) {
-      const previousContent = competitor.linkedInContent || "";
-      const changeScore = calculateChangeScore(previousContent, newContent);
-      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
-      
-      // Extract and store engagement metrics (snapshot only, no change alerts)
-      const engagement = extractEngagementMetrics(rawHtml, "linkedin");
-      updates.linkedInEngagement = engagement;
-      
-      let summary: string | undefined;
-      if (hasSignificantChanges) {
-        summary = await summarizeChanges(
-          competitor.name,
-          "LinkedIn",
-          previousContent,
-          newContent,
-          changeScore
+    if (rapidApiKey) {
+      try {
+        const apiResult = await fetchLinkedInData(
+          competitor.id,
+          competitor.linkedInUrl || undefined,
+          competitor.url
         );
         
-        if (!summary.toLowerCase().includes("no significant")) {
-          await storage.createActivity({
-            type: "social_update",
-            sourceType: "competitor",
+        if (apiResult.success) {
+          // Get previous metrics for comparison
+          const previousMetricsArray = await storage.getSocialMetrics(competitor.id, "linkedin");
+          const previousMetrics = previousMetricsArray.length > 0 ? previousMetricsArray[0] : null;
+          
+          const hasFollowerChange = previousMetrics?.followers !== undefined && 
+            previousMetrics.followers !== null &&
+            apiResult.followerCount !== undefined &&
+            Math.abs(apiResult.followerCount - previousMetrics.followers) > 100;
+          
+          const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
+          
+          // Store metrics
+          if (tenantDomain) {
+            await storage.createSocialMetric({
+              competitorId: competitor.id,
+              tenantDomain,
+              marketId: competitor.marketId || null,
+              platform: "linkedin",
+              period: now.toISOString().split("T")[0],
+              followers: apiResult.followerCount || null,
+              posts: apiResult.recentPosts?.length || null,
+              engagement: apiResult.recentPosts?.reduce((sum, p) => sum + p.reactions + p.comments, 0) || null,
+            });
+          }
+          
+          let summary: string | undefined;
+          if (hasFollowerChange || hasNewPosts) {
+            const changes: string[] = [];
+            if (hasFollowerChange && previousMetrics?.followers && apiResult.followerCount) {
+              const diff = apiResult.followerCount - previousMetrics.followers;
+              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
+            }
+            if (hasNewPosts && apiResult.recentPosts) {
+              changes.push(`${apiResult.recentPosts.length} recent posts detected`);
+              const topPost = apiResult.recentPosts[0];
+              if (topPost) {
+                changes.push(`Latest: "${topPost.text.substring(0, 80)}..." (${topPost.reactions} reactions)`);
+              }
+            }
+            summary = changes.join(". ");
+            
+            if (tenantDomain) {
+              await storage.createActivity({
+                type: "social_update",
+                sourceType: "competitor",
+                competitorId: competitor.id,
+                competitorName: competitor.name,
+                description: summary,
+                details: {
+                  platform: "linkedin",
+                  followerCount: apiResult.followerCount,
+                  employeeCount: apiResult.employeeCount,
+                  postCount: apiResult.recentPosts?.length,
+                  recentPosts: apiResult.recentPosts,
+                },
+                date: now.toISOString(),
+                impact: hasFollowerChange ? "High" : "Medium",
+                userId: userId || competitor.userId,
+                tenantDomain,
+              });
+            }
+          }
+          
+          const engagement: EngagementSnapshot = {
+            followers: apiResult.followerCount,
+            posts: apiResult.recentPosts?.length,
+            capturedAt: now.toISOString(),
+          };
+          updates.linkedInEngagement = engagement;
+          
+          results.push({
             competitorId: competitor.id,
             competitorName: competitor.name,
-            description: `LinkedIn profile updated (${changeScore}% change detected)`,
+            platform: "linkedin",
+            hasChanges: !!(hasFollowerChange || hasNewPosts),
             summary,
-            details: {
-              platform: "linkedin",
-              changeScore,
-              url: competitor.linkedInUrl,
-            },
-            date: now.toISOString(),
-            impact: changeScore > 70 ? "High" : "Medium",
-            userId: userId || competitor.userId,
-            tenantDomain,
+            status: "success",
+            message: "Data fetched via LinkedIn API",
+            engagement,
           });
+        } else {
+          // API call failed, fall back to scraping
+          console.log(`[Social Monitoring] LinkedIn API failed for ${competitor.name}: ${apiResult.error}, falling back to scraping`);
+          await fallbackToLinkedInScraping(competitor, results, updates, now, userId, tenantDomain);
         }
+      } catch (apiError: any) {
+        console.error(`[Social Monitoring] LinkedIn API error for ${competitor.name}:`, apiError);
+        await fallbackToLinkedInScraping(competitor, results, updates, now, userId, tenantDomain);
       }
-      
-      updates.linkedInContent = newContent;
-      
-      results.push({
-        competitorId: competitor.id,
-        competitorName: competitor.name,
-        platform: "linkedin",
-        hasChanges: hasSignificantChanges,
-        summary,
-        status: "success",
-        engagement,
-      });
-    } else {
-      results.push({
-        competitorId: competitor.id,
-        competitorName: competitor.name,
-        platform: "linkedin",
-        hasChanges: false,
-        status: "error",
-        message: "Could not fetch LinkedIn page content",
-      });
+    } else if (competitor.linkedInUrl) {
+      // No API key configured, use scraping
+      await fallbackToLinkedInScraping(competitor, results, updates, now, userId, tenantDomain);
     }
   }
   
