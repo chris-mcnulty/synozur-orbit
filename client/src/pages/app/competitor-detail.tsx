@@ -23,6 +23,7 @@ export default function CompetitorDetail() {
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
   const [editTwitter, setEditTwitter] = useState("");
+  const [editSocialFrequency, setEditSocialFrequency] = useState("daily");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -79,7 +80,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; socialCheckFrequency?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -110,6 +111,7 @@ export default function CompetitorDetail() {
     setEditLinkedIn(competitor?.linkedInUrl || "");
     setEditInstagram(competitor?.instagramUrl || "");
     setEditTwitter(competitor?.twitterUrl || "");
+    setEditSocialFrequency(competitor?.socialCheckFrequency || "daily");
     setEditOpen(true);
   };
 
@@ -118,6 +120,7 @@ export default function CompetitorDetail() {
       linkedInUrl: editLinkedIn || undefined,
       instagramUrl: editInstagram || undefined,
       twitterUrl: editTwitter || undefined,
+      socialCheckFrequency: editSocialFrequency,
     });
   };
 
@@ -406,6 +409,23 @@ export default function CompetitorDetail() {
                             onChange={(e) => setEditTwitter(e.target.value)}
                             data-testid="input-twitter"
                           />
+                        </div>
+                        <div className="space-y-2 pt-2 border-t">
+                          <Label htmlFor="frequency" className="flex items-center gap-2">
+                            <RefreshCw className="h-4 w-4 text-purple-500" /> Auto-check Frequency
+                          </Label>
+                          <select
+                            id="frequency"
+                            value={editSocialFrequency}
+                            onChange={(e) => setEditSocialFrequency(e.target.value)}
+                            className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                            data-testid="select-social-frequency"
+                          >
+                            <option value="hourly">Hourly</option>
+                            <option value="daily">Daily (default)</option>
+                            <option value="weekly">Weekly</option>
+                          </select>
+                          <p className="text-xs text-muted-foreground">How often to automatically check this competitor's social media</p>
                         </div>
                       </div>
                       <DialogFooter>

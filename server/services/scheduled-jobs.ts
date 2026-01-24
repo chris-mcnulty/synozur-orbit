@@ -254,16 +254,21 @@ async function runSocialMonitorJob(): Promise<void> {
       for (const competitor of competitors) {
         if (!competitor.linkedInUrl && !competitor.instagramUrl) continue;
 
+        // Use per-competitor frequency, defaulting to "daily"
+        const competitorFrequency = (competitor as any).socialCheckFrequency || "daily";
+        const competitorIntervalMs = getIntervalMs(competitorFrequency);
+        if (competitorIntervalMs === 0) continue;
+
         const lastSocialCrawl = competitor.lastSocialCrawl
           ? new Date(competitor.lastSocialCrawl).getTime()
           : 0;
         const now = Date.now();
 
-        if (now - lastSocialCrawl < intervalMs) {
+        if (now - lastSocialCrawl < competitorIntervalMs) {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring social for ${competitor.name}...`);
+        console.log(`[Scheduled Job] Monitoring social for ${competitor.name} (${competitorFrequency})...`);
 
         try {
           await monitorCompetitorSocialMedia(competitor.id, tenant.domain);
@@ -278,16 +283,21 @@ async function runSocialMonitorJob(): Promise<void> {
       for (const profile of companyProfiles) {
         if (!profile.linkedInUrl && !profile.instagramUrl && !profile.twitterUrl) continue;
 
+        // Use per-profile frequency, defaulting to "daily"
+        const profileFrequency = (profile as any).socialCheckFrequency || "daily";
+        const profileIntervalMs = getIntervalMs(profileFrequency);
+        if (profileIntervalMs === 0) continue;
+
         const lastSocialCrawl = profile.lastSocialCrawl
           ? new Date(profile.lastSocialCrawl).getTime()
           : 0;
         const now = Date.now();
 
-        if (now - lastSocialCrawl < intervalMs) {
+        if (now - lastSocialCrawl < profileIntervalMs) {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring baseline social for ${profile.companyName}...`);
+        console.log(`[Scheduled Job] Monitoring baseline social for ${profile.companyName} (${profileFrequency})...`);
 
         try {
           await monitorCompanyProfileSocialMedia(

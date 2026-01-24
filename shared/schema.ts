@@ -246,6 +246,7 @@ export const competitors = pgTable("competitors", {
   lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
   previousWebsiteContent: text("previous_website_content"), // Previous crawl content for change detection
   lastWebsiteMonitor: timestamp("last_website_monitor"), // Timestamp of last website change monitoring
+  socialCheckFrequency: text("social_check_frequency").notNull().default("daily"), // "hourly", "daily", "weekly"
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
@@ -710,6 +711,7 @@ export const companyProfiles = pgTable("company_profiles", {
   lastFullCrawl: timestamp("last_full_crawl"),
   previousWebsiteContent: text("previous_website_content"),
   lastWebsiteMonitor: timestamp("last_website_monitor"),
+  socialCheckFrequency: text("social_check_frequency").notNull().default("daily"), // "hourly", "daily", "weekly"
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
