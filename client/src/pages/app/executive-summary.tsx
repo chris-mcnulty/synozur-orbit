@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, ArrowUp, ArrowDown, Minus, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, RefreshCw, Loader2, BarChart3, Users, Swords, FileText, Sparkles, Share2, Linkedin, Instagram } from "lucide-react";
 import { MarkdownContent } from "@/components/MarkdownViewer";
 import { formatDateTime } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 interface ExecutiveSummaryData {
   project: {
@@ -121,6 +122,7 @@ export default function ExecutiveSummary() {
   const projectId = productId || routeProjectId;
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: summary, isLoading, error } = useQuery<ExecutiveSummaryData>({
     queryKey: ["executive-summary", projectId],
@@ -140,11 +142,28 @@ export default function ExecutiveSummary() {
         method: "POST",
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to calculate scores");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to calculate scores" }));
+        throw new Error(err.error || "Failed to calculate scores");
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["executive-summary", projectId] });
+      const scoreCount = data?.scores?.length || 0;
+      toast({
+        title: "Scores Calculated",
+        description: scoreCount > 0 
+          ? `Successfully calculated scores for ${scoreCount} competitors.`
+          : "No competitor products found to score. Add competitor products first.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to calculate scores",
+        variant: "destructive",
+      });
     },
   });
 
