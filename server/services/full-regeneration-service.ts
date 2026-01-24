@@ -578,8 +578,82 @@ Make this practical and ready to use in marketing materials.`;
       }
     }
 
-    progress.currentStep = "Complete";
+    // Step 7: Record score history
+    progress.currentStep = "Recording scores";
     progress.stepsCompleted = 6;
+    
+    try {
+      const { calculateBaselineScore, calculateScores, getCurrentPeriod } = await import("./scoring-service");
+      const period = getCurrentPeriod();
+      
+      // Record baseline score history
+      if (companyProfile) {
+        const baselineScore = calculateBaselineScore({
+          description: companyProfile.description,
+          crawlData: companyProfile.crawlData as any,
+          blogSnapshot: companyProfile.blogSnapshot as any,
+          linkedInEngagement: companyProfile.linkedInEngagement as any,
+          instagramEngagement: companyProfile.instagramEngagement as any,
+          lastCrawl: companyProfile.lastCrawl,
+        });
+        
+        // Check if already recorded this period
+        const existingHistory = await storage.getScoreHistory("baseline", companyProfile.id, 1);
+        if (!existingHistory.length || existingHistory[0].period !== period) {
+          await storage.createScoreHistory({
+            entityType: "baseline",
+            entityId: companyProfile.id,
+            entityName: companyProfile.companyName,
+            tenantDomain,
+            marketId: marketId || companyProfile.marketId || undefined,
+            overallScore: Math.round(baselineScore.overallScore),
+            innovationScore: Math.round(baselineScore.innovationScore),
+            marketPresenceScore: Math.round(baselineScore.marketPresenceScore),
+            contentActivityScore: Math.round(baselineScore.contentActivityScore),
+            socialEngagementScore: Math.round(baselineScore.socialEngagementScore),
+            scoreBreakdown: baselineScore,
+            period,
+          });
+          console.log(`Full regen: Recorded baseline score history for ${companyProfile.companyName}`);
+        }
+      }
+      
+      // Record competitor score history
+      for (const competitor of competitors) {
+        const competitorScores = calculateScores(
+          competitor.analysisData as any,
+          competitor.linkedInEngagement as any,
+          competitor.instagramEngagement as any,
+          competitor.crawlData as any,
+          competitor.blogSnapshot as any,
+          competitor.lastCrawl
+        );
+        
+        const existingHistory = await storage.getScoreHistory("competitor", competitor.id, 1);
+        if (!existingHistory.length || existingHistory[0].period !== period) {
+          await storage.createScoreHistory({
+            entityType: "competitor",
+            entityId: competitor.id,
+            entityName: competitor.name,
+            tenantDomain,
+            marketId: marketId || competitor.marketId || undefined,
+            overallScore: Math.round(competitorScores.overallScore),
+            innovationScore: Math.round(competitorScores.innovationScore),
+            marketPresenceScore: Math.round(competitorScores.marketPresenceScore),
+            contentActivityScore: Math.round(competitorScores.contentActivityScore),
+            socialEngagementScore: Math.round(competitorScores.socialEngagementScore),
+            scoreBreakdown: competitorScores,
+            period,
+          });
+        }
+      }
+      console.log(`Full regen: Recorded score history for ${competitors.length} competitors`);
+    } catch (scoreError) {
+      console.error("Full regen: Failed to record score history:", scoreError);
+    }
+    
+    progress.currentStep = "Complete";
+    progress.stepsCompleted = 7;
     progress.status = "completed";
     progress.completedAt = new Date();
 

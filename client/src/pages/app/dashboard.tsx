@@ -148,7 +148,14 @@ export default function Dashboard() {
 
   // Fetch calculated scores for baseline and competitors
   const { data: dashboardScores } = useQuery<{
-    baseline: { name: string; innovationScore: number; marketPresenceScore: number; overallScore: number } | null;
+    baseline: { 
+      name: string; 
+      id?: string;
+      innovationScore: number; 
+      marketPresenceScore: number; 
+      overallScore: number;
+      trend?: { previousScore: number; delta: number; direction: string } | null;
+    } | null;
     competitors: { id: string; name: string; innovationScore: number; marketPresenceScore: number; overallScore: number }[];
     marketAverages: { innovationScore: number; marketPresenceScore: number; overallScore: number };
     deltaVsMarket: { absolute: number; percent: number };
@@ -567,21 +574,38 @@ export default function Dashboard() {
         <Link href="/app/analysis">
           <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid="card-orbit-score">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Orbit Score</CardTitle>
+              <CardTitle className="text-sm font-medium">Your Orbit Score</CardTitle>
               <TrendingUp className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-primary">
-                  {dashboardScores?.baseline?.overallScore?.toFixed(2) || '—'}
+                  {dashboardScores?.baseline?.overallScore?.toFixed(0) || '—'}
                 </span>
                 {dashboardScores?.deltaVsMarket && (
                   <span className={cn("text-xs", dashboardScores.deltaVsMarket.percent >= 0 ? "text-green-500" : "text-red-500")}>
-                    {dashboardScores.deltaVsMarket.percent >= 0 ? '+' : ''}{dashboardScores.deltaVsMarket.percent}%
+                    {dashboardScores.deltaVsMarket.percent >= 0 ? '+' : ''}{dashboardScores.deltaVsMarket.percent}% vs market
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">vs market average</p>
+              {dashboardScores?.baseline?.trend ? (
+                <p className={cn(
+                  "text-xs flex items-center gap-1",
+                  dashboardScores.baseline.trend.direction === "up" ? "text-green-500" :
+                  dashboardScores.baseline.trend.direction === "down" ? "text-red-500" : "text-muted-foreground"
+                )}>
+                  {dashboardScores.baseline.trend.direction === "up" && <ArrowUpRight className="h-3 w-3" />}
+                  {dashboardScores.baseline.trend.direction === "down" && <ArrowUpRight className="h-3 w-3 rotate-90" />}
+                  {dashboardScores.baseline.trend.delta !== 0 && (
+                    <span>
+                      {dashboardScores.baseline.trend.delta > 0 ? '+' : ''}{dashboardScores.baseline.trend.delta.toFixed(0)} from last month
+                    </span>
+                  )}
+                  {dashboardScores.baseline.trend.delta === 0 && <span>Stable</span>}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">No previous score recorded</p>
+              )}
             </CardContent>
           </Card>
         </Link>

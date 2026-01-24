@@ -9965,18 +9965,30 @@ Return only the description text, no quotes or formatting.`;
       // Get competitors
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       
-      // Calculate baseline scores
+      // Calculate baseline scores using dedicated baseline function
       let baselineScores: ScoreBreakdown | null = null;
+      let baselineTrend: { previousScore: number; delta: number; direction: string } | null = null;
+      
       if (companyProfile) {
-        const analysisData = companyProfile.analysisData as any;
-        baselineScores = calculateScores(
-          analysisData,
-          null, // Company profile doesn't have social data yet
-          null,
-          null,
-          null,
-          companyProfile.lastAnalysis
-        );
+        baselineScores = calculateBaselineScore({
+          description: companyProfile.description,
+          crawlData: companyProfile.crawlData as any,
+          blogSnapshot: companyProfile.blogSnapshot as any,
+          linkedInEngagement: companyProfile.linkedInEngagement as any,
+          instagramEngagement: companyProfile.instagramEngagement as any,
+          lastCrawl: companyProfile.lastCrawl,
+        });
+        
+        // Get trend data from score history
+        const previousScore = await storage.getLatestScoreForEntity("baseline", companyProfile.id);
+        if (previousScore) {
+          const delta = Math.round((baselineScores.overallScore - previousScore.overallScore) * 100) / 100;
+          baselineTrend = {
+            previousScore: previousScore.overallScore,
+            delta,
+            direction: delta > 0 ? "up" : delta < 0 ? "down" : "stable"
+          };
+        }
       }
       
       // Calculate competitor scores
@@ -10016,7 +10028,9 @@ Return only the description text, no quotes or formatting.`;
       res.json({
         baseline: baselineScores ? {
           name: companyProfile?.companyName || 'Your Company',
+          id: companyProfile?.id,
           ...baselineScores,
+          trend: baselineTrend,
         } : null,
         competitors: competitorScores,
         marketAverages: {
