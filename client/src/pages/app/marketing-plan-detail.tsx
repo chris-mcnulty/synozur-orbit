@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -114,7 +114,7 @@ export default function MarketingPlanDetail() {
     title: "",
     description: "",
     activityGroup: "other",
-    priority: "Medium",
+    priority: "medium",
     dueDate: "",
     timeframe: "",
   });
@@ -123,6 +123,15 @@ export default function MarketingPlanDetail() {
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"list" | "matrix">("list");
   const [selectedTask, setSelectedTask] = useState<MarketingTask | null>(null);
+  const [editingTask, setEditingTask] = useState<MarketingTask | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    activityGroup: "other",
+    priority: "medium",
+    timeframe: "",
+    dueDate: "",
+  });
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
     queryKey: [`/api/marketing-plans/${id}`],
@@ -237,7 +246,7 @@ export default function MarketingPlanDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
       setIsAddTaskOpen(false);
-      setTaskForm({ title: "", description: "", activityGroup: "other", priority: "Medium", dueDate: "", timeframe: "" });
+      setTaskForm({ title: "", description: "", activityGroup: "other", priority: "medium", dueDate: "", timeframe: "" });
       toast({ title: "Task Created", description: "Your task has been added to the plan." });
     },
     onError: (error: Error) => {
@@ -275,6 +284,48 @@ export default function MarketingPlanDetail() {
       toast({ title: "Task Deleted" });
     },
   });
+
+  const updateTask = useMutation({
+    mutationFn: async ({ taskId, data }: { taskId: string; data: typeof editForm }) => {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          ...data,
+          dueDate: data.dueDate || null,
+          timeframe: data.timeframe || null,
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to update task");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
+      setEditingTask(null);
+      toast({ title: "Task Updated", description: "Your task has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openEditDialog = (task: MarketingTask) => {
+    setEditingTask(task);
+    // Normalize priority to lowercase to match PRIORITY_OPTIONS values
+    const normalizedPriority = task.priority?.toLowerCase() || "medium";
+    setEditForm({
+      title: task.title,
+      description: task.description || "",
+      activityGroup: task.activityGroup,
+      priority: normalizedPriority,
+      timeframe: task.timeframe || "",
+      dueDate: task.dueDate ? task.dueDate.split("T")[0] : "",
+    });
+  };
 
   const toggleCategory = (category: string) => {
     setSelectedCategories(prev => 
@@ -709,6 +760,99 @@ export default function MarketingPlanDetail() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            {/* Edit Task Dialog */}
+            <Dialog open={!!editingTask} onOpenChange={(open) => !open && setEditingTask(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Task</DialogTitle>
+                  <DialogDescription>Update the task details, reschedule, or reprioritize.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div>
+                    <label className="text-sm font-medium">Title</label>
+                    <Input
+                      value={editForm.title}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                      placeholder="Task title"
+                      data-testid="input-edit-task-title"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Description</label>
+                    <Textarea
+                      value={editForm.description}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Task description (optional)"
+                      data-testid="input-edit-task-description"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Activity Group</label>
+                      <Select value={editForm.activityGroup} onValueChange={(v) => setEditForm(prev => ({ ...prev, activityGroup: v }))}>
+                        <SelectTrigger data-testid="select-edit-task-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ACTIVITY_CATEGORIES.map(cat => (
+                            <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Priority</label>
+                      <Select value={editForm.priority} onValueChange={(v) => setEditForm(prev => ({ ...prev, priority: v }))}>
+                        <SelectTrigger data-testid="select-edit-task-priority">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRIORITY_OPTIONS.map(p => (
+                            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Time Period</label>
+                      <Select value={editForm.timeframe} onValueChange={(v) => setEditForm(prev => ({ ...prev, timeframe: v }))}>
+                        <SelectTrigger data-testid="select-edit-task-period">
+                          <SelectValue placeholder="Select period" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {QUARTER_OPTIONS.map(p => (
+                            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Due Date (optional)</label>
+                      <Input
+                        type="date"
+                        value={editForm.dueDate}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                        data-testid="input-edit-task-due-date"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditingTask(null)}>Cancel</Button>
+                  <Button 
+                    onClick={() => editingTask && updateTask.mutate({ taskId: editingTask.id, data: editForm })} 
+                    disabled={!editForm.title.trim() || updateTask.isPending}
+                    data-testid="button-update-task"
+                  >
+                    {updateTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Update Task
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -941,34 +1085,48 @@ export default function MarketingPlanDetail() {
                       )}
                     </div>
                     <div className="flex justify-between pt-4 border-t">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm">
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete Task
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will permanently delete "{selectedTask.title}". This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => {
-                                deleteTask.mutate(selectedTask.id);
-                                setSelectedTask(null);
-                              }}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            openEditDialog(selectedTask);
+                            setSelectedTask(null);
+                          }}
+                          data-testid="button-edit-task-matrix"
+                        >
+                          <Edit2 className="w-4 h-4 mr-2" />
+                          Edit Task
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                              <Trash2 className="w-4 h-4 mr-2" />
                               Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Task?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete "{selectedTask.title}". This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  deleteTask.mutate(selectedTask.id);
+                                  setSelectedTask(null);
+                                }}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
-                      </AlertDialog>
+                        </AlertDialog>
+                      </div>
                       <Button variant="outline" onClick={() => setSelectedTask(null)}>Close</Button>
                     </div>
                   </div>
@@ -1038,6 +1196,15 @@ export default function MarketingPlanDetail() {
                               ))}
                             </SelectContent>
                           </Select>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={() => openEditDialog(task)}
+                            data-testid={`button-edit-task-${task.id}`}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">

@@ -11019,6 +11019,9 @@ Generate a comprehensive battlecard in this JSON format:
         return res.status(400).json({ error: "Please select at least one category and one time period" });
       }
 
+      // Get existing tasks to avoid duplicates
+      const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      
       // Get competitive intelligence context
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
@@ -11116,6 +11119,16 @@ Generate a comprehensive battlecard in this JSON format:
         });
       }
 
+      // Build existing tasks context to avoid duplicates
+      let existingTasksContext = "";
+      if (existingTasks.length > 0) {
+        existingTasksContext = `\n## EXISTING TASKS (DO NOT DUPLICATE)\nThe following tasks already exist in this plan. DO NOT generate similar or duplicate tasks:\n`;
+        existingTasks.forEach((t: any) => {
+          existingTasksContext += `- [${categoryLabels[t.activityGroup] || t.activityGroup}] "${t.title}"\n`;
+        });
+        existingTasksContext += `\nGenerate only NEW, unique tasks that are different from the above.\n`;
+      }
+
       const prompt = `Generate marketing tasks for a ${plan.fiscalYear} marketing plan.
 
 ## Company Context
@@ -11123,6 +11136,7 @@ ${contextInfo}
 ${gtmPlanContext}
 ${recommendationsContext}
 ${competitorInsights}
+${existingTasksContext}
 
 ## Task Generation Request
 Selected Activity Categories: ${selectedCategoryNames.join(", ")}
@@ -11134,6 +11148,7 @@ Generate 2-3 specific, actionable marketing tasks for EACH selected category. Ea
 3. Address competitive gaps or opportunities identified in the strategic recommendations
 4. Include a suggested priority (High, Medium, or Low)
 5. Be assigned to one of the selected time periods (use "steady_state" for ongoing activities)
+6. BE UNIQUE - DO NOT duplicate any existing tasks listed above
 
 Respond in JSON format:
 {
