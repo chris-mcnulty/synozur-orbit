@@ -59,7 +59,41 @@ export default function CompetitorDetail() {
     valuePropositions?: string[];
     keyDifferentiators?: string[];
     summary?: string;
+    keyMessages?: string[];
+    keywords?: string[];
   } | null;
+  
+  // Fetch dashboard scores to get calculated Orbit score for this competitor
+  const { data: dashboardScores } = useQuery<{
+    competitors: Array<{ id: string; name: string; overallScore: number; innovationScore: number; marketPresenceScore: number }>;
+  }>({
+    queryKey: ["/api/dashboard/scores"],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/scores", { credentials: "include" });
+      if (!response.ok) return { competitors: [] };
+      return response.json();
+    },
+  });
+  
+  // Get this competitor's score from the dashboard data
+  const competitorScore = dashboardScores?.competitors?.find(c => String(c.id) === String(id));
+  const orbitScore = competitorScore?.overallScore ?? null;
+  
+  // Calculate messaging overlap based on number of messaging themes
+  const messagingThemeCount = analysisData?.messagingThemes?.length ?? 0;
+  const getMessagingOverlap = () => {
+    if (messagingThemeCount === 0) return { level: "Unknown", detail: "No analysis data" };
+    if (messagingThemeCount >= 5) return { level: "High", detail: `${messagingThemeCount} themes identified` };
+    if (messagingThemeCount >= 3) return { level: "Medium", detail: `${messagingThemeCount} themes identified` };
+    return { level: "Low", detail: `${messagingThemeCount} themes identified` };
+  };
+  const messagingOverlap = getMessagingOverlap();
+  
+  // Get recent activity count (last 7 days)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentActivityCount = competitorActivity.filter((a: any) => 
+    new Date(a.createdAt) >= sevenDaysAgo
+  ).length;
 
   const crawlMutation = useMutation({
     mutationFn: async () => {
@@ -501,17 +535,28 @@ export default function CompetitorDetail() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Orbit Score</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-foreground">72<span className="text-lg text-muted-foreground font-normal">/100</span></div>
-              <p className="text-xs text-muted-foreground mt-1">Top 15% of your market</p>
+              {orbitScore !== null ? (
+                <>
+                  <div className="text-3xl font-bold text-foreground">{orbitScore.toFixed(0)}<span className="text-lg text-muted-foreground font-normal">/100</span></div>
+                  <p className="text-xs text-muted-foreground mt-1">Calculated competitive score</p>
+                </>
+              ) : (
+                <>
+                  <div className="text-3xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">Run analysis to calculate</p>
+                </>
+              )}
             </CardContent>
           </Card>
           <Card className="bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-colors">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Messaging Overlap</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Messaging Themes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-primary">High</div>
-              <p className="text-xs text-muted-foreground mt-1">Direct conflict on 4 themes</p>
+              <div className={`text-3xl font-bold ${messagingOverlap.level === "High" ? "text-destructive" : messagingOverlap.level === "Medium" ? "text-yellow-500" : messagingOverlap.level === "Low" ? "text-green-500" : "text-muted-foreground"}`}>
+                {messagingOverlap.level}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{messagingOverlap.detail}</p>
             </CardContent>
           </Card>
           <Card className="bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-colors">
@@ -519,7 +564,7 @@ export default function CompetitorDetail() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-foreground">5</div>
+              <div className="text-3xl font-bold text-foreground">{recentActivityCount}</div>
               <p className="text-xs text-muted-foreground mt-1">Changes in last 7 days</p>
             </CardContent>
           </Card>
