@@ -23,6 +23,24 @@ import { useState } from "react";
 const hasAdminAccess = (role: string) => 
   role === "Global Admin" || role === "Domain Admin";
 
+// Format date for mobile-friendly display (relative time or short date)
+const formatSignalDate = (dateStr: string) => {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  
+  // For older dates, show short format like "Jan 17"
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const innovationVal = typeof payload[0]?.value === 'number' ? payload[0].value.toFixed(2) : payload[0]?.value;
@@ -803,9 +821,9 @@ export default function Dashboard() {
                           </div>
                         )}
                       </div>
-                      <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.date}
+                      <div className="text-xs text-muted-foreground shrink-0 flex items-center gap-1" title={item.date || item.createdAt}>
+                        <Clock className="w-3 h-3 hidden sm:block" />
+                        {formatSignalDate(item.createdAt || item.date)}
                       </div>
                     </div>
                   );
