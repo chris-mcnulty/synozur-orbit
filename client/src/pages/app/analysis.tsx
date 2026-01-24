@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
@@ -33,6 +34,7 @@ export default function Analysis() {
   const [messagingPromptsOpen, setMessagingPromptsOpen] = useState(false);
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
+  const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
   const [gapCategoryFilter, setGapCategoryFilter] = useState<string>("all");
 
   const { data: analysis, isLoading } = useQuery({
@@ -270,25 +272,6 @@ export default function Analysis() {
            <p className="text-muted-foreground">AI-powered analysis of your competitors' websites and positioning.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            disabled={fullRegenerationMutation.isPending || !hasCompetitors || !companyProfile}
-            onClick={() => fullRegenerationMutation.mutate()}
-            data-testid="button-regenerate-all"
-            className="gap-2"
-          >
-            {fullRegenerationMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4" />
-                Regenerate All
-              </>
-            )}
-          </Button>
           <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
@@ -354,8 +337,59 @@ export default function Analysis() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+          <Button
+            variant="outline"
+            disabled={fullRegenerationMutation.isPending || !hasCompetitors || !companyProfile}
+            onClick={() => setRegenerateAllWarningOpen(true)}
+            data-testid="button-regenerate-all"
+            className="gap-2"
+          >
+            {fullRegenerationMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-4 w-4" />
+                Regenerate All
+              </>
+            )}
+          </Button>
         </div>
       </div>
+
+      <AlertDialog open={regenerateAllWarningOpen} onOpenChange={setRegenerateAllWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Full Regeneration Warning
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>This will completely regenerate all competitive intelligence data, including:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Re-crawl your baseline company website</li>
+                <li>Re-crawl all competitor websites</li>
+                <li>Regenerate all AI analysis and recommendations</li>
+                <li>Update gap analysis and battlecards</li>
+              </ul>
+              <p className="font-medium text-foreground pt-2">This process can take several minutes and uses significant AI credits.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setRegenerateAllWarningOpen(false);
+                fullRegenerationMutation.mutate();
+              }}
+            >
+              Continue with Regeneration
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isGenerating && (
         <Card className="mb-6 p-6 border-primary/50 bg-primary/5">
