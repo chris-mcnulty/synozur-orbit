@@ -5,6 +5,8 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import fileUpload, { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "./storage";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import bcrypt from "bcrypt";
@@ -9971,6 +9973,50 @@ Return only the description text, no quotes or formatting.`;
       triggerSocialMonitorNow();
       res.json({ success: true, message: "Social monitor job triggered" });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin endpoint to backfill marketId for existing activities
+  app.post("/api/admin/backfill-activity-markets", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      // Run SQL to backfill marketId based on competitor records
+      const result = await db.execute(sql`
+        UPDATE activity a
+        SET market_id = c.market_id
+        FROM competitors c
+        WHERE a.market_id IS NULL 
+          AND a.metadata->>'competitorId' IS NOT NULL
+          AND c.id = CAST(a.metadata->>'competitorId' AS INTEGER)
+      `);
+
+      // Also backfill from company profiles for baseline-related activities
+      const result2 = await db.execute(sql`
+        UPDATE activity a
+        SET market_id = cp.market_id
+        FROM company_profiles cp
+        WHERE a.market_id IS NULL 
+          AND a.metadata->>'companyProfileId' IS NOT NULL
+          AND cp.id = CAST(a.metadata->>'companyProfileId' AS INTEGER)
+      `);
+
+      res.json({ 
+        success: true, 
+        message: "Activity market IDs backfilled successfully",
+        competitorLinked: result.rowCount || 0,
+        baselineLinked: result2.rowCount || 0
+      });
+    } catch (error: any) {
+      console.error("Backfill activity markets error:", error);
       res.status(500).json({ error: error.message });
     }
   });
