@@ -197,10 +197,35 @@ Return ONLY valid JSON array, no additional text.`,
   }
 }
 
+export interface ExistingRecommendation {
+  title: string;
+  description: string;
+  area: string;
+  status: string;
+  dismissedReason?: string;
+}
+
 export async function generateRecommendations(
   gaps: GapAnalysis[],
-  competitorAnalyses: CompetitorAnalysis[]
+  competitorAnalyses: CompetitorAnalysis[],
+  existingRecommendations?: ExistingRecommendation[]
 ): Promise<Recommendation[]> {
+  let existingContext = "";
+  if (existingRecommendations && existingRecommendations.length > 0) {
+    const dismissed = existingRecommendations.filter(r => r.status === "dismissed");
+    const active = existingRecommendations.filter(r => r.status !== "dismissed");
+    
+    if (dismissed.length > 0) {
+      existingContext += `\n\nPREVIOUSLY DISMISSED RECOMMENDATIONS (DO NOT regenerate these or similar):
+${dismissed.map(r => `- "${r.title}" (Reason: ${r.dismissedReason || "user dismissed"})`).join("\n")}`;
+    }
+    
+    if (active.length > 0) {
+      existingContext += `\n\nEXISTING ACTIVE RECOMMENDATIONS (avoid duplicates):
+${active.map(r => `- "${r.title}"`).join("\n")}`;
+    }
+  }
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 2048,
@@ -214,8 +239,14 @@ ${JSON.stringify(gaps, null, 2)}
 
 Competitor Insights:
 ${JSON.stringify(competitorAnalyses, null, 2)}
+${existingContext}
 
-Please generate 3-5 recommendations and return as a JSON array:
+IMPORTANT RULES:
+1. DO NOT generate recommendations that are similar to dismissed ones
+2. DO NOT duplicate existing active recommendations
+3. Focus on NEW, unique insights not already covered
+
+Please generate 3-5 NEW recommendations and return as a JSON array:
 [
   {
     "title": "Short actionable title",

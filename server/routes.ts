@@ -1661,8 +1661,18 @@ export async function registerRoutes(
         groundingContext || undefined
       );
 
-      // Generate recommendations
-      const recommendations = await generateRecommendations(gaps, analyses);
+      // Fetch existing recommendations to avoid regenerating dismissed or duplicates
+      const existingRecs = await storage.getRecommendationsByTenant(tenantDomain);
+      const existingForAI = existingRecs.map(r => ({
+        title: r.title,
+        description: r.description,
+        area: r.area,
+        status: r.status,
+        dismissedReason: r.dismissedReason || undefined,
+      }));
+
+      // Generate recommendations, passing existing ones to avoid duplicates
+      const recommendations = await generateRecommendations(gaps, analyses, existingForAI);
 
       // Save recommendations to database with tenant scoping
       for (const rec of recommendations) {

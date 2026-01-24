@@ -32,6 +32,8 @@ interface Recommendation {
 export default function Recommendations() {
   const queryClient = useQueryClient();
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
 
   const { data: recommendations = [], isLoading } = useQuery<Recommendation[]>({
     queryKey: ["/api/recommendations"],
@@ -105,10 +107,22 @@ export default function Recommendations() {
   const activeRecs = recommendations.filter((r) => r.status !== "dismissed");
   const dismissedRecs = recommendations.filter((r) => r.status === "dismissed");
 
+  const uniqueCategories = Array.from(new Set(activeRecs.map(r => r.area).filter(Boolean))).sort();
+  const uniqueImpacts = Array.from(new Set(activeRecs.map(r => r.impact).filter(Boolean))).sort((a, b) => {
+    const order: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+    return (order[a] ?? 3) - (order[b] ?? 3);
+  });
+
   const filteredRecs = activeRecs
     .filter((r) => filterPriority === "all" || (filterPriority === "priority" && r.isPriority))
+    .filter((r) => filterCategory === "all" || r.area === filterCategory)
+    .filter((r) => filterImpact === "all" || r.impact === filterImpact)
     .sort((a, b) => {
       if (a.isPriority !== b.isPriority) return a.isPriority ? -1 : 1;
+      const impactOrder = { High: 0, Medium: 1, Low: 2 };
+      const aImpact = impactOrder[a.impact as keyof typeof impactOrder] ?? 3;
+      const bImpact = impactOrder[b.impact as keyof typeof impactOrder] ?? 3;
+      if (aImpact !== bImpact) return aImpact - bImpact;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
@@ -263,16 +277,42 @@ export default function Recommendations() {
             </TabsTrigger>
           </TabsList>
 
-          <Select value={filterPriority} onValueChange={setFilterPriority}>
-            <SelectTrigger className="w-[180px]" data-testid="filter-priority">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Recommendations</SelectItem>
-              <SelectItem value="priority">Priority Only</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-[150px]" data-testid="filter-category">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {uniqueCategories.map(cat => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterImpact} onValueChange={setFilterImpact}>
+              <SelectTrigger className="w-[130px]" data-testid="filter-impact">
+                <SelectValue placeholder="Impact" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Impacts</SelectItem>
+                {uniqueImpacts.map(impact => (
+                  <SelectItem key={impact} value={impact}>{impact} Impact</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterPriority} onValueChange={setFilterPriority}>
+              <SelectTrigger className="w-[150px]" data-testid="filter-priority">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priorities</SelectItem>
+                <SelectItem value="priority">Priority Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <TabsContent value="active">
