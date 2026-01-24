@@ -3,7 +3,7 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "./website-monitoring";
-import { analyzeCompetitorWebsite } from "../ai-service";
+import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail } from "./email-service";
 
@@ -192,10 +192,26 @@ async function runWebsiteCrawlJob(): Promise<void> {
           const websiteContent = getCombinedContent(crawlResult);
           if (websiteContent.length > 100) {
             try {
+              // Extract LinkedIn data from competitor record if available
+              const linkedInEngagement = competitor.linkedInEngagement as {
+                followers?: number;
+                posts?: number;
+                employees?: number;
+                recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+              } | null;
+              
+              const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+                followerCount: linkedInEngagement.followers,
+                employeeCount: linkedInEngagement.employees,
+                recentPosts: linkedInEngagement.recentPosts,
+              } : undefined;
+              
               const analysis = await analyzeCompetitorWebsite(
                 competitor.name,
                 competitor.url,
-                websiteContent
+                websiteContent,
+                undefined, // grounding context
+                linkedInData
               );
               await storage.updateCompetitorAnalysis(competitor.id, analysis);
 

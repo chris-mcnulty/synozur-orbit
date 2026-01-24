@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis } from "../ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
 import Anthropic from "@anthropic-ai/sdk";
@@ -129,10 +129,26 @@ async function runRegenerationInBackground(
           .trim();
 
         if (content.length > 100) {
+          // Extract LinkedIn data from competitor record if available
+          const linkedInEngagement = competitor.linkedInEngagement as {
+            followers?: number;
+            posts?: number;
+            employees?: number;
+            recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+          } | null;
+          
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          
           const analysis = await analyzeCompetitorWebsite(
             competitor.name,
             competitor.url,
-            content
+            content,
+            undefined, // grounding context
+            linkedInData
           );
           await storage.updateCompetitorAnalysis(competitor.id, analysis);
           await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());

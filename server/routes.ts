@@ -11,7 +11,7 @@ import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis } from "./ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -1067,10 +1067,26 @@ export async function registerRoutes(
       
       if (websiteContent.length > 100) {
         try {
+          // Extract LinkedIn data from competitor record if available
+          const linkedInEngagement = competitor.linkedInEngagement as {
+            followers?: number;
+            posts?: number;
+            employees?: number;
+            recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+          } | null;
+          
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          
           const analysis = await analyzeCompetitorWebsite(
             competitor.name,
             competitor.url,
-            websiteContent
+            websiteContent,
+            undefined, // grounding context
+            linkedInData
           );
           
           // Store analysis data on the competitor record
@@ -1639,10 +1655,26 @@ export async function registerRoutes(
             .trim();
 
           if (content.length > 100) {
+            // Extract LinkedIn data from competitor record if available
+            const linkedInEngagement = competitor.linkedInEngagement as {
+              followers?: number;
+              posts?: number;
+              employees?: number;
+              recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+            } | null;
+            
+            const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+              followerCount: linkedInEngagement.followers,
+              employeeCount: linkedInEngagement.employees,
+              recentPosts: linkedInEngagement.recentPosts,
+            } : undefined;
+            
             const analysis = await analyzeCompetitorWebsite(
               competitor.name,
               competitor.url,
-              content
+              content,
+              undefined, // grounding context
+              linkedInData
             );
             // Store analysis on competitor
             await storage.updateCompetitorAnalysis(competitor.id, analysis);
@@ -3306,12 +3338,27 @@ Return ONLY valid JSON, no markdown or explanations.`;
           .join("\n\n");
       }
 
-      // Use AI analysis with grounding context
+      // Extract LinkedIn data from profile if available
+      const linkedInEngagement = profile.linkedInEngagement as {
+        followers?: number;
+        posts?: number;
+        employees?: number;
+        recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+      } | null;
+      
+      const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+        followerCount: linkedInEngagement.followers,
+        employeeCount: linkedInEngagement.employees,
+        recentPosts: linkedInEngagement.recentPosts,
+      } : undefined;
+      
+      // Use AI analysis with grounding context and LinkedIn data
       const analysisResult = await analyzeCompetitorWebsite(
         profile.companyName, 
         profile.websiteUrl, 
         websiteContent,
-        groundingContext || undefined
+        groundingContext || undefined,
+        linkedInData
       );
 
       // Update profile with analysis data

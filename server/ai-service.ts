@@ -12,6 +12,26 @@ export interface CompetitorAnalysis {
   valueProposition: string;
   keywords: string[];
   tone: string;
+  // LinkedIn-enhanced fields
+  companyDescription?: string;
+  industry?: string;
+  employeeCount?: number;
+  followerCount?: number;
+  socialPresence?: string;
+  recentPostThemes?: string[];
+}
+
+// LinkedIn data structure for AI analysis
+export interface LinkedInContext {
+  companyDescription?: string;
+  industry?: string;
+  employeeCount?: number;
+  followerCount?: number;
+  recentPosts?: Array<{
+    text: string;
+    reactions?: number;
+    comments?: number;
+  }>;
 }
 
 export type GapCategory = "messaging" | "features" | "audience" | "content" | "positioning" | "other";
@@ -35,7 +55,8 @@ export async function analyzeCompetitorWebsite(
   competitorName: string,
   websiteUrl: string,
   websiteContent: string,
-  groundingContext?: string
+  groundingContext?: string,
+  linkedInData?: LinkedInContext
 ): Promise<CompetitorAnalysis> {
   // Build the prompt with optional grounding context
   let contextSection = "";
@@ -49,28 +70,67 @@ Use this context to better understand the company's intended positioning and mes
 `;
   }
 
+  // Build LinkedIn context section if available
+  let linkedInSection = "";
+  if (linkedInData) {
+    const linkedInParts: string[] = [];
+    if (linkedInData.companyDescription) {
+      linkedInParts.push(`Company Description: ${linkedInData.companyDescription}`);
+    }
+    if (linkedInData.industry) {
+      linkedInParts.push(`Industry: ${linkedInData.industry}`);
+    }
+    if (linkedInData.employeeCount) {
+      linkedInParts.push(`Employee Count: ${linkedInData.employeeCount.toLocaleString()}`);
+    }
+    if (linkedInData.followerCount) {
+      linkedInParts.push(`LinkedIn Followers: ${linkedInData.followerCount.toLocaleString()}`);
+    }
+    if (linkedInData.recentPosts && linkedInData.recentPosts.length > 0) {
+      const postsPreview = linkedInData.recentPosts.slice(0, 5).map((p, i) => 
+        `  ${i + 1}. "${p.text.substring(0, 200)}..." (${p.reactions || 0} reactions, ${p.comments || 0} comments)`
+      ).join("\n");
+      linkedInParts.push(`Recent LinkedIn Posts:\n${postsPreview}`);
+    }
+    if (linkedInParts.length > 0) {
+      linkedInSection = `
+
+LINKEDIN PROFILE DATA:
+${linkedInParts.join("\n")}
+
+Use this LinkedIn data to understand their social presence, thought leadership themes, and company positioning.
+`;
+    }
+  }
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 2048,
     messages: [
       {
         role: "user",
-        content: `Analyze this company's website content and extract key marketing insights.
+        content: `Analyze this company's website content${linkedInData ? " and LinkedIn presence" : ""} and extract key marketing insights.
 
 Company: ${competitorName}
 Website: ${websiteUrl}
-${contextSection}
+${contextSection}${linkedInSection}
 Website Content:
 ${websiteContent.slice(0, 15000)}
 
 Please provide a JSON response with the following structure:
 {
-  "summary": "Brief 2-3 sentence summary of their positioning",
+  "summary": "Brief 2-3 sentence summary of their positioning${linkedInData ? " including social presence insights" : ""}",
   "keyMessages": ["Main message 1", "Main message 2", "Main message 3"],
   "targetAudience": "Who they are targeting",
   "valueProposition": "Their main value proposition",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-  "tone": "Professional/Casual/Technical/etc"
+  "tone": "Professional/Casual/Technical/etc"${linkedInData ? `,
+  "companyDescription": "Their LinkedIn company description or tagline",
+  "industry": "Their stated industry",
+  "employeeCount": ${linkedInData.employeeCount ?? "null"},
+  "followerCount": ${linkedInData.followerCount ?? "null"},
+  "socialPresence": "Assessment of their LinkedIn activity level and engagement (Strong/Moderate/Minimal)",
+  "recentPostThemes": ["Theme 1 from their posts", "Theme 2", "Theme 3"]` : ""}
 }
 
 Return ONLY valid JSON, no additional text.`,
