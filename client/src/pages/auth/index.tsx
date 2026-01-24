@@ -135,12 +135,13 @@ export default function AuthPage() {
       }}
     >
       <div 
-        className="absolute inset-0 opacity-30"
+        className="absolute bottom-0 left-0 right-0 h-1/2 opacity-40"
         style={{
           backgroundImage: "url('/images/orbit-background.png')",
           backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundBlendMode: "overlay",
+          backgroundPosition: "top center",
+          maskImage: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
+          WebkitMaskImage: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-background/90 to-secondary/40" />
