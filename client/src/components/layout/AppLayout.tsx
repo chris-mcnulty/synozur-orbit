@@ -275,6 +275,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       items: [
         { label: "Company Baseline", icon: Building2, href: "/app/company-profile" },
         { label: "Competitors", icon: Target, href: "/app/competitors" },
+        { label: "Products", icon: Package, href: "/app/products" },
         { label: "Documents", icon: BookOpen, href: "/app/documents" },
       ]
     },
@@ -291,7 +292,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Outputs",
       items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
-        { label: "Products", icon: Package, href: "/app/products" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
       ]
