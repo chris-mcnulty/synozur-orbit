@@ -273,6 +273,7 @@ async function fallbackToLinkedInScraping(
           impact: changeScore > 70 ? "High" : "Medium",
           userId: userId || competitor.userId,
           tenantDomain,
+          marketId: competitor.marketId,
         });
       }
     }
@@ -388,6 +389,7 @@ export async function monitorCompetitorSocialMedia(
                 impact: hasFollowerChange ? "High" : "Medium",
                 userId: userId || competitor.userId,
                 tenantDomain,
+                marketId: competitor.marketId,
               });
             }
           }
@@ -473,6 +475,7 @@ export async function monitorCompetitorSocialMedia(
             impact: changeScore > 70 ? "High" : "Medium",
             userId: userId || competitor.userId,
             tenantDomain,
+            marketId: competitor.marketId,
           });
         }
       }
@@ -548,6 +551,7 @@ export async function monitorCompetitorSocialMedia(
             impact: changeScore > 70 ? "High" : "Medium",
             userId: userId || competitor.userId,
             tenantDomain,
+            marketId: competitor.marketId,
           });
         }
       }

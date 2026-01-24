@@ -160,6 +160,7 @@ export async function monitorCompetitorWebsite(
           impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
           userId,
           tenantDomain,
+          marketId: competitor.marketId,
         });
       }
     }

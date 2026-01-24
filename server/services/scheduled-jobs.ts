@@ -169,6 +169,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 date: new Date().toISOString(),
                 impact: newPosts >= 3 ? "High" : "Medium",
                 tenantDomain: tenant.domain,
+                marketId: competitor.marketId,
               });
             }
           }
@@ -206,6 +207,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 date: new Date().toISOString(),
                 impact: "Low",
                 tenantDomain: tenant.domain,
+                marketId: competitor.marketId,
               });
             } catch (aiError) {
               console.error(`[Scheduled Job] AI analysis failed for ${competitor.name}:`, aiError);

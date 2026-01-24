@@ -970,6 +970,8 @@ export async function registerRoutes(
             description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${crawlResult.blogSnapshot.latestTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
             date: now.toISOString(),
             impact: newPosts >= 3 ? "High" : "Medium",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
           });
         }
       }
@@ -1046,6 +1048,8 @@ export async function registerRoutes(
           description: `Quick refresh: crawled ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words)`,
           date: lastCrawl,
           impact: "Low",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
         });
         
         return res.json({ 
@@ -1086,6 +1090,8 @@ export async function registerRoutes(
             description: `Analyzed ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words): ${analysis.summary}`,
             date: lastCrawl,
             impact: "Medium",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
           });
           
           // For full_with_change, also trigger social media monitoring
@@ -1165,6 +1171,8 @@ export async function registerRoutes(
         description: `Manual AI research saved: ${analysisData.summary?.substring(0, 100) || "Company intelligence gathered via external AI assistant"}...`,
         date: new Date().toLocaleString(),
         impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
 
       // Capture visual assets (screenshot/favicon) if not already captured
@@ -3393,6 +3401,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         description: `Manual AI research saved for baseline: ${analysisData.summary?.substring(0, 100) || "Company intelligence gathered"}...`,
         date: new Date().toLocaleString(),
         impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
       });
 
       res.json({ success: true, analysisData });
