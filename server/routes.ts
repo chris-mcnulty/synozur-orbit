@@ -26,7 +26,7 @@ import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
-import { calculateScores, type ScoreBreakdown } from "./services/scoring-service";
+import { calculateScores, calculateBaselineScore, getCurrentPeriod, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
 import { testBlogUrl, monitorBlogForCompetitor } from "./services/rss-service";
@@ -3164,6 +3164,141 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const ctx = await getRequestContext(req);
       const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       res.json(profile || null);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get baseline Orbit Score (company profile score)
+  app.get("/api/company-profile/score", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      
+      if (!profile) {
+        return res.json({ hasScore: false, score: null });
+      }
+      
+      // Calculate baseline score
+      const scoreBreakdown = calculateBaselineScore({
+        description: profile.description,
+        crawlData: profile.crawlData as any,
+        blogSnapshot: profile.blogSnapshot as any,
+        linkedInEngagement: profile.linkedInEngagement as any,
+        instagramEngagement: profile.instagramEngagement as any,
+        lastCrawl: profile.lastCrawl,
+      });
+      
+      // Get previous score for trend
+      const previousScore = await storage.getLatestScoreForEntity("baseline", profile.id);
+      const trend = previousScore 
+        ? {
+            previousScore: previousScore.overallScore,
+            delta: Math.round((scoreBreakdown.overallScore - previousScore.overallScore) * 100) / 100,
+            direction: scoreBreakdown.overallScore > previousScore.overallScore ? "up" : 
+                       scoreBreakdown.overallScore < previousScore.overallScore ? "down" : "stable"
+          }
+        : null;
+      
+      res.json({
+        hasScore: true,
+        score: scoreBreakdown,
+        trend,
+        companyName: profile.companyName,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Record baseline score to history (called after analysis/crawl)
+  app.post("/api/company-profile/score/record", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+      
+      const scoreBreakdown = calculateBaselineScore({
+        description: profile.description,
+        crawlData: profile.crawlData as any,
+        blogSnapshot: profile.blogSnapshot as any,
+        linkedInEngagement: profile.linkedInEngagement as any,
+        instagramEngagement: profile.instagramEngagement as any,
+        lastCrawl: profile.lastCrawl,
+      });
+      
+      const period = getCurrentPeriod();
+      
+      // Check if we already have a record for this period
+      const existingHistory = await storage.getScoreHistory("baseline", profile.id, 1);
+      if (existingHistory.length > 0 && existingHistory[0].period === period) {
+        return res.json({ recorded: false, message: "Score already recorded for this period", score: scoreBreakdown });
+      }
+      
+      // Record to history
+      await storage.createScoreHistory({
+        entityType: "baseline",
+        entityId: profile.id,
+        entityName: profile.companyName,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        overallScore: Math.round(scoreBreakdown.overallScore),
+        innovationScore: Math.round(scoreBreakdown.innovationScore),
+        marketPresenceScore: Math.round(scoreBreakdown.marketPresenceScore),
+        contentActivityScore: Math.round(scoreBreakdown.contentActivityScore),
+        socialEngagementScore: Math.round(scoreBreakdown.socialEngagementScore),
+        scoreBreakdown: scoreBreakdown,
+        period,
+      });
+      
+      res.json({ recorded: true, score: scoreBreakdown, period });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get score history for an entity (baseline or competitor)
+  app.get("/api/score-history/:entityType/:entityId", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { entityType, entityId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 12;
+      
+      if (!["baseline", "competitor"].includes(entityType)) {
+        return res.status(400).json({ error: "Invalid entity type. Must be 'baseline' or 'competitor'" });
+      }
+      
+      const history = await storage.getScoreHistory(entityType, entityId, limit);
+      res.json(history);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get all score history for current market context
+  app.get("/api/score-history", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const entityType = req.query.entityType as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      const history = await storage.getScoreHistoryByContext(toContextFilter(ctx), entityType, limit);
+      res.json(history);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

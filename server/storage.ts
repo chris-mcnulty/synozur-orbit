@@ -97,10 +97,13 @@ import {
   type InsertFeatureRecommendation,
   competitorScores,
   socialMetrics,
+  scoreHistory,
   executiveSummaries,
   scheduledJobRuns,
   type ScheduledJobRun,
   type InsertScheduledJobRun,
+  type ScoreHistory,
+  type InsertScoreHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
@@ -319,6 +322,12 @@ export interface IStorage {
   getSocialMetricsByTenant(tenantDomain: string): Promise<SocialMetric[]>;
   getSocialMetricsByContext(ctx: ContextFilter): Promise<SocialMetric[]>;
   createSocialMetric(metric: InsertSocialMetric): Promise<SocialMetric>;
+  
+  // Score history methods (for tracking scores over time)
+  getScoreHistory(entityType: string, entityId: string, limit?: number): Promise<ScoreHistory[]>;
+  getScoreHistoryByContext(ctx: ContextFilter, entityType?: string, limit?: number): Promise<ScoreHistory[]>;
+  createScoreHistory(history: InsertScoreHistory): Promise<ScoreHistory>;
+  getLatestScoreForEntity(entityType: string, entityId: string): Promise<ScoreHistory | undefined>;
   
   // Executive summary methods
   getExecutiveSummary(projectId?: string, companyProfileId?: string): Promise<ExecutiveSummary | undefined>;
@@ -1551,6 +1560,56 @@ export class DatabaseStorage implements IStorage {
       .values(metric)
       .returning();
     return result;
+  }
+
+  // Score history methods
+  async getScoreHistory(entityType: string, entityId: string, limit: number = 12): Promise<ScoreHistory[]> {
+    return db.select().from(scoreHistory)
+      .where(and(
+        eq(scoreHistory.entityType, entityType),
+        eq(scoreHistory.entityId, entityId)
+      ))
+      .orderBy(desc(scoreHistory.recordedAt))
+      .limit(limit);
+  }
+
+  async getScoreHistoryByContext(ctx: ContextFilter, entityType?: string, limit: number = 50): Promise<ScoreHistory[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(scoreHistory.marketId, ctx.marketId), isNull(scoreHistory.marketId))
+      : eq(scoreHistory.marketId, ctx.marketId);
+    
+    const conditions = [
+      eq(scoreHistory.tenantDomain, ctx.tenantDomain),
+      marketCondition
+    ];
+    
+    if (entityType) {
+      conditions.push(eq(scoreHistory.entityType, entityType));
+    }
+    
+    return db.select().from(scoreHistory)
+      .where(and(...conditions))
+      .orderBy(desc(scoreHistory.recordedAt))
+      .limit(limit);
+  }
+
+  async createScoreHistory(history: InsertScoreHistory): Promise<ScoreHistory> {
+    const [result] = await db
+      .insert(scoreHistory)
+      .values(history)
+      .returning();
+    return result;
+  }
+
+  async getLatestScoreForEntity(entityType: string, entityId: string): Promise<ScoreHistory | undefined> {
+    const [result] = await db.select().from(scoreHistory)
+      .where(and(
+        eq(scoreHistory.entityType, entityType),
+        eq(scoreHistory.entityId, entityId)
+      ))
+      .orderBy(desc(scoreHistory.recordedAt))
+      .limit(1);
+    return result || undefined;
   }
 
   // Executive summary methods

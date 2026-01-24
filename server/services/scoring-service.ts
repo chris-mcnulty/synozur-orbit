@@ -258,3 +258,62 @@ export function calculateScores(
     },
   };
 }
+
+/**
+ * Calculate Orbit Score for a company profile (baseline)
+ * Uses the same algorithm as competitor scoring but with baseline-specific data
+ */
+export function calculateBaselineScore(
+  companyProfile: {
+    description?: string | null;
+    crawlData?: CrawlData | null;
+    blogSnapshot?: BlogSnapshot | null;
+    linkedInEngagement?: SocialEngagement | null;
+    instagramEngagement?: SocialEngagement | null;
+    lastCrawl?: Date | string | null;
+  }
+): ScoreBreakdown {
+  // Extract keywords from description (simple tokenization for baseline)
+  const description = companyProfile.description || "";
+  const words = description.toLowerCase().split(/\W+/).filter(w => w.length > 4);
+  const uniqueKeywords = Array.from(new Set(words)).slice(0, 20);
+  
+  // Build pseudo-analysis data from company profile
+  const analysisData: AnalysisData = {
+    keywords: uniqueKeywords,
+    keyMessages: description ? [description.substring(0, 200)] : [],
+    summary: description || undefined,
+  };
+  
+  return calculateScores(
+    analysisData,
+    companyProfile.linkedInEngagement || null,
+    companyProfile.instagramEngagement || null,
+    companyProfile.crawlData || null,
+    companyProfile.blogSnapshot || null,
+    companyProfile.lastCrawl || null
+  );
+}
+
+/**
+ * Get the current period identifier for score history tracking
+ * Uses monthly periods by default (e.g., "2026-01")
+ */
+export function getCurrentPeriod(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+/**
+ * Get weekly period identifier (e.g., "2026-W04")
+ */
+export function getCurrentWeeklyPeriod(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+  const week = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
