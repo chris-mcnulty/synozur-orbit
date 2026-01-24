@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -177,6 +177,38 @@ export default function Competitors() {
   });
 
   const [analyzingCompetitor, setAnalyzingCompetitor] = useState<string | null>(null);
+  const [checkingSocialsId, setCheckingSocialsId] = useState<string | null>(null);
+
+  const checkSocials = useMutation({
+    mutationFn: async (id: string) => {
+      setCheckingSocialsId(id);
+      const response = await fetch(`/api/competitors/${id}/monitor-social`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to check socials");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setCheckingSocialsId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      toast({
+        title: "Social Check Complete",
+        description: "Social media profiles have been checked for updates.",
+      });
+    },
+    onError: (error: Error) => {
+      setCheckingSocialsId(null);
+      toast({
+        title: "Social Check Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const crawlCompetitor = useMutation({
     mutationFn: async ({ id, analysisType }: { id: string; analysisType: "quick" | "full" | "full_with_change" }) => {
@@ -871,6 +903,18 @@ export default function Competitors() {
                                     >
                                       <Pencil className="w-4 h-4 mr-2" />
                                       Edit Social & Blog Links
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => checkSocials.mutate(competitor.id)}
+                                      disabled={checkingSocialsId === competitor.id}
+                                      data-testid={`button-check-socials-${competitor.id}`}
+                                    >
+                                      {checkingSocialsId === competitor.id ? (
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      ) : (
+                                        <Users className="w-4 h-4 mr-2" />
+                                      )}
+                                      Check Socials
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
