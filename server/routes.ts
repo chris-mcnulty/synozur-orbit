@@ -5856,6 +5856,112 @@ Respond in JSON format:
     }
   });
 
+  // Scan/Analyze a product (crawl website and generate analysis)
+  app.post("/api/products/:id/scan", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      if (!validateResourceContext(product, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!product.url) {
+        return res.status(400).json({ error: "Product has no URL to scan" });
+      }
+
+      // Crawl the product page
+      let crawlResult;
+      try {
+        crawlResult = await crawlCompetitorWebsite(product.url);
+      } catch (crawlError) {
+        console.error("Product crawl failed:", crawlError);
+        return res.status(502).json({ error: "Failed to crawl product website" });
+      }
+      
+      const pages = crawlResult?.pages || [];
+      if (pages.length === 0) {
+        return res.status(502).json({ error: "No content found on product website" });
+      }
+      
+      const combinedContent = pages
+        .map((p: any) => `## ${p.pageType}\n${p.content}`)
+        .join("\n\n");
+
+      // AI Analysis for product
+      let analysisData: any = {};
+      try {
+        const analysisPrompt = `Analyze this product page and provide competitive intelligence:
+
+Product: ${product.name}
+Company: ${product.companyName || "Unknown"}
+URL: ${product.url}
+
+Content:
+${combinedContent.substring(0, 15000)}
+
+Provide analysis in this JSON format:
+{
+  "competitiveScore": <number 1-100>,
+  "marketPosition": "<leader|challenger|follower|niche>",
+  "innovationLevel": "<high|medium|low>",
+  "strengths": ["strength1", "strength2", ...],
+  "weaknesses": ["weakness1", "weakness2", ...],
+  "valueProposition": "main value proposition",
+  "targetAudience": "target audience description",
+  "keyMessages": ["message1", "message2", ...],
+  "features": ["feature1", "feature2", ...],
+  "pricing": "pricing info if found"
+}`;
+
+        const analysisResponse = await anthropic.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: analysisPrompt }],
+        });
+
+        const analysisText = analysisResponse.content[0].type === "text" 
+          ? analysisResponse.content[0].text : "";
+        
+        try {
+          const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            analysisData = JSON.parse(jsonMatch[0]);
+          }
+        } catch (e) {
+          console.error("Failed to parse product analysis JSON:", e);
+        }
+      } catch (aiError) {
+        console.error("AI analysis failed:", aiError);
+        // Continue with just crawl data, no analysis
+      }
+
+      const updated = await storage.updateProduct(product.id, {
+        crawlData: crawlResult,
+        analysisData: Object.keys(analysisData).length > 0 ? analysisData : undefined,
+        lastCrawled: new Date(),
+      });
+
+      res.json({ 
+        success: true, 
+        product: updated,
+        analysis: analysisData,
+        pagesScanned: pages.length,
+        hasAnalysis: Object.keys(analysisData).length > 0
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Product scan error:", error);
+      res.status(500).json({ error: error.message || "Failed to scan product" });
+    }
+  });
+
   // === Product Features CRUD ===
   
   // Get features for a product
