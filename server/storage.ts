@@ -310,12 +310,14 @@ export interface IStorage {
   updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation>;
   deleteLongFormRecommendation(id: string): Promise<void>;
   
-  // Competitor score methods
+  // Competitor score methods (also supports product scores)
   getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined>;
+  getProductScore(productId: string): Promise<CompetitorScore | undefined>;
   getCompetitorScoresByProject(projectId: string): Promise<CompetitorScore[]>;
   getCompetitorScoresByTenant(tenantDomain: string): Promise<CompetitorScore[]>;
   getCompetitorScoresByContext(ctx: ContextFilter): Promise<CompetitorScore[]>;
   upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore>;
+  upsertProductScore(score: InsertCompetitorScore): Promise<CompetitorScore>;
   
   // Social metrics methods
   getSocialMetrics(competitorId: string, platform?: string): Promise<SocialMetric[]>;
@@ -1502,7 +1504,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertCompetitorScore(score: InsertCompetitorScore): Promise<CompetitorScore> {
-    const existing = await this.getCompetitorScore(score.competitorId, score.projectId ?? undefined);
+    const existing = score.competitorId 
+      ? await this.getCompetitorScore(score.competitorId, score.projectId ?? undefined)
+      : undefined;
+    if (existing) {
+      const [result] = await db
+        .update(competitorScores)
+        .set({ ...score, updatedAt: new Date(), lastCalculatedAt: new Date() })
+        .where(eq(competitorScores.id, existing.id))
+        .returning();
+      return result;
+    }
+    const [result] = await db
+      .insert(competitorScores)
+      .values(score)
+      .returning();
+    return result;
+  }
+
+  async getProductScore(productId: string): Promise<CompetitorScore | undefined> {
+    const [score] = await db.select().from(competitorScores)
+      .where(eq(competitorScores.productId, productId));
+    return score || undefined;
+  }
+
+  async upsertProductScore(score: InsertCompetitorScore): Promise<CompetitorScore> {
+    if (!score.productId) {
+      throw new Error('productId is required for product scores');
+    }
+    const existing = await this.getProductScore(score.productId);
     if (existing) {
       const [result] = await db
         .update(competitorScores)
