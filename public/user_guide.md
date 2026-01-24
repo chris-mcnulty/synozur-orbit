@@ -5,15 +5,16 @@
 2. [Getting Started](#getting-started)
 3. [User Roles & Permissions](#user-roles--permissions)
 4. [Core Features](#core-features)
-5. [Managing Competitors](#managing-competitors)
-6. [Running Analysis](#running-analysis)
-7. [Battlecards & Reports](#battlecards--reports)
-8. [Client Projects](#client-projects)
-9. [Marketing Planner](#marketing-planner)
-10. [Team Management](#team-management)
-11. [Settings & Configuration](#settings--configuration)
-12. [Administrator Guide](#administrator-guide)
-13. [Troubleshooting & FAQs](#troubleshooting--faqs)
+5. [Understanding Orbit Scores](#understanding-orbit-scores)
+6. [Managing Competitors](#managing-competitors)
+7. [Running Analysis](#running-analysis)
+8. [Battlecards & Reports](#battlecards--reports)
+9. [Client Projects](#client-projects)
+10. [Marketing Planner](#marketing-planner)
+11. [Team Management](#team-management)
+12. [Settings & Configuration](#settings--configuration)
+13. [Administrator Guide](#administrator-guide)
+14. [Troubleshooting & FAQs](#troubleshooting--faqs)
 
 ---
 
@@ -247,6 +248,101 @@ Each activity entry shows:
 - Associated competitor
 - AI-generated summary (for changes)
 - Link to view full details
+
+---
+
+## Understanding Orbit Scores
+
+### What is the Orbit Score?
+
+The **Orbit Score** is a composite metric (0-100) that measures a company's overall competitive positioning. It combines multiple data points to give you a single, actionable number for comparing competitors and tracking changes over time.
+
+### Score Components
+
+The overall Orbit Score is calculated from four main components:
+
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| **Innovation Score** | 35% | How differentiated and fresh the messaging is |
+| **Market Presence** | 35% | Visibility and establishment in the market |
+| **Content Activity** | 15% | How actively they publish and update content |
+| **Social Engagement** | 15% | Social media reach and interaction |
+
+### Innovation Score (35% of total)
+
+Measures how unique and differentiated a company's positioning is:
+
+- **Keyword Diversity** (20%): Variety of unique keywords in messaging. More diverse keywords indicate broader topic coverage.
+- **Key Message Count** (25%): Number of distinct value propositions. Companies with clear, multiple messages score higher.
+- **Content Freshness** (20%): Based on how recently the analysis was updated. Full score within 7 days, decaying over 30 days.
+- **Blog Activity** (20%): Recent blog posts indicate thought leadership. More posts = higher score.
+- **Analysis Completeness** (15%): Depth of AI analysis data available.
+
+### Market Presence Score (35% of total)
+
+Measures visibility and establishment in the market. This score **adapts** based on available data:
+
+**When social data is available:**
+- Social Followers (25%): LinkedIn/Instagram follower counts (logarithmic scale)
+- Social Engagement (20%): Posts, reactions, comments
+- Website Depth (20%): Pages crawled and content volume
+- Content Richness (20%): Combination of keyword diversity and key messages
+- Brand Consistency (15%): Analysis completeness plus clear messaging presence
+
+**When social data is NOT available:**
+- Website Depth (35%): Pages crawled and content volume
+- Content Richness (35%): Keyword diversity and key messages
+- Brand Consistency (30%): Analysis completeness plus clear messaging
+
+*Note: Social data uses a logarithmic scale, meaning the difference between 100 and 1,000 followers counts as much as the difference between 10,000 and 100,000.*
+
+### Content Activity Score (15% of total)
+
+Measures how actively a company publishes and maintains content:
+
+- **Content Freshness** (40%): How recently the website was analyzed
+- **Blog Activity** (35%): Frequency and recency of blog posts
+- **Website Completeness** (25%): Number of pages crawled
+
+### Social Engagement Score (15% of total)
+
+Measures social media reach and interaction:
+
+- **Social Followers** (50%): Combined LinkedIn and Instagram followers
+- **Social Engagement** (50%): Combined posts, reactions, and comments
+
+### Reading the Market Positioning Chart
+
+The scatter plot on your dashboard displays competitors on two axes:
+
+- **X-axis (Innovation Score)**: How unique and differentiated the positioning is
+- **Y-axis (Market Presence)**: How visible and established in the market
+
+**Interpreting Quadrants:**
+
+| Quadrant | Position | What It Means |
+|----------|----------|---------------|
+| **Top-Right** | High Innovation + High Presence | Strong competitors - well-positioned and visible |
+| **Top-Left** | Low Innovation + High Presence | Established but generic - may be vulnerable to differentiated challengers |
+| **Bottom-Right** | High Innovation + Low Presence | Innovative disruptors - watch these for rapid growth |
+| **Bottom-Left** | Low Innovation + Low Presence | Weaker competitors - less immediate threat |
+
+### How to Improve Your Score
+
+To increase your Orbit Score:
+
+1. **Run analyses regularly** - Keep content freshness high by running monthly analyses
+2. **Add social media links** - Adding LinkedIn and Instagram URLs provides more data points
+3. **Monitor blog activity** - Companies with active blogs score higher on innovation
+4. **Complete your profile** - Ensure all analysis fields are populated
+
+### Score Calculation Notes
+
+- All scores are calculated on a 0-100 scale with 2 decimal precision
+- Scores update automatically when you run analyses
+- The system uses logarithmic scaling for follower counts (prevents mega-companies from dominating)
+- Companies without social data are still scored fairly using adaptive weights
+- Scores are relative - they help compare competitors, not provide absolute benchmarks
 
 ---
 

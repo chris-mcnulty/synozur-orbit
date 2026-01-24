@@ -11,8 +11,9 @@ import {
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
   Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
-  RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare
+  RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare, HelpCircle
 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -593,6 +594,99 @@ export default function Dashboard() {
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-primary" />
                 Market Positioning
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" data-testid="button-scoring-help">
+                      <HelpCircle className="h-4 w-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-primary" />
+                        Understanding Orbit Scores
+                      </DialogTitle>
+                      <DialogDescription>How we measure competitive positioning</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-6 py-4">
+                      <div>
+                        <h4 className="font-semibold mb-2">Orbit Score (0-100)</h4>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          The overall Orbit Score combines four key components to give you a comprehensive view of each competitor's market position.
+                        </p>
+                        <div className="grid gap-3">
+                          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                            <div className="w-12 text-center">
+                              <span className="text-lg font-bold text-primary">35%</span>
+                            </div>
+                            <div>
+                              <p className="font-medium">Innovation Score</p>
+                              <p className="text-xs text-muted-foreground">How differentiated and fresh the messaging is. Based on keyword variety, distinct value propositions, content freshness, and blog activity.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                            <div className="w-12 text-center">
+                              <span className="text-lg font-bold text-primary">35%</span>
+                            </div>
+                            <div>
+                              <p className="font-medium">Market Presence</p>
+                              <p className="text-xs text-muted-foreground">Visibility and establishment in the market. Includes social followers, engagement, website depth, and brand consistency.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                            <div className="w-12 text-center">
+                              <span className="text-lg font-bold text-primary">15%</span>
+                            </div>
+                            <div>
+                              <p className="font-medium">Content Activity</p>
+                              <p className="text-xs text-muted-foreground">How actively they publish and update content. Measures content freshness, blog posting frequency, and website completeness.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                            <div className="w-12 text-center">
+                              <span className="text-lg font-bold text-primary">15%</span>
+                            </div>
+                            <div>
+                              <p className="font-medium">Social Engagement</p>
+                              <p className="text-xs text-muted-foreground">Social media reach and interaction. Combines follower counts and engagement metrics from LinkedIn and other platforms.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-semibold mb-2">Reading the Chart</h4>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          The scatter plot shows competitors plotted on two axes:
+                        </p>
+                        <ul className="text-sm text-muted-foreground space-y-2 ml-4">
+                          <li><strong>X-axis (Innovation):</strong> How unique and differentiated the positioning is</li>
+                          <li><strong>Y-axis (Market Presence):</strong> How visible and established in the market</li>
+                        </ul>
+                        <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                          <div className="p-2 rounded bg-green-500/10 text-green-600 text-center">
+                            <strong>Top-Right:</strong> Strong competitors
+                          </div>
+                          <div className="p-2 rounded bg-yellow-500/10 text-yellow-600 text-center">
+                            <strong>Top-Left:</strong> Established but generic
+                          </div>
+                          <div className="p-2 rounded bg-blue-500/10 text-blue-600 text-center">
+                            <strong>Bottom-Right:</strong> Innovative disruptors
+                          </div>
+                          <div className="p-2 rounded bg-muted text-muted-foreground text-center">
+                            <strong>Bottom-Left:</strong> Weaker competitors
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">
+                          Scores update automatically when you run analyses. For detailed documentation, see the User Guide in About.
+                        </p>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </CardTitle>
               <CardDescription>Your brand vs competitors on key axes. Click any point for details.</CardDescription>
             </div>
