@@ -157,8 +157,10 @@ export function calculateScores(
   }
 
   // === WEBSITE COMPLETENESS (0-100) ===
-  if (crawlData?.pages && Array.isArray(crawlData.pages)) {
-    const pagesCount = crawlData.pages.length;
+  // Handle both formats: crawlData.pages (competitor format) and crawlData.pagesCrawled (baseline format)
+  const pagesArray = crawlData?.pages || (crawlData as any)?.pagesCrawled;
+  if (pagesArray && Array.isArray(pagesArray)) {
+    const pagesCount = pagesArray.length;
     // Score based on pages crawled (cap at 5 for max score)
     websiteCompleteness = Math.min(100, (pagesCount / 5) * 100);
   }
