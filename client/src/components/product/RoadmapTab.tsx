@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown } from "lucide-react";
+import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown, Table as TableIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface RoadmapItem {
@@ -467,19 +468,41 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                 Get AI-powered roadmap suggestions based on competitive intelligence
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => generateRecommendations.mutate()}
-              disabled={generateRecommendations.isPending}
-              data-testid="button-generate-recommendations"
-            >
-              {generateRecommendations.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Wand2 className="mr-2 h-4 w-4" />
+            <div className="flex gap-2">
+              {recommendations.filter(r => r.status === "pending").length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const recsToExport = recommendations
+                      .filter((r: FeatureRecommendation) => r.status === "pending")
+                      .map((r): CSVExportItem => ({
+                        title: r.title || "",
+                        description: r.explanation || "",
+                        category: r.type || "general",
+                      }));
+                    exportToCSV(recsToExport, "AI_Recommendations");
+                  }}
+                  data-testid="button-export-ai-recommendations-csv"
+                >
+                  <TableIcon className="h-4 w-4 mr-1" />
+                  Export CSV
+                </Button>
               )}
-              Generate Recommendations
-            </Button>
+              <Button
+                variant="outline"
+                onClick={() => generateRecommendations.mutate()}
+                disabled={generateRecommendations.isPending}
+                data-testid="button-generate-recommendations"
+              >
+                {generateRecommendations.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="mr-2 h-4 w-4" />
+                )}
+                Generate Recommendations
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -700,6 +723,24 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {roadmapItems.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const itemsToExport = roadmapItems.map((item): CSVExportItem => ({
+                  title: item.title || "",
+                  description: item.description || "",
+                  category: item.quarter && item.year ? `${item.quarter} ${item.year}` : "Unscheduled",
+                }));
+                exportToCSV(itemsToExport, "Product_Roadmap");
+              }}
+              data-testid="button-export-roadmap-csv"
+            >
+              <TableIcon className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
+          )}
 
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>

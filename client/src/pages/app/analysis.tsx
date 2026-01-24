@@ -8,8 +8,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -544,7 +545,7 @@ export default function Analysis() {
           <TabsContent value="gaps">
               {analysis.gaps?.length > 0 ? (
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <Filter className="h-4 w-4 text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">Filter by type:</span>
@@ -563,12 +564,36 @@ export default function Analysis() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {gapCategoryFilter === "all" 
-                          ? `${analysis.gaps.length} gaps detected`
-                          : `${analysis.gaps.filter((g: any) => g.category === gapCategoryFilter || (!g.category && gapCategoryFilter === "other")).length} of ${analysis.gaps.length} gaps`
-                        }
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {gapCategoryFilter === "all" 
+                            ? `${analysis.gaps.length} gaps detected`
+                            : `${analysis.gaps.filter((g: any) => g.category === gapCategoryFilter || (!g.category && gapCategoryFilter === "other")).length} of ${analysis.gaps.length} gaps`
+                          }
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const gapsToExport = analysis.gaps
+                              .filter((gap: any) => {
+                                if (gapCategoryFilter === "all") return true;
+                                if (!gap.category && gapCategoryFilter === "other") return true;
+                                return gap.category === gapCategoryFilter;
+                              })
+                              .map((gap: any): CSVExportItem => ({
+                                title: gap.area || "",
+                                description: gap.observation || "",
+                                category: gap.category || "other",
+                              }));
+                            exportToCSV(gapsToExport, "Gap_Analysis");
+                          }}
+                          data-testid="button-export-gaps-csv"
+                        >
+                          <Table className="h-4 w-4 mr-1" />
+                          Export CSV
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                         {analysis.gaps
@@ -1031,8 +1056,30 @@ export default function Analysis() {
               {/* Recommendations Section */}
               <Card className="border-border">
                 <CardHeader>
-                  <CardTitle>Action Items</CardTitle>
-                  <CardDescription>Strategic recommendations based on competitive analysis.</CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Action Items</CardTitle>
+                      <CardDescription>Strategic recommendations based on competitive analysis.</CardDescription>
+                    </div>
+                    {recommendations.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const recsToExport = recommendations.map((rec: any): CSVExportItem => ({
+                            title: rec.title || "",
+                            description: rec.description || "",
+                            category: rec.area || "general",
+                          }));
+                          exportToCSV(recsToExport, "Recommendations");
+                        }}
+                        data-testid="button-export-recommendations-csv"
+                      >
+                        <Table className="h-4 w-4 mr-1" />
+                        Export CSV
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {recommendations.length > 0 ? (

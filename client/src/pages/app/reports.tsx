@@ -69,8 +69,8 @@ export default function Reports() {
   const handleGenerateAndDownload = async () => {
     if (scope === "project" && !selectedProjectId) {
       toast({
-        title: "Select a Project",
-        description: "Please select a project to generate a report for.",
+        title: "Select a Product",
+        description: "Please select a product to generate a report for.",
         variant: "destructive",
       });
       return;
@@ -323,32 +323,32 @@ export default function Reports() {
                   size="sm"
                   className="flex-1"
                   onClick={() => setScope("project")}
-                  data-testid="button-scope-project"
+                  data-testid="button-scope-product"
                 >
                   <Briefcase className="w-4 h-4 mr-2" />
-                  Project
+                  Product
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 {scope === "baseline" 
                   ? "Your company profile and all tracked competitors"
-                  : "A specific client project"}
+                  : "A specific product analysis"}
               </p>
             </div>
 
             {scope === "project" && (
               <div className="space-y-2">
-                <Label>Select Project</Label>
+                <Label>Select Product</Label>
                 <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger data-testid="select-project">
-                    <SelectValue placeholder="Choose a project" />
+                  <SelectTrigger data-testid="select-product">
+                    <SelectValue placeholder="Choose a product" />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.length === 0 ? (
-                      <SelectItem value="none" disabled>No projects available</SelectItem>
+                      <SelectItem value="none" disabled>No products available</SelectItem>
                     ) : (
                       projects.map((project: any) => (
-                        <SelectItem key={project.id} value={project.id} data-testid={`option-project-${project.id}`}>
+                        <SelectItem key={project.id} value={project.id} data-testid={`option-product-${project.id}`}>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{project.name}</span>
                             {project.clientName && (
@@ -423,7 +423,7 @@ export default function Reports() {
                   </div>
                   <Badge variant="outline" className="text-xs">
                     {report.scope === "project" ? (
-                      <><Briefcase className="w-3 h-3 mr-1" /> Project</>
+                      <><Briefcase className="w-3 h-3 mr-1" /> Product</>
                     ) : (
                       <><Building2 className="w-3 h-3 mr-1" /> Baseline</>
                     )}

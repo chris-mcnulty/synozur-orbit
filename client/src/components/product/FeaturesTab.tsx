@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Trash2, Edit2, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown } from "lucide-react";
+import { Plus, Loader2, Trash2, Edit2, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown, Table as TableIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface ProductFeature {
@@ -527,6 +528,24 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {features.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const featuresToExport = features.map((f): CSVExportItem => ({
+                  title: f.name || "",
+                  description: f.description || "",
+                  category: f.category || "other",
+                }));
+                exportToCSV(featuresToExport, "Product_Features");
+              }}
+              data-testid="button-export-features-csv"
+            >
+              <TableIcon className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
+          )}
 
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>

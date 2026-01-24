@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
-import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem } from "lucide-react";
+import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 
@@ -463,6 +463,52 @@ export default function Landing() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Export & Portability */}
+      <section className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Export & Portability</p>
+            <h2 className="text-3xl font-bold mb-6">Take your intelligence everywhere</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Orbit makes it easy to export data for collaboration, presentations, and digital visioning tools like Mural or Miro.
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                icon: FileDown,
+                category: "PDF Reports",
+                items: ["Competitive Analysis Report", "Battlecard PDFs", "Full Analysis Report", "Product-Scoped Reports"]
+              },
+              {
+                icon: Table,
+                category: "CSV Exports",
+                items: ["Gap Analysis", "Strategic Recommendations", "AI Roadmap Suggestions", "Product Features", "Roadmap Items"]
+              },
+              {
+                icon: Download,
+                category: "Markdown & Word",
+                items: ["GTM Plans", "Messaging Frameworks", "Executive Summaries", "Market Export"]
+              }
+            ].map((exportType, i) => (
+              <div key={i} className="p-6 rounded-xl bg-card border border-border">
+                <exportType.icon size={28} className="text-primary mb-4" />
+                <h3 className="font-semibold mb-4">{exportType.category}</h3>
+                <ul className="space-y-2">
+                  {exportType.items.map((item, j) => (
+                    <li key={j} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle2 size={14} className="text-primary flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </div>
       </section>
