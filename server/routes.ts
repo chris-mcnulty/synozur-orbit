@@ -11551,13 +11551,22 @@ Generate a comprehensive battlecard in this JSON format:
         return res.status(404).json({ error: "Marketing plan not found" });
       }
 
-      const { categories = [], periods = [] } = req.body;
+      const { categories = [], periods = [], deleteExisting = false } = req.body;
       
       if (!categories.length || !periods.length) {
         return res.status(400).json({ error: "Please select at least one category and one time period" });
       }
 
-      // Get existing tasks to avoid duplicates
+      // Handle data cleanup if requested
+      if (deleteExisting) {
+        // Delete all tasks for this plan
+        const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+        for (const task of existingTasks) {
+          await storage.deleteMarketingTask(task.id, plan.id, toContextFilter(ctx));
+        }
+      }
+
+      // Get existing tasks to avoid duplicates (will be empty if deleteExisting was true)
       const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
       
       // Get competitive intelligence context
