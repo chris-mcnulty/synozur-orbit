@@ -196,7 +196,7 @@ export default function MarketingPlanDetail() {
   });
 
   const generateTasks = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ deleteExisting }: { deleteExisting: boolean }) => {
       const response = await fetch(`/api/marketing-plans/${id}/generate-tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -204,6 +204,7 @@ export default function MarketingPlanDetail() {
         body: JSON.stringify({
           categories: selectedCategories,
           periods: selectedPeriods,
+          deleteExisting,
         }),
       });
       if (!response.ok) {
@@ -621,19 +622,50 @@ export default function MarketingPlanDetail() {
                       {saveConfig.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       Save & Add Tasks Manually
                     </Button>
-                    <Button 
-                      onClick={() => {
-                        setIsGenerating(true);
-                        saveConfig.mutate();
-                        generateTasks.mutate();
-                      }} 
-                      disabled={selectedPeriods.length === 0 || saveConfig.isPending || generateTasks.isPending}
-                      data-testid="button-generate-tasks"
-                    >
-                      {(saveConfig.isPending || generateTasks.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Generate AI Suggestions
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          disabled={selectedPeriods.length === 0 || saveConfig.isPending || generateTasks.isPending}
+                          data-testid="button-generate-tasks-trigger"
+                        >
+                          {(saveConfig.isPending || generateTasks.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Generate AI Suggestions
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Generate Marketing Plan Tasks</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Would you like to keep any existing tasks in this plan, or delete them and start fresh?
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => {
+                              setIsGenerating(true);
+                              saveConfig.mutate(undefined, {
+                                onSuccess: () => generateTasks.mutate({ deleteExisting: false })
+                              });
+                            }}
+                          >
+                            Keep Existing Data
+                          </AlertDialogAction>
+                          <AlertDialogAction 
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                              setIsGenerating(true);
+                              saveConfig.mutate(undefined, {
+                                onSuccess: () => generateTasks.mutate({ deleteExisting: true })
+                              });
+                            }}
+                          >
+                            Delete & Start Fresh
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               </CardContent>
