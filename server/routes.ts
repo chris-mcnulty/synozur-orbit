@@ -1500,7 +1500,7 @@ export async function registerRoutes(
   app.post("/api/company-profile/:id/refresh", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const profileId = parseInt(req.params.id);
+      const profileId = req.params.id;
       const profile = await storage.getCompanyProfile(profileId);
       
       if (!profile) {
@@ -1516,7 +1516,7 @@ export async function registerRoutes(
         
         if (crawlResult.pages.length > 0) {
           const combinedContent = getCombinedContent(crawlResult);
-          await storage.updateCompanyProfile(profileId, {
+          await storage.updateCompanyProfile(profile.id, {
             crawlData: {
               pagesCrawled: crawlResult.pages.map(p => ({
                 url: p.url,
@@ -1525,7 +1525,7 @@ export async function registerRoutes(
                 wordCount: p.wordCount,
               })),
               totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
-              crawledAt: crawlResult.crawledAt,
+              crawledAt: crawlResult.crawledAt.toISOString(),
             },
             previousWebsiteContent: combinedContent.substring(0, 100000),
             lastCrawl: new Date(),
@@ -1535,13 +1535,10 @@ export async function registerRoutes(
         }
       }
       
-      // Refresh LinkedIn
+      // Refresh LinkedIn - using company profile social monitoring
       if (profile.linkedInUrl) {
-        const { monitorCompetitorSocialMedia } = await import("./services/social-monitoring");
-        await monitorCompetitorSocialMedia(
-          { id: profile.id, linkedInUrl: profile.linkedInUrl } as any,
-          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId }
-        );
+        const { monitorCompanyProfileSocialMedia } = await import("./services/social-monitoring");
+        await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
         results.linkedin = { success: true };
       }
       
@@ -4453,40 +4450,34 @@ Respond in JSON format:
         const tenantDomain = tenant?.domain || "";
         
         if (tenantDomain) {
+          const contextFilter: ContextFilter = {
+            tenantId: market.tenantId,
+            marketId: market.id,
+            tenantDomain,
+          };
+          
           // Get all competitors and company profile in this market
-          const competitors = await storage.getCompetitorsByContext({ 
-            tenantDomain,
-            marketId: market.id 
-          });
-          const companyProfile = await storage.getCompanyProfileByContext({
-            tenantDomain,
-            marketId: market.id
-          });
+          const competitors = await storage.getCompetitorsByContext(contextFilter);
+          const companyProfile = await storage.getCompanyProfileByContext(contextFilter);
           
           console.log(`[Unarchive] Triggering refresh for market ${market.name} - ${competitors.length} competitors`);
           
           // Trigger website monitoring for all competitors
           for (const competitor of competitors) {
-            monitorCompetitorWebsite(competitor, {
-              tenantDomain,
-              marketId: market.id
-            }).catch(err => console.error(`Unarchive refresh error for ${competitor.name}:`, err));
+            monitorCompetitorWebsite(competitor.id, undefined, tenantDomain)
+              .catch(err => console.error(`Unarchive refresh error for ${competitor.name}:`, err));
           }
           
           // Trigger baseline monitoring
           if (companyProfile) {
-            monitorCompanyProfileWebsite(companyProfile, {
-              tenantDomain,
-              marketId: market.id
-            }).catch(err => console.error(`Unarchive refresh error for baseline:`, err));
+            monitorCompanyProfileWebsite(companyProfile.id, user.id, tenantDomain, market.id)
+              .catch(err => console.error(`Unarchive refresh error for baseline:`, err));
           }
           
           // Trigger social monitoring for all competitors
           for (const competitor of competitors) {
-            monitorCompetitorSocialMedia(competitor, {
-              tenantDomain,
-              marketId: market.id
-            }).catch(err => console.error(`Unarchive social refresh error for ${competitor.name}:`, err));
+            monitorCompetitorSocialMedia(competitor.id, undefined, tenantDomain)
+              .catch(err => console.error(`Unarchive social refresh error for ${competitor.name}:`, err));
           }
         }
       }
@@ -4721,7 +4712,7 @@ Respond in JSON format:
             if (compScore.featureBreadthScore) md += `- **Feature Breadth:** ${compScore.featureBreadthScore}\n`;
             if (compScore.contentActivityScore) md += `- **Content Activity:** ${compScore.contentActivityScore}\n`;
             if (compScore.socialEngagementScore) md += `- **Social Engagement:** ${compScore.socialEngagementScore}\n`;
-            if (compScore.trendDirection) md += `- **Trend:** ${compScore.trendDirection} (${compScore.trendDelta >= 0 ? '+' : ''}${compScore.trendDelta || 0})\n`;
+            if (compScore.trendDirection) md += `- **Trend:** ${compScore.trendDirection} (${(compScore.trendDelta || 0) >= 0 ? '+' : ''}${compScore.trendDelta || 0})\n`;
             md += `\n`;
           }
 
@@ -5761,7 +5752,6 @@ Respond in JSON format:
           url: competitorUrl,
           status: "pending",
           userId: ctx.userId,
-          tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
         });
         
@@ -5895,6 +5885,11 @@ Respond in JSON format:
       // AI Analysis for product
       let analysisData: any = {};
       try {
+        const anthropic = new Anthropic({
+          apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+          baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+        });
+        
         const analysisPrompt = `Analyze this product page and provide competitive intelligence:
 
 Product: ${product.name}
@@ -5943,7 +5938,7 @@ Provide analysis in this JSON format:
       const updated = await storage.updateProduct(product.id, {
         crawlData: crawlResult,
         analysisData: Object.keys(analysisData).length > 0 ? analysisData : undefined,
-        lastCrawled: new Date(),
+        updatedAt: new Date(),
       });
 
       res.json({ 
