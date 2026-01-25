@@ -390,6 +390,22 @@ Deep LinkedIn post content tracking (beyond basic profile metrics):
 
 ---
 
+## Known Issues / Bug Fixes
+
+### PDF Full Analysis Report Improvements
+**Status**: Backlogged (Reported January 2026)
+**Priority**: Medium
+Several issues identified in the Full Analysis Report PDF generation:
+- [ ] **Key Themes Section**: Currently displays "Based on profile" placeholder repeatedly instead of actual extracted themes from analysis data
+- [ ] **Messaging Comparison**: Shows generic "Competitor" text instead of actual competitor names - needs to pull competitor name from the data
+- [ ] **Active Products Section**: Needs more high-level findings content about product analysis results rather than minimal summary
+- [ ] **Messaging Framework Formatting**: Should use proper markdown/HTML formatting instead of raw verbatim quotes - improve visual presentation
+- [ ] **GTM Plan Missing**: The generated GTM Plan is not included in the full report - should be added as a section when available
+**Files**: `server/routes.ts` (PDF generation endpoint), `server/services/report-generator.ts` (if exists)
+**Effort**: Medium
+
+---
+
 ## Long-Range / Future (May Become Separate App)
 
 ### Product Management Module

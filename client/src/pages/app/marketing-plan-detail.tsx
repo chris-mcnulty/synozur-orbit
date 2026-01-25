@@ -1009,7 +1009,7 @@ export default function MarketingPlanDetail() {
                   <Plus className="w-4 h-4 mr-2" />
                   Add Task Manually
                 </Button>
-                <Button onClick={() => generateTasks.mutate()} disabled={generateTasks.isPending}>
+                <Button onClick={() => generateTasks.mutate({ deleteExisting: false })} disabled={generateTasks.isPending}>
                   {generateTasks.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   Generate AI Suggestions
                 </Button>
