@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown } from "lucide-react";
+import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -659,6 +660,27 @@ export default function MarketingPlanDetail() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                const categoryLookup = ACTIVITY_CATEGORIES.reduce((acc, cat) => {
+                  acc[cat.value] = cat.label;
+                  return acc;
+                }, {} as Record<string, string>);
+                const csvItems: CSVExportItem[] = tasks.map(task => ({
+                  title: task.title,
+                  description: task.description || "",
+                  category: categoryLookup[task.activityGroup] || task.activityGroup,
+                }));
+                exportToCSV(csvItems, `${plan.name}_marketing_plan`);
+                toast({ title: "Exported", description: `${tasks.length} tasks exported to CSV.` });
+              }}
+              disabled={tasks.length === 0}
+              data-testid="button-export-csv"
+            >
+              <FileDown className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
             <Button variant="outline" onClick={() => setIsConfiguring(true)}>
               <Settings className="w-4 h-4 mr-2" />
               Reconfigure
