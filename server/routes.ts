@@ -1525,10 +1525,10 @@ export async function registerRoutes(
                 wordCount: p.wordCount,
               })),
               totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
-              crawledAt: crawlResult.crawledAt.toISOString(),
+              crawledAt: crawlResult.crawledAt,
             },
             previousWebsiteContent: combinedContent.substring(0, 100000),
-            lastCrawl: new Date(),
+            lastCrawl: new Date().toISOString(),
             lastFullCrawl: new Date(),
           });
           results.website = { success: true, pages: crawlResult.pages.length };
