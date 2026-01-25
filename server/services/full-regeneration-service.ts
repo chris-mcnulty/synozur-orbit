@@ -3,7 +3,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
-import { monitorCompetitorSocialMedia as monitorSocialMedia } from "./social-monitoring";
+import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -118,7 +118,7 @@ async function runRegenerationInBackground(
               crawledAt: crawlResult.crawledAt,
             },
             previousWebsiteContent: combinedContent.substring(0, 100000),
-            lastCrawl: new Date(),
+            lastCrawl: new Date().toISOString(),
             lastFullCrawl: new Date(),
           });
           console.log(`Full regen: Baseline website crawled - ${crawlResult.pages.length} pages`);
@@ -131,9 +131,11 @@ async function runRegenerationInBackground(
       if (companyProfile.linkedInUrl) {
         try {
           console.log(`Full regen: Refreshing baseline LinkedIn data...`);
-          await monitorSocialMedia(
-            { id: companyProfile.id, linkedInUrl: companyProfile.linkedInUrl } as any,
-            { tenantDomain, marketId: marketId || companyProfile.marketId || undefined }
+          await monitorCompanyProfileSocialMedia(
+            companyProfile.id,
+            userId,
+            tenantDomain,
+            marketId || companyProfile.marketId || undefined
           );
           console.log(`Full regen: Baseline LinkedIn data refreshed`);
         } catch (error) {
