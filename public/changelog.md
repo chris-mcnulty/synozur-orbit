@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+*No unreleased changes*
+
+---
+
+## [1.0.0-beta.1] - 2026-01-26
+
 ### Added
 - Marketing Planner (Enterprise-only) - AI-powered marketing planning module
   - Create quarterly, half-year, or annual marketing plans
@@ -55,9 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Daily usage bar chart (last 14 days) and pie chart showing usage by operation type
   - Recent activity table with operation details, model names, and tenant attribution
   - Database table for tracking all AI API calls (provider, model, tokens, costs)
-- Backlog.md file with comprehensive MVP feature tracking
-
-### Added
 - Blog/RSS Feed Monitoring for Manual Competitors - Add direct links to competitor blogs or RSS feeds
   - New "Add Blog/RSS Feed" option in competitor dropdown menu
   - Test blog URLs before saving to verify they can be parsed
@@ -73,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now detects `/insight` and `/insights` pages as blog content (common for B2B companies)
   - Prioritizes blog → insights → news → articles (fallback order)
   - Improves content discovery for professional services and consulting firms
+- Backlog.md file with comprehensive MVP feature tracking
 
 ### Fixed
 - "Regenerate All" now preserves manual research - competitors with manually entered research (source === "manual") are no longer overwritten during full regeneration, protecting hand-entered data for companies that block web crawlers
