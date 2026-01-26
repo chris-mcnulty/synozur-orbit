@@ -68,7 +68,7 @@ Synozur Orbit is an AI-powered go-to-market intelligence platform designed to he
 **What Happens Next:**
 - Your account is created as a **Standard User**
 - A tenant (organization) is automatically created based on your email domain
-- If you're the first user from your domain, you're **automatically promoted to Domain Admin**
+- If you're the first user from your domain, you're **automatically promoted to Domain Admin** (gives you team management and organization settings access)
 - You'll receive a welcome email
 - Your account information is synced to HubSpot CRM (for Synozur tracking)
 - Your organization starts with a **60-day trial period** of the Enterprise plan
@@ -98,7 +98,7 @@ You'll receive email reminders about your trial status at key milestones:
 - Limited to 1 competitor and 1 analysis per month
 - Contact sales@synozur.com to upgrade to Pro or Enterprise
 
-**Note:** The final 14 days of reminder emails include contact information (contactus@synozur.com) for establishing a client relationship and exploring paid plans.
+**Note:** Reminder emails starting from day 46 onwards (14 days remaining) include contact information (contactus@synozur.com) for establishing a client relationship and exploring paid plans.
 
 ### Joining an Existing Organization
 
@@ -264,7 +264,7 @@ The Overview page (located at `/app`) is your home page and central dashboard wh
 - Re-crawls all competitor websites
 - Updates all analysis data
 - Use quarterly or when major market changes occur
-- **Note:** The "Regenerate All" operation now preserves manual research. Competitors with manually entered research (source === "manual") are not overwritten, protecting hand-entered data for companies that block web crawlers.
+- **Note:** The "Regenerate All" operation now preserves manual research. Competitors with manually entered research are not overwritten, protecting hand-entered data for companies that block web crawlers.
 
 ### Dashboard (Legacy)
 
