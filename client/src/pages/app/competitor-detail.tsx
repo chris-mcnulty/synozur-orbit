@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -232,6 +232,48 @@ export default function CompetitorDetail() {
     onError: (error: Error) => {
       toast({
         title: "Monitoring Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateReportMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/competitors/${id}/report/pdf`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to generate report");
+      }
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = `Competitor_Report_${competitor?.name || "Report"}.pdf`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        if (match) filename = match[1];
+      }
+      return { blob, filename };
+    },
+    onSuccess: ({ blob, filename }) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({
+        title: "Report Generated",
+        description: "Your competitor intelligence report has been downloaded.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Report Generation Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -523,8 +565,21 @@ export default function CompetitorDetail() {
                 </TooltipProvider>
               )}
               
-              <Button className="gap-2">
-                <FileText className="h-4 w-4" /> Generate Report
+              <Button 
+                className="gap-2"
+                onClick={() => generateReportMutation.mutate()}
+                disabled={generateReportMutation.isPending}
+                data-testid="button-generate-report"
+              >
+                {generateReportMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" /> Generate Report
+                  </>
+                )}
               </Button>
             </div>
           </div>

@@ -2248,6 +2248,43 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // Competitor-specific PDF report
+  app.get("/api/competitors/:id/report/pdf", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { id } = req.params;
+
+      const competitor = await storage.getCompetitor(id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { generateCompetitorPdfReport } = await import("./services/pdf-generator");
+      const { pdfBuffer, report } = await generateCompetitorPdfReport(
+        id,
+        ctx.tenantDomain,
+        ctx.userId,
+        ctx.marketId || undefined
+      );
+
+      const filename = `Competitor_Report_${competitor.name.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().split('T')[0]}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("X-Report-Id", report.id);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Competitor PDF generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/reports", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);

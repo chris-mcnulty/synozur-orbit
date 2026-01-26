@@ -1290,3 +1290,568 @@ export async function getReportPdf(reportId: string): Promise<Buffer | null> {
   }
   return null;
 }
+
+interface CompetitorReportData {
+  competitor: Competitor;
+  companyProfile: CompanyProfile | null;
+  battlecard: Battlecard | null;
+  scores: {
+    overallScore: number;
+    innovationScore: number;
+    marketPresenceScore: number;
+  } | null;
+  generatedAt: Date;
+  tenantDomain: string;
+  marketName?: string;
+  reportName: string;
+  author: string;
+}
+
+function generateCompetitorReportHtml(data: CompetitorReportData): string {
+  const formattedDate = format(data.generatedAt, "MMMM d, yyyy");
+  const synozurLogo = getSynozurLogoBase64();
+  const orbitLogo = getOrbitLogoBase64();
+  const fontFaces = getFontFacesCss();
+
+  const headerLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 12px;"><img src="${synozurLogo}" alt="Synozur" style="height: 24px; width: auto;"><span style="color: #94A3B8; font-size: 20px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+      : synozurLogo
+        ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${synozurLogo}" alt="Synozur" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
+        : `<div class="logo"><span>Orbit</span></div>`;
+
+  const coverLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;"><img src="${synozurLogo}" alt="Synozur" style="height: 48px; width: auto;"><span style="color: #94A3B8; font-size: 28px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="margin-bottom: 24px;"><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+      : synozurLogo
+        ? `<img src="${synozurLogo}" alt="Synozur" style="height: 40px; width: auto; margin-bottom: 24px;">`
+        : "";
+
+  const analysisData = data.competitor.analysisData as any;
+  const linkedIn = data.competitor.linkedInEngagement as any;
+  const instagram = data.competitor.instagramEngagement as any;
+  const crawlData = data.competitor.crawlData as any;
+  const blogSnapshot = data.competitor.blogSnapshot as any;
+
+  const ORBIT_FOOTER = `
+    <div style="text-align: center; padding: 12px 0; border-top: 1px solid #E2E8F0; margin-top: 40px; font-size: 10px; color: #64748B;">
+      <div style="margin-bottom: 4px;">Orbit • orbit.synozur.com</div>
+      <div>Published by The Synozur Alliance LLC • www.synozur.com • © 2026 All Rights Reserved</div>
+      <div style="margin-top: 4px;">Confidential - ${escapeHtml(data.tenantDomain)} | Generated ${formattedDate}</div>
+    </div>
+  `;
+
+  const battlecardHtml = data.battlecard ? `
+    <div class="section">
+      <div class="section-title">Battlecard</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+        <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 16px;">
+          <div style="font-weight: 600; color: #DC2626; font-size: 13px; margin-bottom: 12px;">THEIR STRENGTHS</div>
+          ${(Array.isArray(data.battlecard.strengths) ? data.battlecard.strengths : []).map((s: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(s))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No strengths identified</div>'}
+        </div>
+        <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 16px;">
+          <div style="font-weight: 600; color: #D97706; font-size: 13px; margin-bottom: 12px;">THEIR WEAKNESSES</div>
+          ${(Array.isArray(data.battlecard.weaknesses) ? data.battlecard.weaknesses : []).map((w: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(w))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No weaknesses identified</div>'}
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 16px;">
+          <div style="font-weight: 600; color: #059669; font-size: 13px; margin-bottom: 12px;">OUR ADVANTAGES</div>
+          ${(Array.isArray(data.battlecard.ourAdvantages) ? data.battlecard.ourAdvantages : []).map((a: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(a))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No advantages identified</div>'}
+        </div>
+        <div style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 16px;">
+          <div style="font-weight: 600; color: #4F46E5; font-size: 13px; margin-bottom: 12px;">HOW TO WIN</div>
+          ${(Array.isArray(data.battlecard.talkingPoints) ? data.battlecard.talkingPoints : []).map((t: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(t))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No talking points defined</div>'}
+        </div>
+      </div>
+    </div>
+  ` : '';
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    ${fontFaces}
+    @page {
+      size: A4;
+      margin: 20mm 15mm 30mm 15mm;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #FFFFFF;
+      color: #1E293B;
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #334155 100%);
+      color: white;
+    }
+    .cover-title {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .cover-subtitle {
+      font-size: 20px;
+      color: #94A3B8;
+      margin-bottom: 40px;
+    }
+    .cover-meta {
+      font-size: 14px;
+      color: #64748B;
+    }
+    .page-break {
+      page-break-after: always;
+    }
+    .content-wrapper {
+      padding: 20px 0;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #E2E8F0;
+      margin-bottom: 24px;
+    }
+    .report-meta {
+      text-align: right;
+      font-size: 12px;
+      color: #64748B;
+    }
+    .section {
+      margin-bottom: 32px;
+    }
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1E293B;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #6366F1;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #64748B;
+      margin-top: 4px;
+    }
+    .info-card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .info-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748B;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .info-value {
+      font-size: 14px;
+      color: #1E293B;
+    }
+    .keywords-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .keyword-tag {
+      background: #EEF2FF;
+      color: #4F46E5;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Cover Page -->
+  <div class="cover-page">
+    ${coverLogo}
+    <div class="cover-title">Competitor Intelligence Report</div>
+    <div class="cover-subtitle">${escapeHtml(data.competitor.name)}</div>
+    <div class="cover-meta">
+      <div>${formattedDate}</div>
+      <div>Prepared by ${escapeHtml(data.author)}</div>
+      ${data.marketName ? `<div style="margin-top: 8px;">Market: ${escapeHtml(data.marketName)}</div>` : ""}
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- Overview Page -->
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Competitor Overview</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">${escapeHtml(data.competitor.name)}</div>
+      
+      ${data.scores ? `
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value">${data.scores.overallScore.toFixed(0)}</div>
+          <div class="stat-label">Orbit Score</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${data.scores.innovationScore.toFixed(0)}</div>
+          <div class="stat-label">Innovation Score</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${data.scores.marketPresenceScore.toFixed(0)}</div>
+          <div class="stat-label">Market Presence</div>
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="info-card">
+        <div class="info-label">Website</div>
+        <div class="info-value">${escapeHtml(data.competitor.url || 'Not specified')}</div>
+      </div>
+
+      ${analysisData?.summary ? `
+      <div class="info-card">
+        <div class="info-label">Summary</div>
+        <div class="info-value">${escapeHtml(analysisData.summary)}</div>
+      </div>
+      ` : ''}
+
+      ${analysisData?.valueProposition ? `
+      <div class="info-card">
+        <div class="info-label">Value Proposition</div>
+        <div class="info-value">${escapeHtml(analysisData.valueProposition)}</div>
+      </div>
+      ` : ''}
+
+      ${analysisData?.targetAudience ? `
+      <div class="info-card">
+        <div class="info-label">Target Audience</div>
+        <div class="info-value">${escapeHtml(analysisData.targetAudience)}</div>
+      </div>
+      ` : ''}
+
+      ${analysisData?.tone ? `
+      <div class="info-card">
+        <div class="info-label">Brand Tone</div>
+        <div class="info-value">${escapeHtml(analysisData.tone)}</div>
+      </div>
+      ` : ''}
+
+      ${analysisData?.keywords && Array.isArray(analysisData.keywords) && analysisData.keywords.length > 0 ? `
+      <div class="info-card">
+        <div class="info-label">Key Themes</div>
+        <div class="keywords-container">
+          ${analysisData.keywords.slice(0, 10).map((k: string) => `<span class="keyword-tag">${escapeHtml(k)}</span>`).join("")}
+        </div>
+      </div>
+      ` : ''}
+
+      ${analysisData?.keyMessages && Array.isArray(analysisData.keyMessages) && analysisData.keyMessages.length > 0 ? `
+      <div class="info-card">
+        <div class="info-label">Key Messages</div>
+        <div class="info-value">
+          ${analysisData.keyMessages.map((m: string) => `<div style="margin-bottom: 6px;">• ${escapeHtml(m)}</div>`).join("")}
+        </div>
+      </div>
+      ` : ''}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+
+  ${data.battlecard ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Competitive Battlecard</div>
+      </div>
+    </div>
+
+    ${battlecardHtml}
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ''}
+
+  ${(linkedIn || instagram || blogSnapshot) ? `
+  <div class="page-break"></div>
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Social & Web Presence</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Digital Presence</div>
+      
+      ${linkedIn ? `
+      <div class="info-card">
+        <div class="info-label">LinkedIn</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 8px;">
+          ${linkedIn.followers ? `<div><div style="font-size: 20px; font-weight: 600; color: #0A66C2;">${linkedIn.followers.toLocaleString()}</div><div style="font-size: 11px; color: #64748B;">Followers</div></div>` : ''}
+          ${linkedIn.engagementRate ? `<div><div style="font-size: 20px; font-weight: 600; color: #0A66C2;">${(linkedIn.engagementRate * 100).toFixed(1)}%</div><div style="font-size: 11px; color: #64748B;">Engagement Rate</div></div>` : ''}
+          ${linkedIn.postFrequency ? `<div><div style="font-size: 20px; font-weight: 600; color: #0A66C2;">${linkedIn.postFrequency}</div><div style="font-size: 11px; color: #64748B;">Posts/Week</div></div>` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      ${instagram ? `
+      <div class="info-card">
+        <div class="info-label">Instagram</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 8px;">
+          ${instagram.followers ? `<div><div style="font-size: 20px; font-weight: 600; color: #E4405F;">${instagram.followers.toLocaleString()}</div><div style="font-size: 11px; color: #64748B;">Followers</div></div>` : ''}
+          ${instagram.engagementRate ? `<div><div style="font-size: 20px; font-weight: 600; color: #E4405F;">${(instagram.engagementRate * 100).toFixed(1)}%</div><div style="font-size: 11px; color: #64748B;">Engagement Rate</div></div>` : ''}
+          ${instagram.postFrequency ? `<div><div style="font-size: 20px; font-weight: 600; color: #E4405F;">${instagram.postFrequency}</div><div style="font-size: 11px; color: #64748B;">Posts/Week</div></div>` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      ${blogSnapshot ? `
+      <div class="info-card">
+        <div class="info-label">Blog Activity</div>
+        <div class="info-value">
+          <div style="font-size: 20px; font-weight: 600; color: #6366F1; margin-bottom: 8px;">${blogSnapshot.postCount || 0} posts tracked</div>
+          ${blogSnapshot.latestTitles && Array.isArray(blogSnapshot.latestTitles) ? `
+          <div style="margin-top: 8px;">
+            <div style="font-size: 12px; color: #64748B; margin-bottom: 4px;">Recent Topics:</div>
+            ${blogSnapshot.latestTitles.slice(0, 5).map((t: string) => `<div style="font-size: 13px; color: #475569; margin-bottom: 2px;">• ${escapeHtml(t)}</div>`).join("")}
+          </div>
+          ` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      ${crawlData ? `
+      <div class="info-card">
+        <div class="info-label">Website Crawl</div>
+        <div class="info-value">
+          ${crawlData.pages?.length ? `<div>${crawlData.pages.length} pages analyzed</div>` : ''}
+          ${crawlData.totalWordCount ? `<div style="font-size: 13px; color: #64748B;">${crawlData.totalWordCount.toLocaleString()} total words</div>` : ''}
+          ${crawlData.crawledAt ? `<div style="font-size: 12px; color: #94A3B8; margin-top: 4px;">Last crawled: ${format(new Date(crawlData.crawledAt), "MMM d, yyyy")}</div>` : ''}
+        </div>
+      </div>
+      ` : ''}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+  ` : ''}
+
+</body>
+</html>
+  `;
+}
+
+export async function generateCompetitorPdfReport(
+  competitorId: string,
+  tenantDomain: string,
+  userId: string,
+  marketId?: string
+): Promise<{ pdfBuffer: Buffer; report: Report }> {
+  const user = await storage.getUser(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const competitor = await storage.getCompetitor(competitorId);
+  if (!competitor) {
+    throw new Error("Competitor not found");
+  }
+
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant) {
+    throw new Error("Tenant not found");
+  }
+
+  let marketName: string | undefined;
+  if (marketId) {
+    const market = await storage.getMarket(marketId);
+    marketName = market?.name;
+  }
+
+  const contextFilter = { 
+    tenantId: tenant.id, 
+    tenantDomain, 
+    marketId: marketId || "",
+    isDefaultMarket: !marketId
+  };
+
+  const companyProfile = await storage.getCompanyProfileByContext(contextFilter);
+  
+  const battlecards = await storage.getBattlecardsByContext(contextFilter);
+  const battlecard = battlecards.find(bc => bc.competitorId === competitorId) || null;
+
+  const analysisData = competitor.analysisData as any;
+  const linkedIn = competitor.linkedInEngagement as any;
+  const instagram = competitor.instagramEngagement as any;
+  const crawlData = competitor.crawlData as any;
+  const blogSnapshot = competitor.blogSnapshot as any;
+
+  let scores: CompetitorReportData["scores"] = null;
+  if (analysisData) {
+    const calculated = calculateScores(
+      analysisData,
+      linkedIn,
+      instagram,
+      crawlData,
+      blogSnapshot,
+      competitor.lastCrawl ? new Date(competitor.lastCrawl) : null
+    );
+    scores = {
+      overallScore: calculated.overallScore,
+      innovationScore: calculated.innovationScore,
+      marketPresenceScore: calculated.marketPresenceScore,
+    };
+  }
+
+  const reportName = `Competitor Report - ${competitor.name} - ${format(new Date(), "yyyy-MM-dd")}`;
+
+  const reportData: CompetitorReportData = {
+    competitor,
+    companyProfile,
+    battlecard,
+    scores,
+    generatedAt: new Date(),
+    tenantDomain,
+    marketName,
+    reportName,
+    author: user.name || user.email,
+  };
+
+  const html = generateCompetitorReportHtml(reportData);
+  const startTime = Date.now();
+
+  const executablePath = await findChromiumPath();
+  console.log(`[Competitor PDF] Starting generation for ${competitor.name}, chromium path: ${executablePath || 'auto-detect'}`);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+      "--disable-extensions",
+      "--disable-background-networking",
+      "--disable-sync",
+      "--disable-translate",
+      "--hide-scrollbars",
+      "--mute-audio",
+      "--disable-web-security",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--js-flags=--max-old-space-size=256",
+      "--disable-software-rasterizer",
+    ],
+    timeout: 180000,
+    protocolTimeout: 180000,
+  });
+
+  console.log(`[Competitor PDF] Browser launched in ${Date.now() - startTime}ms`);
+
+  try {
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    await page.setViewport({ width: 800, height: 600 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    
+    console.log(`[Competitor PDF] Content loaded in ${Date.now() - startTime}ms`);
+    
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "15mm",
+        bottom: "15mm",
+        left: "12mm",
+        right: "12mm",
+      },
+    });
+
+    const pdfSizeKb = Math.round(pdfBuffer.length / 1024);
+    const sizeLabel = pdfSizeKb > 1024 
+      ? `${(pdfSizeKb / 1024).toFixed(1)} MB` 
+      : `${pdfSizeKb} KB`;
+    
+    console.log(`[Competitor PDF] PDF generated in ${Date.now() - startTime}ms, size: ${sizeLabel}`);
+
+    const report = await storage.createReport({
+      name: reportName,
+      date: format(new Date(), "yyyy-MM-dd"),
+      type: "Competitor Intelligence",
+      size: sizeLabel,
+      author: user.name || user.email,
+      status: "Generated",
+      scope: "baseline",
+      projectId: null,
+      tenantDomain,
+      createdBy: userId,
+      fileUrl: null,
+      marketId: marketId || null,
+    });
+
+    return { pdfBuffer: Buffer.from(pdfBuffer), report };
+  } finally {
+    await browser.close();
+  }
+}
