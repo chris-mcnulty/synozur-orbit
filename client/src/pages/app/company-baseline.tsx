@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -30,6 +30,7 @@ export default function CompanyBaseline() {
     linkedInUrl: "",
     instagramUrl: "",
     twitterUrl: "",
+    blogUrl: "",
     description: "",
   });
 
@@ -239,6 +240,7 @@ export default function CompanyBaseline() {
         linkedInUrl: companyProfile.linkedInUrl || "",
         instagramUrl: companyProfile.instagramUrl || "",
         twitterUrl: companyProfile.twitterUrl || "",
+        blogUrl: companyProfile.blogUrl || "",
         description: companyProfile.description || "",
       });
       setLogoUploadTab("url");
@@ -250,6 +252,7 @@ export default function CompanyBaseline() {
         linkedInUrl: "",
         instagramUrl: "",
         twitterUrl: "",
+        blogUrl: "",
         description: "",
       });
     }
@@ -441,6 +444,18 @@ export default function CompanyBaseline() {
                             value={profileForm.twitterUrl}
                             onChange={(e) => setProfileForm({ ...profileForm, twitterUrl: e.target.value })}
                             data-testid="input-twitter"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="blogUrl" className="flex items-center gap-2">
+                            <Rss className="h-4 w-4 text-orange-500" /> Blog URL
+                          </Label>
+                          <Input
+                            id="blogUrl"
+                            placeholder="https://yourcompany.com/blog or RSS feed URL..."
+                            value={profileForm.blogUrl}
+                            onChange={(e) => setProfileForm({ ...profileForm, blogUrl: e.target.value })}
+                            data-testid="input-blog"
                           />
                         </div>
                         <div className="grid gap-2">
@@ -677,6 +692,17 @@ export default function CompanyBaseline() {
                                 />
                               </div>
                               <div className="grid gap-2">
+                                <Label htmlFor="blogUrl" className="flex items-center gap-2">
+                                  <Rss className="h-4 w-4 text-orange-500" /> Blog URL
+                                </Label>
+                                <Input
+                                  id="blogUrl"
+                                  placeholder="https://yourcompany.com/blog or RSS feed URL..."
+                                  value={profileForm.blogUrl}
+                                  onChange={(e) => setProfileForm({ ...profileForm, blogUrl: e.target.value })}
+                                />
+                              </div>
+                              <div className="grid gap-2">
                                 <Label htmlFor="description">Description (optional)</Label>
                                 <Textarea
                                   id="description"
@@ -741,6 +767,11 @@ export default function CompanyBaseline() {
                     {companyProfile.twitterUrl && (
                       <a href={companyProfile.twitterUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-[#1DA1F2]">
                         <Twitter className="w-4 h-4" /> Twitter/X
+                      </a>
+                    )}
+                    {companyProfile.blogUrl && (
+                      <a href={companyProfile.blogUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-orange-500">
+                        <Rss className="w-4 h-4" /> Blog
                       </a>
                     )}
                   </div>

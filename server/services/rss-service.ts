@@ -245,3 +245,79 @@ export async function testBlogUrl(blogUrl: string): Promise<{
     error: result.error,
   };
 }
+
+export async function monitorBlogForCompanyProfile(
+  companyProfileId: string,
+  blogUrl: string,
+  companyName: string,
+  userId: string,
+  tenantDomain: string,
+  marketId?: string | null
+): Promise<{ success: boolean; newPosts: number; error?: string }> {
+  const result = await fetchBlogFeed(blogUrl);
+  
+  if (!result.success) {
+    return { success: false, newPosts: 0, error: result.error };
+  }
+  
+  const profile = await storage.getCompanyProfile(companyProfileId);
+  if (!profile) {
+    return { success: false, newPosts: 0, error: "Company profile not found" };
+  }
+  
+  const previousSnapshot = profile.blogSnapshot as any;
+  const previousTitles = previousSnapshot?.latestTitles || [];
+  
+  const currentTitles = result.posts.slice(0, 10).map(p => p.title);
+  const newTitles = currentTitles.filter(t => !previousTitles.includes(t));
+  
+  const newPostsWithDetails = result.posts
+    .filter(p => newTitles.includes(p.title))
+    .slice(0, 5)
+    .map(p => ({
+      title: p.title,
+      link: p.link || null,
+      excerpt: p.description?.slice(0, 200) || null,
+      pubDate: p.pubDate || null,
+    }));
+  
+  const newSnapshot = {
+    postCount: result.posts.length,
+    latestTitles: currentTitles,
+    latestPosts: result.posts.slice(0, 5).map(p => ({
+      title: p.title,
+      link: p.link || null,
+      excerpt: p.description?.slice(0, 200) || null,
+      pubDate: p.pubDate || null,
+    })),
+    feedType: result.feedType,
+    capturedAt: new Date().toISOString(),
+    blogUrl,
+  };
+  
+  await storage.updateCompanyProfile(companyProfileId, {
+    blogSnapshot: newSnapshot,
+  });
+  
+  if (newTitles.length > 0 && previousTitles.length > 0) {
+    await storage.createActivity({
+      type: "blog_post",
+      sourceType: "baseline",
+      companyProfileId,
+      competitorName: companyName,
+      description: `Published ${newTitles.length} new blog post${newTitles.length > 1 ? "s" : ""}: "${newTitles[0]}"${newTitles.length > 1 ? " and more" : ""}`,
+      details: { 
+        newPosts: newPostsWithDetails,
+        feedType: result.feedType,
+        blogUrl,
+      },
+      date: new Date().toISOString(),
+      impact: newTitles.length >= 3 ? "high" : "medium",
+      userId,
+      tenantDomain,
+      marketId: marketId || null,
+    });
+  }
+  
+  return { success: true, newPosts: newTitles.length };
+}

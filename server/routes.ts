@@ -29,7 +29,7 @@ import { startFullRegeneration, getRegenerationStatus } from "./services/full-re
 import { calculateScores, calculateBaselineScore, getCurrentPeriod, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
-import { testBlogUrl, monitorBlogForCompetitor } from "./services/rss-service";
+import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
 import { validateDocumentUpload } from "./utils/file-validator";
 
@@ -3376,7 +3376,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, logoUrl } = parsed.data;
+      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, blogUrl, logoUrl } = parsed.data;
       
       // Validate websiteUrl for security (SSRF protection)
       const urlValidation = await validateCompetitorUrl(websiteUrl);
@@ -3384,6 +3384,16 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: urlValidation.error });
       }
       const validatedWebsiteUrl = urlValidation.normalizedUrl!;
+      
+      // Validate blogUrl for security (SSRF protection) if provided
+      let validatedBlogUrl: string | null = null;
+      if (blogUrl) {
+        const blogUrlValidation = await validateBlogUrl(blogUrl);
+        if (!blogUrlValidation.isValid) {
+          return res.status(400).json({ error: `Blog URL: ${blogUrlValidation.error}` });
+        }
+        validatedBlogUrl = blogUrlValidation.normalizedUrl!;
+      }
       
       // Plan-gating: Trial/Free plans can only baseline their own domain
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
@@ -3411,6 +3421,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
           twitterUrl: twitterUrl || null,
+          blogUrl: validatedBlogUrl,
           description,
         });
         res.json(updated);
@@ -3425,6 +3436,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           linkedInUrl: linkedInUrl || null,
           instagramUrl: instagramUrl || null,
           twitterUrl: twitterUrl || null,
+          blogUrl: validatedBlogUrl,
           description,
         });
         res.json(profile);

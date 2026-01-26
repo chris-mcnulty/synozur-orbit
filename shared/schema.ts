@@ -700,6 +700,7 @@ export const companyProfiles = pgTable("company_profiles", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
+  blogUrl: text("blog_url"), // Blog or RSS feed URL for baseline company
   description: text("description"),
   lastAnalysis: timestamp("last_analysis"),
   analysisData: jsonb("analysis_data"),
