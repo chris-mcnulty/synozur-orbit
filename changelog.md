@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports RSS feeds, Atom feeds, and direct blog page HTML parsing
   - Detects new blog posts and creates activity entries when competitors publish
   - Useful for companies that block web crawlers but have accessible blogs
+- Blog URL Field for Baseline Company - Track your own company's blog activity
+  - New blog URL input field in Company Baseline settings with RSS icon
+  - SSRF protection validates blog URLs before saving (blocks private IPs, internal domains)
+  - Blog monitoring function updates baseline Orbit Score (blog activity = 20% of Innovation Score)
+  - Activity feed tracks new blog posts from baseline company
+- Enhanced Blog Discovery in Web Crawler
+  - Now detects `/insight` and `/insights` pages as blog content (common for B2B companies)
+  - Prioritizes blog → insights → news → articles (fallback order)
+  - Improves content discovery for professional services and consulting firms
 
 ### Fixed
 - "Regenerate All" now preserves manual research - competitors with manually entered research (source === "manual") are no longer overwritten during full regeneration, protecting hand-entered data for companies that block web crawlers

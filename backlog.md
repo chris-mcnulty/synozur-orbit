@@ -367,12 +367,17 @@ Connect logAiUsage() calls to all AI service entry points:
 **Effort**: Medium
 
 #### Active Social/Blog Monitoring
-**Status**: Partially implemented (manual triggers exist)
+**Status**: Substantially implemented
 Scheduled monitoring of competitor social media accounts and blog posts:
-- [ ] Configurable check intervals
-- [ ] Change detection
-- [ ] AI-summarized diffs highlighting what changed
-**Effort**: Medium
+- [x] Manual blog URL input for competitors and baseline company
+- [x] Blog/RSS feed parsing (RSS, Atom, HTML scraping)
+- [x] New post detection with activity log entries
+- [x] Web crawler auto-discovery of blog/insights/news pages
+- [x] SSRF protection on all URL inputs
+- [ ] Configurable check intervals (uses tenant-level frequency settings)
+- [x] Change detection for website content
+- [x] AI-summarized diffs highlighting what changed
+**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
 
 #### Domain Blocklist
 **Status**: Not implemented

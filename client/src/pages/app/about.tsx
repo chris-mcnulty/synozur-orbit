@@ -81,7 +81,7 @@ const milestones: Milestone[] = [
     id: "q2-2026",
     name: "Enhanced Intelligence",
     quarter: "Q2 2026",
-    progress: 25,
+    progress: 75,
     items: [
       {
         id: "consolidated-actions",
@@ -110,8 +110,8 @@ const milestones: Milestone[] = [
       {
         id: "input-validation",
         title: "Enhanced Input Safety",
-        description: "Pre-validate URLs and uploads for security threats",
-        status: "in-progress",
+        description: "Pre-validate URLs and uploads for security threats (SSRF protection)",
+        status: "completed",
         category: "Security",
         icon: <Shield className="h-4 w-4" />
       }
@@ -121,7 +121,7 @@ const milestones: Milestone[] = [
     id: "q3-2026",
     name: "Scale & Monitor",
     quarter: "Q3 2026",
-    progress: 0,
+    progress: 50,
     items: [
       {
         id: "google-sso",
@@ -142,16 +142,16 @@ const milestones: Milestone[] = [
       {
         id: "social-monitoring",
         title: "Social & Blog Monitoring",
-        description: "Scheduled monitoring with AI-summarized change diffs",
-        status: "planned",
+        description: "Blog/RSS monitoring, insights page discovery, activity tracking",
+        status: "completed",
         category: "Core",
         icon: <Clock className="h-4 w-4" />
       },
       {
         id: "visual-assets",
         title: "Visual Competitor Assets",
-        description: "Screenshot capture and visual analysis",
-        status: "planned",
+        description: "Screenshot capture and logo/favicon display",
+        status: "completed",
         category: "Core",
         icon: <Target className="h-4 w-4" />
       }
