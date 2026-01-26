@@ -1627,16 +1627,14 @@ export async function registerRoutes(
   // Generate AI analysis for all competitors
   app.post("/api/analysis/generate", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
+      const ctx = await getRequestContext(req);
+      
+      const user = await storage.getUser(ctx.userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const tenantDomain = user.email.split("@")[1];
+      const tenantDomain = ctx.tenantDomain;
       const analysisType = req.body?.analysisType || "full";
 
       // Check premium for full_with_change mode
@@ -1648,17 +1646,17 @@ export async function registerRoutes(
         }
       }
 
-      // Get tenant-scoped competitors
-      const userCompetitors = await storage.getCompetitorsByUserId(user.id);
+      // Get context-scoped competitors (includes market filtering)
+      const userCompetitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       if (userCompetitors.length === 0) {
         return res.status(400).json({ error: "No competitors to analyze. Add competitors first." });
       }
 
-      // Get company profile for "our" positioning
-      const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+      // Get company profile for "our" positioning (context-scoped)
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
-      // Get grounding documents for additional context
-      const groundingDocs = await storage.getGroundingDocumentsByTenant(tenantDomain);
+      // Get grounding documents for additional context (context-scoped)
+      const groundingDocs = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
       const groundingContext = groundingDocs
         .filter(doc => doc.extractedText)
         .map(doc => doc.extractedText)
@@ -1758,8 +1756,8 @@ export async function registerRoutes(
         groundingContext || undefined
       );
 
-      // Fetch existing recommendations to avoid regenerating dismissed or duplicates
-      const existingRecs = await storage.getRecommendationsByTenant(tenantDomain);
+      // Fetch existing recommendations to avoid regenerating dismissed or duplicates (context-scoped)
+      const existingRecs = await storage.getRecommendationsByContext(toContextFilter(ctx));
       const existingForAI = existingRecs.map(r => ({
         title: r.title,
         description: r.description,
@@ -1771,7 +1769,7 @@ export async function registerRoutes(
       // Generate recommendations, passing existing ones to avoid duplicates
       const recommendations = await generateRecommendations(gaps, analyses, existingForAI);
 
-      // Save recommendations to database with tenant scoping
+      // Save recommendations to database with context scoping (includes marketId)
       for (const rec of recommendations) {
         await storage.createRecommendation({
           title: rec.title,
@@ -1780,6 +1778,7 @@ export async function registerRoutes(
           impact: rec.impact,
           userId: user.id,
           tenantDomain,
+          marketId: ctx.marketId,
         });
       }
 
@@ -1788,10 +1787,11 @@ export async function registerRoutes(
       const ourSummary = ourAnalysisData?.summary || companyProfile?.description || "Our positioning";
       const ourKeyMessages = ourAnalysisData?.keyMessages || [];
 
-      // Save tenant-scoped analysis
+      // Save context-scoped analysis (includes marketId)
       const savedAnalysis = await storage.createAnalysis({
         userId: user.id,
         tenantDomain,
+        marketId: ctx.marketId,
         themes: analyses.map(a => ({
           theme: a.valueProposition,
           us: companyProfile ? "Based on profile" : "Medium",
