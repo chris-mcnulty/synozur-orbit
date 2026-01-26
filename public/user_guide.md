@@ -68,9 +68,37 @@ Synozur Orbit is an AI-powered go-to-market intelligence platform designed to he
 **What Happens Next:**
 - Your account is created as a **Standard User**
 - A tenant (organization) is automatically created based on your email domain
-- If you're the first user from your domain, you're promoted to **Domain Admin**
+- If you're the first user from your domain, you're **automatically promoted to Domain Admin** (gives you team management and organization settings access)
 - You'll receive a welcome email
 - Your account information is synced to HubSpot CRM (for Synozur tracking)
+- Your organization starts with a **60-day trial period** of the Enterprise plan
+
+### Understanding Your Trial Period
+
+New organizations automatically receive a **60-day trial** of the Enterprise plan:
+
+**Trial Benefits:**
+- Full access to all Enterprise features
+- Unlimited competitors and analyses
+- Marketing Planner access
+- Team collaboration features
+
+**Trial Reminders:**
+You'll receive email reminders about your trial status at key milestones:
+- **Day 7**: Welcome and feature overview
+- **Day 30**: Mid-trial check-in (30 days remaining)
+- **Day 46**: Upgrade reminder (14 days remaining)
+- **Day 53**: Upgrade reminder (7 days remaining)
+- **Day 57**: Urgent reminder (3 days remaining)
+- **Day 59**: Final reminder (1 day remaining)
+- **Day 60**: Trial expired notification
+
+**What Happens When Trial Expires:**
+- Your account automatically reverts to the **Free plan**
+- Limited to 1 competitor and 1 analysis per month
+- Contact sales@synozur.com to upgrade to Pro or Enterprise
+
+**Note:** Reminder emails starting from day 46 onwards (14 days remaining) include contact information (contactus@synozur.com) for establishing a client relationship and exploring paid plans.
 
 ### Joining an Existing Organization
 
@@ -193,9 +221,11 @@ Orbit uses a role-based access control (RBAC) system with four distinct roles:
 
 ## Core Features
 
-### Dashboard
+### Overview Page
 
-The Dashboard is your command center, providing:
+The Overview page (located at `/app`) is your home page and central dashboard when you log in:
+
+**What You'll See:**
 
 **Quick Stats:**
 - Total competitors tracked
@@ -220,6 +250,25 @@ The Dashboard is your command center, providing:
 - Click any competitor to view details
 
 **Action Items:**
+- Priority recommendations
+- Pending analyses
+- Recent competitor changes requiring attention
+
+**AI Insights Section:**
+- Action item assignment controls
+- Accept or dismiss recommendations
+- Track follow-ups and implementation
+
+**"Rebuild All" Button (Admins):**
+- Admins can trigger a complete refresh of all competitive intelligence
+- Re-crawls all competitor websites
+- Updates all analysis data
+- Use quarterly or when major market changes occur
+- **Note:** The "Regenerate All" operation now preserves manual research. Competitors with manually entered research are not overwritten, protecting hand-entered data for companies that block web crawlers.
+
+### Dashboard (Legacy)
+
+The Dashboard provides additional views and historical data:
 - Priority recommendations
 - Pending analyses
 - Recent competitor changes requiring attention
@@ -432,6 +481,36 @@ Click any competitor to see their full profile:
 - Deletes all associated analysis data
 - Cannot be undone
 
+### Adding Blog/RSS Feeds
+
+For competitors that block web crawlers but have accessible blogs or RSS feeds:
+
+1. **Navigate to the Competitors page**
+2. **Click the competitor dropdown menu**
+3. **Select "Add Blog/RSS Feed"**
+4. **Enter the blog URL or RSS feed URL**:
+   - Supports RSS feeds (application/rss+xml)
+   - Supports Atom feeds (application/atom+xml)
+   - Supports direct blog page HTML parsing
+5. **Click "Test Feed"** to verify the URL can be parsed
+6. **Click "Save"** if test is successful
+
+**What Happens Next:**
+- Orbit monitors the feed for new posts
+- When new blog posts are detected, activity entries are created
+- AI can analyze blog content for competitive insights
+- Useful for companies with blocked crawlers but public blogs
+
+**Supported Feed Types:**
+- Standard RSS 2.0 feeds
+- Atom feeds
+- Blog pages with structured post HTML
+
+**Troubleshooting:**
+- If testing fails, verify the URL is publicly accessible
+- Try the RSS feed URL directly (often `/rss` or `/feed`)
+- Check if the blog requires authentication
+
 ### Competitor Limits by Plan
 
 - **Trial**: Up to 3 competitors
@@ -578,6 +657,35 @@ Battlecards prepare your sales team for competitive conversations:
 
 **Note:** Battlecards are automatically generated using AI when you run a Full Analysis. You can always edit them to add your team's insights and real-world experiences.
 
+### Exporting Battlecards
+
+Share battlecards with your sales team in multiple formats:
+
+**Export Options:**
+
+1. **Copy to Clipboard**
+   - Click the "Copy" button
+   - Formatted text with emojis and sections
+   - Ready to paste into Slack, email, or documents
+   - Preserves formatting for most applications
+
+2. **Download as PDF**
+   - Click "Download PDF"
+   - Professional layout with Synozur branding
+   - Purple gradient design
+   - Print-ready format
+   - Ideal for sales meetings and presentations
+
+3. **Download as Text**
+   - Click "Download TXT"
+   - Plain text format (.txt file)
+   - Use in Word, PowerPoint, or any document editor
+   - No formatting, maximum compatibility
+
+**Available For:**
+- Company-level battlecards (competitor vs. your company)
+- Product-level battlecards (competitor product vs. your product)
+
 ### Product Battlecards
 
 For project-based product analysis:
@@ -604,6 +712,43 @@ For project-based product analysis:
 3. **Click "Generate Report"**
 4. **Wait for generation** (30-60 seconds)
 5. **Download PDF**
+
+### One-Click Full Report Generation
+
+For projects, you can generate all content sections with a single click:
+
+**How It Works:**
+
+1. **Navigate to a Project detail page**
+2. **Click "Generate Full Report"** button in the project header
+3. **Wait for orchestration** (~1 minute)
+   - Progress indicator shows generation status
+   - All 5 AI content sections created in parallel:
+     - Gap Analysis
+     - Strategic Recommendations
+     - Competitive Summary
+     - Go-to-Market (GTM) Plan
+     - Messaging Framework
+   - Competitor scores are calculated automatically
+
+**What Happens Next:**
+- Results card displays success/failure count for each section
+- All project tabs refresh automatically with new content
+- If all sections complete successfully, comprehensive markdown export auto-downloads
+- You can review individual sections or re-generate specific ones if needed
+
+**Benefits:**
+- Save time with single-click generation
+- Parallel processing for faster results
+- Complete project analysis in ~1 minute
+- Auto-download for immediate sharing
+
+**Requirements:**
+- Pro or Enterprise plan
+- Project with at least one competitor
+- Active AI analysis capability
+
+### Standard Report Generation
 
 **Report Contents:**
 
@@ -1052,6 +1197,62 @@ As a Domain Admin, you're responsible for:
 - Manage allowed domains
 - Review blocklist effectiveness
 
+### AI Usage Tracker (Global Admin Only)
+
+**For Synozur Staff Only:**
+
+The AI Usage Tracker provides comprehensive monitoring of AI API usage across all tenants:
+
+**Accessing the Tracker:**
+1. Navigate to the Admin section (Global Admin only)
+2. Click "AI Usage Tracker"
+3. View real-time statistics and historical data
+
+**Dashboard Statistics:**
+
+**Summary Cards:**
+- **Total Requests**: Total number of AI API calls across all tenants
+- **Estimated Costs**: Calculated total cost based on token usage and model pricing
+- **Average Daily Usage**: Mean number of requests per day
+- **Most-Used Operations**: Top operation types (e.g., competitor analysis, battlecard generation)
+
+**Visual Analytics:**
+
+1. **Daily Usage Bar Chart**
+   - Shows AI requests for the last 14 days
+   - Identify usage spikes and trends
+   - Hover to see exact counts per day
+
+2. **Usage by Operation Pie Chart**
+   - Breakdown of AI calls by operation type
+   - See which features consume most AI resources
+   - Examples: analysis, recommendations, battlecards, etc.
+
+**Recent Activity Table:**
+- **Operation Details**: Type of AI operation performed
+- **Model Names**: Which AI model was used (e.g., Claude Sonnet)
+- **Token Usage**: Input and output tokens consumed
+- **Costs**: Estimated cost per operation
+- **Tenant Attribution**: Which organization made the request
+- **Timestamp**: When the request occurred
+
+**Database Tracking:**
+- All AI API calls are logged to database
+- Tracks provider, model, tokens, and costs
+- Enables historical analysis and billing
+
+**Use Cases:**
+- Monitor platform-wide AI costs
+- Identify high-usage tenants for billing
+- Detect unusual usage patterns
+- Plan infrastructure and budget
+- Optimize AI model selection
+
+**Scheduled Updates:**
+- Data refreshes in real-time as requests occur
+- Charts update automatically
+- Historical data retained for analysis
+
 ### Plan Management
 
 **Understanding Plans:**
@@ -1300,7 +1501,17 @@ A:
 A: Contact Synozur sales team at sales@synozur.com to discuss plan options and pricing.
 
 **Q: What happens when my trial expires?**
-A: Your account is automatically downgraded to the Free plan (1 competitor, 1 analysis). Upgrade to Pro or Enterprise to restore full access.
+A: Your account is automatically downgraded to the Free plan (1 competitor, 1 analysis per month). You'll receive reminder emails at days 7, 30, 46, 53, 57, 59, and 60 of your trial. Contact contactus@synozur.com or sales@synozur.com to upgrade before your trial ends.
+
+**Q: When will I receive trial reminder emails?**
+A: You'll receive reminders at the following milestones:
+- Day 7: Welcome and feature overview
+- Day 30: Mid-trial check-in (30 days remaining)
+- Day 46: Upgrade reminder (14 days remaining)
+- Day 53: Upgrade reminder (7 days remaining)
+- Day 57: Urgent reminder (3 days remaining)
+- Day 59: Final reminder (1 day remaining)
+- Day 60: Trial expired notification
 
 **Q: Can I downgrade my plan?**
 A: Yes, contact Synozur support to downgrade. Note that downgrading may result in loss of access to certain features and data.
@@ -1400,6 +1611,6 @@ Synozur Orbit empowers your team with AI-driven competitive intelligence, enabli
 
 ---
 
-*Document Version: 1.0*  
+*Document Version: 1.1*  
 *Last Updated: January 2026*  
 *For the latest updates, see changelog.md*
