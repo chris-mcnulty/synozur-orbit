@@ -206,7 +206,7 @@ function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   if (urlLower.includes("/product") || urlLower.includes("/pricing")) {
     return "products";
   }
-  if (urlLower.includes("/blog") || urlLower.includes("/news") || urlLower.includes("/article")) {
+  if (urlLower.includes("/blog") || urlLower.includes("/insight") || urlLower.includes("/article") || urlLower.includes("/news")) {
     return "blog";
   }
   if (urlLower.includes("/case") || urlLower.includes("/success") || urlLower.includes("/customer-stor")) {
@@ -276,7 +276,10 @@ function findKeyPages(html: string, baseUrl: string): KeyPages {
       if (!pages.products && (text.includes("product") || text.includes("pricing") || hrefLower.includes("/product"))) {
         pages.products = url.href;
       }
-      if (!pages.blog && (text.includes("blog") || text.includes("news") || hrefLower.includes("/blog"))) {
+      if (!pages.blog && (text.includes("blog") || text.includes("insight") || hrefLower.includes("/blog") || hrefLower.includes("/insight"))) {
+        pages.blog = url.href;
+      }
+      if (!pages.blog && (text.includes("news") || hrefLower.includes("/news") || hrefLower.includes("/article"))) {
         pages.blog = url.href;
       }
       if (!pages.caseStudies && (text.includes("case stud") || text.includes("success stor") || hrefLower.includes("/case") || hrefLower.includes("/success"))) {
