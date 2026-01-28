@@ -1757,6 +1757,7 @@ export async function registerRoutes(
       );
 
       // Fetch existing recommendations to avoid regenerating dismissed or duplicates (context-scoped)
+      // Include feedback scores for AI learning
       const existingRecs = await storage.getRecommendationsByContext(toContextFilter(ctx));
       const existingForAI = existingRecs.map(r => ({
         title: r.title,
@@ -1764,6 +1765,8 @@ export async function registerRoutes(
         area: r.area,
         status: r.status,
         dismissedReason: r.dismissedReason || undefined,
+        thumbsUp: r.thumbsUp || 0,
+        thumbsDown: r.thumbsDown || 0,
       }));
 
       // Generate recommendations, passing existing ones to avoid duplicates

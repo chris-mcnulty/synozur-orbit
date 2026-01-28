@@ -258,7 +258,21 @@ async function runRegenerationInBackground(
     );
     results.gapsIdentified = gaps.length;
 
-    const recommendations = await generateRecommendations(gaps, analyses);
+    // Fetch existing recommendations with feedback scores for AI learning
+    const existingRecs = await storage.getRecommendationsByTenant(tenantDomain);
+    const existingForAI = existingRecs
+      .filter(r => !marketId || r.marketId === marketId || !r.marketId)
+      .map(r => ({
+        title: r.title,
+        description: r.description,
+        area: r.area,
+        status: r.status,
+        dismissedReason: r.dismissedReason || undefined,
+        thumbsUp: r.thumbsUp || 0,
+        thumbsDown: r.thumbsDown || 0,
+      }));
+
+    const recommendations = await generateRecommendations(gaps, analyses, existingForAI);
     results.recommendationsGenerated = recommendations.length;
 
     for (const rec of recommendations) {

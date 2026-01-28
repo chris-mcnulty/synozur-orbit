@@ -263,6 +263,8 @@ export interface ExistingRecommendation {
   area: string;
   status: string;
   dismissedReason?: string;
+  thumbsUp?: number;
+  thumbsDown?: number;
 }
 
 export async function generateRecommendations(
@@ -271,6 +273,8 @@ export async function generateRecommendations(
   existingRecommendations?: ExistingRecommendation[]
 ): Promise<Recommendation[]> {
   let existingContext = "";
+  let feedbackLearningContext = "";
+  
   if (existingRecommendations && existingRecommendations.length > 0) {
     const dismissed = existingRecommendations.filter(r => r.status === "dismissed");
     const active = existingRecommendations.filter(r => r.status !== "dismissed");
@@ -283,6 +287,27 @@ ${dismissed.map(r => `- "${r.title}" (Reason: ${r.dismissedReason || "user dismi
     if (active.length > 0) {
       existingContext += `\n\nEXISTING ACTIVE RECOMMENDATIONS (avoid duplicates):
 ${active.map(r => `- "${r.title}"`).join("\n")}`;
+    }
+    
+    const highlyRated = existingRecommendations.filter(r => 
+      (r.thumbsUp || 0) > 0 && (r.thumbsUp || 0) > (r.thumbsDown || 0)
+    );
+    const poorlyRated = existingRecommendations.filter(r => 
+      (r.thumbsDown || 0) > 0 && (r.thumbsDown || 0) > (r.thumbsUp || 0)
+    );
+    
+    if (highlyRated.length > 0 || poorlyRated.length > 0) {
+      feedbackLearningContext = "\n\nUSER FEEDBACK LEARNING:";
+      
+      if (highlyRated.length > 0) {
+        feedbackLearningContext += `\n\nHIGHLY-RATED RECOMMENDATIONS (users found these helpful - generate similar style/approach):
+${highlyRated.slice(0, 5).map(r => `- "${r.title}" [Area: ${r.area}] - ${r.description.substring(0, 100)}...`).join("\n")}`;
+      }
+      
+      if (poorlyRated.length > 0) {
+        feedbackLearningContext += `\n\nPOORLY-RATED RECOMMENDATIONS (users found these unhelpful - AVOID similar approaches):
+${poorlyRated.slice(0, 5).map(r => `- "${r.title}" [Area: ${r.area}] - AVOID: ${r.description.substring(0, 80)}...`).join("\n")}`;
+      }
     }
   }
 
@@ -300,11 +325,14 @@ ${JSON.stringify(gaps, null, 2)}
 Competitor Insights:
 ${JSON.stringify(competitorAnalyses, null, 2)}
 ${existingContext}
+${feedbackLearningContext}
 
 IMPORTANT RULES:
 1. DO NOT generate recommendations that are similar to dismissed ones
 2. DO NOT duplicate existing active recommendations
 3. Focus on NEW, unique insights not already covered
+4. LEARN from user feedback: Generate recommendations similar in style/approach to highly-rated ones
+5. AVOID patterns from poorly-rated recommendations
 
 Please generate 3-5 NEW recommendations and return as a JSON array:
 [
