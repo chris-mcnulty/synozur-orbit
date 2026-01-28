@@ -3227,6 +3227,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         linkedInEngagement: profile.linkedInEngagement as any,
         instagramEngagement: profile.instagramEngagement as any,
         lastCrawl: profile.lastCrawl,
+        analysisData: profile.analysisData as any,
       });
       
       // Get previous score for trend
@@ -3271,6 +3272,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         linkedInEngagement: profile.linkedInEngagement as any,
         instagramEngagement: profile.instagramEngagement as any,
         lastCrawl: profile.lastCrawl,
+        analysisData: profile.analysisData as any,
       });
       
       const period = getCurrentPeriod();
@@ -10200,6 +10202,7 @@ Return only the description text, no quotes or formatting.`;
           linkedInEngagement: companyProfile.linkedInEngagement as any,
           instagramEngagement: companyProfile.instagramEngagement as any,
           lastCrawl: companyProfile.lastCrawl,
+          analysisData: companyProfile.analysisData as any,
         });
         
         // Get trend data from score history

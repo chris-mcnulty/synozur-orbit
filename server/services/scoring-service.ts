@@ -273,19 +273,27 @@ export function calculateBaselineScore(
     linkedInEngagement?: SocialEngagement | null;
     instagramEngagement?: SocialEngagement | null;
     lastCrawl?: Date | string | null;
+    analysisData?: AnalysisData | null;
   }
 ): ScoreBreakdown {
-  // Extract keywords from description (simple tokenization for baseline)
-  const description = companyProfile.description || "";
-  const words = description.toLowerCase().split(/\W+/).filter(w => w.length > 4);
-  const uniqueKeywords = Array.from(new Set(words)).slice(0, 20);
+  let analysisData: AnalysisData | null = null;
   
-  // Build pseudo-analysis data from company profile
-  const analysisData: AnalysisData = {
-    keywords: uniqueKeywords,
-    keyMessages: description ? [description.substring(0, 200)] : [],
-    summary: description || undefined,
-  };
+  // Use actual AI analysis data if available (preferred)
+  if (companyProfile.analysisData) {
+    analysisData = companyProfile.analysisData;
+  } else {
+    // Fallback: extract keywords from description (simple tokenization)
+    const description = companyProfile.description || "";
+    const words = description.toLowerCase().split(/\W+/).filter(w => w.length > 4);
+    const uniqueKeywords = Array.from(new Set(words)).slice(0, 20);
+    
+    // Build pseudo-analysis data from company profile
+    analysisData = {
+      keywords: uniqueKeywords,
+      keyMessages: description ? [description.substring(0, 200)] : [],
+      summary: description || undefined,
+    };
+  }
   
   return calculateScores(
     analysisData,
