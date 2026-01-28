@@ -1,3 +1,5 @@
+import { fetchPageHeadless, isHeadlessAvailable } from "./headless-crawler";
+
 interface CrawlResult {
   url: string;
   pageType: "homepage" | "about" | "services" | "products" | "blog" | "other";
@@ -5,6 +7,7 @@ interface CrawlResult {
   content: string;
   wordCount: number;
   crawledAt: string;
+  crawlMethod?: "headless" | "http";
 }
 
 interface CrawlSummary {
@@ -22,6 +25,7 @@ interface CrawlSummary {
     postCount: number;
     latestTitles: string[];
   };
+  crawlMethod?: "headless" | "http" | "mixed";
 }
 
 const USER_AGENTS = [
@@ -68,7 +72,7 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchPage(url: string, retries = 2): Promise<{ html: string; finalUrl: string } | null> {
+async function fetchPageHttp(url: string, retries = 2): Promise<{ html: string; finalUrl: string } | null> {
   const userAgent = getRandomUserAgent();
   const headers = getBrowserHeaders(userAgent);
   
@@ -98,6 +102,44 @@ async function fetchPage(url: string, retries = 2): Promise<{ html: string; fina
       return null;
     }
   }
+  return null;
+}
+
+interface FetchResult {
+  html: string;
+  finalUrl: string;
+  method: "headless" | "http";
+  renderedContent?: string;
+}
+
+async function fetchPage(url: string, useHeadless = true, retries = 2): Promise<FetchResult | null> {
+  if (useHeadless && isHeadlessAvailable()) {
+    console.log(`[Headless] Attempting to crawl: ${url}`);
+    const headlessResult = await fetchPageHeadless(url, { retries, timeout: 30000 });
+    
+    if (headlessResult) {
+      console.log(`[Headless] Successfully crawled: ${url}`);
+      return {
+        html: headlessResult.html,
+        finalUrl: headlessResult.finalUrl,
+        method: "headless",
+        renderedContent: headlessResult.renderedContent,
+      };
+    }
+    
+    console.log(`[Headless] Failed, falling back to HTTP for: ${url}`);
+  }
+  
+  const httpResult = await fetchPageHttp(url, retries);
+  if (httpResult) {
+    console.log(`[HTTP] Successfully crawled: ${url}`);
+    return {
+      html: httpResult.html,
+      finalUrl: httpResult.finalUrl,
+      method: "http",
+    };
+  }
+  
   return null;
 }
 
@@ -334,25 +376,33 @@ function createConcurrencyLimit(maxConcurrent: number) {
   };
 }
 
-export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary> {
+export async function crawlCompetitorWebsite(url: string, options: { useHeadless?: boolean } = {}): Promise<CrawlSummary> {
+  const { useHeadless = true } = options;
   const limit = createConcurrencyLimit(3);
   const crawledAt = new Date().toISOString();
   const pages: CrawlResult[] = [];
   let socialLinks: CrawlSummary["socialLinks"] = {};
   let blogSnapshot: CrawlSummary["blogSnapshot"] | undefined;
+  let crawlMethod: "headless" | "http" = "http";
   
-  const homepage = await fetchPage(url);
+  console.log(`[Web Crawler] Starting crawl of ${url} (headless: ${useHeadless})`);
+  
+  const homepage = await fetchPage(url, useHeadless);
   if (!homepage) {
+    console.log(`[Web Crawler] Failed to fetch homepage for ${url}`);
     return {
       baseUrl: url,
       pages: [],
       totalWordCount: 0,
       crawledAt,
       socialLinks: {},
+      crawlMethod: "http",
     };
   }
   
-  const homepageContent = extractTextContent(homepage.html);
+  crawlMethod = homepage.method;
+  
+  const homepageContent = homepage.renderedContent || extractTextContent(homepage.html);
   pages.push({
     url: homepage.finalUrl,
     pageType: "homepage",
@@ -360,6 +410,7 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
     content: homepageContent.substring(0, 50000),
     wordCount: homepageContent.split(/\s+/).length,
     crawledAt,
+    crawlMethod: homepage.method,
   });
   
   socialLinks = extractSocialLinks(homepage.html);
@@ -389,10 +440,10 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
         if (crawledUrls.has(pageUrl)) return null;
         crawledUrls.add(pageUrl);
         
-        const page = await fetchPage(pageUrl);
+        const page = await fetchPage(pageUrl, useHeadless);
         if (!page) return null;
         
-        const content = extractTextContent(page.html);
+        const content = page.renderedContent || extractTextContent(page.html);
         
         if (type === "blog" && !blogSnapshot) {
           blogSnapshot = extractBlogInfo(page.html);
@@ -416,6 +467,7 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
           content: content.substring(0, 30000),
           wordCount: content.split(/\s+/).length,
           crawledAt,
+          crawlMethod: page.method,
           html: page.html, // Keep HTML for sub-page discovery
         };
       })
@@ -456,10 +508,10 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
           if (crawledUrls.has(subUrl)) return null;
           crawledUrls.add(subUrl);
           
-          const page = await fetchPage(subUrl);
+          const page = await fetchPage(subUrl, useHeadless);
           if (!page) return null;
           
-          const content = extractTextContent(page.html);
+          const content = page.renderedContent || extractTextContent(page.html);
           return {
             url: page.finalUrl,
             pageType: classifyPageType(page.finalUrl, page.html),
@@ -467,6 +519,7 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
             content: content.substring(0, 20000),
             wordCount: content.split(/\s+/).length,
             crawledAt,
+            crawlMethod: page.method,
           };
         })
       )
@@ -479,6 +532,20 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
   
   const totalWordCount = pages.reduce((sum, p) => sum + p.wordCount, 0);
   
+  const headlessCount = pages.filter(p => p.crawlMethod === "headless").length;
+  const httpCount = pages.filter(p => p.crawlMethod === "http").length;
+  
+  let finalCrawlMethod: "headless" | "http" | "mixed";
+  if (headlessCount > 0 && httpCount > 0) {
+    finalCrawlMethod = "mixed";
+  } else if (headlessCount > 0) {
+    finalCrawlMethod = "headless";
+  } else {
+    finalCrawlMethod = "http";
+  }
+  
+  console.log(`[Web Crawler] Completed crawl of ${url}: ${pages.length} pages, ${totalWordCount} words (method: ${finalCrawlMethod}, headless: ${headlessCount}, http: ${httpCount})`);
+  
   return {
     baseUrl: url,
     pages,
@@ -486,6 +553,7 @@ export async function crawlCompetitorWebsite(url: string): Promise<CrawlSummary>
     crawledAt,
     socialLinks,
     blogSnapshot,
+    crawlMethod: finalCrawlMethod,
   };
 }
 
