@@ -107,14 +107,7 @@
 - [ ] Customer testimonials (when available)
 - [ ] Video walkthrough/demo
 
-### 3.2 Expert Review Upsell
-**Status**: Not implemented
-**Spec Requirement**: "Expert Review CTA for Synozur consultant review"
-- [ ] In-app CTA to request consultant review
-- [ ] Contact form or scheduling link
-- [ ] Messaging about Synozur services
-
-### 3.3 Recommendation Feedback Loop
+### 3.2 Recommendation Feedback Loop
 **Status**: Not implemented
 **Spec Requirement**: "Users can mark recommendations as 'not relevant'"
 - [ ] Thumbs up/down on recommendations
