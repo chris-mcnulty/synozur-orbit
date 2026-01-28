@@ -11,7 +11,8 @@ import {
   Users, Target, Eye, ArrowUpRight, Building2, Briefcase, TrendingUp, 
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
   Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
-  RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare, HelpCircle
+  RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare, HelpCircle,
+  ThumbsUp, ThumbsDown
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
@@ -224,6 +225,22 @@ export default function Dashboard() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+    },
+  });
+
+  const voteRecommendation = useMutation({
+    mutationFn: async ({ id, vote }: { id: string; vote: "up" | "down" }) => {
+      const res = await fetch(`/api/recommendations/${id}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vote }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to vote");
       return res.json();
     },
     onSuccess: () => {
@@ -1004,6 +1021,34 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-0.5 mr-1 border-r border-border pr-2">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={cn(
+                              "h-6 w-6",
+                              rec.thumbsUp > 0 ? "text-green-500" : "text-muted-foreground hover:text-green-400 hover:bg-green-500/10"
+                            )}
+                            onClick={() => voteRecommendation.mutate({ id: rec.id, vote: "up" })}
+                            data-testid={`button-thumbsup-${rec.id}`}
+                          >
+                            <ThumbsUp className="h-3 w-3" />
+                          </Button>
+                          <span className="text-xs text-muted-foreground min-w-[12px] text-center">{rec.thumbsUp || 0}</span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={cn(
+                              "h-6 w-6",
+                              rec.thumbsDown > 0 ? "text-red-500" : "text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                            )}
+                            onClick={() => voteRecommendation.mutate({ id: rec.id, vote: "down" })}
+                            data-testid={`button-thumbsdown-${rec.id}`}
+                          >
+                            <ThumbsDown className="h-3 w-3" />
+                          </Button>
+                          <span className="text-xs text-muted-foreground min-w-[12px] text-center">{rec.thumbsDown || 0}</span>
+                        </div>
                         <Select
                           value={rec.assignedTo || "unassigned"}
                           onValueChange={(value) => 

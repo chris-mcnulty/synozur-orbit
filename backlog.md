@@ -108,10 +108,10 @@
 - [ ] Video walkthrough/demo
 
 ### 3.2 Recommendation Feedback Loop
-**Status**: Not implemented
+**Status**: Partial (UI complete)
 **Spec Requirement**: "Users can mark recommendations as 'not relevant'"
-- [ ] Thumbs up/down on recommendations
-- [ ] AI learning from feedback
+- [x] Thumbs up/down on recommendations (dashboard insight cards)
+- [ ] AI learning from feedback (future enhancement)
 
 ### 3.4 Trial & Feature Gating System ✅
 **Status**: Trial system implemented (60-day trial with email reminders)
