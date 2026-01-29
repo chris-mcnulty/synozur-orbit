@@ -101,6 +101,46 @@ export const domainBlocklist = pgTable("domain_blocklist", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Service Plans - defines plan templates with default limits
+export const servicePlans = pgTable("service_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // e.g., "trial", "free", "pro", "enterprise"
+  displayName: text("display_name").notNull(), // e.g., "Trial", "Free", "Pro", "Enterprise"
+  description: text("description"),
+  // Usage limits
+  competitorLimit: integer("competitor_limit").notNull().default(3),
+  analysisLimit: integer("analysis_limit").notNull().default(5),
+  // User limits
+  adminUserLimit: integer("admin_user_limit").notNull().default(1),
+  readWriteUserLimit: integer("read_write_user_limit").notNull().default(2),
+  readOnlyUserLimit: integer("read_only_user_limit").notNull().default(5),
+  // Multi-market settings
+  multiMarketEnabled: boolean("multi_market_enabled").notNull().default(false),
+  marketLimit: integer("market_limit"), // NULL = unlimited
+  // Premium features
+  monitoringFrequency: text("monitoring_frequency").default("weekly"), // weekly, daily, disabled
+  socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false),
+  // Trial settings
+  trialDays: integer("trial_days"), // Only applicable for trial plan
+  // Pricing (for display purposes)
+  monthlyPrice: integer("monthly_price"), // In cents, NULL = free or contact sales
+  annualPrice: integer("annual_price"), // In cents, NULL = free or contact sales
+  // Status
+  isActive: boolean("is_active").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false), // Default plan for new signups
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertServicePlanSchema = createInsertSchema(servicePlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertServicePlan = z.infer<typeof insertServicePlanSchema>;
+export type ServicePlan = typeof servicePlans.$inferSelect;
+
 // Markets - a "market" is a context containing a baseline company, competitors, and projects
 // Enterprise tenants can have multiple markets for different client work
 export const markets = pgTable("markets", {
