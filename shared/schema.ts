@@ -88,7 +88,7 @@ export const tenants = pgTable("tenants", {
   entraEnabled: boolean("entra_enabled").default(false), // Whether tenant-level Entra SSO is enabled
   // Multi-market settings (Enterprise tier feature)
   multiMarketEnabled: boolean("multi_market_enabled").default(false), // Whether tenant can create multiple markets
-  marketLimit: integer("market_limit").notNull().default(1), // Maximum number of markets allowed
+  marketLimit: integer("market_limit"), // Maximum number of markets allowed (NULL = unlimited)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
