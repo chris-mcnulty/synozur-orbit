@@ -1585,46 +1585,19 @@ export default function AdminPage() {
                 </div>
                 <div className="space-y-2 pt-4 border-t">
                   <Label className="text-sm font-medium">Multi-Market Settings</Label>
-                  <p className="text-xs text-muted-foreground mb-2">Enterprise feature for managing multiple client contexts</p>
+                  <p className="text-xs text-muted-foreground mb-2">Enterprise feature - controlled by service plan</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Multi-Market Enabled</Label>
-                      <Select
-                        value={editForm.multiMarketEnabled ? "true" : "false"}
-                        onValueChange={(value) => setEditForm({ ...editForm, multiMarketEnabled: value === "true" })}
-                      >
-                        <SelectTrigger data-testid="edit-tenant-multi-market">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="false">Disabled</SelectItem>
-                          <SelectItem value="true">Enabled</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs text-muted-foreground">Multi-Market</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-multi-market">
+                        {editForm.multiMarketEnabled ? "Enabled" : "Disabled"}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Market Limit</Label>
-                      <Select
-                        value={editForm.marketLimit === null ? "unlimited" : String(editForm.marketLimit)}
-                        onValueChange={(value) => setEditForm({ 
-                          ...editForm, 
-                          marketLimit: value === "unlimited" ? null : parseInt(value) 
-                        })}
-                      >
-                        <SelectTrigger data-testid="edit-tenant-market-limit">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unlimited">Unlimited</SelectItem>
-                          <SelectItem value="1">1 market</SelectItem>
-                          <SelectItem value="5">5 markets</SelectItem>
-                          <SelectItem value="10">10 markets</SelectItem>
-                          <SelectItem value="25">25 markets</SelectItem>
-                          <SelectItem value="50">50 markets</SelectItem>
-                          <SelectItem value="100">100 markets</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[10px] text-muted-foreground">Set to Unlimited for enterprise accounts</p>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-sm" data-testid="display-tenant-market-limit">
+                        {editForm.marketLimit === null ? "Unlimited" : `${editForm.marketLimit} markets`}
+                      </div>
                     </div>
                   </div>
                 </div>
