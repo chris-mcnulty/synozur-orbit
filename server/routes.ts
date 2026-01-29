@@ -4265,8 +4265,31 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const tenant = await storage.getTenant(targetTenantId);
       const marketsList = await storage.getMarketsByTenant(targetTenantId);
       
+      // Fetch all company profiles for this tenant once (efficient single query)
+      const allProfiles = await storage.getCompanyProfilesByTenantDomain(tenant?.domain || "");
+      
+      // Build a map of marketId -> baseline profile for O(1) lookups
+      const profilesByMarketId = new Map<string | null, typeof allProfiles[0]>();
+      for (const profile of allProfiles) {
+        profilesByMarketId.set(profile.marketId, profile);
+      }
+      
+      // Enrich markets with baseline company info
+      const marketsWithBaseline = marketsList.map((market) => {
+        // Find profile for this market (or null marketId for legacy default market)
+        let baselineProfile = profilesByMarketId.get(market.id);
+        if (!baselineProfile && market.isDefault) {
+          baselineProfile = profilesByMarketId.get(null);
+        }
+        return {
+          ...market,
+          baselineCompanyName: baselineProfile?.companyName || null,
+          baselineCompanyUrl: baselineProfile?.websiteUrl || null,
+        };
+      });
+      
       res.json({
-        markets: marketsList,
+        markets: marketsWithBaseline,
         activeMarketId: req.session.activeMarketId || null,
         multiMarketEnabled: tenant?.multiMarketEnabled || false,
         marketLimit: tenant?.marketLimit || 1

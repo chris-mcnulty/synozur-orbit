@@ -42,6 +42,8 @@ interface Market {
   description: string | null;
   isDefault: boolean;
   status: string;
+  baselineCompanyName: string | null;
+  baselineCompanyUrl: string | null;
 }
 
 interface ContextData {
@@ -432,39 +434,43 @@ export default function ContextBar() {
                   <ChevronDown className="w-3 h-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuContent align="start" className="w-72">
                 <DropdownMenuLabel className="flex items-center gap-2">
                   <Layers className="w-4 h-4" />
                   Switch Market
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {marketsData?.markets
-                  ?.filter(m => m.status === "active")
-                  .map((market) => (
-                    <DropdownMenuItem
-                      key={market.id}
-                      onClick={() => switchMarketMutation.mutate(market.id)}
-                      className="flex items-center justify-between cursor-pointer group"
-                      data-testid={`menu-item-market-${market.id}`}
-                    >
-                      <div className="flex flex-col flex-1 min-w-0">
-                        <span className="font-medium">{market.name}</span>
-                        {market.description && (
-                          <span className="text-xs text-muted-foreground truncate max-w-32">{market.description}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {market.status === "archived" && (
-                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-600/50">Archived</Badge>
-                        )}
-                        {market.isDefault && (
-                          <Badge variant="outline" className="text-[10px]">Default</Badge>
-                        )}
-                        {market.id === context?.activeMarketId && (
-                          <Badge variant="secondary" className="text-xs">Active</Badge>
-                        )}
+                <div className="max-h-[320px] overflow-y-auto">
+                  {marketsData?.markets
+                    ?.filter(m => m.status === "active")
+                    .map((market) => (
+                      <DropdownMenuItem
+                        key={market.id}
+                        onClick={() => switchMarketMutation.mutate(market.id)}
+                        className="flex items-center justify-between cursor-pointer group py-2"
+                        data-testid={`menu-item-market-${market.id}`}
+                      >
+                        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{market.name}</span>
+                            {market.isDefault && (
+                              <Badge variant="outline" className="text-[10px]">Default</Badge>
+                            )}
+                            {market.id === context?.activeMarketId && (
+                              <Badge className="text-[10px] bg-primary">Active</Badge>
+                            )}
+                          </div>
+                          {market.baselineCompanyName ? (
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Building2 className="w-3 h-3" />
+                              <span className="truncate">{market.baselineCompanyName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/60 italic">No baseline set</span>
+                          )}
+                        </div>
                         {canDeleteMarket && !market.isDefault && (
-                          <>
+                          <div className="flex items-center gap-0.5 ml-2">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -473,7 +479,7 @@ export default function ContextBar() {
                               data-testid={`btn-edit-market-${market.id}`}
                               title="Edit market"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Pencil className="h-3 w-3" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -484,9 +490,9 @@ export default function ContextBar() {
                               title={market.status === "archived" ? "Restore market" : "Archive market"}
                             >
                               {market.status === "archived" ? (
-                                <ArchiveRestore className="h-3.5 w-3.5" />
+                                <ArchiveRestore className="h-3 w-3" />
                               ) : (
-                                <Archive className="h-3.5 w-3.5" />
+                                <Archive className="h-3 w-3" />
                               )}
                             </Button>
                             <Button
@@ -497,16 +503,16 @@ export default function ContextBar() {
                               data-testid={`btn-delete-market-${market.id}`}
                               title="Delete market"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3 w-3" />
                             </Button>
-                          </>
+                          </div>
                         )}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                {canCreateMarket && (
-                  <>
-                    <DropdownMenuSeparator />
+                      </DropdownMenuItem>
+                    ))}
+                </div>
+                <DropdownMenuSeparator />
+                <div className="flex flex-col">
+                  {canCreateMarket && (
                     <DropdownMenuItem
                       onClick={() => setCreateMarketOpen(true)}
                       className="cursor-pointer"
@@ -515,11 +521,8 @@ export default function ContextBar() {
                       <Plus className="w-4 h-4 mr-2" />
                       Create New Market
                     </DropdownMenuItem>
-                  </>
-                )}
-                {context?.activeMarketId && (
-                  <>
-                    <DropdownMenuSeparator />
+                  )}
+                  {context?.activeMarketId && (
                     <DropdownMenuItem
                       onClick={() => {
                         window.open(`/api/markets/${context.activeMarketId}/export`, '_blank');
@@ -532,10 +535,10 @@ export default function ContextBar() {
                       data-testid="btn-export-market"
                     >
                       <Download className="w-4 h-4 mr-2" />
-                      Export Market (Markdown)
+                      Export Market
                     </DropdownMenuItem>
-                  </>
-                )}
+                  )}
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </>
@@ -633,40 +636,44 @@ export default function ContextBar() {
                 <ChevronDown className="w-3 h-3 shrink-0" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel className="flex items-center gap-2">
                 <Layers className="w-4 h-4" />
                 Switch Market
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {marketsData?.markets
-                ?.filter(m => m.status === "active")
-                .map((market) => (
-                  <DropdownMenuItem
-                    key={market.id}
-                    onClick={() => switchMarketMutation.mutate(market.id)}
-                    className="flex items-center justify-between cursor-pointer"
-                    data-testid={`mobile-menu-item-market-${market.id}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-medium">{market.name}</span>
-                      {market.description && (
-                        <span className="text-xs text-muted-foreground truncate max-w-40">{market.description}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {market.status === "archived" && (
-                        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-600/50">Archived</Badge>
-                      )}
-                      {market.isDefault && (
-                        <Badge variant="outline" className="text-[10px]">Default</Badge>
-                      )}
-                      {market.id === context?.activeMarketId && (
-                        <Badge variant="secondary" className="text-xs">Active</Badge>
-                      )}
-                    </div>
-                  </DropdownMenuItem>
-                ))}
+              <div className="max-h-[280px] overflow-y-auto">
+                {marketsData?.markets
+                  ?.filter(m => m.status === "active")
+                  .map((market) => (
+                    <DropdownMenuItem
+                      key={market.id}
+                      onClick={() => switchMarketMutation.mutate(market.id)}
+                      className="flex items-center justify-between cursor-pointer py-2"
+                      data-testid={`mobile-menu-item-market-${market.id}`}
+                    >
+                      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{market.name}</span>
+                          {market.isDefault && (
+                            <Badge variant="outline" className="text-[10px]">Default</Badge>
+                          )}
+                          {market.id === context?.activeMarketId && (
+                            <Badge className="text-[10px] bg-primary">Active</Badge>
+                          )}
+                        </div>
+                        {market.baselineCompanyName ? (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Building2 className="w-3 h-3" />
+                            <span className="truncate">{market.baselineCompanyName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60 italic">No baseline set</span>
+                        )}
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+              </div>
               {canCreateMarket && (
                 <>
                   <DropdownMenuSeparator />
