@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -56,6 +56,30 @@ type GlobalDocument = {
   wordCount: number;
   isActive: boolean;
   uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ServicePlan = {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+  competitorLimit: number;
+  analysisLimit: number;
+  adminUserLimit: number;
+  readWriteUserLimit: number;
+  readOnlyUserLimit: number;
+  multiMarketEnabled: boolean;
+  marketLimit: number | null;
+  monitoringFrequency: string | null;
+  socialMonitoringEnabled: boolean | null;
+  trialDays: number | null;
+  monthlyPrice: number | null;
+  annualPrice: number | null;
+  isActive: boolean;
+  isDefault: boolean;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -107,6 +131,26 @@ export default function AdminPage() {
     name: "",
     plan: "trial",
     status: "active",
+  });
+  const [servicePlanDialogOpen, setServicePlanDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<ServicePlan | null>(null);
+  const [planForm, setPlanForm] = useState({
+    name: "",
+    displayName: "",
+    description: "",
+    competitorLimit: 3,
+    analysisLimit: 5,
+    adminUserLimit: 1,
+    readWriteUserLimit: 2,
+    readOnlyUserLimit: 5,
+    multiMarketEnabled: false,
+    marketLimit: null as number | null,
+    trialDays: null as number | null,
+    monthlyPrice: null as number | null,
+    annualPrice: null as number | null,
+    isActive: true,
+    isDefault: false,
+    sortOrder: 0,
   });
 
   const { data: tenants = [], isLoading, error } = useQuery<TenantWithCounts[]>({
@@ -299,6 +343,129 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/global-documents"] });
     },
   });
+
+  const { data: servicePlans = [] } = useQuery<ServicePlan[]>({
+    queryKey: ["/api/admin/service-plans"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/service-plans", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch service plans");
+      return response.json();
+    },
+  });
+
+  const createServicePlanMutation = useMutation({
+    mutationFn: async (data: Partial<ServicePlan>) => {
+      const response = await fetch("/api/admin/service-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create plan");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/service-plans"] });
+      setServicePlanDialogOpen(false);
+      resetPlanForm();
+    },
+  });
+
+  const updateServicePlanMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<ServicePlan> }) => {
+      const response = await fetch(`/api/admin/service-plans/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update plan");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/service-plans"] });
+      setServicePlanDialogOpen(false);
+      setEditingPlan(null);
+      resetPlanForm();
+    },
+  });
+
+  const deleteServicePlanMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/admin/service-plans/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete plan");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/service-plans"] });
+    },
+  });
+
+  const resetPlanForm = () => {
+    setPlanForm({
+      name: "",
+      displayName: "",
+      description: "",
+      competitorLimit: 3,
+      analysisLimit: 5,
+      adminUserLimit: 1,
+      readWriteUserLimit: 2,
+      readOnlyUserLimit: 5,
+      multiMarketEnabled: false,
+      marketLimit: null,
+      trialDays: null,
+      monthlyPrice: null,
+      annualPrice: null,
+      isActive: true,
+      isDefault: false,
+      sortOrder: 0,
+    });
+  };
+
+  const openEditPlanDialog = (plan: ServicePlan) => {
+    setEditingPlan(plan);
+    setPlanForm({
+      name: plan.name,
+      displayName: plan.displayName,
+      description: plan.description || "",
+      competitorLimit: plan.competitorLimit,
+      analysisLimit: plan.analysisLimit,
+      adminUserLimit: plan.adminUserLimit,
+      readWriteUserLimit: plan.readWriteUserLimit,
+      readOnlyUserLimit: plan.readOnlyUserLimit,
+      multiMarketEnabled: plan.multiMarketEnabled,
+      marketLimit: plan.marketLimit,
+      trialDays: plan.trialDays,
+      monthlyPrice: plan.monthlyPrice,
+      annualPrice: plan.annualPrice,
+      isActive: plan.isActive,
+      isDefault: plan.isDefault,
+      sortOrder: plan.sortOrder,
+    });
+    setServicePlanDialogOpen(true);
+  };
+
+  const handleSavePlan = () => {
+    if (editingPlan) {
+      updateServicePlanMutation.mutate({ id: editingPlan.id, data: planForm });
+    } else {
+      createServicePlanMutation.mutate(planForm);
+    }
+  };
 
   const getPlanBadge = (plan: string) => {
     switch (plan) {
@@ -727,6 +894,117 @@ export default function AdminPage() {
           </CardContent>
         </Card>
 
+        <Card data-testid="card-service-plans">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-primary" />
+                  Service Plans
+                </CardTitle>
+                <CardDescription>
+                  Define subscription plans with their limits and features
+                </CardDescription>
+              </div>
+              <Button 
+                onClick={() => {
+                  setEditingPlan(null);
+                  resetPlanForm();
+                  setServicePlanDialogOpen(true);
+                }}
+                data-testid="btn-add-service-plan"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Plan
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {servicePlans.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No service plans defined yet.</p>
+                <p className="text-sm">Create plans to define subscription tiers and limits.</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>Limits</TableHead>
+                    <TableHead>Multi-Market</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {servicePlans.map((plan) => (
+                    <TableRow key={plan.id} data-testid={`service-plan-${plan.name}`}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <div className="font-medium flex items-center gap-2">
+                              {plan.displayName}
+                              {plan.isDefault && (
+                                <Badge variant="outline" className="text-xs">Default</Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">{plan.name}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm space-y-1">
+                          <div>{plan.competitorLimit} competitors, {plan.analysisLimit} analyses</div>
+                          <div className="text-muted-foreground">
+                            Users: {plan.adminUserLimit}A / {plan.readWriteUserLimit}RW / {plan.readOnlyUserLimit}RO
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {plan.multiMarketEnabled ? (
+                          <div className="flex items-center gap-1 text-green-500">
+                            <Check className="h-4 w-4" />
+                            <span className="text-sm">{plan.marketLimit === null ? "Unlimited" : `${plan.marketLimit} markets`}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">Disabled</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={plan.isActive ? "default" : "secondary"}>
+                          {plan.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditPlanDialog(plan)}
+                            data-testid={`edit-plan-${plan.name}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteServicePlanMutation.mutate(plan.id)}
+                            disabled={deleteServicePlanMutation.isPending || plan.isDefault}
+                            data-testid={`delete-plan-${plan.name}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -831,6 +1109,211 @@ export default function AdminPage() {
             <AiUsageDashboard />
           </CardContent>
         </Card>
+
+        <Dialog open={servicePlanDialogOpen} onOpenChange={(open) => {
+          setServicePlanDialogOpen(open);
+          if (!open) {
+            setEditingPlan(null);
+            resetPlanForm();
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingPlan ? "Edit Service Plan" : "Create Service Plan"}</DialogTitle>
+              <DialogDescription>
+                Define the limits and features for this subscription tier.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Plan Name (ID)</Label>
+                  <Input
+                    placeholder="e.g., enterprise"
+                    value={planForm.name}
+                    onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                    disabled={!!editingPlan}
+                    data-testid="input-plan-name"
+                  />
+                  <p className="text-xs text-muted-foreground">Lowercase, no spaces</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Display Name</Label>
+                  <Input
+                    placeholder="e.g., Enterprise"
+                    value={planForm.displayName}
+                    onChange={(e) => setPlanForm({ ...planForm, displayName: e.target.value })}
+                    data-testid="input-plan-display-name"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  placeholder="Brief description of this plan..."
+                  value={planForm.description}
+                  onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}
+                  data-testid="input-plan-description"
+                />
+              </div>
+
+              <div className="border-t pt-4">
+                <Label className="text-sm font-medium">Usage Limits</Label>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Competitors</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={planForm.competitorLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, competitorLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="input-plan-competitors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Analyses</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={planForm.analysisLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, analysisLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="input-plan-analyses"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <Label className="text-sm font-medium">User Limits</Label>
+                <div className="grid grid-cols-3 gap-4 mt-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Admin Users</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={planForm.adminUserLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, adminUserLimit: parseInt(e.target.value) || 1 })}
+                      data-testid="input-plan-admin-users"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Read/Write Users</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={planForm.readWriteUserLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, readWriteUserLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="input-plan-rw-users"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Read-Only Users</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={planForm.readOnlyUserLimit}
+                      onChange={(e) => setPlanForm({ ...planForm, readOnlyUserLimit: parseInt(e.target.value) || 0 })}
+                      data-testid="input-plan-ro-users"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <Label className="text-sm font-medium">Multi-Market Settings</Label>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Multi-Market</Label>
+                    <Select
+                      value={planForm.multiMarketEnabled ? "true" : "false"}
+                      onValueChange={(value) => setPlanForm({ ...planForm, multiMarketEnabled: value === "true" })}
+                    >
+                      <SelectTrigger data-testid="select-plan-multi-market">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">Disabled</SelectItem>
+                        <SelectItem value="true">Enabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Market Limit</Label>
+                    <Select
+                      value={planForm.marketLimit === null ? "unlimited" : String(planForm.marketLimit)}
+                      onValueChange={(value) => setPlanForm({ 
+                        ...planForm, 
+                        marketLimit: value === "unlimited" ? null : parseInt(value) 
+                      })}
+                      disabled={!planForm.multiMarketEnabled}
+                    >
+                      <SelectTrigger data-testid="select-plan-market-limit">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unlimited">Unlimited</SelectItem>
+                        <SelectItem value="1">1 market</SelectItem>
+                        <SelectItem value="5">5 markets</SelectItem>
+                        <SelectItem value="10">10 markets</SelectItem>
+                        <SelectItem value="25">25 markets</SelectItem>
+                        <SelectItem value="50">50 markets</SelectItem>
+                        <SelectItem value="100">100 markets</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Sort Order</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={planForm.sortOrder}
+                      onChange={(e) => setPlanForm({ ...planForm, sortOrder: parseInt(e.target.value) || 0 })}
+                      data-testid="input-plan-sort-order"
+                    />
+                  </div>
+                  <div className="space-y-2 flex items-end gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={planForm.isActive}
+                        onChange={(e) => setPlanForm({ ...planForm, isActive: e.target.checked })}
+                        data-testid="checkbox-plan-active"
+                      />
+                      <span className="text-sm">Active</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={planForm.isDefault}
+                        onChange={(e) => setPlanForm({ ...planForm, isDefault: e.target.checked })}
+                        data-testid="checkbox-plan-default"
+                      />
+                      <span className="text-sm">Default</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setServicePlanDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSavePlan}
+                disabled={!planForm.name || !planForm.displayName || createServicePlanMutation.isPending || updateServicePlanMutation.isPending}
+                data-testid="btn-save-plan"
+              >
+                {createServicePlanMutation.isPending || updateServicePlanMutation.isPending ? "Saving..." : (editingPlan ? "Update Plan" : "Create Plan")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={globalDocDialogOpen} onOpenChange={setGlobalDocDialogOpen}>
           <DialogContent>
