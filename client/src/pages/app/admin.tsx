@@ -1515,16 +1515,32 @@ export default function AdminPage() {
                     <Label>Plan</Label>
                     <Select
                       value={editForm.plan}
-                      onValueChange={(value) => setEditForm({ ...editForm, plan: value })}
+                      onValueChange={(value) => {
+                        const selectedPlan = servicePlans.find(p => p.name === value);
+                        if (selectedPlan) {
+                          setEditForm({ 
+                            ...editForm, 
+                            plan: value,
+                            competitorLimit: selectedPlan.competitorLimit,
+                            analysisLimit: selectedPlan.analysisLimit,
+                            adminUserLimit: selectedPlan.adminUserLimit,
+                            readWriteUserLimit: selectedPlan.readWriteUserLimit,
+                            readOnlyUserLimit: selectedPlan.readOnlyUserLimit,
+                            multiMarketEnabled: selectedPlan.multiMarketEnabled,
+                            marketLimit: selectedPlan.marketLimit,
+                          });
+                        }
+                      }}
                     >
                       <SelectTrigger data-testid="edit-tenant-plan">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="trial">Trial</SelectItem>
-                        <SelectItem value="free">Free</SelectItem>
-                        <SelectItem value="pro">Pro</SelectItem>
-                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                        {servicePlans.filter(p => p.isActive).map((plan) => (
+                          <SelectItem key={plan.id} value={plan.name}>
+                            {plan.displayName}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
