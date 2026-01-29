@@ -5500,6 +5500,157 @@ Respond in JSON format:
     }
   });
 
+  // ==================== SERVICE PLANS (Global Admin only) ====================
+  
+  // Get all service plans
+  app.get("/api/admin/service-plans", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const plans = await storage.getAllServicePlans();
+      res.json(plans);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get active service plans (for dropdowns)
+  app.get("/api/service-plans/active", async (req, res) => {
+    try {
+      const plans = await storage.getActiveServicePlans();
+      res.json(plans);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single service plan
+  app.get("/api/admin/service-plans/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const plan = await storage.getServicePlan(req.params.id);
+      if (!plan) {
+        return res.status(404).json({ error: "Service plan not found" });
+      }
+      res.json(plan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create service plan
+  app.post("/api/admin/service-plans", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { name, displayName, description, ...limits } = req.body;
+      
+      if (!name || !displayName) {
+        return res.status(400).json({ error: "Name and display name are required" });
+      }
+
+      // Check if plan name already exists
+      const existing = await storage.getServicePlanByName(name);
+      if (existing) {
+        return res.status(400).json({ error: "A plan with this name already exists" });
+      }
+
+      const plan = await storage.createServicePlan({
+        name: name.toLowerCase().replace(/\s+/g, "_"),
+        displayName,
+        description,
+        ...limits
+      });
+      
+      res.status(201).json(plan);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update service plan
+  app.patch("/api/admin/service-plans/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const plan = await storage.getServicePlan(req.params.id);
+      if (!plan) {
+        return res.status(404).json({ error: "Service plan not found" });
+      }
+
+      // If changing name, check for conflicts
+      if (req.body.name && req.body.name !== plan.name) {
+        const existing = await storage.getServicePlanByName(req.body.name);
+        if (existing) {
+          return res.status(400).json({ error: "A plan with this name already exists" });
+        }
+      }
+
+      const updated = await storage.updateServicePlan(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete service plan
+  app.delete("/api/admin/service-plans/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const plan = await storage.getServicePlan(req.params.id);
+      if (!plan) {
+        return res.status(404).json({ error: "Service plan not found" });
+      }
+
+      // Prevent deleting default plan
+      if (plan.isDefault) {
+        return res.status(400).json({ error: "Cannot delete the default plan. Set another plan as default first." });
+      }
+
+      await storage.deleteServicePlan(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== AI USAGE TRACKING (Global Admin only) ====================
   
   app.get("/api/admin/ai/usage", async (req, res) => {
