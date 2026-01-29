@@ -104,6 +104,9 @@ import {
   type InsertScheduledJobRun,
   type ScoreHistory,
   type InsertScoreHistory,
+  servicePlans,
+  type ServicePlan,
+  type InsertServicePlan,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
@@ -404,6 +407,16 @@ export interface IStorage {
   updateFeatureRecommendation(id: string, data: Partial<FeatureRecommendation>): Promise<FeatureRecommendation>;
   deleteFeatureRecommendation(id: string): Promise<void>;
   addRecommendationToRoadmap(recId: string, roadmapData: InsertRoadmapItem): Promise<{ roadmapItem: RoadmapItem; recommendation: FeatureRecommendation }>;
+  
+  // Service Plan methods
+  getServicePlan(id: string): Promise<ServicePlan | undefined>;
+  getServicePlanByName(name: string): Promise<ServicePlan | undefined>;
+  getAllServicePlans(): Promise<ServicePlan[]>;
+  getActiveServicePlans(): Promise<ServicePlan[]>;
+  getDefaultServicePlan(): Promise<ServicePlan | undefined>;
+  createServicePlan(plan: InsertServicePlan): Promise<ServicePlan>;
+  updateServicePlan(id: string, data: Partial<ServicePlan>): Promise<ServicePlan>;
+  deleteServicePlan(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2465,6 +2478,50 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(scheduledJobRuns)
       .where(eq(scheduledJobRuns.status, "running"))
       .orderBy(desc(scheduledJobRuns.startedAt));
+  }
+
+  // Service Plan methods
+  async getServicePlan(id: string): Promise<ServicePlan | undefined> {
+    const [plan] = await db.select().from(servicePlans).where(eq(servicePlans.id, id));
+    return plan || undefined;
+  }
+
+  async getServicePlanByName(name: string): Promise<ServicePlan | undefined> {
+    const [plan] = await db.select().from(servicePlans).where(eq(servicePlans.name, name));
+    return plan || undefined;
+  }
+
+  async getAllServicePlans(): Promise<ServicePlan[]> {
+    return db.select().from(servicePlans).orderBy(servicePlans.sortOrder);
+  }
+
+  async getActiveServicePlans(): Promise<ServicePlan[]> {
+    return db.select().from(servicePlans)
+      .where(eq(servicePlans.isActive, true))
+      .orderBy(servicePlans.sortOrder);
+  }
+
+  async getDefaultServicePlan(): Promise<ServicePlan | undefined> {
+    const [plan] = await db.select().from(servicePlans)
+      .where(and(eq(servicePlans.isDefault, true), eq(servicePlans.isActive, true)));
+    return plan || undefined;
+  }
+
+  async createServicePlan(plan: InsertServicePlan): Promise<ServicePlan> {
+    const [created] = await db.insert(servicePlans).values(plan).returning();
+    return created;
+  }
+
+  async updateServicePlan(id: string, data: Partial<ServicePlan>): Promise<ServicePlan> {
+    const [updated] = await db.update(servicePlans)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(servicePlans.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteServicePlan(id: string): Promise<void> {
+    await db.delete(servicePlans).where(eq(servicePlans.id, id));
   }
 }
 
