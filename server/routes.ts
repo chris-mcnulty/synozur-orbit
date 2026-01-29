@@ -4291,8 +4291,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
       res.json({
         markets: marketsWithBaseline,
         activeMarketId: req.session.activeMarketId || null,
-        multiMarketEnabled: tenant?.multiMarketEnabled || false,
-        marketLimit: tenant?.marketLimit || null
+        multiMarketEnabled: tenant?.multiMarketEnabled || tenant?.plan === "enterprise",
+        marketLimit: tenant?.plan === "enterprise" ? null : (tenant?.marketLimit || 1)
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4328,13 +4328,17 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(404).json({ error: "Tenant not found" });
       }
 
-      if (!tenant.multiMarketEnabled) {
+      // Enterprise plan automatically enables multi-market with unlimited capacity
+      const isMultiMarketEnabled = tenant.multiMarketEnabled || tenant.plan === "enterprise";
+      const effectiveMarketLimit = tenant.plan === "enterprise" ? null : (tenant.marketLimit || 1);
+      
+      if (!isMultiMarketEnabled) {
         return res.status(403).json({ error: "Multi-market feature is not enabled for this tenant. Please upgrade to Enterprise plan." });
       }
 
       const existingMarkets = await storage.getMarketsByTenant(targetTenantId);
-      if (tenant.marketLimit && existingMarkets.length >= tenant.marketLimit) {
-        return res.status(400).json({ error: `Market limit reached (${tenant.marketLimit}). Contact support to increase your limit.` });
+      if (effectiveMarketLimit && existingMarkets.length >= effectiveMarketLimit) {
+        return res.status(400).json({ error: `Market limit reached (${effectiveMarketLimit}). Contact support to increase your limit.` });
       }
 
       const { name, description, websiteUrl } = req.body;
