@@ -2526,9 +2526,7 @@ export class DatabaseStorage implements IStorage {
 
   async seedDefaultServicePlans(): Promise<void> {
     const existingPlans = await this.getAllServicePlans();
-    if (existingPlans.length > 0) {
-      return;
-    }
+    const existingNames = new Set(existingPlans.map(p => p.name));
 
     const defaultPlans: InsertServicePlan[] = [
       {
@@ -2609,10 +2607,13 @@ export class DatabaseStorage implements IStorage {
       },
     ];
 
-    for (const plan of defaultPlans) {
+    const plansToCreate = defaultPlans.filter(p => !existingNames.has(p.name));
+    for (const plan of plansToCreate) {
       await this.createServicePlan(plan);
     }
-    console.log('[seed] Created default service plans');
+    if (plansToCreate.length > 0) {
+      console.log(`[seed] Created ${plansToCreate.length} missing service plans: ${plansToCreate.map(p => p.name).join(', ')}`);
+    }
   }
 }
 
