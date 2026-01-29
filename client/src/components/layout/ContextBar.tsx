@@ -364,9 +364,10 @@ export default function ContextBar() {
   const canSwitchTenants = user?.role === "Global Admin" || user?.role === "Consultant";
   const canDeleteMarket = user?.role === "Global Admin" || user?.role === "Domain Admin";
   const showMarketSelector = marketsData?.multiMarketEnabled;
-  const canCreateMarket = marketsData?.multiMarketEnabled && 
-    (user?.role === "Global Admin" || user?.role === "Domain Admin") &&
-    (!marketsData?.marketLimit || marketsData.markets.length < marketsData.marketLimit);
+  const isMarketAdmin = user?.role === "Global Admin" || user?.role === "Domain Admin";
+  const hasMarketCapacity = !marketsData?.marketLimit || marketsData.markets.length < marketsData.marketLimit;
+  const canCreateMarket = marketsData?.multiMarketEnabled && isMarketAdmin && hasMarketCapacity;
+  const showCreateMarketOption = marketsData?.multiMarketEnabled && isMarketAdmin;
 
   if (!canSwitchTenants && !showMarketSelector) {
     return null;
@@ -512,14 +513,17 @@ export default function ContextBar() {
                 </div>
                 <DropdownMenuSeparator />
                 <div className="flex flex-col">
-                  {canCreateMarket && (
+                  {showCreateMarketOption && (
                     <DropdownMenuItem
-                      onClick={() => setCreateMarketOpen(true)}
-                      className="cursor-pointer"
+                      onClick={() => canCreateMarket && setCreateMarketOpen(true)}
+                      className={canCreateMarket ? "cursor-pointer" : "cursor-not-allowed opacity-50"}
                       data-testid="btn-create-market"
+                      disabled={!canCreateMarket}
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Create New Market
+                      {canCreateMarket 
+                        ? "Create New Market" 
+                        : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit})`}
                     </DropdownMenuItem>
                   )}
                   {context?.activeMarketId && (
@@ -674,16 +678,19 @@ export default function ContextBar() {
                     </DropdownMenuItem>
                   ))}
               </div>
-              {canCreateMarket && (
+              {showCreateMarketOption && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => setCreateMarketOpen(true)}
-                    className="cursor-pointer"
+                    onClick={() => canCreateMarket && setCreateMarketOpen(true)}
+                    className={canCreateMarket ? "cursor-pointer" : "cursor-not-allowed opacity-50"}
                     data-testid="mobile-btn-create-market"
+                    disabled={!canCreateMarket}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Create New Market
+                    {canCreateMarket 
+                      ? "Create New Market" 
+                      : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit})`}
                   </DropdownMenuItem>
                 </>
               )}
