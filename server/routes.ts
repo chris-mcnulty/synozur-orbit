@@ -4292,7 +4292,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         markets: marketsWithBaseline,
         activeMarketId: req.session.activeMarketId || null,
         multiMarketEnabled: tenant?.multiMarketEnabled || false,
-        marketLimit: tenant?.marketLimit || 1
+        marketLimit: tenant?.marketLimit || null
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4333,7 +4333,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
       }
 
       const existingMarkets = await storage.getMarketsByTenant(targetTenantId);
-      if (existingMarkets.length >= (tenant.marketLimit || 1)) {
+      if (tenant.marketLimit && existingMarkets.length >= tenant.marketLimit) {
         return res.status(400).json({ error: `Market limit reached (${tenant.marketLimit}). Contact support to increase your limit.` });
       }
 

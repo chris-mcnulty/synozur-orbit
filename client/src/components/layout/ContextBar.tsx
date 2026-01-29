@@ -368,6 +368,7 @@ export default function ContextBar() {
   const hasMarketCapacity = !marketsData?.marketLimit || marketsData.markets.length < marketsData.marketLimit;
   const canCreateMarket = marketsData?.multiMarketEnabled && isMarketAdmin && hasMarketCapacity;
   const showCreateMarketOption = marketsData?.multiMarketEnabled && isMarketAdmin;
+  const hasUnlimitedMarkets = !marketsData?.marketLimit;
 
   if (!canSwitchTenants && !showMarketSelector) {
     return null;
@@ -523,7 +524,7 @@ export default function ContextBar() {
                       <Plus className="w-4 h-4 mr-2" />
                       {canCreateMarket 
                         ? "Create New Market" 
-                        : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit})`}
+                        : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit || "∞"})`}
                     </DropdownMenuItem>
                   )}
                   {context?.activeMarketId && (
@@ -690,7 +691,7 @@ export default function ContextBar() {
                     <Plus className="w-4 h-4 mr-2" />
                     {canCreateMarket 
                       ? "Create New Market" 
-                      : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit})`}
+                      : `Limit reached (${marketsData?.markets.length}/${marketsData?.marketLimit || "∞"})`}
                   </DropdownMenuItem>
                 </>
               )}
