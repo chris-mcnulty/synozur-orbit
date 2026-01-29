@@ -2592,6 +2592,21 @@ export class DatabaseStorage implements IStorage {
         isActive: true,
         isDefault: false,
       },
+      {
+        name: 'unlimited',
+        displayName: 'Unlimited',
+        description: 'No limits - for internal use and strategic partners',
+        competitorLimit: 9999,
+        analysisLimit: 9999,
+        adminUserLimit: 9999,
+        readWriteUserLimit: 9999,
+        readOnlyUserLimit: 9999,
+        multiMarketEnabled: true,
+        marketLimit: null,
+        sortOrder: 5,
+        isActive: true,
+        isDefault: false,
+      },
     ];
 
     for (const plan of defaultPlans) {
