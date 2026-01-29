@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startScheduledJobs } from "./services/scheduled-jobs";
+import { storage } from "./storage";
 import pg from "pg";
 
 const app = express();
@@ -108,6 +109,9 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  
+  // Seed default service plans if none exist
+  await storage.seedDefaultServicePlans();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

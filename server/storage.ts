@@ -2523,6 +2523,82 @@ export class DatabaseStorage implements IStorage {
   async deleteServicePlan(id: string): Promise<void> {
     await db.delete(servicePlans).where(eq(servicePlans.id, id));
   }
+
+  async seedDefaultServicePlans(): Promise<void> {
+    const existingPlans = await this.getAllServicePlans();
+    if (existingPlans.length > 0) {
+      return;
+    }
+
+    const defaultPlans: InsertServicePlan[] = [
+      {
+        name: 'trial',
+        displayName: 'Trial',
+        description: '60-day trial with full feature access',
+        competitorLimit: 3,
+        analysisLimit: 5,
+        adminUserLimit: 1,
+        readWriteUserLimit: 2,
+        readOnlyUserLimit: 5,
+        multiMarketEnabled: false,
+        marketLimit: 1,
+        trialDays: 60,
+        sortOrder: 1,
+        isActive: true,
+        isDefault: true,
+      },
+      {
+        name: 'free',
+        displayName: 'Free',
+        description: 'Basic free tier with limited access',
+        competitorLimit: 1,
+        analysisLimit: 1,
+        adminUserLimit: 1,
+        readWriteUserLimit: 0,
+        readOnlyUserLimit: 2,
+        multiMarketEnabled: false,
+        marketLimit: 1,
+        sortOrder: 2,
+        isActive: true,
+        isDefault: false,
+      },
+      {
+        name: 'pro',
+        displayName: 'Pro',
+        description: 'Professional tier for growing teams',
+        competitorLimit: 10,
+        analysisLimit: 25,
+        adminUserLimit: 2,
+        readWriteUserLimit: 5,
+        readOnlyUserLimit: 10,
+        multiMarketEnabled: false,
+        marketLimit: 1,
+        sortOrder: 3,
+        isActive: true,
+        isDefault: false,
+      },
+      {
+        name: 'enterprise',
+        displayName: 'Enterprise',
+        description: 'Full-featured enterprise tier with unlimited access',
+        competitorLimit: 100,
+        analysisLimit: 100,
+        adminUserLimit: 10,
+        readWriteUserLimit: 25,
+        readOnlyUserLimit: 50,
+        multiMarketEnabled: true,
+        marketLimit: null,
+        sortOrder: 4,
+        isActive: true,
+        isDefault: false,
+      },
+    ];
+
+    for (const plan of defaultPlans) {
+      await this.createServicePlan(plan);
+    }
+    console.log('[seed] Created default service plans');
+  }
 }
 
 export const storage = new DatabaseStorage();
