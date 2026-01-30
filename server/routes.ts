@@ -4057,12 +4057,11 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(403).json({ error: "Access denied - Global Admin only" });
       }
 
-      const validPlans = ["free", "pro", "enterprise", "trial"];
       const validStatuses = ["active", "suspended", "inactive"];
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       
-      const { domain, plan, status, competitorLimit, analysisLimit, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
-      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
+      const { domain, plan, status, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
+      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; adminUserLimit?: number; readWriteUserLimit?: number; readOnlyUserLimit?: number; multiMarketEnabled?: boolean; marketLimit?: number | null; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
       
       if (domain && typeof domain === "string" && domain.includes(".")) {
         // Check if domain is already taken by another tenant
@@ -4072,10 +4071,16 @@ Return ONLY valid JSON, no markdown or explanations.`;
         }
         updateData.domain = domain.toLowerCase();
       }
-      if (plan && validPlans.includes(plan)) updateData.plan = plan;
+      
+      // Just update the plan name - limits come from service plan at runtime
+      if (plan && typeof plan === "string") {
+        const servicePlan = await storage.getServicePlanByName(plan);
+        if (servicePlan) {
+          updateData.plan = plan;
+        }
+      }
+      
       if (status && validStatuses.includes(status)) updateData.status = status;
-      if (typeof competitorLimit === "number" && competitorLimit >= 0) updateData.competitorLimit = competitorLimit;
-      if (typeof analysisLimit === "number" && analysisLimit >= 0) updateData.analysisLimit = analysisLimit;
       if (name && typeof name === "string" && name.trim()) updateData.name = name.trim();
       if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null;
       if (faviconUrl !== undefined) updateData.faviconUrl = faviconUrl || null;
@@ -4288,11 +4293,14 @@ Return ONLY valid JSON, no markdown or explanations.`;
         };
       });
       
+      // Get limits from service plan (single source of truth)
+      const servicePlan = tenant?.plan ? await storage.getServicePlanByName(tenant.plan) : null;
+      
       res.json({
         markets: marketsWithBaseline,
         activeMarketId: req.session.activeMarketId || null,
-        multiMarketEnabled: tenant?.multiMarketEnabled || false,
-        marketLimit: tenant?.marketLimit
+        multiMarketEnabled: servicePlan?.multiMarketEnabled || false,
+        marketLimit: servicePlan?.marketLimit ?? null
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4328,13 +4336,16 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(404).json({ error: "Tenant not found" });
       }
 
-      if (!tenant.multiMarketEnabled) {
+      // Get limits from service plan (single source of truth)
+      const servicePlan = tenant.plan ? await storage.getServicePlanByName(tenant.plan) : null;
+
+      if (!servicePlan?.multiMarketEnabled) {
         return res.status(403).json({ error: "Multi-market feature is not enabled for this tenant. Please upgrade to Enterprise plan." });
       }
 
       const existingMarkets = await storage.getMarketsByTenant(targetTenantId);
-      if (tenant.marketLimit !== null && existingMarkets.length >= tenant.marketLimit) {
-        return res.status(400).json({ error: `Market limit reached (${tenant.marketLimit}). Contact support to increase your limit.` });
+      if (servicePlan.marketLimit !== null && existingMarkets.length >= servicePlan.marketLimit) {
+        return res.status(400).json({ error: `Market limit reached (${servicePlan.marketLimit}). Contact support to increase your limit.` });
       }
 
       const { name, description, websiteUrl } = req.body;
