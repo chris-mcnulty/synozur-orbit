@@ -124,13 +124,15 @@ function generateBattlecardHtml(
   competitorName: string,
   companyName: string,
   tenant?: Tenant | null,
-  generatedAt?: Date | string | null
+  generatedAt?: Date | string | null,
+  competitorLogoUrl?: string | null
 ): string {
   const bc = battlecard as any;
   const primaryColor = tenant?.primaryColor || "#810FFB";
   const secondaryColor = tenant?.secondaryColor || "#E60CB3";
   const tenantLogo = tenant?.logoUrl || null;
   const tenantName = tenant?.name || companyName;
+  const competitorLogo = competitorLogoUrl || null;
   
   const strengths = bc.strengths || [];
   const weaknesses = bc.weaknesses || [];
@@ -265,9 +267,9 @@ function generateBattlecardHtml(
 <body>
   <div class="doc-title">BATTLE CARD</div>
   <div class="header">
-    ${tenantLogo ? `
+    ${competitorLogo ? `
     <div class="header-logo">
-      <img src="${tenantLogo}" alt="${tenantName}" />
+      <img src="${competitorLogo}" alt="${competitorName}" />
     </div>
     ` : ''}
     <div class="header-content">
@@ -407,9 +409,10 @@ export async function generateBattlecardPdf(
   competitorName: string,
   companyName: string,
   tenant?: Tenant | null,
-  generatedAt?: Date | string | null
+  generatedAt?: Date | string | null,
+  competitorLogoUrl?: string | null
 ): Promise<Buffer> {
-  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt);
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, competitorLogoUrl);
   
   let browser;
   const startTime = Date.now();

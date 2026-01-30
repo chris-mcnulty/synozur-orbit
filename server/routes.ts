@@ -2633,7 +2633,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         competitor?.name || "Competitor",
         companyProfile?.companyName || "Your Company",
         tenant,
-        battlecard.lastGeneratedAt || battlecard.createdAt
+        battlecard.lastGeneratedAt || battlecard.createdAt,
+        competitor?.faviconUrl || null
       );
       
       const filename = `Battlecard_${competitor?.name || "Competitor"}_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -5800,7 +5801,6 @@ Respond in JSON format:
             projectId: project.id,
             productId: product.id,
             role: "baseline",
-            addedBy: ctx.userId,
           });
         } catch (productError: any) {
           // Don't fail the whole request if product creation fails
