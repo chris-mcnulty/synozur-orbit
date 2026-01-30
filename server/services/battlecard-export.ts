@@ -3,6 +3,31 @@ import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 
+// Fetch external image URL and convert to base64 data URI
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+  if (!url) return null;
+  
+  try {
+    const response = await fetch(url, { 
+      signal: AbortSignal.timeout(5000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OrbitBot/1.0)' }
+    });
+    
+    if (!response.ok) {
+      console.error(`[fetchImageAsBase64] Failed to fetch ${url}: ${response.status}`);
+      return null;
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    return `data:${contentType};base64,${base64}`;
+  } catch (e) {
+    console.error(`[fetchImageAsBase64] Error fetching ${url}:`, e);
+    return null;
+  }
+}
+
 // Format date in a timezone-safe way (uses UTC to avoid date shifting)
 function formatDateSafe(date: Date | string | null | undefined): string {
   if (!date) {
@@ -412,7 +437,13 @@ export async function generateBattlecardPdf(
   generatedAt?: Date | string | null,
   competitorLogoUrl?: string | null
 ): Promise<Buffer> {
-  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, competitorLogoUrl);
+  // Convert external logo URL to base64 for Puppeteer compatibility
+  let logoBase64: string | null = null;
+  if (competitorLogoUrl) {
+    logoBase64 = await fetchImageAsBase64(competitorLogoUrl);
+  }
+  
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64);
   
   let browser;
   const startTime = Date.now();
@@ -667,13 +698,14 @@ function generateProductBattlecardHtml(
   battlecard: ProductBattlecard,
   competitorName: string,
   baselineName: string,
-  tenant?: Tenant | null
+  tenant?: Tenant | null,
+  tenantLogoBase64?: string | null
 ): string {
   const bc = battlecard as any;
   const generatedAt = bc.lastGeneratedAt || bc.createdAt || null;
   const primaryColor = tenant?.primaryColor || "#810FFB";
   const secondaryColor = tenant?.secondaryColor || "#E60CB3";
-  const tenantLogo = tenant?.logoUrl || null;
+  const tenantLogo = tenantLogoBase64 || null;
   const tenantName = tenant?.name || baselineName;
   
   const strengths = bc.strengths || [];
@@ -894,7 +926,13 @@ export async function generateProductBattlecardPdf(
   baselineName: string,
   tenant?: Tenant | null
 ): Promise<Buffer> {
-  const html = generateProductBattlecardHtml(battlecard, competitorName, baselineName, tenant);
+  // Convert tenant logo URL to base64 for Puppeteer compatibility
+  let tenantLogoBase64: string | null = null;
+  if (tenant?.logoUrl) {
+    tenantLogoBase64 = await fetchImageAsBase64(tenant.logoUrl);
+  }
+  
+  const html = generateProductBattlecardHtml(battlecard, competitorName, baselineName, tenant, tenantLogoBase64);
   
   let browser;
   const startTime = Date.now();
