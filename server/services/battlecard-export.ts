@@ -806,7 +806,7 @@ function generateProductBattlecardHtml(
     ` : ''}
     <div class="header-content">
       <h1>${competitorName}</h1>
-      <div class="subtitle">vs ${baselineName} • Product Comparison</div>
+      <div class="subtitle">Product-level competitive comparison vs ${baselineName}</div>
     </div>
   </div>
 
