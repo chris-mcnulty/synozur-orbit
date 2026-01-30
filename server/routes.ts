@@ -5762,7 +5762,7 @@ Respond in JSON format:
         });
       }
 
-      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates } = req.body;
+      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl } = req.body;
       
       if (!name || !clientName) {
         return res.status(400).json({ error: "Project name and client name are required" });
@@ -5780,6 +5780,33 @@ Respond in JSON format:
         marketId: ctx.marketId,
         ownerUserId: ctx.userId,
       });
+
+      // If productUrl provided, automatically create the baseline product
+      if (productUrl && typeof productUrl === "string" && productUrl.trim()) {
+        try {
+          // Create the product
+          const product = await storage.createProduct({
+            name: name.trim(),
+            description: description?.trim() || null,
+            url: productUrl.trim(),
+            companyName: clientName.trim(),
+            createdBy: ctx.userId,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
+          });
+
+          // Link it to the project as baseline
+          await storage.addProductToProject({
+            projectId: project.id,
+            productId: product.id,
+            role: "baseline",
+            addedBy: ctx.userId,
+          });
+        } catch (productError: any) {
+          // Don't fail the whole request if product creation fails
+          console.error("[projects] Failed to create baseline product:", productError.message);
+        }
+      }
 
       res.status(201).json(project);
     } catch (error: any) {

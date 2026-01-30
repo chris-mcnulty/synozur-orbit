@@ -43,6 +43,7 @@ export default function Products() {
     clientName: "",
     clientDomain: "",
     description: "",
+    productUrl: "",
     notifyOnUpdates: false,
   });
 
@@ -81,7 +82,7 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", clientName: "", clientDomain: "", description: "", notifyOnUpdates: false });
+      setFormData({ name: "", clientName: "", clientDomain: "", description: "", productUrl: "", notifyOnUpdates: false });
       toast({
         title: "Product Created",
         description: "Your product analysis has been created.",
@@ -184,6 +185,7 @@ export default function Products() {
       clientName: project.clientName,
       clientDomain: project.clientDomain || "",
       description: project.description || "",
+      productUrl: "",
       notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
@@ -305,6 +307,19 @@ export default function Products() {
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                         rows={3}
                       />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="productUrl">Product URL (optional)</Label>
+                      <Input
+                        id="productUrl"
+                        data-testid="input-product-url"
+                        placeholder="e.g., https://myproduct.com"
+                        value={formData.productUrl}
+                        onChange={(e) => setFormData({ ...formData, productUrl: e.target.value })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        If provided, automatically creates this as your baseline product
+                      </p>
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                       <div className="space-y-0.5">
