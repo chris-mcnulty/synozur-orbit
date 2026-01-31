@@ -2685,7 +2685,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
         companyProfile?.companyName || "Your Company",
         tenant,
         battlecard.lastGeneratedAt || battlecard.createdAt,
-        competitor?.faviconUrl || null
+        competitor?.faviconUrl || null,
+        competitor ? {
+          headquarters: competitor.headquarters,
+          founded: competitor.founded,
+          revenue: competitor.revenue,
+          fundingRaised: competitor.fundingRaised,
+        } : null
       );
       
       const filename = `Battlecard_${competitor?.name || "Competitor"}_${new Date().toISOString().split('T')[0]}.pdf`;

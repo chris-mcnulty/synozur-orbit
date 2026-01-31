@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +24,13 @@ export default function CompetitorDetail() {
   const [editInstagram, setEditInstagram] = useState("");
   const [editTwitter, setEditTwitter] = useState("");
   const [editSocialFrequency, setEditSocialFrequency] = useState("daily");
+  
+  // Company Profile editing state
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [editHeadquarters, setEditHeadquarters] = useState("");
+  const [editFounded, setEditFounded] = useState("");
+  const [editRevenue, setEditRevenue] = useState("");
+  const [editFundingRaised, setEditFundingRaised] = useState("");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -156,6 +163,52 @@ export default function CompetitorDetail() {
       instagramUrl: editInstagram || undefined,
       twitterUrl: editTwitter || undefined,
       socialCheckFrequency: editSocialFrequency,
+    });
+  };
+  
+  // Company profile mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: { headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
+      const response = await fetch(`/api/competitors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      setProfileEditOpen(false);
+      toast({
+        title: "Profile Updated",
+        description: "Company profile has been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Update Failed",
+        description: "Could not save company profile.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleProfileEditOpen = () => {
+    setEditHeadquarters(competitor?.headquarters || "");
+    setEditFounded(competitor?.founded || "");
+    setEditRevenue(competitor?.revenue || "");
+    setEditFundingRaised(competitor?.fundingRaised || "");
+    setProfileEditOpen(true);
+  };
+  
+  const handleSaveProfile = () => {
+    updateProfileMutation.mutate({
+      headquarters: editHeadquarters || undefined,
+      founded: editFounded || undefined,
+      revenue: editRevenue || undefined,
+      fundingRaised: editFundingRaised || undefined,
     });
   };
 
@@ -735,6 +788,117 @@ export default function CompetitorDetail() {
                 </CardContent>
               </Card>
             </div>
+            
+            {/* Company Profile Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  Company Profile
+                </CardTitle>
+                <Dialog open={profileEditOpen} onOpenChange={setProfileEditOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={handleProfileEditOpen} data-testid="button-edit-profile">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Edit Company Profile</DialogTitle>
+                      <DialogDescription>
+                        Update company information for {competitor?.name}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="headquarters">Headquarters</Label>
+                        <Input 
+                          id="headquarters" 
+                          value={editHeadquarters} 
+                          onChange={(e) => setEditHeadquarters(e.target.value)}
+                          placeholder="e.g. San Francisco, CA"
+                          data-testid="input-headquarters"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="founded">Founded</Label>
+                        <Input 
+                          id="founded" 
+                          value={editFounded} 
+                          onChange={(e) => setEditFounded(e.target.value)}
+                          placeholder="e.g. 2015"
+                          data-testid="input-founded"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="revenue">Revenue</Label>
+                        <Input 
+                          id="revenue" 
+                          value={editRevenue} 
+                          onChange={(e) => setEditRevenue(e.target.value)}
+                          placeholder="e.g. $10M-$50M"
+                          data-testid="input-revenue"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="funding">Funding Raised</Label>
+                        <Input 
+                          id="funding" 
+                          value={editFundingRaised} 
+                          onChange={(e) => setEditFundingRaised(e.target.value)}
+                          placeholder="e.g. $25M Series B"
+                          data-testid="input-funding"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setProfileEditOpen(false)}>Cancel</Button>
+                      <Button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending} data-testid="button-save-profile">
+                        {updateProfileMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        Save
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {(competitor?.headquarters || competitor?.founded || competitor?.revenue || competitor?.fundingRaised) ? (
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <Building2 className="h-3 w-3" /> Headquarters
+                      </p>
+                      <p className="text-sm">{competitor.headquarters || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> Founded
+                      </p>
+                      <p className="text-sm">{competitor.founded || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" /> Revenue
+                      </p>
+                      <p className="text-sm">{competitor.revenue || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3" /> Funding Raised
+                      </p>
+                      <p className="text-sm">{competitor.fundingRaised || "—"}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Building2 className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground text-sm mb-3">
+                      No company profile data yet. Click edit to add details or run AI research.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="battlecard" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">

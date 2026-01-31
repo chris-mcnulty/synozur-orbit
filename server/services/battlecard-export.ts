@@ -144,13 +144,21 @@ function harveyBallSvg(value: string): string {
 
 const ORBIT_FOOTER = 'Orbit orbit.synozur.com • Published by The Synozur Alliance LLC www.synozur.com © 2026 All Rights Reserved.';
 
+interface CompanyProfile {
+  headquarters?: string | null;
+  founded?: string | null;
+  revenue?: string | null;
+  fundingRaised?: string | null;
+}
+
 function generateBattlecardHtml(
   battlecard: Battlecard,
   competitorName: string,
   companyName: string,
   tenant?: Tenant | null,
   generatedAt?: Date | string | null,
-  competitorLogoUrl?: string | null
+  competitorLogoUrl?: string | null,
+  companyProfile?: CompanyProfile | null
 ): string {
   const bc = battlecard as any;
   const primaryColor = tenant?.primaryColor || "#810FFB";
@@ -303,6 +311,38 @@ function generateBattlecardHtml(
     </div>
   </div>
 
+  ${(companyProfile?.headquarters || companyProfile?.founded || companyProfile?.revenue || companyProfile?.fundingRaised) ? `
+  <div class="section" style="margin-bottom: 16px;">
+    <div class="section-title">Company Snapshot</div>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+      ${companyProfile.headquarters ? `
+      <div style="flex: 1; min-width: 120px;">
+        <div style="font-size: 9pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Headquarters</div>
+        <div style="font-weight: 500;">${companyProfile.headquarters}</div>
+      </div>
+      ` : ''}
+      ${companyProfile.founded ? `
+      <div style="flex: 1; min-width: 80px;">
+        <div style="font-size: 9pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Founded</div>
+        <div style="font-weight: 500;">${companyProfile.founded}</div>
+      </div>
+      ` : ''}
+      ${companyProfile.revenue ? `
+      <div style="flex: 1; min-width: 100px;">
+        <div style="font-size: 9pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Revenue</div>
+        <div style="font-weight: 500;">${companyProfile.revenue}</div>
+      </div>
+      ` : ''}
+      ${companyProfile.fundingRaised ? `
+      <div style="flex: 1; min-width: 100px;">
+        <div style="font-size: 9pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Funding Raised</div>
+        <div style="font-weight: 500;">${companyProfile.fundingRaised}</div>
+      </div>
+      ` : ''}
+    </div>
+  </div>
+  ` : ''}
+
   ${strengths.length || weaknesses.length ? `
   <div class="section">
     <div class="section-title">Competitor Overview</div>
@@ -435,7 +475,8 @@ export async function generateBattlecardPdf(
   companyName: string,
   tenant?: Tenant | null,
   generatedAt?: Date | string | null,
-  competitorLogoUrl?: string | null
+  competitorLogoUrl?: string | null,
+  companyProfile?: CompanyProfile | null
 ): Promise<Buffer> {
   // Convert external logo URL to base64 for Puppeteer compatibility
   let logoBase64: string | null = null;
@@ -443,7 +484,7 @@ export async function generateBattlecardPdf(
     logoBase64 = await fetchImageAsBase64(competitorLogoUrl);
   }
   
-  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64);
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64, companyProfile);
   
   let browser;
   const startTime = Date.now();
