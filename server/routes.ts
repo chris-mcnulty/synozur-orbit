@@ -10627,12 +10627,79 @@ Return only the description text, no quotes or formatting.`;
       }
 
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      if (!user || (user.role !== "Global Admin" && user.role !== "Domain Admin")) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
       }
 
       const status = getJobStatus();
-      res.json(status);
+      
+      // Add schedule information with job intervals
+      const scheduleInfo = {
+        websiteCrawl: {
+          ...status.websiteCrawl,
+          description: "Crawls competitor websites for content changes",
+          interval: "Every 6 hours",
+        },
+        socialMonitor: {
+          ...status.socialMonitor,
+          description: "Monitors social media profiles for updates",
+          interval: "Every 4 hours",
+        },
+        websiteMonitor: {
+          ...status.websiteMonitor,
+          description: "Detects website changes and generates AI summaries",
+          interval: "Every 6 hours",
+        },
+        trialReminder: {
+          ...status.trialReminder,
+          description: "Sends trial expiration reminder emails",
+          interval: "Every 6 hours",
+        },
+        weeklyDigest: {
+          ...status.weeklyDigest,
+          description: "Sends weekly competitive intelligence digest emails",
+          interval: "Weekly (Mondays 9am ET)",
+        },
+      };
+      
+      res.json(scheduleInfo);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get job run history
+  app.get("/api/admin/jobs/history", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || (user.role !== "Global Admin" && user.role !== "Domain Admin")) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 100;
+      const jobType = req.query.jobType as string;
+      
+      let history;
+      if (user.role === "Global Admin") {
+        // Global admins see all job runs
+        if (jobType) {
+          history = await storage.getScheduledJobRunsByType(jobType, limit);
+        } else {
+          history = await storage.getScheduledJobRuns(limit);
+        }
+      } else {
+        // Domain admins only see their tenant's job runs
+        history = await storage.getScheduledJobRunsByTenant(user.tenantDomain, limit);
+        if (jobType) {
+          history = history.filter(j => j.jobType === jobType);
+        }
+      }
+      
+      res.json(history);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
