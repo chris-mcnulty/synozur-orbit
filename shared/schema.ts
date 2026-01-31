@@ -297,6 +297,11 @@ export const competitors = pgTable("competitors", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
   analysisData: jsonb("analysis_data"), // AI analysis results
+  // Company profile fields (for battlecard capsule overview)
+  headquarters: text("headquarters"), // City, State/Country
+  founded: text("founded"), // Year founded
+  revenue: text("revenue"), // Revenue range or estimate (e.g., "$10M-$50M", "Series B")
+  fundingRaised: text("funding_raised"), // Total funding raised (e.g., "$25M")
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
