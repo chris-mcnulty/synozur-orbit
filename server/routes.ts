@@ -138,6 +138,7 @@ function parseManualResearch(content: string, entityName: string): any {
   // List of known section headers to use as delimiters
   const knownHeaders = [
     "Company Summary", "Summary", "Overview",
+    "Company Profile",
     "Value Proposition", "Main Value Proposition",
     "Target Audience", "Target Market",
     "Key Messages", "Main Messages",
@@ -207,6 +208,28 @@ function parseManualResearch(content: string, entityName: string): any {
   const strengths = extractList(content, "Strengths");
   const weaknesses = extractList(content, "Weaknesses");
 
+  // Extract company profile fields from "Company Profile:" section
+  const companyProfileSection = extractSection(content, "Company Profile");
+  const extractProfileField = (fieldName: string): string => {
+    const patterns = [
+      new RegExp(`[-•]\\s*${fieldName}[:\\s]+([^\\n]+)`, 'i'),
+      new RegExp(`${fieldName}[:\\s]+([^\\n]+)`, 'i'),
+    ];
+    for (const pattern of patterns) {
+      const match = companyProfileSection.match(pattern);
+      if (match && match[1]?.trim()) {
+        return match[1].trim();
+      }
+    }
+    return "";
+  };
+
+  const headquarters = extractProfileField("Headquarters");
+  const founded = extractProfileField("Founded");
+  const employeeCount = extractProfileField("Employee Count") || extractProfileField("Employees");
+  const revenue = extractProfileField("Revenue");
+  const fundingRaised = extractProfileField("Funding Raised") || extractProfileField("Funding");
+
   return {
     summary: summary.substring(0, 500),
     valueProposition: valueProposition.substring(0, 500),
@@ -217,6 +240,14 @@ function parseManualResearch(content: string, entityName: string): any {
     strengths: strengths.slice(0, 5),
     weaknesses: weaknesses.slice(0, 5),
     rawContent: content.substring(0, 5000),
+    // Company profile fields (stored in analysisData but also returned for direct update)
+    companyProfile: {
+      headquarters,
+      founded,
+      employeeCount,
+      revenue,
+      fundingRaised,
+    },
   };
 }
 
@@ -1180,6 +1211,26 @@ export async function registerRoutes(
       analysisData.manualResearchDate = new Date().toISOString();
 
       await storage.updateCompetitorAnalysis(competitor.id, analysisData);
+      
+      // Also update the competitor record with company profile fields if extracted
+      if (analysisData.companyProfile) {
+        const profileUpdates: any = {};
+        if (analysisData.companyProfile.headquarters) {
+          profileUpdates.headquarters = analysisData.companyProfile.headquarters;
+        }
+        if (analysisData.companyProfile.founded) {
+          profileUpdates.founded = analysisData.companyProfile.founded;
+        }
+        if (analysisData.companyProfile.revenue) {
+          profileUpdates.revenue = analysisData.companyProfile.revenue;
+        }
+        if (analysisData.companyProfile.fundingRaised) {
+          profileUpdates.fundingRaised = analysisData.companyProfile.fundingRaised;
+        }
+        if (Object.keys(profileUpdates).length > 0) {
+          await storage.updateCompetitor(competitor.id, profileUpdates);
+        }
+      }
       
       // Create activity entry
       await storage.createActivity({

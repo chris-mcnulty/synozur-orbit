@@ -35,6 +35,13 @@ export function ManualResearchDialog({
 **Company Summary:**
 [2-3 sentence overview of what the company does, their market position, and key focus areas]
 
+**Company Profile:**
+- Headquarters: [City, State/Country]
+- Founded: [Year]
+- Employee Count: [Approximate number or range, e.g., "50-100" or "500+"]
+- Revenue: [Estimated revenue range if available, e.g., "$10M-$50M" or "Series B"]
+- Funding Raised: [Total funding if venture-backed, e.g., "$25M" or "Bootstrapped"]
+
 **Value Proposition:**
 [Their main value proposition - what unique value do they offer customers?]
 
