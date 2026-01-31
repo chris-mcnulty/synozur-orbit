@@ -1252,6 +1252,7 @@ export default function AdminPage() {
                         <TableHead>Job Type</TableHead>
                         <TableHead>Target</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Details</TableHead>
                         <TableHead>Started</TableHead>
                         <TableHead>Duration</TableHead>
                       </TableRow>
@@ -1261,6 +1262,17 @@ export default function AdminPage() {
                         const duration = run.startedAt && run.completedAt
                           ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
                           : null;
+                        const resultDetails = run.result ? (
+                          run.jobType === "websiteCrawl" && run.result.pagesCrawled
+                            ? `${run.result.pagesCrawled} pages, ${run.result.totalWordCount?.toLocaleString() || 0} words`
+                            : run.jobType === "socialMonitor"
+                            ? `${run.result.entityType || "entity"}`
+                            : run.jobType === "websiteMonitor"
+                            ? `${run.result.entityType || "entity"}`
+                            : run.result.status || "-"
+                        ) : run.errorMessage
+                          ? run.errorMessage.substring(0, 50)
+                          : "-";
                         return (
                           <TableRow key={run.id} data-testid={`job-run-${run.id}`}>
                             <TableCell className="font-medium">
@@ -1288,6 +1300,9 @@ export default function AdminPage() {
                               ) : (
                                 <Badge variant="secondary">{run.status}</Badge>
                               )}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={typeof resultDetails === 'string' ? resultDetails : undefined}>
+                              {resultDetails}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {run.startedAt ? new Date(run.startedAt).toLocaleString() : "-"}

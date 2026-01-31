@@ -88,6 +88,28 @@ async function trackJobComplete(
   }
 }
 
+async function trackJobRun<T>(
+  jobType: string,
+  tenantDomain: string,
+  targetId: string,
+  targetName: string,
+  work: () => Promise<T>
+): Promise<string | null> {
+  const jobRunId = await trackJobStart(jobType, tenantDomain, targetId, targetName);
+  if (!jobRunId) return null;
+  
+  try {
+    const result = await work();
+    await trackJobComplete(jobRunId, "completed", result as Record<string, any>);
+    return jobRunId;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await trackJobComplete(jobRunId, "failed", undefined, errorMessage);
+    console.error(`[Scheduled Job] Job failed for ${targetName}:`, error);
+    return jobRunId;
+  }
+}
+
 const jobStatus: Record<string, JobStatus> = {
   websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
@@ -155,118 +177,133 @@ async function runWebsiteCrawlJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Crawling ${competitor.name} (${competitor.url})...`);
 
-        try {
-          const crawlResult = await crawlCompetitorWebsite(competitor.url);
+        const jobRunId = await trackJobRun(
+          "websiteCrawl",
+          tenant.domain,
+          competitor.id,
+          competitor.name,
+          async () => {
+            const crawlResult = await crawlCompetitorWebsite(competitor.url);
 
-          if (crawlResult.pages.length === 0) {
-            console.log(`[Scheduled Job] No pages found for ${competitor.name}`);
-            continue;
-          }
+            if (crawlResult.pages.length === 0) {
+              return { status: "no_pages", message: `No pages found for ${competitor.name}` };
+            }
 
-          const updates: any = {
-            crawlData: {
-              pagesCrawled: crawlResult.pages.map(p => ({
-                url: p.url,
-                pageType: p.pageType,
-                title: p.title,
-                wordCount: p.wordCount,
-              })),
-              totalWordCount: crawlResult.totalWordCount,
-              crawledAt: crawlResult.crawledAt,
-            },
-            lastFullCrawl: new Date(),
-          };
-
-          if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) {
-            updates.linkedInUrl = crawlResult.socialLinks.linkedIn;
-          }
-          if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
-            updates.instagramUrl = crawlResult.socialLinks.instagram;
-          }
-
-          if (crawlResult.blogSnapshot) {
-            const previousSnapshot = competitor.blogSnapshot as any;
-            const previousCount = previousSnapshot?.postCount || 0;
-            const newPosts = crawlResult.blogSnapshot.postCount - previousCount;
-
-            updates.blogSnapshot = {
-              ...crawlResult.blogSnapshot,
-              capturedAt: new Date().toISOString(),
+            const updates: any = {
+              crawlData: {
+                pagesCrawled: crawlResult.pages.map(p => ({
+                  url: p.url,
+                  pageType: p.pageType,
+                  title: p.title,
+                  wordCount: p.wordCount,
+                })),
+                totalWordCount: crawlResult.totalWordCount,
+                crawledAt: crawlResult.crawledAt,
+              },
+              lastFullCrawl: new Date(),
             };
 
-            if (previousCount > 0 && newPosts > 0) {
-              await storage.createActivity({
-                type: "blog_update",
-                competitorId: competitor.id,
-                competitorName: competitor.name,
-                description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${crawlResult.blogSnapshot.latestTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
-                date: new Date().toISOString(),
-                impact: newPosts >= 3 ? "High" : "Medium",
-                tenantDomain: tenant.domain,
-                marketId: competitor.marketId,
-              });
+            if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) {
+              updates.linkedInUrl = crawlResult.socialLinks.linkedIn;
             }
-          }
+            if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
+              updates.instagramUrl = crawlResult.socialLinks.instagram;
+            }
 
-          await storage.updateCompetitor(competitor.id, updates);
-          await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
+            if (crawlResult.blogSnapshot) {
+              const previousSnapshot = competitor.blogSnapshot as any;
+              const previousCount = previousSnapshot?.postCount || 0;
+              const newPosts = crawlResult.blogSnapshot.postCount - previousCount;
 
-          // Capture visual assets if not already captured
-          if (!competitor.faviconUrl || !competitor.screenshotUrl) {
-            captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
-              if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
-                await storage.updateCompetitor(competitor.id, {
-                  faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
-                  screenshotUrl: visualAssets.screenshotUrl || competitor.screenshotUrl,
+              updates.blogSnapshot = {
+                ...crawlResult.blogSnapshot,
+                capturedAt: new Date().toISOString(),
+              };
+
+              if (previousCount > 0 && newPosts > 0) {
+                await storage.createActivity({
+                  type: "blog_update",
+                  competitorId: competitor.id,
+                  competitorName: competitor.name,
+                  description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${crawlResult.blogSnapshot.latestTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
+                  date: new Date().toISOString(),
+                  impact: newPosts >= 3 ? "High" : "Medium",
+                  tenantDomain: tenant.domain,
+                  marketId: competitor.marketId,
                 });
               }
-            }).catch(err => console.error(`Visual capture failed for ${competitor.name}:`, err));
-          }
-
-          const websiteContent = getCombinedContent(crawlResult);
-          if (websiteContent.length > 100) {
-            try {
-              // Extract LinkedIn data from competitor record if available
-              const linkedInEngagement = competitor.linkedInEngagement as {
-                followers?: number;
-                posts?: number;
-                employees?: number;
-                recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
-              } | null;
-              
-              const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
-                followerCount: linkedInEngagement.followers,
-                employeeCount: linkedInEngagement.employees,
-                recentPosts: linkedInEngagement.recentPosts,
-              } : undefined;
-              
-              const analysis = await analyzeCompetitorWebsite(
-                competitor.name,
-                competitor.url,
-                websiteContent,
-                undefined, // grounding context
-                linkedInData
-              );
-              await storage.updateCompetitorAnalysis(competitor.id, analysis);
-
-              await storage.createActivity({
-                type: "scheduled_crawl",
-                competitorId: competitor.id,
-                competitorName: competitor.name,
-                description: `Scheduled analysis of ${crawlResult.pages.length} pages: ${analysis.summary}`,
-                date: new Date().toISOString(),
-                impact: "Low",
-                tenantDomain: tenant.domain,
-                marketId: competitor.marketId,
-              });
-            } catch (aiError) {
-              console.error(`[Scheduled Job] AI analysis failed for ${competitor.name}:`, aiError);
             }
-          }
 
+            await storage.updateCompetitor(competitor.id, updates);
+            await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
+
+            // Capture visual assets if not already captured
+            if (!competitor.faviconUrl || !competitor.screenshotUrl) {
+              captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+                if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+                  await storage.updateCompetitor(competitor.id, {
+                    faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
+                    screenshotUrl: visualAssets.screenshotUrl || competitor.screenshotUrl,
+                  });
+                }
+              }).catch(err => console.error(`Visual capture failed for ${competitor.name}:`, err));
+            }
+
+            const websiteContent = getCombinedContent(crawlResult);
+            let analysisResult = null;
+            if (websiteContent.length > 100) {
+              try {
+                const linkedInEngagement = competitor.linkedInEngagement as {
+                  followers?: number;
+                  posts?: number;
+                  employees?: number;
+                  recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+                } | null;
+                
+                const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+                  followerCount: linkedInEngagement.followers,
+                  employeeCount: linkedInEngagement.employees,
+                  recentPosts: linkedInEngagement.recentPosts,
+                } : undefined;
+                
+                const analysis = await analyzeCompetitorWebsite(
+                  competitor.name,
+                  competitor.url,
+                  websiteContent,
+                  undefined,
+                  linkedInData
+                );
+                await storage.updateCompetitorAnalysis(competitor.id, analysis);
+                analysisResult = { summary: analysis.summary };
+
+                await storage.createActivity({
+                  type: "scheduled_crawl",
+                  competitorId: competitor.id,
+                  competitorName: competitor.name,
+                  description: `Scheduled analysis of ${crawlResult.pages.length} pages: ${analysis.summary}`,
+                  date: new Date().toISOString(),
+                  impact: "Low",
+                  tenantDomain: tenant.domain,
+                  marketId: competitor.marketId,
+                });
+              } catch (aiError) {
+                console.error(`[Scheduled Job] AI analysis failed for ${competitor.name}:`, aiError);
+              }
+            }
+
+            return {
+              status: "success",
+              pagesCrawled: crawlResult.pages.length,
+              totalWordCount: crawlResult.totalWordCount,
+              blogPostsDetected: crawlResult.blogSnapshot?.postCount || 0,
+              socialLinksFound: Object.keys(crawlResult.socialLinks).filter(k => crawlResult.socialLinks[k as keyof typeof crawlResult.socialLinks]).length,
+              analysis: analysisResult,
+            };
+          }
+        );
+
+        if (jobRunId) {
           await new Promise(resolve => setTimeout(resolve, 2000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed to crawl ${competitor.name}:`, error);
         }
       }
     }
@@ -328,12 +365,22 @@ async function runSocialMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Monitoring social for ${competitor.name} (${competitorFrequency})...`);
 
-        try {
-          await monitorCompetitorSocialMedia(competitor.id, tenant.domain);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed social monitoring for ${competitor.name}:`, error);
-        }
+        await trackJobRun(
+          "socialMonitor",
+          tenant.domain,
+          competitor.id,
+          `Competitor: ${competitor.name}`,
+          async () => {
+            await monitorCompetitorSocialMedia(competitor.id, tenant.domain);
+            return {
+              status: "success",
+              entityType: "competitor",
+              linkedIn: !!competitor.linkedInUrl,
+              instagram: !!competitor.instagramUrl,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
       // Monitor company profiles (baseline) for social changes
@@ -363,17 +410,28 @@ async function runSocialMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Monitoring baseline social for ${profile.companyName} (${profileFrequency})...`);
 
-        try {
-          await monitorCompanyProfileSocialMedia(
-            profile.id,
-            profile.userId,
-            tenant.domain,
-            profile.marketId || undefined
-          );
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed baseline social monitoring for ${profile.companyName}:`, error);
-        }
+        await trackJobRun(
+          "socialMonitor",
+          tenant.domain,
+          profile.id,
+          `Baseline: ${profile.companyName}`,
+          async () => {
+            await monitorCompanyProfileSocialMedia(
+              profile.id,
+              profile.userId,
+              tenant.domain,
+              profile.marketId || undefined
+            );
+            return {
+              status: "success",
+              entityType: "baseline",
+              linkedIn: !!profile.linkedInUrl,
+              instagram: !!profile.instagramUrl,
+              twitter: !!profile.twitterUrl,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
       // Monitor products for social changes (product-level social tracking)
@@ -397,17 +455,28 @@ async function runSocialMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Monitoring product social for ${product.name} (${productFrequency})...`);
 
-        try {
-          await monitorProductSocialMedia(
-            product.id,
-            product.createdBy,
-            tenant.domain,
-            product.marketId || undefined
-          );
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed product social monitoring for ${product.name}:`, error);
-        }
+        await trackJobRun(
+          "socialMonitor",
+          tenant.domain,
+          product.id,
+          `Product: ${product.name}`,
+          async () => {
+            await monitorProductSocialMedia(
+              product.id,
+              product.createdBy,
+              tenant.domain,
+              product.marketId || undefined
+            );
+            return {
+              status: "success",
+              entityType: "product",
+              linkedIn: !!product.linkedInUrl,
+              instagram: !!product.instagramUrl,
+              twitter: !!product.twitterUrl,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
   } catch (error) {
@@ -461,16 +530,25 @@ async function runWebsiteMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Monitoring website changes for ${competitor.name}...`);
 
-        try {
-          await monitorCompetitorWebsite(
-            competitor.id, 
-            competitor.userId,
-            tenant.domain
-          );
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed website monitoring for ${competitor.name}:`, error);
-        }
+        await trackJobRun(
+          "websiteMonitor",
+          tenant.domain,
+          competitor.id,
+          `Competitor: ${competitor.name}`,
+          async () => {
+            await monitorCompetitorWebsite(
+              competitor.id, 
+              competitor.userId,
+              tenant.domain
+            );
+            return {
+              status: "success",
+              entityType: "competitor",
+              url: competitor.url,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
       // Monitor company profiles (baseline) for website changes
@@ -493,17 +571,26 @@ async function runWebsiteMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Monitoring baseline website changes for ${profile.companyName}...`);
 
-        try {
-          await monitorCompanyProfileWebsite(
-            profile.id,
-            profile.userId,
-            tenant.domain,
-            profile.marketId || undefined
-          );
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (error) {
-          console.error(`[Scheduled Job] Failed baseline website monitoring for ${profile.companyName}:`, error);
-        }
+        await trackJobRun(
+          "websiteMonitor",
+          tenant.domain,
+          profile.id,
+          `Baseline: ${profile.companyName}`,
+          async () => {
+            await monitorCompanyProfileWebsite(
+              profile.id,
+              profile.userId,
+              tenant.domain,
+              profile.marketId || undefined
+            );
+            return {
+              status: "success",
+              entityType: "baseline",
+              url: profile.websiteUrl,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
   } catch (error) {
