@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -82,6 +82,36 @@ type ServicePlan = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+type JobStatusInfo = {
+  lastRun: string | null;
+  isRunning: boolean;
+  nextRun: string | null;
+  description: string;
+  interval: string;
+};
+
+type ScheduledJobRun = {
+  id: string;
+  jobType: string;
+  tenantDomain: string | null;
+  targetId: string | null;
+  targetName: string | null;
+  status: string;
+  result: Record<string, any> | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+const JOB_TYPE_LABELS: Record<string, string> = {
+  websiteCrawl: "Website Crawl",
+  socialMonitor: "Social Monitor",
+  websiteMonitor: "Website Monitor",
+  trialReminder: "Trial Reminders",
+  weeklyDigest: "Weekly Digest",
 };
 
 const GLOBAL_DOC_CATEGORIES = [
@@ -351,6 +381,30 @@ export default function AdminPage() {
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch service plans");
+      return response.json();
+    },
+  });
+
+  // Scheduled Jobs queries
+  const { data: jobStatus, refetch: refetchJobStatus } = useQuery<Record<string, JobStatusInfo>>({
+    queryKey: ["/api/admin/jobs/status"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/jobs/status", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch job status");
+      return response.json();
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const { data: jobHistory = [], refetch: refetchJobHistory } = useQuery<ScheduledJobRun[]>({
+    queryKey: ["/api/admin/jobs/history"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/jobs/history?limit=50", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch job history");
       return response.json();
     },
   });
@@ -1107,6 +1161,148 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             <AiUsageDashboard />
+          </CardContent>
+        </Card>
+
+        {/* Scheduled Jobs */}
+        <Card data-testid="card-scheduled-jobs">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" />
+              Scheduled Jobs
+            </CardTitle>
+            <CardDescription>
+              Monitor background job schedules and execution history
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Job Schedule */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">Job Schedule</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    refetchJobStatus();
+                    refetchJobHistory();
+                  }}
+                  data-testid="refresh-jobs"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
+              {jobStatus && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Object.entries(jobStatus).map(([key, job]) => (
+                    <div
+                      key={key}
+                      className="border rounded-lg p-3 bg-muted/30"
+                      data-testid={`job-status-${key}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-sm">
+                          {JOB_TYPE_LABELS[key] || key}
+                        </span>
+                        {job.isRunning ? (
+                          <Badge variant="default" className="bg-blue-500">
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Running
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Idle</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-2">{job.description}</p>
+                      <div className="text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Interval:</span>
+                          <span>{job.interval}</span>
+                        </div>
+                        {job.lastRun && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Last run:</span>
+                            <span>{new Date(job.lastRun).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {job.nextRun && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Next run:</span>
+                            <span>{new Date(job.nextRun).toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Job History */}
+            <div>
+              <h3 className="font-semibold text-sm mb-3">Recent Job Runs</h3>
+              {jobHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No job runs recorded yet.</p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Job Type</TableHead>
+                        <TableHead>Target</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Started</TableHead>
+                        <TableHead>Duration</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jobHistory.slice(0, 25).map((run) => {
+                        const duration = run.startedAt && run.completedAt
+                          ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+                          : null;
+                        return (
+                          <TableRow key={run.id} data-testid={`job-run-${run.id}`}>
+                            <TableCell className="font-medium">
+                              {JOB_TYPE_LABELS[run.jobType] || run.jobType}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {run.targetName || run.tenantDomain || "-"}
+                            </TableCell>
+                            <TableCell>
+                              {run.status === "completed" ? (
+                                <Badge variant="outline" className="text-green-600 border-green-600">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              ) : run.status === "failed" ? (
+                                <Badge variant="outline" className="text-red-600 border-red-600">
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Failed
+                                </Badge>
+                              ) : run.status === "running" ? (
+                                <Badge variant="outline" className="text-blue-600 border-blue-600">
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                  Running
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">{run.status}</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {run.startedAt ? new Date(run.startedAt).toLocaleString() : "-"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {duration !== null ? `${duration}s` : "-"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
