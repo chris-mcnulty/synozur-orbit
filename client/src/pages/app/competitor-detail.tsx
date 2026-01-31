@@ -58,7 +58,18 @@ export default function CompetitorDetail() {
   const competitorActivity = allActivity.filter((a: any) => 
     a.competitorId && id && String(a.competitorId) === String(id)
   );
-  const crawlData = competitor?.crawlData as { pages?: Array<{ url: string; title?: string; wordCount?: number; crawledAt?: string }>; totalWordCount?: number; crawledAt?: string } | null;
+  // Handle both formats: 'pages' and 'pagesCrawled' (backend uses pagesCrawled)
+  const rawCrawlData = competitor?.crawlData as { 
+    pages?: Array<{ url: string; title?: string; wordCount?: number; pageType?: string }>; 
+    pagesCrawled?: Array<{ url: string; title?: string; wordCount?: number; pageType?: string }>; 
+    totalWordCount?: number; 
+    crawledAt?: string 
+  } | null;
+  const crawlData = rawCrawlData ? {
+    pages: rawCrawlData.pages || rawCrawlData.pagesCrawled,
+    totalWordCount: rawCrawlData.totalWordCount,
+    crawledAt: rawCrawlData.crawledAt,
+  } : null;
   const analysisData = competitor?.analysisData as { 
     positioning?: string; 
     messagingThemes?: string[];
