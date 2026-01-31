@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*No unreleased changes*
+### Added
+- Company Profile fields for competitors (headquarters, founded year, revenue, funding raised)
+  - View and edit company profile data on the Competitor Detail page (Overview tab)
+  - Manual AI Research prompt now requests company profile information
+  - Company profile fields auto-extracted when pasting AI research results
+  - "Company Snapshot" section in battlecard PDFs displays profile data when available
+- Enhanced scheduled job tracking with individual entity-level run details
+  - Job history "Details" column shows results summary (pages crawled, word count, social platforms)
+  - Each competitor/baseline/product crawl creates individual job run record with results
 
 ---
 

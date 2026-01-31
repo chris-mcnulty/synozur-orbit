@@ -425,6 +425,18 @@ Click any competitor to see their full profile:
 - Social media links
 - Last crawl timestamp
 - Analysis status
+- **Company Profile card** with key business information:
+  - Headquarters location
+  - Year founded
+  - Revenue (estimated range)
+  - Funding raised (if venture-backed)
+
+**Editing Company Profile:**
+1. Click the pencil icon on the Company Profile card
+2. Enter or update company information
+3. Click "Save" to store the data
+
+**Tip:** Company profile data is automatically extracted when you use Manual AI Research. The AI prompt includes company profile fields, and results are saved when you paste the research.
 
 **Website Content Tab:**
 - Homepage content
@@ -624,27 +636,34 @@ Battlecards prepare your sales team for competitive conversations:
 
 **Battlecard Sections:**
 
-**1. Overview:**
+**1. Company Snapshot** (PDF only):
+- Headquarters location
+- Year founded
+- Revenue (estimated)
+- Funding raised
+- *Only displays when company profile data is available*
+
+**2. Overview:**
 - Competitor company summary
 - Target market and positioning
 - Key products/services
 
-**2. Our Advantages:**
+**3. Our Advantages:**
 - Where your solution is stronger
 - Unique differentiators
 - Competitive edge points
 
-**3. Their Strengths:**
+**4. Their Strengths:**
 - What the competitor does well
 - Areas where they're strong
 - Features to be aware of
 
-**4. Common Objections:**
+**5. Common Objections:**
 - Typical competitor claims
 - Suggested responses
 - How to reframe the conversation
 
-**5. Talk Tracks:**
+**6. Talk Tracks:**
 - Opening statements
 - Discovery questions
 - Closing strategies

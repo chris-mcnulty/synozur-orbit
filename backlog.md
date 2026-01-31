@@ -164,12 +164,14 @@
 
 ## Post-MVP Roadmap (Year One)
 
-### Competitive Battlecards (Q1 Post-Launch)
+### Competitive Battlecards (Q1 Post-Launch) ✅
 Generate competitive battlecards for sales enablement:
-- [ ] Critical Capabilities Matrix with Harvey Ball scoring (●○◐◑)
-- [ ] Qualitative comparison narrative
-- [ ] Sales challenge questions with responses
-- [ ] Exportable PDF battlecard
+- [x] Critical Capabilities Matrix with Harvey Ball scoring (●○◐◑)
+- [x] Qualitative comparison narrative
+- [x] Sales challenge questions with responses
+- [x] Exportable PDF battlecard
+- [x] Company Profile fields (headquarters, founded, revenue, funding) with UI editing
+- [x] Company Snapshot section in PDF exports
 
 ### Real-Time Competitor Alerts (Q1)
 - [ ] Real-time notifications for competitor changes
