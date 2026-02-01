@@ -10589,6 +10589,34 @@ Return only the description text, no quotes or formatting.`;
       const deltaVsMarket = baselineOverall - avgOverall;
       const deltaPercent = avgOverall > 0 ? Math.round((deltaVsMarket / avgOverall) * 100) : 0;
       
+      // Save score history for baseline (once per period to avoid duplicates)
+      if (companyProfile && baselineScores) {
+        try {
+          const existingScore = await storage.getLatestScoreForEntity("baseline", companyProfile.id);
+          const currentPeriod = new Date().toISOString().slice(0, 7); // YYYY-MM format
+          const existingPeriod = existingScore?.recordedAt ? new Date(existingScore.recordedAt).toISOString().slice(0, 7) : null;
+          
+          // Only save if no history exists yet OR we're in a new period
+          if (!existingScore || existingPeriod !== currentPeriod) {
+            await storage.createScoreHistory({
+              entityType: "baseline",
+              entityId: companyProfile.id,
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId,
+              innovationScore: baselineScores.innovationScore,
+              marketPresenceScore: baselineScores.marketPresenceScore,
+              overallScore: baselineScores.overallScore,
+              period: currentPeriod,
+              factors: JSON.stringify(baselineScores.factors),
+            });
+            console.log(`[Score History] Saved baseline score for period ${currentPeriod}: ${baselineScores.overallScore}`);
+          }
+        } catch (historyError) {
+          console.error("[Score History] Failed to save baseline score:", historyError);
+          // Non-blocking - continue even if history save fails
+        }
+      }
+      
       res.json({
         baseline: baselineScores ? {
           name: companyProfile?.companyName || 'Your Company',
