@@ -1137,6 +1137,69 @@ export async function registerRoutes(
             await storage.updateCompetitorAnalysis(competitor.id, analysis);
           }
           
+          // Extract company profile data from about/homepage content (if not already set)
+          if (!competitor.headquarters && !competitor.founded && !competitor.revenue && !competitor.fundingRaised) {
+            try {
+              // Find about page content for company info extraction
+              const aboutPage = crawlResult.pages.find(p => p.pageType === "about");
+              const homePage = crawlResult.pages.find(p => p.pageType === "homepage");
+              const contentForProfile = (aboutPage?.content || "") + "\n\n" + (homePage?.content || "");
+              
+              if (contentForProfile.length > 200) {
+                const profilePrompt = `Extract company profile information from this website content. Return ONLY a JSON object with these fields (use null if not found):
+{
+  "headquarters": "City, State/Country or null",
+  "founded": "Year as string or null",
+  "revenue": "Revenue range or null", 
+  "fundingRaised": "Funding amount or null"
+}
+
+Website content:
+${contentForProfile.substring(0, 8000)}
+
+Return ONLY the JSON object, no other text.`;
+
+                const anthropic = new Anthropic({
+                  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
+                });
+                
+                const profileResponse = await anthropic.messages.create({
+                  model: "claude-sonnet-4-20250514",
+                  max_tokens: 500,
+                  messages: [{ role: "user", content: profilePrompt }],
+                });
+                
+                const profileText = (profileResponse.content[0] as any).text;
+                const jsonMatch = profileText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                  const profileData = JSON.parse(jsonMatch[0]);
+                  const profileUpdates: any = {};
+                  
+                  if (profileData.headquarters && profileData.headquarters !== "null") {
+                    profileUpdates.headquarters = profileData.headquarters;
+                  }
+                  if (profileData.founded && profileData.founded !== "null") {
+                    profileUpdates.founded = String(profileData.founded);
+                  }
+                  if (profileData.revenue && profileData.revenue !== "null") {
+                    profileUpdates.revenue = profileData.revenue;
+                  }
+                  if (profileData.fundingRaised && profileData.fundingRaised !== "null") {
+                    profileUpdates.fundingRaised = profileData.fundingRaised;
+                  }
+                  
+                  if (Object.keys(profileUpdates).length > 0) {
+                    await storage.updateCompetitor(competitor.id, profileUpdates);
+                    console.log(`[Crawl] Extracted company profile for ${competitor.name}:`, profileUpdates);
+                  }
+                }
+              }
+            } catch (profileError) {
+              console.error(`[Crawl] Failed to extract company profile for ${competitor.name}:`, profileError);
+              // Non-blocking - continue even if profile extraction fails
+            }
+          }
+          
           // Create activity entry for the crawl
           await storage.createActivity({
             type: "crawl",
