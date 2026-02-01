@@ -40,7 +40,7 @@ interface Competitor {
   url: string;
   faviconUrl?: string;
   blogSnapshot?: BlogSnapshot;
-  linkedinEngagement?: SocialEngagement;
+  linkedInEngagement?: SocialEngagement;
   instagramEngagement?: SocialEngagement;
   twitterEngagement?: SocialEngagement;
   linkedInUrl?: string;
@@ -162,7 +162,7 @@ export default function Activity() {
   );
 
   const competitorsWithSocial = competitors.filter((c) =>
-    c.linkedinEngagement || c.instagramEngagement || c.twitterEngagement ||
+    c.linkedInEngagement || c.instagramEngagement || c.twitterEngagement ||
     c.linkedInUrl || c.instagramUrl || c.twitterUrl
   );
 
@@ -412,7 +412,7 @@ export default function Activity() {
                     )}
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {(competitor.linkedInUrl || competitor.linkedinEngagement) && (
+                    {(competitor.linkedInUrl || competitor.linkedInEngagement) && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between p-2 rounded bg-muted/50">
                           <div className="flex items-center gap-2">
@@ -420,24 +420,24 @@ export default function Activity() {
                             <span className="text-sm">LinkedIn</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {(competitor.linkedinEngagement as any)?.posts > 0 && (
+                            {(competitor.linkedInEngagement as any)?.posts > 0 && (
                               <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
-                                {(competitor.linkedinEngagement as any).posts} recent posts
+                                {(competitor.linkedInEngagement as any).posts} recent posts
                               </Badge>
                             )}
-                            {competitor.linkedinEngagement?.followers ? (
+                            {competitor.linkedInEngagement?.followers ? (
                               <span className="text-sm font-medium">
-                                {formatNumber(competitor.linkedinEngagement.followers)} followers
+                                {formatNumber(competitor.linkedInEngagement.followers)} followers
                               </span>
                             ) : (
                               <Badge variant="outline" className="text-xs">Linked</Badge>
                             )}
                           </div>
                         </div>
-                        {(competitor.linkedinEngagement as any)?.recentPosts?.length > 0 && (
+                        {(competitor.linkedInEngagement as any)?.recentPosts?.length > 0 && (
                           <div className="pl-6 space-y-1">
                             <p className="text-xs font-medium text-muted-foreground uppercase">Recent LinkedIn Posts</p>
-                            {((competitor.linkedinEngagement as any).recentPosts || []).slice(0, 3).map((post: any, i: number) => (
+                            {((competitor.linkedInEngagement as any).recentPosts || []).slice(0, 3).map((post: any, i: number) => (
                               <a 
                                 key={i} 
                                 href={post.url || competitor.linkedInUrl} 
