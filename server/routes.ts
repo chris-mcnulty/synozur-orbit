@@ -10601,13 +10601,16 @@ Return only the description text, no quotes or formatting.`;
             await storage.createScoreHistory({
               entityType: "baseline",
               entityId: companyProfile.id,
+              entityName: companyProfile.companyName || "Your Company",
               tenantDomain: ctx.tenantDomain,
               marketId: ctx.marketId,
-              innovationScore: baselineScores.innovationScore,
-              marketPresenceScore: baselineScores.marketPresenceScore,
-              overallScore: baselineScores.overallScore,
+              innovationScore: Math.round(baselineScores.innovationScore),
+              marketPresenceScore: Math.round(baselineScores.marketPresenceScore),
+              contentActivityScore: Math.round(baselineScores.contentActivityScore),
+              socialEngagementScore: Math.round(baselineScores.socialEngagementScore),
+              overallScore: Math.round(baselineScores.overallScore),
               period: currentPeriod,
-              factors: JSON.stringify(baselineScores.factors),
+              scoreBreakdown: baselineScores.factors,
             });
             console.log(`[Score History] Saved baseline score for period ${currentPeriod}: ${baselineScores.overallScore}`);
           }
@@ -10847,7 +10850,8 @@ Return only the description text, no quotes or formatting.`;
         }
       } else {
         // Domain admins only see their tenant's job runs
-        history = await storage.getScheduledJobRunsByTenant(user.tenantDomain, limit);
+        const userDomain = user.email.split("@")[1];
+        history = await storage.getScheduledJobRunsByTenant(userDomain, limit);
         if (jobType) {
           history = history.filter(j => j.jobType === jobType);
         }

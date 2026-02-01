@@ -180,21 +180,13 @@ export function calculateScores(
   // === CALCULATE COMPOSITE SCORES ===
 
   // Innovation Score (weighted average of innovation factors)
-  // If no crawl data, cap innovation score to indicate incomplete data
-  let innovationScore = (
+  const innovationScore = (
     (keywordDiversity * 0.20) +
     (keyMessageCount * 0.25) +
     (contentFreshness * 0.20) +
     (blogActivity * 0.20) +
     (analysisCompleteness * 0.15)
   );
-  
-  // Penalize if no website data was ever crawled
-  const hasWebsiteDataForInnovation = websiteCompleteness > 0 || contentFreshness > 50;
-  if (!hasWebsiteDataForInnovation) {
-    // Without actual website crawl, cap innovation at 50% - data is theoretical
-    innovationScore = Math.min(50, innovationScore * 0.6);
-  }
 
   // Content richness score (combines keyword diversity and key messages)
   const contentRichnessScore = (keywordDiversity * 0.5) + (keyMessageCount * 0.5);
@@ -205,9 +197,6 @@ export function calculateScores(
 
   // Check if we have meaningful social data
   const hasSocialData = socialFollowers > 0 || socialEngagementScore > 0;
-  
-  // Check if we have actual crawl/website data
-  const hasWebsiteData = websiteCompleteness > 0;
 
   // Market Presence Score with ADAPTIVE WEIGHTS based on data availability
   let marketPresenceScore: number;
@@ -221,23 +210,14 @@ export function calculateScores(
       (contentRichnessScore * 0.20) +
       (brandConsistencyScore * 0.15)
     );
-  } else if (hasWebsiteData) {
-    // Adaptive formula when social data is NOT available but website data exists
+  } else {
+    // Adaptive formula when social data is NOT available
     // Redistribute social weights to content-based factors for differentiation
     marketPresenceScore = (
       (websiteCompleteness * 0.35) +
       (contentRichnessScore * 0.35) +
       (brandConsistencyScore * 0.30)
     );
-  } else {
-    // No social data AND no website crawl data - heavily penalize
-    // This prevents artificially high scores based only on analysis metadata
-    // Cap at 40% max to indicate incomplete data
-    const rawScore = (
-      (contentRichnessScore * 0.40) +
-      (brandConsistencyScore * 0.30)
-    );
-    marketPresenceScore = Math.min(40, rawScore * 0.5);
   }
 
   // Content Activity Score
