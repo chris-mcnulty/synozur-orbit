@@ -719,9 +719,10 @@ export function startScheduledJobs(): void {
   if (trialReminderInterval) clearInterval(trialReminderInterval);
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
 
+  // Set up recurring intervals
   websiteCrawlInterval = setInterval(() => {
     runWebsiteCrawlJob();
-  }, 60 * 60 * 1000);
+  }, 60 * 60 * 1000); // Every hour
 
   socialMonitorInterval = setInterval(() => {
     runSocialMonitorJob();
@@ -735,33 +736,40 @@ export function startScheduledJobs(): void {
     runTrialReminderJob();
   }, 6 * 60 * 60 * 1000);
 
-  // Weekly digest runs once per week (every 7 days)
-  // Check daily, but only send on Sundays at the scheduled time
   weeklyDigestInterval = setInterval(() => {
     const now = new Date();
-    // Run on Sunday (day 0) between 9-10 AM
     if (now.getDay() === 0 && now.getHours() >= 9 && now.getHours() < 10) {
       runWeeklyDigestJob();
     }
-  }, 60 * 60 * 1000); // Check every hour
+  }, 60 * 60 * 1000);
 
+  // CRITICAL: Run jobs immediately on startup to catch up after app sleep
+  // This ensures overdue jobs run even if app was sleeping for days
+  console.log("[Scheduled Jobs] Running initial job sweep for any overdue items...");
+  
+  // Run immediately (staggered by 5 seconds to avoid overwhelming the system)
   setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting website crawl job sweep...");
     runWebsiteCrawlJob();
-  }, 30 * 1000);
+  }, 5 * 1000);
 
   setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting social monitor job sweep...");
     runSocialMonitorJob();
-  }, 60 * 1000);
+  }, 10 * 1000);
 
   setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting website monitor job sweep...");
     runWebsiteMonitorJob();
-  }, 90 * 1000);
+  }, 15 * 1000);
 
   setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting trial reminder job sweep...");
     runTrialReminderJob();
-  }, 120 * 1000);
+  }, 20 * 1000);
 
   console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website change monitor (hourly), trial reminders (every 6 hours), weekly digest (Sundays)");
+  console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
 export function stopScheduledJobs(): void {

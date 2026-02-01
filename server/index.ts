@@ -146,10 +146,9 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
       
       // Start scheduled background jobs for website crawling and social monitoring
-      if (process.env.NODE_ENV === "production") {
-        startScheduledJobs();
-        log("Scheduled jobs started");
-      }
+      // Jobs run in both development and production now
+      startScheduledJobs();
+      log("Scheduled jobs started");
     },
   );
 })();
