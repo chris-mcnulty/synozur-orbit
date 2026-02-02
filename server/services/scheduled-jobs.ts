@@ -306,6 +306,130 @@ async function runWebsiteCrawlJob(): Promise<void> {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
+
+      // Crawl baseline company profiles on the same frequency as competitors
+      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
+      for (const profile of companyProfiles) {
+        // Skip profiles in archived markets
+        if (await isMarketArchived(profile.marketId)) {
+          console.log(`[Scheduled Job] Skipping baseline ${profile.companyName} - market is archived`);
+          continue;
+        }
+
+        if (!profile.websiteUrl) continue;
+
+        const lastCrawl = profile.lastFullCrawl
+          ? new Date(profile.lastFullCrawl).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastCrawl < intervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Crawling baseline ${profile.companyName} (${profile.websiteUrl})...`);
+
+        await trackJobRun(
+          "websiteCrawl",
+          tenant.domain,
+          profile.id,
+          `Baseline: ${profile.companyName}`,
+          async () => {
+            const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl!);
+
+            if (crawlResult.pages.length === 0) {
+              return { status: "no_pages", message: `No pages found for baseline ${profile.companyName}` };
+            }
+
+            const updates: any = {
+              crawlData: {
+                pagesCrawled: crawlResult.pages.map(p => ({
+                  url: p.url,
+                  pageType: p.pageType,
+                  title: p.title,
+                  wordCount: p.wordCount,
+                })),
+                totalWordCount: crawlResult.totalWordCount,
+                crawledAt: crawlResult.crawledAt,
+              },
+              lastFullCrawl: new Date(),
+              lastCrawl: new Date().toISOString(),
+            };
+
+            // Update social links if found
+            if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
+              updates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+            }
+            if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
+              updates.instagramUrl = crawlResult.socialLinks.instagram;
+            }
+            if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
+              updates.twitterUrl = crawlResult.socialLinks.twitter;
+            }
+
+            // Update blog snapshot if found
+            if (crawlResult.blogSnapshot) {
+              updates.blogSnapshot = {
+                ...crawlResult.blogSnapshot,
+                capturedAt: new Date().toISOString(),
+              };
+            }
+
+            // Store combined content for website monitoring change detection
+            const combinedContent = getCombinedContent(crawlResult);
+            updates.previousWebsiteContent = combinedContent.substring(0, 100000);
+
+            await storage.updateCompanyProfile(profile.id, updates);
+
+            // Run AI analysis on the crawled content
+            const websiteContent = getCombinedContent(crawlResult);
+            let analysisResult = null;
+            if (websiteContent.length > 100) {
+              try {
+                // Get LinkedIn engagement data if available
+                const linkedInEngagement = profile.linkedInEngagement as {
+                  followers?: number;
+                  posts?: number;
+                  employees?: number;
+                  recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+                } | null;
+
+                const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+                  followerCount: linkedInEngagement.followers,
+                  employeeCount: linkedInEngagement.employees,
+                  recentPosts: linkedInEngagement.recentPosts,
+                } : undefined;
+
+                const analysis = await analyzeCompetitorWebsite(
+                  profile.companyName,
+                  profile.websiteUrl!,
+                  websiteContent,
+                  undefined, // groundingContext
+                  linkedInData
+                );
+
+                // Save analysis to company profile
+                await storage.updateCompanyProfile(profile.id, { analysisData: analysis });
+                analysisResult = analysis;
+              } catch (analysisError: any) {
+                console.error(`[Scheduled Job] AI analysis failed for baseline ${profile.companyName}:`, analysisError.message);
+              }
+            }
+
+            return {
+              status: "success",
+              entityType: "baseline",
+              pagesCrawled: crawlResult.pages.length,
+              totalWordCount: crawlResult.totalWordCount,
+              blogPostsDetected: crawlResult.blogSnapshot?.postCount || 0,
+              socialLinksFound: Object.keys(crawlResult.socialLinks).filter(k => crawlResult.socialLinks[k as keyof typeof crawlResult.socialLinks]).length,
+              analysis: analysisResult,
+            };
+          }
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
   } catch (error) {
     console.error("[Scheduled Job] Website crawl job failed:", error);

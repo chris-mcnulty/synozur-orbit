@@ -610,58 +610,136 @@ export async function monitorCompanyProfileSocialMedia(
   const now = new Date();
   const updates: any = { lastSocialCrawl: now };
   
-  if (companyProfile.linkedInUrl) {
-    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(companyProfile.linkedInUrl);
+  if (companyProfile.linkedInUrl || companyProfile.websiteUrl) {
+    // Try RapidAPI LinkedIn Data API first if configured (same as competitors)
+    const rapidApiKey = process.env.RAPIDAPI_KEY;
     
-    if (blocked) {
-      results.push({
-        companyProfileId: companyProfile.id,
-        companyName: companyProfile.companyName,
-        platform: "linkedin",
-        hasChanges: false,
-        status: "blocked",
-        message: "LinkedIn requires authentication.",
-      });
-    } else if (newContent && rawHtml) {
-      const previousContent = companyProfile.linkedInContent || "";
-      const changeScore = calculateChangeScore(previousContent, newContent);
-      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
-      
-      const engagement = extractEngagementMetrics(rawHtml, "linkedin");
-      updates.linkedInEngagement = engagement;
-      
-      let summary: string | undefined;
-      if (hasSignificantChanges) {
-        summary = await summarizeChanges(companyProfile.companyName, "LinkedIn", previousContent, newContent, changeScore);
+    if (rapidApiKey) {
+      try {
+        const apiResult = await fetchLinkedInData(
+          companyProfile.id,
+          companyProfile.linkedInUrl || undefined,
+          companyProfile.websiteUrl
+        );
         
-        if (!summary.toLowerCase().includes("no significant")) {
-          await storage.createActivity({
-            type: "social_update",
-            sourceType: "baseline",
+        if (apiResult.success) {
+          // Get previous metrics for comparison from linkedInEngagement stored on profile
+          const previousEngagement = companyProfile.linkedInEngagement as any;
+          const previousFollowers = previousEngagement?.followers || 0;
+          
+          const hasFollowerChange = previousFollowers > 0 && 
+            apiResult.followerCount !== undefined &&
+            Math.abs(apiResult.followerCount - previousFollowers) > 100;
+          
+          const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
+          
+          // Build engagement data
+          const engagement: EngagementSnapshot = {
+            followers: apiResult.followerCount,
+            posts: apiResult.recentPosts?.length || 0,
+            reactions: apiResult.recentPosts?.reduce((sum, p) => sum + p.reactions, 0) || 0,
+            comments: apiResult.recentPosts?.reduce((sum, p) => sum + p.comments, 0) || 0,
+            capturedAt: now.toISOString(),
+          };
+          updates.linkedInEngagement = engagement;
+          
+          let summary: string | undefined;
+          if (hasFollowerChange || hasNewPosts) {
+            const changes: string[] = [];
+            if (hasFollowerChange && apiResult.followerCount) {
+              const diff = apiResult.followerCount - previousFollowers;
+              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
+            }
+            if (hasNewPosts && apiResult.recentPosts) {
+              changes.push(`${apiResult.recentPosts.length} recent posts detected`);
+              const topPost = apiResult.recentPosts[0];
+              if (topPost) {
+                changes.push(`Latest: "${topPost.text.substring(0, 80)}..." (${topPost.reactions} reactions)`);
+              }
+            }
+            summary = changes.join(". ");
+            
+            await storage.createActivity({
+              type: "social_update",
+              sourceType: "baseline",
+              companyProfileId: companyProfile.id,
+              competitorName: companyProfile.companyName,
+              description: summary,
+              details: {
+                platform: "linkedin",
+                followerCount: apiResult.followerCount,
+                employeeCount: apiResult.employeeCount,
+                postCount: apiResult.recentPosts?.length,
+                recentPosts: apiResult.recentPosts,
+              },
+              date: now.toISOString(),
+              impact: hasFollowerChange ? "High" : "Medium",
+              userId,
+              tenantDomain,
+              marketId: marketId || companyProfile.marketId || undefined,
+            });
+          }
+          
+          results.push({
             companyProfileId: companyProfile.id,
-            competitorName: companyProfile.companyName,
-            description: `Your LinkedIn profile was updated (${changeScore}% change detected)`,
+            companyName: companyProfile.companyName,
+            platform: "linkedin",
+            hasChanges: !!summary,
             summary,
-            details: { platform: "linkedin", changeScore, url: companyProfile.linkedInUrl },
-            date: now.toISOString(),
-            impact: changeScore > 70 ? "High" : "Medium",
-            userId,
-            tenantDomain,
-            marketId: marketId || companyProfile.marketId || undefined,
+            status: "success",
+            message: `Followers: ${apiResult.followerCount?.toLocaleString() || 'N/A'}, Posts: ${apiResult.recentPosts?.length || 0}`,
+            engagement,
+          });
+        } else {
+          console.log(`[Social Monitor] LinkedIn API failed for baseline ${companyProfile.companyName}: ${apiResult.error}`);
+          results.push({
+            companyProfileId: companyProfile.id,
+            companyName: companyProfile.companyName,
+            platform: "linkedin",
+            hasChanges: false,
+            status: "error",
+            message: apiResult.error || "Failed to fetch LinkedIn data",
+          });
+        }
+      } catch (error: any) {
+        console.error(`[Social Monitor] LinkedIn API error for baseline ${companyProfile.companyName}:`, error);
+        results.push({
+          companyProfileId: companyProfile.id,
+          companyName: companyProfile.companyName,
+          platform: "linkedin",
+          hasChanges: false,
+          status: "error",
+          message: error.message,
+        });
+      }
+    } else {
+      // No RapidAPI key - fall back to basic scraping (will likely be blocked)
+      const linkedInUrl = companyProfile.linkedInUrl;
+      if (linkedInUrl) {
+        const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(linkedInUrl);
+        
+        if (blocked) {
+          results.push({
+            companyProfileId: companyProfile.id,
+            companyName: companyProfile.companyName,
+            platform: "linkedin",
+            hasChanges: false,
+            status: "blocked",
+            message: "LinkedIn requires authentication. Configure RAPIDAPI_KEY for better results.",
+          });
+        } else if (newContent && rawHtml) {
+          const engagement = extractEngagementMetrics(rawHtml, "linkedin");
+          updates.linkedInEngagement = engagement;
+          results.push({
+            companyProfileId: companyProfile.id,
+            companyName: companyProfile.companyName,
+            platform: "linkedin",
+            hasChanges: false,
+            status: "success",
+            engagement,
           });
         }
       }
-      
-      updates.linkedInContent = newContent;
-      results.push({
-        companyProfileId: companyProfile.id,
-        companyName: companyProfile.companyName,
-        platform: "linkedin",
-        hasChanges: hasSignificantChanges,
-        summary,
-        status: "success",
-        engagement,
-      });
     }
   }
   
