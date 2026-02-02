@@ -133,7 +133,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; socialCheckFrequency?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -147,8 +147,8 @@ export default function CompetitorDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
       setEditOpen(false);
       toast({
-        title: "Social Links Updated",
-        description: "Competitor social media links have been saved.",
+        title: "Competitor Updated",
+        description: "Competitor information has been saved.",
       });
     },
     onError: () => {
@@ -165,6 +165,11 @@ export default function CompetitorDetail() {
     setEditInstagram(competitor?.instagramUrl || "");
     setEditTwitter(competitor?.twitterUrl || "");
     setEditSocialFrequency(competitor?.socialCheckFrequency || "daily");
+    // Also populate company profile fields
+    setEditHeadquarters(competitor?.headquarters || "");
+    setEditFounded(competitor?.founded || "");
+    setEditRevenue(competitor?.revenue || "");
+    setEditFundingRaised(competitor?.fundingRaised || "");
     setEditOpen(true);
   };
 
@@ -174,6 +179,11 @@ export default function CompetitorDetail() {
       instagramUrl: editInstagram || undefined,
       twitterUrl: editTwitter || undefined,
       socialCheckFrequency: editSocialFrequency,
+      // Include company profile fields
+      headquarters: editHeadquarters || undefined,
+      founded: editFounded || undefined,
+      revenue: editRevenue || undefined,
+      fundingRaised: editFundingRaised || undefined,
     });
   };
   
@@ -509,9 +519,9 @@ export default function CompetitorDetail() {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Edit Social Media Links</DialogTitle>
+                        <DialogTitle>Edit {competitor.name}</DialogTitle>
                         <DialogDescription>
-                          Add or update social media profile URLs for {competitor.name}
+                          Manage social media profiles, blog/RSS feeds, and product associations for this competitor.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
@@ -567,6 +577,57 @@ export default function CompetitorDetail() {
                             <option value="weekly">Weekly</option>
                           </select>
                           <p className="text-xs text-muted-foreground">How often to automatically check this competitor's social media</p>
+                        </div>
+                        
+                        {/* Company Profile Section */}
+                        <div className="space-y-3 pt-4 border-t">
+                          <p className="text-sm font-medium text-muted-foreground">Company Directory</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <Label htmlFor="headquarters" className="text-xs">Headquarters</Label>
+                              <Input
+                                id="headquarters"
+                                placeholder="e.g. San Francisco, CA"
+                                value={editHeadquarters}
+                                onChange={(e) => setEditHeadquarters(e.target.value)}
+                                className="h-9"
+                                data-testid="input-headquarters"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="founded" className="text-xs">Year Founded</Label>
+                              <Input
+                                id="founded"
+                                placeholder="e.g. 2015"
+                                value={editFounded}
+                                onChange={(e) => setEditFounded(e.target.value)}
+                                className="h-9"
+                                data-testid="input-founded"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="revenue" className="text-xs">Revenue</Label>
+                              <Input
+                                id="revenue"
+                                placeholder="e.g. $10M-$50M"
+                                value={editRevenue}
+                                onChange={(e) => setEditRevenue(e.target.value)}
+                                className="h-9"
+                                data-testid="input-revenue"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="funding" className="text-xs">Funding Raised</Label>
+                              <Input
+                                id="funding"
+                                placeholder="e.g. $25M Series B"
+                                value={editFundingRaised}
+                                onChange={(e) => setEditFundingRaised(e.target.value)}
+                                className="h-9"
+                                data-testid="input-funding"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <DialogFooter>
