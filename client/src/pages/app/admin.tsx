@@ -74,6 +74,8 @@ type ServicePlan = {
   marketLimit: number | null;
   monitoringFrequency: string | null;
   socialMonitoringEnabled: boolean | null;
+  websiteMonitorEnabled: boolean | null;
+  productMonitorEnabled: boolean | null;
   trialDays: number | null;
   monthlyPrice: number | null;
   annualPrice: number | null;
@@ -110,6 +112,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   websiteCrawl: "Website Crawl",
   socialMonitor: "Social Monitor",
   websiteMonitor: "Website Monitor",
+  productMonitor: "Product Monitor",
   trialReminder: "Trial Reminders",
   weeklyDigest: "Weekly Digest",
 };
@@ -178,6 +181,9 @@ export default function AdminPage() {
     readOnlyUserLimit: 5,
     multiMarketEnabled: false,
     marketLimit: null as number | null,
+    socialMonitoringEnabled: false,
+    websiteMonitorEnabled: false,
+    productMonitorEnabled: false,
     trialDays: null as number | null,
     monthlyPrice: null as number | null,
     annualPrice: null as number | null,
@@ -484,6 +490,9 @@ export default function AdminPage() {
       readOnlyUserLimit: 5,
       multiMarketEnabled: false,
       marketLimit: null,
+      socialMonitoringEnabled: false,
+      websiteMonitorEnabled: false,
+      productMonitorEnabled: false,
       trialDays: null,
       monthlyPrice: null,
       annualPrice: null,
@@ -506,6 +515,9 @@ export default function AdminPage() {
       readOnlyUserLimit: plan.readOnlyUserLimit,
       multiMarketEnabled: plan.multiMarketEnabled,
       marketLimit: plan.marketLimit,
+      socialMonitoringEnabled: plan.socialMonitoringEnabled || false,
+      websiteMonitorEnabled: plan.websiteMonitorEnabled || false,
+      productMonitorEnabled: plan.productMonitorEnabled || false,
       trialDays: plan.trialDays,
       monthlyPrice: plan.monthlyPrice,
       annualPrice: plan.annualPrice,
@@ -1544,6 +1556,58 @@ export default function AdminPage() {
                         <SelectItem value="25">25 markets</SelectItem>
                         <SelectItem value="50">50 markets</SelectItem>
                         <SelectItem value="100">100 markets</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <Label className="text-sm font-medium">Monitoring Features</Label>
+                <p className="text-xs text-muted-foreground mb-2">Control which automated monitoring features are available for this plan</p>
+                <div className="grid grid-cols-3 gap-4 mt-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Social Monitoring</Label>
+                    <Select
+                      value={planForm.socialMonitoringEnabled ? "true" : "false"}
+                      onValueChange={(value) => setPlanForm({ ...planForm, socialMonitoringEnabled: value === "true" })}
+                    >
+                      <SelectTrigger data-testid="select-plan-social-monitoring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">Disabled</SelectItem>
+                        <SelectItem value="true">Enabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Website Monitor</Label>
+                    <Select
+                      value={planForm.websiteMonitorEnabled ? "true" : "false"}
+                      onValueChange={(value) => setPlanForm({ ...planForm, websiteMonitorEnabled: value === "true" })}
+                    >
+                      <SelectTrigger data-testid="select-plan-website-monitoring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">Disabled</SelectItem>
+                        <SelectItem value="true">Enabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Product Monitor</Label>
+                    <Select
+                      value={planForm.productMonitorEnabled ? "true" : "false"}
+                      onValueChange={(value) => setPlanForm({ ...planForm, productMonitorEnabled: value === "true" })}
+                    >
+                      <SelectTrigger data-testid="select-plan-product-monitoring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">Disabled</SelectItem>
+                        <SelectItem value="true">Enabled</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

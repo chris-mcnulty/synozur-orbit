@@ -627,7 +627,12 @@ async function runWebsiteMonitorJob(): Promise<void> {
 
     for (const tenant of tenants) {
       if (tenant.status !== "active") continue;
-      if (tenant.plan === "free" || tenant.plan === "trial") continue;
+
+      // Check if tenant's plan allows website monitoring
+      const plan = await storage.getServicePlanByName(tenant.plan);
+      if (!plan?.websiteMonitorEnabled) {
+        continue;
+      }
 
       const frequency = tenant.monitoringFrequency || "weekly";
       if (frequency === "disabled") continue;
