@@ -164,6 +164,9 @@ export default function AdminPage() {
   });
   const [servicePlanDialogOpen, setServicePlanDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<ServicePlan | null>(null);
+  const [jobTypeFilter, setJobTypeFilter] = useState<string>("all");
+  const [jobStatusFilter, setJobStatusFilter] = useState<string>("all");
+  const [jobTargetFilter, setJobTargetFilter] = useState<string>("");
   const [planForm, setPlanForm] = useState({
     name: "",
     displayName: "",
@@ -1241,10 +1244,80 @@ export default function AdminPage() {
 
             {/* Job History */}
             <div>
-              <h3 className="font-semibold text-sm mb-3">Recent Job Runs</h3>
-              {jobHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No job runs recorded yet.</p>
-              ) : (
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">Recent Job Runs</h3>
+                <div className="flex items-center gap-2">
+                  <Select value={jobTypeFilter} onValueChange={setJobTypeFilter}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="filter-job-type">
+                      <SelectValue placeholder="Job Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={jobStatusFilter} onValueChange={setJobStatusFilter}>
+                    <SelectTrigger className="w-[120px] h-8 text-xs" data-testid="filter-job-status">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="failed">Failed</SelectItem>
+                      <SelectItem value="running">Running</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input 
+                    placeholder="Search target..." 
+                    value={jobTargetFilter}
+                    onChange={(e) => setJobTargetFilter(e.target.value)}
+                    className="w-[150px] h-8 text-xs"
+                    data-testid="filter-job-target"
+                  />
+                  {(jobTypeFilter !== "all" || jobStatusFilter !== "all" || jobTargetFilter) && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-2 text-xs"
+                      onClick={() => {
+                        setJobTypeFilter("all");
+                        setJobStatusFilter("all");
+                        setJobTargetFilter("");
+                      }}
+                      data-testid="clear-job-filters"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {(() => {
+                const filteredJobs = jobHistory.filter((run) => {
+                  if (jobTypeFilter !== "all" && run.jobType !== jobTypeFilter) return false;
+                  if (jobStatusFilter !== "all" && run.status !== jobStatusFilter) return false;
+                  if (jobTargetFilter) {
+                    const target = (run.targetName || run.tenantDomain || "").toLowerCase();
+                    if (!target.includes(jobTargetFilter.toLowerCase())) return false;
+                  }
+                  return true;
+                });
+                const hasFilters = jobTypeFilter !== "all" || jobStatusFilter !== "all" || jobTargetFilter;
+                
+                if (jobHistory.length === 0) {
+                  return <p className="text-sm text-muted-foreground">No job runs recorded yet.</p>;
+                }
+                
+                if (filteredJobs.length === 0 && hasFilters) {
+                  return (
+                    <div className="border rounded-lg p-6 text-center">
+                      <p className="text-sm text-muted-foreground">No job runs match the current filters.</p>
+                    </div>
+                  );
+                }
+                
+                return (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -1258,7 +1331,7 @@ export default function AdminPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {jobHistory.slice(0, 25).map((run) => {
+                      {filteredJobs.slice(0, 50).map((run) => {
                         const duration = run.startedAt && run.completedAt
                           ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
                           : null;
@@ -1316,7 +1389,8 @@ export default function AdminPage() {
                     </TableBody>
                   </Table>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </CardContent>
         </Card>
