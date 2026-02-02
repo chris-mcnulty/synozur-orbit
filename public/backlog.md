@@ -221,6 +221,18 @@ Implement tiered access control with blurred overlays and upgrade prompts:
 - [ ] Show locked features with diamond icon and blur effect
 **Effort**: High
 
+#### Manual Action Rate Limits by Plan
+**Status**: Backlogged
+Plan-based limits on manual (user-initiated) actions to control costs for paid APIs:
+- [ ] LinkedIn API calls - paid API, needs strict limits per plan tier
+- [ ] Manual website crawls - limit frequency per plan
+- [ ] Regenerate All analysis - limit how often users can trigger full re-analysis
+- [ ] Product URL crawling - limit for lower tiers
+- [ ] Track usage counts per tenant/user with monthly reset
+- [ ] Show remaining quota in UI with upgrade prompts when limits reached
+**Note**: Currently, service plan monitoring controls only affect automated scheduled jobs. Manual actions are unrestricted.
+**Effort**: Medium
+
 #### Input Safety Validation ✅
 **Status**: Implemented
 Pre-validate all user-entered URLs and uploaded data before crawling or processing:
