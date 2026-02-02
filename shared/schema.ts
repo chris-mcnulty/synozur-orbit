@@ -992,7 +992,16 @@ export const executiveSummaries = pgTable("executive_summaries", {
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   scope: text("scope").notNull().default("baseline"), // baseline or project
-  summaryData: jsonb("summary_data").notNull(), // Aggregated executive summary payload
+  // 4-part executive summary sections
+  companySnapshot: text("company_snapshot"), // 1-2 sentence company overview + key facts
+  marketPosition: text("market_position"), // Score vs competitors + comparative insights
+  competitiveLandscape: text("competitive_landscape"), // Top competitors + themes/gaps
+  opportunities: text("opportunities"), // Top recommendations + actions
+  // Editing/locking support
+  lockedSections: jsonb("locked_sections").default([]), // Array of locked section names
+  dataHash: text("data_hash"), // Hash of source data to detect changes
+  // Legacy fields for backwards compatibility
+  summaryData: jsonb("summary_data"), // Aggregated executive summary payload
   topCompetitors: jsonb("top_competitors"), // Ranked list of top competitors with scores
   keyInsights: jsonb("key_insights"), // AI-generated key insights
   alertItems: jsonb("alert_items"), // Items needing attention (rising competitors, gaps)
