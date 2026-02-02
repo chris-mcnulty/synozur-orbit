@@ -1049,3 +1049,24 @@ export async function triggerWebsiteMonitorNow(): Promise<void> {
 export async function triggerProductMonitorNow(): Promise<void> {
   runProductMonitorJob();
 }
+
+export function resetStuckJob(jobType: string): boolean {
+  if (jobStatus[jobType]) {
+    jobStatus[jobType].isRunning = false;
+    console.log(`[Scheduled Job] Reset stuck job: ${jobType}`);
+    return true;
+  }
+  return false;
+}
+
+export function resetAllStuckJobs(): string[] {
+  const resetJobs: string[] = [];
+  for (const [key, status] of Object.entries(jobStatus)) {
+    if (status.isRunning) {
+      status.isRunning = false;
+      resetJobs.push(key);
+      console.log(`[Scheduled Job] Reset stuck job: ${key}`);
+    }
+  }
+  return resetJobs;
+}

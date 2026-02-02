@@ -23,7 +23,7 @@ import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache } from "./services/scheduled-jobs";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, calculateBaselineScore, getCurrentPeriod, type ScoreBreakdown } from "./services/scoring-service";
@@ -10838,6 +10838,38 @@ Return only the description text, no quotes or formatting.`;
       };
       
       res.json(scheduleInfo);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Reset stuck jobs
+  app.post("/api/admin/jobs/reset", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { jobType } = req.body;
+      
+      if (jobType) {
+        // Reset specific job
+        const success = resetStuckJob(jobType);
+        if (success) {
+          res.json({ message: `Reset job: ${jobType}`, reset: [jobType] });
+        } else {
+          res.status(400).json({ error: `Unknown job type: ${jobType}` });
+        }
+      } else {
+        // Reset all stuck jobs
+        const resetJobs = resetAllStuckJobs();
+        res.json({ message: `Reset ${resetJobs.length} stuck jobs`, reset: resetJobs });
+      }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

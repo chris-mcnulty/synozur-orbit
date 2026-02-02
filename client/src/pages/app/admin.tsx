@@ -418,6 +418,22 @@ export default function AdminPage() {
     },
   });
 
+  const resetStuckJobsMutation = useMutation({
+    mutationFn: async (jobType?: string) => {
+      const response = await fetch("/api/admin/jobs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ jobType }),
+      });
+      if (!response.ok) throw new Error("Failed to reset jobs");
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchJobStatus();
+    },
+  });
+
   const createServicePlanMutation = useMutation({
     mutationFn: async (data: Partial<ServicePlan>) => {
       const response = await fetch("/api/admin/service-plans", {
@@ -1195,18 +1211,33 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-sm">Job Schedule</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    refetchJobStatus();
-                    refetchJobHistory();
-                  }}
-                  data-testid="refresh-jobs"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
+                <div className="flex gap-2">
+                  {jobStatus && Object.values(jobStatus).some(j => j.isRunning) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => resetStuckJobsMutation.mutate(undefined)}
+                      disabled={resetStuckJobsMutation.isPending}
+                      data-testid="reset-stuck-jobs"
+                      className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Reset Stuck
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      refetchJobStatus();
+                      refetchJobHistory();
+                    }}
+                    data-testid="refresh-jobs"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
               </div>
               {jobStatus && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
