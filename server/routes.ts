@@ -20,7 +20,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
-import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache } from "./services/scheduled-jobs";
@@ -1713,6 +1713,19 @@ Return ONLY the JSON object, no other text.`;
           try {
             await monitorCompanyProfileWebsite(
               product.companyProfileId,
+              ctx.userId,
+              ctx.tenantDomain,
+              project.marketId || undefined
+            );
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        } else {
+          // Standalone product - monitor directly by product URL
+          try {
+            await monitorProductWebsite(
+              product.id,
               ctx.userId,
               ctx.tenantDomain,
               project.marketId || undefined

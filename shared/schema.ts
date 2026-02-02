@@ -202,6 +202,8 @@ export const products = pgTable("products", {
   twitterUrl: text("twitter_url"), // Product-specific Twitter/X
   socialCheckFrequency: text("social_check_frequency").default("daily"), // hourly, daily, weekly
   lastSocialCrawl: timestamp("last_social_crawl"), // When social was last checked
+  previousWebsiteContent: text("previous_website_content"), // Previous crawl content for change detection
+  lastWebsiteMonitor: timestamp("last_website_monitor"), // When website was last monitored for changes
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

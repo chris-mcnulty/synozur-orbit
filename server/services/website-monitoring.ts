@@ -375,3 +375,132 @@ export async function monitorAllCompetitorsForTenant(
   
   return allResults;
 }
+
+interface ProductMonitoringResult {
+  productId: string;
+  productName: string;
+  hasChanges: boolean;
+  changeScore: number;
+  summary?: string;
+  status: "success" | "error" | "no_content" | "no_url";
+  message?: string;
+  pagesMonitored: number;
+}
+
+export async function monitorProductWebsite(
+  productId: string,
+  userId: string,
+  tenantDomain: string,
+  marketId?: string
+): Promise<ProductMonitoringResult> {
+  const product = await storage.getProduct(productId);
+  if (!product) {
+    throw new Error("Product not found");
+  }
+
+  if (!product.url) {
+    return {
+      productId: product.id,
+      productName: product.name,
+      hasChanges: false,
+      changeScore: 0,
+      status: "no_url",
+      message: "Product has no URL configured",
+      pagesMonitored: 0,
+    };
+  }
+
+  const now = new Date();
+
+  try {
+    await delay(REQUEST_DELAY_MS + Math.random() * 500);
+
+    const crawlResult = await crawlCompetitorWebsite(product.url);
+
+    if (crawlResult.pages.length === 0) {
+      return {
+        productId: product.id,
+        productName: product.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Unable to crawl website - site may be unavailable or URL is invalid",
+        pagesMonitored: 0,
+      };
+    }
+
+    const newContent = getCombinedContent(crawlResult);
+    const previousContent = product.previousWebsiteContent || "";
+
+    const changeScore = calculateChangeScore(previousContent, newContent);
+    const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
+
+    let summary: string | undefined;
+
+    if (hasSignificantChanges) {
+      summary = await summarizeWebsiteChanges(product.name, previousContent, newContent, changeScore);
+
+      const isRealChange = !summary.toLowerCase().includes("no significant");
+
+      if (isRealChange) {
+        await storage.createActivity({
+          type: "website_update",
+          sourceType: "product",
+          competitorName: product.name,
+          description: `Product website content changed (${changeScore}% change detected)`,
+          summary,
+          details: {
+            productId: product.id,
+            changeScore,
+            pagesMonitored: crawlResult.pages.length,
+            crawledAt: crawlResult.crawledAt,
+          },
+          date: now.toISOString().split("T")[0],
+          impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
+          userId,
+          tenantDomain,
+          marketId,
+        });
+      }
+    }
+
+    await storage.updateProduct(product.id, {
+      previousWebsiteContent: newContent.substring(0, 100000),
+      lastWebsiteMonitor: now,
+      crawlData: {
+        pagesCrawled: crawlResult.pages.map(p => ({
+          url: p.url,
+          pageType: p.pageType,
+          title: p.title,
+          wordCount: p.wordCount,
+        })),
+        totalWordCount: crawlResult.totalWordCount,
+        crawledAt: crawlResult.crawledAt,
+      },
+    });
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      hasChanges: hasSignificantChanges,
+      changeScore,
+      summary,
+      status: "success",
+      message: hasSignificantChanges 
+        ? `Detected ${changeScore}% content change` 
+        : "No significant changes detected",
+      pagesMonitored: crawlResult.pages.length,
+    };
+  } catch (error: any) {
+    console.error(`Error monitoring website for product ${product.name}:`, error);
+    return {
+      productId: product.id,
+      productName: product.name,
+      hasChanges: false,
+      changeScore: 0,
+      status: "error",
+      message: error.message || "Unknown error occurred",
+      pagesMonitored: 0,
+    };
+  }
+}
