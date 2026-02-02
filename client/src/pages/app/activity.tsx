@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { useSearch, useLocation } from "wouter";
 
 interface BlogPost {
   title: string;
@@ -73,10 +74,30 @@ interface Activity {
 }
 
 export default function Activity() {
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  const searchParams = new URLSearchParams(search);
+  const tabFromUrl = searchParams.get("tab");
+  
   const [companyFilter, setCompanyFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<string>("insights");
+  const [activeTab, setActiveTab] = useState<string>(tabFromUrl || "insights");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Update tab when URL changes
+  useEffect(() => {
+    if (tabFromUrl && ["insights", "social", "blog", "log"].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+  
+  // Update URL when tab changes (only if different from current URL)
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    const newParams = new URLSearchParams(search);
+    newParams.set("tab", newTab);
+    setLocation(`/app/activity?${newParams.toString()}`, { replace: true });
+  };
 
   const { data: activity = [], isLoading: loadingActivity } = useQuery<Activity[]>({
     queryKey: ["/api/activity"],
@@ -237,7 +258,7 @@ export default function Activity() {
         )}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="insights" className="gap-2" data-testid="tab-insights">
             <TrendingUp className="h-4 w-4" />

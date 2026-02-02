@@ -890,10 +890,25 @@ export default function Dashboard() {
                     if (item.type === "social_update") return "bg-blue-500/20 text-blue-500";
                     return getImpactColor(item.impact);
                   };
+                  // Determine where to navigate based on signal type
+                  const getNavigationPath = () => {
+                    if (item.type === "website_update") {
+                      return `/app/activity?tab=insights`;
+                    }
+                    if (item.type === "blog_update") {
+                      return `/app/activity?tab=blog`;
+                    }
+                    if (item.type === "social_update") {
+                      return `/app/activity?tab=social`;
+                    }
+                    // Default: go to competitor detail page
+                    return `/app/competitors/${item.competitorId}`;
+                  };
+                  
                   return (
                     <div 
                       key={item.id} 
-                      onClick={() => setLocation(`/app/competitors/${item.competitorId}`)}
+                      onClick={() => setLocation(getNavigationPath())}
                       className={cn(
                         "flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
                         isMeaningful && "border border-primary/20 bg-primary/5"
