@@ -23,10 +23,10 @@ export default function CompetitorDetail() {
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
   const [editTwitter, setEditTwitter] = useState("");
+  const [editBlogUrl, setEditBlogUrl] = useState("");
   const [editSocialFrequency, setEditSocialFrequency] = useState("daily");
   
-  // Company Profile editing state
-  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  // Company Profile editing state (shared with main edit dialog)
   const [editHeadquarters, setEditHeadquarters] = useState("");
   const [editFounded, setEditFounded] = useState("");
   const [editRevenue, setEditRevenue] = useState("");
@@ -133,7 +133,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -164,6 +164,7 @@ export default function CompetitorDetail() {
     setEditLinkedIn(competitor?.linkedInUrl || "");
     setEditInstagram(competitor?.instagramUrl || "");
     setEditTwitter(competitor?.twitterUrl || "");
+    setEditBlogUrl(competitor?.blogFeedUrl || "");
     setEditSocialFrequency(competitor?.socialCheckFrequency || "daily");
     // Also populate company profile fields
     setEditHeadquarters(competitor?.headquarters || "");
@@ -178,54 +179,9 @@ export default function CompetitorDetail() {
       linkedInUrl: editLinkedIn || undefined,
       instagramUrl: editInstagram || undefined,
       twitterUrl: editTwitter || undefined,
+      blogFeedUrl: editBlogUrl || undefined,
       socialCheckFrequency: editSocialFrequency,
       // Include company profile fields
-      headquarters: editHeadquarters || undefined,
-      founded: editFounded || undefined,
-      revenue: editRevenue || undefined,
-      fundingRaised: editFundingRaised || undefined,
-    });
-  };
-  
-  // Company profile mutation
-  const updateProfileMutation = useMutation({
-    mutationFn: async (data: { headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
-      const response = await fetch(`/api/competitors/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to update");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
-      setProfileEditOpen(false);
-      toast({
-        title: "Profile Updated",
-        description: "Company profile has been saved.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Update Failed",
-        description: "Could not save company profile.",
-        variant: "destructive",
-      });
-    },
-  });
-  
-  const handleProfileEditOpen = () => {
-    setEditHeadquarters(competitor?.headquarters || "");
-    setEditFounded(competitor?.founded || "");
-    setEditRevenue(competitor?.revenue || "");
-    setEditFundingRaised(competitor?.fundingRaised || "");
-    setProfileEditOpen(true);
-  };
-  
-  const handleSaveProfile = () => {
-    updateProfileMutation.mutate({
       headquarters: editHeadquarters || undefined,
       founded: editFounded || undefined,
       revenue: editRevenue || undefined,
@@ -561,6 +517,19 @@ export default function CompetitorDetail() {
                             data-testid="input-twitter"
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="blogUrl" className="flex items-center gap-2">
+                            <Rss className="h-4 w-4 text-orange-500" /> Blog or RSS Feed URL
+                          </Label>
+                          <Input
+                            id="blogUrl"
+                            placeholder="https://example.com/blog or https://example.com/feed.xml"
+                            value={editBlogUrl}
+                            onChange={(e) => setEditBlogUrl(e.target.value)}
+                            data-testid="input-blog-url"
+                          />
+                          <p className="text-xs text-muted-foreground">RSS feeds, Atom feeds, or blog page URLs</p>
+                        </div>
                         <div className="space-y-2 pt-2 border-t">
                           <Label htmlFor="frequency" className="flex items-center gap-2">
                             <RefreshCw className="h-4 w-4 text-purple-500" /> Auto-check Frequency
@@ -868,70 +837,9 @@ export default function CompetitorDetail() {
                   <Building2 className="h-4 w-4 text-primary" />
                   Company Profile
                 </CardTitle>
-                <Dialog open={profileEditOpen} onOpenChange={setProfileEditOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={handleProfileEditOpen} data-testid="button-edit-profile">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Edit Company Profile</DialogTitle>
-                      <DialogDescription>
-                        Update company information for {competitor?.name}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="headquarters">Headquarters</Label>
-                        <Input 
-                          id="headquarters" 
-                          value={editHeadquarters} 
-                          onChange={(e) => setEditHeadquarters(e.target.value)}
-                          placeholder="e.g. San Francisco, CA"
-                          data-testid="input-headquarters"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="founded">Founded</Label>
-                        <Input 
-                          id="founded" 
-                          value={editFounded} 
-                          onChange={(e) => setEditFounded(e.target.value)}
-                          placeholder="e.g. 2015"
-                          data-testid="input-founded"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="revenue">Revenue</Label>
-                        <Input 
-                          id="revenue" 
-                          value={editRevenue} 
-                          onChange={(e) => setEditRevenue(e.target.value)}
-                          placeholder="e.g. $10M-$50M"
-                          data-testid="input-revenue"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="funding">Funding Raised</Label>
-                        <Input 
-                          id="funding" 
-                          value={editFundingRaised} 
-                          onChange={(e) => setEditFundingRaised(e.target.value)}
-                          placeholder="e.g. $25M Series B"
-                          data-testid="input-funding"
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setProfileEditOpen(false)}>Cancel</Button>
-                      <Button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending} data-testid="button-save-profile">
-                        {updateProfileMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                        Save
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <Button variant="ghost" size="sm" onClick={handleEditOpen} data-testid="button-edit-profile">
+                  <Pencil className="h-4 w-4" />
+                </Button>
               </CardHeader>
               <CardContent>
                 {(competitor?.headquarters || competitor?.founded || competitor?.revenue || competitor?.fundingRaised) ? (
