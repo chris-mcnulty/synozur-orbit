@@ -44,8 +44,17 @@ export default function Competitors() {
     instagramUrl: string;
     blogUrl: string;
     projectId: string | null;
+    socialCheckFrequency: string;
+    headquarters: string;
+    founded: string;
+    employeeCount: string;
+    revenue: string;
+    fundingRaised: string;
   } | null>(null);
-  const [linksForm, setLinksForm] = useState({ linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "", projectId: "" });
+  const [linksForm, setLinksForm] = useState({ 
+    linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "", projectId: "",
+    socialCheckFrequency: "daily", headquarters: "", founded: "", employeeCount: "", revenue: "", fundingRaised: ""
+  });
   const [isBlogTesting, setIsBlogTesting] = useState(false);
   const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
@@ -326,16 +335,22 @@ export default function Competitors() {
     setIsSavingLinks(true);
     
     try {
-      // Save social links and project association via PATCH
+      // Save social links, company profile fields, and project association via PATCH
       const response = await fetch(`/api/competitors/${linksEditTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          linkedInUrl: linksForm.linkedInUrl.trim() || null,
-          twitterUrl: linksForm.twitterUrl.trim() || null,
-          instagramUrl: linksForm.instagramUrl.trim() || null,
-          blogUrl: linksForm.blogUrl.trim() || null,
+          linkedInUrl: linksForm.linkedInUrl.trim() || "",
+          twitterUrl: linksForm.twitterUrl.trim() || "",
+          instagramUrl: linksForm.instagramUrl.trim() || "",
+          blogUrl: linksForm.blogUrl.trim() || "",
           projectId: linksForm.projectId || null,
+          socialCheckFrequency: linksForm.socialCheckFrequency || "daily",
+          headquarters: linksForm.headquarters.trim() || "",
+          founded: linksForm.founded.trim() || "",
+          employeeCount: linksForm.employeeCount.trim() || "",
+          revenue: linksForm.revenue.trim() || "",
+          fundingRaised: linksForm.fundingRaised.trim() || "",
         }),
         credentials: "include",
       });
@@ -381,6 +396,12 @@ export default function Competitors() {
       instagramUrl: competitor.instagramUrl || "",
       blogUrl: competitor.blogUrl || "",
       projectId: competitor.projectId || null,
+      socialCheckFrequency: competitor.socialCheckFrequency || "daily",
+      headquarters: competitor.headquarters || "",
+      founded: competitor.founded || "",
+      employeeCount: competitor.employeeCount || "",
+      revenue: competitor.revenue || "",
+      fundingRaised: competitor.fundingRaised || "",
     });
     setLinksForm({
       linkedInUrl: competitor.linkedInUrl || "",
@@ -388,6 +409,12 @@ export default function Competitors() {
       instagramUrl: competitor.instagramUrl || "",
       blogUrl: competitor.blogUrl || "",
       projectId: competitor.projectId || "",
+      socialCheckFrequency: competitor.socialCheckFrequency || "daily",
+      headquarters: competitor.headquarters || "",
+      founded: competitor.founded || "",
+      employeeCount: competitor.employeeCount || "",
+      revenue: competitor.revenue || "",
+      fundingRaised: competitor.fundingRaised || "",
     });
     setBlogTestResult(null);
     setLinksEditOpen(true);
@@ -1020,7 +1047,7 @@ export default function Competitors() {
 
       {/* Social & Blog Links Edit Dialog */}
       <Dialog open={linksEditOpen} onOpenChange={setLinksEditOpen}>
-        <DialogContent className="sm:max-w-[550px]">
+        <DialogContent className="sm:max-w-[550px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
@@ -1133,6 +1160,87 @@ export default function Competitors() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Link this competitor to a specific product analysis project
+              </p>
+            </div>
+            
+            <div className="pt-4 border-t space-y-2">
+              <Label className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-blue-500" />
+                Company Information
+              </Label>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="headquarters" className="text-xs">Headquarters</Label>
+                  <Input
+                    id="headquarters"
+                    placeholder="City, State/Country"
+                    value={linksForm.headquarters}
+                    onChange={(e) => setLinksForm(f => ({ ...f, headquarters: e.target.value }))}
+                    data-testid="input-headquarters"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="founded" className="text-xs">Founded</Label>
+                  <Input
+                    id="founded"
+                    placeholder="e.g., 2015"
+                    value={linksForm.founded}
+                    onChange={(e) => setLinksForm(f => ({ ...f, founded: e.target.value }))}
+                    data-testid="input-founded"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="employeeCount" className="text-xs">Employees</Label>
+                  <Input
+                    id="employeeCount"
+                    placeholder="e.g., 50-100"
+                    value={linksForm.employeeCount}
+                    onChange={(e) => setLinksForm(f => ({ ...f, employeeCount: e.target.value }))}
+                    data-testid="input-employee-count"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="revenue" className="text-xs">Revenue</Label>
+                  <Input
+                    id="revenue"
+                    placeholder="e.g., $10M-$50M"
+                    value={linksForm.revenue}
+                    onChange={(e) => setLinksForm(f => ({ ...f, revenue: e.target.value }))}
+                    data-testid="input-revenue"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="fundingRaised" className="text-xs">Funding Raised</Label>
+                <Input
+                  id="fundingRaised"
+                  placeholder="e.g., $5M Series A"
+                  value={linksForm.fundingRaised}
+                  onChange={(e) => setLinksForm(f => ({ ...f, fundingRaised: e.target.value }))}
+                  data-testid="input-funding"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t space-y-2">
+              <Label className="flex items-center gap-2">Social Check Frequency</Label>
+              <Select 
+                value={linksForm.socialCheckFrequency} 
+                onValueChange={(val) => setLinksForm(f => ({ ...f, socialCheckFrequency: val }))}
+              >
+                <SelectTrigger data-testid="select-social-frequency">
+                  <SelectValue placeholder="Daily" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="never">Never</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                How often to check social media for updates
               </p>
             </div>
           </div>
