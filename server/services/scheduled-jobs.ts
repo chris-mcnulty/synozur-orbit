@@ -39,6 +39,7 @@ interface JobStatus {
   lastRun: Date | null;
   isRunning: boolean;
   nextRun: Date | null;
+  abortController: AbortController | null;
 }
 
 interface JobRunContext {
@@ -111,12 +112,12 @@ async function trackJobRun<T>(
 }
 
 const jobStatus: Record<string, JobStatus> = {
-  websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
-  socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
-  websiteMonitor: { lastRun: null, isRunning: false, nextRun: null },
-  productMonitor: { lastRun: null, isRunning: false, nextRun: null },
-  trialReminder: { lastRun: null, isRunning: false, nextRun: null },
-  weeklyDigest: { lastRun: null, isRunning: false, nextRun: null },
+  websiteCrawl: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  socialMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  websiteMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  productMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  trialReminder: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  weeklyDigest: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -136,6 +137,8 @@ async function runWebsiteCrawlJob(): Promise<void> {
     return;
   }
 
+  const abortController = new AbortController();
+  jobStatus.websiteCrawl.abortController = abortController;
   jobStatus.websiteCrawl.isRunning = true;
   console.log("[Scheduled Job] Starting website crawl job...");
 
@@ -143,6 +146,11 @@ async function runWebsiteCrawlJob(): Promise<void> {
     const tenants = await storage.getAllTenants();
 
     for (const tenant of tenants) {
+      // Check for abort signal
+      if (abortController.signal.aborted) {
+        console.log("[Scheduled Job] Website crawl job was cancelled");
+        break;
+      }
       if (tenant.status !== "active") continue;
       
       const frequency = tenant.monitoringFrequency || "weekly";
@@ -436,6 +444,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
     console.error("[Scheduled Job] Website crawl job failed:", error);
   } finally {
     jobStatus.websiteCrawl.isRunning = false;
+    jobStatus.websiteCrawl.abortController = null;
     jobStatus.websiteCrawl.lastRun = new Date();
     console.log("[Scheduled Job] Website crawl job completed");
   }
@@ -447,6 +456,8 @@ async function runSocialMonitorJob(): Promise<void> {
     return;
   }
 
+  const abortController = new AbortController();
+  jobStatus.socialMonitor.abortController = abortController;
   jobStatus.socialMonitor.isRunning = true;
   console.log("[Scheduled Job] Starting social monitor job...");
 
@@ -454,6 +465,10 @@ async function runSocialMonitorJob(): Promise<void> {
     const tenants = await storage.getAllTenants();
 
     for (const tenant of tenants) {
+      if (abortController.signal.aborted) {
+        console.log("[Scheduled Job] Social monitor job was cancelled");
+        break;
+      }
       if (tenant.status !== "active") continue;
       if (!tenant.socialMonitoringEnabled) continue;
 
@@ -608,6 +623,7 @@ async function runSocialMonitorJob(): Promise<void> {
     console.error("[Scheduled Job] Social monitor job failed:", error);
   } finally {
     jobStatus.socialMonitor.isRunning = false;
+    jobStatus.socialMonitor.abortController = null;
     jobStatus.socialMonitor.lastRun = new Date();
     console.log("[Scheduled Job] Social monitor job completed");
   }
@@ -619,6 +635,8 @@ async function runWebsiteMonitorJob(): Promise<void> {
     return;
   }
 
+  const abortController = new AbortController();
+  jobStatus.websiteMonitor.abortController = abortController;
   jobStatus.websiteMonitor.isRunning = true;
   console.log("[Scheduled Job] Starting website change monitor job...");
 
@@ -626,6 +644,10 @@ async function runWebsiteMonitorJob(): Promise<void> {
     const tenants = await storage.getAllTenants();
 
     for (const tenant of tenants) {
+      if (abortController.signal.aborted) {
+        console.log("[Scheduled Job] Website monitor job was cancelled");
+        break;
+      }
       if (tenant.status !== "active") continue;
 
       // Check if tenant's plan allows website monitoring
@@ -727,6 +749,7 @@ async function runWebsiteMonitorJob(): Promise<void> {
     console.error("[Scheduled Job] Website monitor job failed:", error);
   } finally {
     jobStatus.websiteMonitor.isRunning = false;
+    jobStatus.websiteMonitor.abortController = null;
     jobStatus.websiteMonitor.lastRun = new Date();
     console.log("[Scheduled Job] Website change monitor job completed");
   }
@@ -738,6 +761,8 @@ async function runProductMonitorJob(): Promise<void> {
     return;
   }
 
+  const abortController = new AbortController();
+  jobStatus.productMonitor.abortController = abortController;
   jobStatus.productMonitor.isRunning = true;
   console.log("[Scheduled Job] Starting product monitor job...");
 
@@ -745,6 +770,10 @@ async function runProductMonitorJob(): Promise<void> {
     const tenants = await storage.getAllTenants();
 
     for (const tenant of tenants) {
+      if (abortController.signal.aborted) {
+        console.log("[Scheduled Job] Product monitor job was cancelled");
+        break;
+      }
       if (tenant.status !== "active") continue;
 
       // Check if tenant's plan allows product monitoring
@@ -812,6 +841,7 @@ async function runProductMonitorJob(): Promise<void> {
     console.error("[Scheduled Job] Product monitor job failed:", error);
   } finally {
     jobStatus.productMonitor.isRunning = false;
+    jobStatus.productMonitor.abortController = null;
     jobStatus.productMonitor.lastRun = new Date();
     console.log("[Scheduled Job] Product monitor job completed");
   }
@@ -1030,8 +1060,16 @@ export async function triggerWeeklyDigestNow(): Promise<void> {
   runWeeklyDigestJob();
 }
 
-export function getJobStatus(): Record<string, JobStatus> {
-  return { ...jobStatus };
+export function getJobStatus(): Record<string, Omit<JobStatus, 'abortController'>> {
+  const result: Record<string, Omit<JobStatus, 'abortController'>> = {};
+  for (const [key, status] of Object.entries(jobStatus)) {
+    result[key] = {
+      lastRun: status.lastRun,
+      isRunning: status.isRunning,
+      nextRun: status.nextRun,
+    };
+  }
+  return result;
 }
 
 export async function triggerWebsiteCrawlNow(): Promise<void> {
@@ -1052,6 +1090,11 @@ export async function triggerProductMonitorNow(): Promise<void> {
 
 export function resetStuckJob(jobType: string): boolean {
   if (jobStatus[jobType]) {
+    // Abort if there's an active controller
+    if (jobStatus[jobType].abortController) {
+      jobStatus[jobType].abortController!.abort();
+      jobStatus[jobType].abortController = null;
+    }
     jobStatus[jobType].isRunning = false;
     console.log(`[Scheduled Job] Reset stuck job: ${jobType}`);
     return true;
@@ -1063,10 +1106,34 @@ export function resetAllStuckJobs(): string[] {
   const resetJobs: string[] = [];
   for (const [key, status] of Object.entries(jobStatus)) {
     if (status.isRunning) {
+      // Abort if there's an active controller
+      if (status.abortController) {
+        status.abortController.abort();
+        status.abortController = null;
+      }
       status.isRunning = false;
       resetJobs.push(key);
       console.log(`[Scheduled Job] Reset stuck job: ${key}`);
     }
   }
   return resetJobs;
+}
+
+export function cancelJob(jobType: string): { cancelled: boolean; wasRunning: boolean } {
+  const job = jobStatus[jobType];
+  if (!job) {
+    return { cancelled: false, wasRunning: false };
+  }
+  
+  const wasRunning = job.isRunning;
+  
+  if (job.abortController) {
+    job.abortController.abort();
+    job.abortController = null;
+    console.log(`[Scheduled Job] Cancelled running job: ${jobType}`);
+  }
+  
+  job.isRunning = false;
+  
+  return { cancelled: true, wasRunning };
 }
