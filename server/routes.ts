@@ -709,19 +709,22 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, name, url, projectId, headquarters, founded, revenue, fundingRaised } = req.body;
+      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
       if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
       if (twitterUrl !== undefined) updateData.twitterUrl = twitterUrl || null;
       if (blogUrl !== undefined) updateData.blogUrl = blogUrl || null;
+      if (blogFeedUrl !== undefined) updateData.blogFeedUrl = blogFeedUrl || null;
+      if (socialCheckFrequency !== undefined) updateData.socialCheckFrequency = socialCheckFrequency || null;
       if (name) updateData.name = name;
       if (url) updateData.url = url;
       
       // Company profile fields
       if (headquarters !== undefined) updateData.headquarters = headquarters || null;
       if (founded !== undefined) updateData.founded = founded || null;
+      if (employeeCount !== undefined) updateData.employeeCount = employeeCount || null;
       if (revenue !== undefined) updateData.revenue = revenue || null;
       if (fundingRaised !== undefined) updateData.fundingRaised = fundingRaised || null;
 

@@ -177,18 +177,19 @@ export default function CompetitorDetail() {
   };
 
   const handleSaveSocial = () => {
+    // Send empty strings so they can be cleared (API converts to null)
     updateSocialMutation.mutate({
-      linkedInUrl: editLinkedIn || undefined,
-      instagramUrl: editInstagram || undefined,
-      twitterUrl: editTwitter || undefined,
-      blogFeedUrl: editBlogUrl || undefined,
+      linkedInUrl: editLinkedIn,
+      instagramUrl: editInstagram,
+      twitterUrl: editTwitter,
+      blogFeedUrl: editBlogUrl,
       socialCheckFrequency: editSocialFrequency,
       // Include company profile fields
-      headquarters: editHeadquarters || undefined,
-      founded: editFounded || undefined,
-      employeeCount: editEmployeeCount || undefined,
-      revenue: editRevenue || undefined,
-      fundingRaised: editFundingRaised || undefined,
+      headquarters: editHeadquarters,
+      founded: editFounded,
+      employeeCount: editEmployeeCount,
+      revenue: editRevenue,
+      fundingRaised: editFundingRaised,
     });
   };
 
