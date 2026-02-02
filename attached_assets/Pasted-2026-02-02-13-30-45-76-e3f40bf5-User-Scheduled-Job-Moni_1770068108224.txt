@@ -1,0 +1,172 @@
+2026-02-02 13:30:45.76
+e3f40bf5
+User
+[Scheduled Job] Monitoring website changes for Marc Adamus Photography...
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async _a (/home/runner/workspace/dist/index.cjs:2371:360)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:85:28)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at ChromeLauncher.resolveExecutablePath (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:333:27)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+1. you did not perform an installation before running the script (e.g. `npx puppeteer browsers install chrome`) or
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async _$ (/home/runner/workspace/dist/index.cjs:748:14523)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+Headless fetch failed for https://www.marcadamus.com (attempt 2): Error: Could not find Chrome (ver. 143.0.7499.192). This can occur if either
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async /home/runner/workspace/dist/index.cjs:2371:21038
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async Nee (/home/runner/workspace/dist/index.cjs:748:12626)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at async s1 (/home/runner/workspace/dist/index.cjs:748:17335)
+2026-02-02 13:30:48.90
+e3f40bf5
+User
+at ChromeLauncher.computeLaunchArguments (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/ChromeLauncher.js:94:24)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at ChromeLauncher.computeLaunchArguments (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/ChromeLauncher.js:94:24)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+For (2), check out our guide on configuring puppeteer at https://pptr.dev/guides/configuration.
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async w1 (/home/runner/workspace/dist/index.cjs:2371:20964)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async Nee (/home/runner/workspace/dist/index.cjs:748:12626)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async _a (/home/runner/workspace/dist/index.cjs:2371:360)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async mr (/home/runner/workspace/dist/index.cjs:748:22013)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+2. your cache path is incorrectly configured (which is: /home/runner/.cache/puppeteer).
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+[Headless] Failed, falling back to HTTP for: https://www.marcadamus.com
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+Headless fetch failed for https://www.marcadamus.com (attempt 3): Error: Could not find Chrome (ver. 143.0.7499.192). This can occur if either
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+1. you did not perform an installation before running the script (e.g. `npx puppeteer browsers install chrome`) or
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async hs (/home/runner/workspace/dist/index.cjs:2371:10963)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async /home/runner/workspace/dist/index.cjs:2371:21038
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async s1 (/home/runner/workspace/dist/index.cjs:748:17335)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:85:28)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at ChromeLauncher.resolveExecutablePath (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:333:27)
+2026-02-02 13:30:51.83
+e3f40bf5
+User
+at async _$ (/home/runner/workspace/dist/index.cjs:748:14523)
+2026-02-02 13:30:51.90
+e3f40bf5
+User
+Blocked (403) fetching https://www.marcadamus.com, attempt 1/3
+2026-02-02 13:30:53.43
+e3f40bf5
+User
+Blocked (403) fetching https://www.marcadamus.com, attempt 2/3
+2026-02-02 13:30:55.82
+e3f40bf5
+User
+[Web Crawler] Failed to fetch homepage for https://www.marcadamus.com
+2026-02-02 13:30:55.82
+e3f40bf5
+User
+Blocked (403) fetching https://www.marcadamus.com, attempt 3/3
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+request_id: 'req_011CXjxPCScumvMgL6gKucFr'
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+at async /home/runner/workspace/dist/index.cjs:2585:49 {
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+status: 401,
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+error: {
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+'content-type': 'application/json',
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+server: 'cloudflare',
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+}
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+date: 'Mon, 02 Feb 2026 21:30:57 GMT',
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+at APIError.generate (/home/runner/workspace/node_modules/@anthropic-ai/sdk/core/error.js:44:20)
+2026-02-02 13:30:57.88
+e3f40bf5
+User
+}

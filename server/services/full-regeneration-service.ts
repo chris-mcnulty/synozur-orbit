@@ -291,22 +291,37 @@ async function runRegenerationInBackground(
     const ourSummary = ourAnalysisData?.summary || companyProfile?.description || "Our positioning";
     const ourKeyMessages = ourAnalysisData?.keyMessages || [];
 
+    // Build themes from competitor keywords/key positioning - use each competitor's own analysisData
+    // This avoids index alignment issues if some analyses fail
+    const competitorThemes = competitors.flatMap((comp) => {
+      const compAnalysis = comp.analysisData as any;
+      if (!compAnalysis) return [];
+      const keywords = compAnalysis.keywords || [];
+      return keywords.slice(0, 3).map((keyword: string) => ({
+        theme: keyword,
+        description: `${comp.name} emphasizes "${keyword}" in their positioning`,
+        competitorName: comp.name,
+        source: 'keyword',
+      }));
+    }).slice(0, 12);
+
+    // Build messaging comparison with explicit competitor names - use each competitor's own analysisData
+    const messagingComparisons = competitors.slice(0, 5).map((comp, i) => {
+      const compAnalysis = comp.analysisData as any;
+      return {
+        category: compAnalysis?.targetAudience || "Market Positioning",
+        competitorName: comp.name,
+        us: ourKeyMessages[i] || ourSummary,
+        competitorMessage: compAnalysis?.keyMessages?.[0] || compAnalysis?.valueProposition || "",
+      };
+    }).filter(m => m.competitorMessage);
+
     await storage.createAnalysis({
       userId: userId,
       tenantDomain,
       marketId: marketId || null,
-      themes: analyses.map(a => ({
-        theme: a.valueProposition,
-        us: companyProfile ? "Based on profile" : "Medium",
-        competitorA: "High",
-        competitorB: "Medium",
-      })),
-      messaging: analyses.slice(0, 3).map((a, i) => ({
-        category: a.targetAudience || "Market Positioning",
-        us: ourKeyMessages[i] || ourSummary,
-        competitorA: a.keyMessages[0] || "",
-        competitorB: a.keyMessages[1] || "",
-      })),
+      themes: competitorThemes,
+      messaging: messagingComparisons,
       gaps: gaps,
     });
 
