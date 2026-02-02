@@ -1364,7 +1364,14 @@ export default function AdminPage() {
                               {JOB_TYPE_LABELS[run.jobType] || run.jobType}
                             </TableCell>
                             <TableCell className="text-sm">
-                              {run.targetName || run.tenantDomain || "-"}
+                              <div>
+                                {run.targetName || "-"}
+                                {run.tenantDomain && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {run.tenantDomain}
+                                  </div>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               {run.status === "completed" ? (
