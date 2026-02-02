@@ -2,7 +2,7 @@ import { storage } from "../storage";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
-import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "./website-monitoring";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail } from "./email-service";
@@ -114,6 +114,7 @@ const jobStatus: Record<string, JobStatus> = {
   websiteCrawl: { lastRun: null, isRunning: false, nextRun: null },
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null },
   websiteMonitor: { lastRun: null, isRunning: false, nextRun: null },
+  productMonitor: { lastRun: null, isRunning: false, nextRun: null },
   trialReminder: { lastRun: null, isRunning: false, nextRun: null },
   weeklyDigest: { lastRun: null, isRunning: false, nextRun: null },
 };
@@ -726,6 +727,91 @@ async function runWebsiteMonitorJob(): Promise<void> {
   }
 }
 
+async function runProductMonitorJob(): Promise<void> {
+  if (jobStatus.productMonitor.isRunning) {
+    console.log("[Scheduled Job] Product monitor already running, skipping...");
+    return;
+  }
+
+  jobStatus.productMonitor.isRunning = true;
+  console.log("[Scheduled Job] Starting product monitor job...");
+
+  try {
+    const tenants = await storage.getAllTenants();
+
+    for (const tenant of tenants) {
+      if (tenant.status !== "active") continue;
+
+      // Check if tenant's plan allows product monitoring
+      const plan = await storage.getServicePlanByName(tenant.plan);
+      if (!plan?.productMonitorEnabled) {
+        continue;
+      }
+
+      const frequency = tenant.monitoringFrequency || "weekly";
+      if (frequency === "disabled") continue;
+
+      const intervalMs = getIntervalMs(frequency);
+      if (intervalMs === 0) continue;
+
+      // Get all standalone products (products with URL but no competitor/baseline link)
+      const products = await storage.getProductsByTenant(tenant.domain);
+      
+      for (const product of products) {
+        // Skip products that are linked to competitors or baselines - they're monitored via their parent
+        if (product.competitorId || product.companyProfileId) continue;
+        
+        // Skip products without a URL
+        if (!product.url) continue;
+
+        // Skip products in archived markets
+        if (await isMarketArchived(product.marketId)) {
+          console.log(`[Scheduled Job] Skipping product monitor for ${product.name} - market is archived`);
+          continue;
+        }
+
+        const lastMonitor = product.lastWebsiteMonitor
+          ? new Date(product.lastWebsiteMonitor).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (now - lastMonitor < intervalMs) {
+          continue;
+        }
+
+        console.log(`[Scheduled Job] Monitoring standalone product: ${product.name}...`);
+
+        await trackJobRun(
+          "productMonitor",
+          tenant.domain,
+          product.id,
+          `Product: ${product.name}`,
+          async () => {
+            await monitorProductWebsite(
+              product.id,
+              product.createdBy || "",
+              tenant.domain,
+              product.marketId || undefined
+            );
+            return {
+              status: "success",
+              entityType: "product",
+              url: product.url,
+            };
+          }
+        );
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+  } catch (error) {
+    console.error("[Scheduled Job] Product monitor job failed:", error);
+  } finally {
+    jobStatus.productMonitor.isRunning = false;
+    jobStatus.productMonitor.lastRun = new Date();
+    console.log("[Scheduled Job] Product monitor job completed");
+  }
+}
+
 async function runTrialReminderJob(): Promise<void> {
   if (jobStatus.trialReminder.isRunning) {
     console.log("[Scheduled Job] Trial reminder already running, skipping...");
@@ -831,6 +917,7 @@ async function runWeeklyDigestJob(): Promise<void> {
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
+let productMonitorInterval: NodeJS.Timeout | null = null;
 let trialReminderInterval: NodeJS.Timeout | null = null;
 let weeklyDigestInterval: NodeJS.Timeout | null = null;
 
@@ -840,6 +927,7 @@ export function startScheduledJobs(): void {
   if (websiteCrawlInterval) clearInterval(websiteCrawlInterval);
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
   if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
+  if (productMonitorInterval) clearInterval(productMonitorInterval);
   if (trialReminderInterval) clearInterval(trialReminderInterval);
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
 
@@ -854,6 +942,10 @@ export function startScheduledJobs(): void {
 
   websiteMonitorInterval = setInterval(() => {
     runWebsiteMonitorJob();
+  }, 60 * 60 * 1000);
+
+  productMonitorInterval = setInterval(() => {
+    runProductMonitorJob();
   }, 60 * 60 * 1000);
 
   trialReminderInterval = setInterval(() => {
@@ -888,11 +980,16 @@ export function startScheduledJobs(): void {
   }, 15 * 1000);
 
   setTimeout(() => {
-    console.log("[Scheduled Jobs] Starting trial reminder job sweep...");
-    runTrialReminderJob();
+    console.log("[Scheduled Jobs] Starting product monitor job sweep...");
+    runProductMonitorJob();
   }, 20 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website change monitor (hourly), trial reminders (every 6 hours), weekly digest (Sundays)");
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting trial reminder job sweep...");
+    runTrialReminderJob();
+  }, 25 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (Sundays)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
@@ -908,6 +1005,10 @@ export function stopScheduledJobs(): void {
   if (websiteMonitorInterval) {
     clearInterval(websiteMonitorInterval);
     websiteMonitorInterval = null;
+  }
+  if (productMonitorInterval) {
+    clearInterval(productMonitorInterval);
+    productMonitorInterval = null;
   }
   if (trialReminderInterval) {
     clearInterval(trialReminderInterval);
@@ -938,4 +1039,8 @@ export async function triggerSocialMonitorNow(): Promise<void> {
 
 export async function triggerWebsiteMonitorNow(): Promise<void> {
   runWebsiteMonitorJob();
+}
+
+export async function triggerProductMonitorNow(): Promise<void> {
+  runProductMonitorJob();
 }
