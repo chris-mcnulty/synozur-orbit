@@ -117,9 +117,11 @@ export const servicePlans = pgTable("service_plans", {
   // Multi-market settings
   multiMarketEnabled: boolean("multi_market_enabled").notNull().default(false),
   marketLimit: integer("market_limit"), // NULL = unlimited
-  // Premium features
-  monitoringFrequency: text("monitoring_frequency").default("weekly"), // weekly, daily, disabled
+  // Premium features - Monitoring controls
+  monitoringFrequency: text("monitoring_frequency").default("weekly"), // weekly, daily, disabled (controls website crawls)
   socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false),
+  websiteMonitorEnabled: boolean("website_monitor_enabled").default(false), // AI-powered website change detection
+  productMonitorEnabled: boolean("product_monitor_enabled").default(false), // Standalone product URL monitoring
   // Trial settings
   trialDays: integer("trial_days"), // Only applicable for trial plan
   // Pricing (for display purposes)
