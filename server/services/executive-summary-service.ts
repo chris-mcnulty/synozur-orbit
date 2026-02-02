@@ -250,8 +250,17 @@ export async function updateExecutiveSummarySection(
   }
 
   await storage.upsertExecutiveSummary({
-    ...existing,
-    [section]: content,
-    lockedSections: updatedLocked
+    tenantDomain: existing.tenantDomain,
+    marketId: existing.marketId,
+    projectId: existing.projectId,
+    companyProfileId: existing.companyProfileId,
+    scope: existing.scope,
+    companySnapshot: section === "companySnapshot" ? content : (existing.companySnapshot || undefined),
+    marketPosition: section === "marketPosition" ? content : (existing.marketPosition || undefined),
+    competitiveLandscape: section === "competitiveLandscape" ? content : (existing.competitiveLandscape || undefined),
+    opportunities: section === "opportunities" ? content : (existing.opportunities || undefined),
+    lockedSections: updatedLocked,
+    dataHash: existing.dataHash || undefined,
+    summaryData: (existing.summaryData as Record<string, unknown>) || {}
   });
 }

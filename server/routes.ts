@@ -9412,6 +9412,97 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
     }
   });
 
+  // ==================== BASELINE EXECUTIVE SUMMARY ====================
+
+  // Get baseline executive summary
+  app.get("/api/baseline/executive-summary", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { getExecutiveSummary } = await import("./services/executive-summary-service");
+      
+      const summary = await getExecutiveSummary(ctx.tenantDomain, ctx.marketId);
+      
+      if (!summary) {
+        return res.json({ 
+          exists: false,
+          data: null,
+          lockedSections: [],
+          lastGeneratedAt: null
+        });
+      }
+
+      res.json({
+        exists: true,
+        data: summary.data,
+        lockedSections: summary.lockedSections,
+        lastGeneratedAt: summary.lastGeneratedAt
+      });
+    } catch (error: any) {
+      console.error("Get executive summary error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate/regenerate executive summary (respects locked sections)
+  app.post("/api/baseline/executive-summary/generate", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { generateExecutiveSummary } = await import("./services/executive-summary-service");
+      
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      
+      const existingSummary = await storage.getExecutiveSummaryByContext(toContextFilter(ctx));
+      const lockedSections = (existingSummary?.lockedSections as string[]) || [];
+
+      const data = await generateExecutiveSummary(
+        ctx.tenantDomain, 
+        ctx.marketId, 
+        companyProfile?.id,
+        lockedSections
+      );
+
+      res.json({ 
+        success: true, 
+        data,
+        lockedSections
+      });
+    } catch (error: any) {
+      console.error("Generate executive summary error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update a specific section of the executive summary
+  app.patch("/api/baseline/executive-summary", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { section, content, lock } = req.body;
+      
+      if (!section || !["companySnapshot", "marketPosition", "competitiveLandscape", "opportunities"].includes(section)) {
+        return res.status(400).json({ error: "Invalid section" });
+      }
+
+      if (typeof content !== "string") {
+        return res.status(400).json({ error: "Content must be a string" });
+      }
+
+      const { updateExecutiveSummarySection } = await import("./services/executive-summary-service");
+      
+      await updateExecutiveSummarySection(
+        ctx.tenantDomain,
+        ctx.marketId,
+        section,
+        content,
+        lock === true
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Update executive summary error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== FULL REGENERATION ENDPOINTS ====================
 
   // Start full regeneration of all analysis (runs in background, emails when complete)
