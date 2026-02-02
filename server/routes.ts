@@ -10820,6 +10820,11 @@ Return only the description text, no quotes or formatting.`;
           description: "Detects website changes and generates AI summaries",
           interval: "Every 6 hours",
         },
+        productMonitor: {
+          ...status.productMonitor,
+          description: "Monitors standalone product URLs for changes",
+          interval: "Every hour",
+        },
         trialReminder: {
           ...status.trialReminder,
           description: "Sends trial expiration reminder emails",
