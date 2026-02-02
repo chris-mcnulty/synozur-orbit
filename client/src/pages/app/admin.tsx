@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -431,6 +431,48 @@ export default function AdminPage() {
     },
     onSuccess: () => {
       refetchJobStatus();
+    },
+  });
+
+  const triggerJobMutation = useMutation({
+    mutationFn: async (jobType: string) => {
+      const endpointMap: Record<string, string> = {
+        websiteCrawl: "/api/admin/jobs/trigger-crawl",
+        socialMonitor: "/api/admin/jobs/trigger-social",
+        websiteMonitor: "/api/admin/jobs/trigger-website-monitor",
+        productMonitor: "/api/admin/jobs/trigger-product",
+      };
+      const endpoint = endpointMap[jobType];
+      if (!endpoint) throw new Error(`Unknown job type: ${jobType}`);
+      
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error(`Failed to trigger ${jobType}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchJobStatus();
+      refetchJobHistory();
+    },
+  });
+
+  const cancelJobMutation = useMutation({
+    mutationFn: async (jobType: string) => {
+      const response = await fetch("/api/admin/jobs/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ jobType }),
+      });
+      if (!response.ok) throw new Error(`Failed to cancel ${jobType}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchJobStatus();
+      refetchJobHistory();
     },
   });
 
@@ -1279,6 +1321,43 @@ export default function AdminPage() {
                           </div>
                         )}
                       </div>
+                      {["websiteCrawl", "socialMonitor", "websiteMonitor", "productMonitor"].includes(key) && (
+                        <div className="mt-3 pt-2 border-t">
+                          {job.isRunning ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-7 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                              onClick={() => cancelJobMutation.mutate(key)}
+                              disabled={cancelJobMutation.isPending}
+                              data-testid={`cancel-${key}`}
+                            >
+                              {cancelJobMutation.isPending && cancelJobMutation.variables === key ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Square className="h-3 w-3 mr-1" />
+                              )}
+                              Cancel
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-7 text-xs"
+                              onClick={() => triggerJobMutation.mutate(key)}
+                              disabled={triggerJobMutation.isPending}
+                              data-testid={`run-now-${key}`}
+                            >
+                              {triggerJobMutation.isPending && triggerJobMutation.variables === key ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Play className="h-3 w-3 mr-1" />
+                              )}
+                              Run Now
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

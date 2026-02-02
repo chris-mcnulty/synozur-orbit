@@ -304,6 +304,7 @@ export const competitors = pgTable("competitors", {
   // Company profile fields (for battlecard capsule overview)
   headquarters: text("headquarters"), // City, State/Country
   founded: text("founded"), // Year founded
+  employeeCount: text("employee_count"), // Approximate number or range, e.g., "50-100" or "500+"
   revenue: text("revenue"), // Revenue range or estimate (e.g., "$10M-$50M", "Series B")
   fundingRaised: text("funding_raised"), // Total funding raised (e.g., "$25M")
   createdAt: timestamp("created_at").notNull().defaultNow(),

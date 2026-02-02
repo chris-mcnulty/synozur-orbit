@@ -23,7 +23,7 @@ import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs } from "./services/scheduled-jobs";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, calculateBaselineScore, getCurrentPeriod, type ScoreBreakdown } from "./services/scoring-service";
@@ -10944,6 +10944,70 @@ Return only the description text, no quotes or formatting.`;
 
       triggerSocialMonitorNow();
       res.json({ success: true, message: "Social monitor job triggered" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/trigger-website-monitor", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      triggerWebsiteMonitorNow();
+      res.json({ success: true, message: "Website monitor job triggered" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/trigger-product", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      triggerProductMonitorNow();
+      res.json({ success: true, message: "Product monitor job triggered" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/cancel", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { jobType } = req.body;
+      if (!jobType) {
+        return res.status(400).json({ error: "Job type is required" });
+      }
+
+      const result = cancelJob(jobType);
+      res.json({ 
+        success: true, 
+        cancelled: result.cancelled,
+        wasRunning: result.wasRunning,
+        message: result.wasRunning ? `Job ${jobType} cancelled` : `Job ${jobType} was not running`
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

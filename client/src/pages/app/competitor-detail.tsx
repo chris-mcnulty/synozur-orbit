@@ -29,6 +29,7 @@ export default function CompetitorDetail() {
   // Company Profile editing state (shared with main edit dialog)
   const [editHeadquarters, setEditHeadquarters] = useState("");
   const [editFounded, setEditFounded] = useState("");
+  const [editEmployeeCount, setEditEmployeeCount] = useState("");
   const [editRevenue, setEditRevenue] = useState("");
   const [editFundingRaised, setEditFundingRaised] = useState("");
 
@@ -133,7 +134,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; revenue?: string; fundingRaised?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -169,6 +170,7 @@ export default function CompetitorDetail() {
     // Also populate company profile fields
     setEditHeadquarters(competitor?.headquarters || "");
     setEditFounded(competitor?.founded || "");
+    setEditEmployeeCount(competitor?.employeeCount || "");
     setEditRevenue(competitor?.revenue || "");
     setEditFundingRaised(competitor?.fundingRaised || "");
     setEditOpen(true);
@@ -184,6 +186,7 @@ export default function CompetitorDetail() {
       // Include company profile fields
       headquarters: editHeadquarters || undefined,
       founded: editFounded || undefined,
+      employeeCount: editEmployeeCount || undefined,
       revenue: editRevenue || undefined,
       fundingRaised: editFundingRaised || undefined,
     });
@@ -575,6 +578,17 @@ export default function CompetitorDetail() {
                               />
                             </div>
                             <div className="space-y-1">
+                              <Label htmlFor="employees" className="text-xs">Employee Count</Label>
+                              <Input
+                                id="employees"
+                                placeholder="e.g. 50-100 or 500+"
+                                value={editEmployeeCount}
+                                onChange={(e) => setEditEmployeeCount(e.target.value)}
+                                className="h-9"
+                                data-testid="input-employees"
+                              />
+                            </div>
+                            <div className="space-y-1">
                               <Label htmlFor="revenue" className="text-xs">Revenue</Label>
                               <Input
                                 id="revenue"
@@ -842,8 +856,8 @@ export default function CompetitorDetail() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {(competitor?.headquarters || competitor?.founded || competitor?.revenue || competitor?.fundingRaised) ? (
-                  <div className="grid gap-4 md:grid-cols-4">
+                {(competitor?.headquarters || competitor?.founded || competitor?.employeeCount || competitor?.revenue || competitor?.fundingRaised) ? (
+                  <div className="grid gap-4 md:grid-cols-5">
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
                         <Building2 className="h-3 w-3" /> Headquarters
@@ -855,6 +869,12 @@ export default function CompetitorDetail() {
                         <Calendar className="h-3 w-3" /> Founded
                       </p>
                       <p className="text-sm">{competitor.founded || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <Users className="h-3 w-3" /> Employees
+                      </p>
+                      <p className="text-sm">{competitor.employeeCount || "—"}</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
