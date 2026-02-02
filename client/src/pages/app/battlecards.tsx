@@ -8,7 +8,8 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Swords, Plus, Download, RefreshCw, Target, ArrowRight, 
   CheckCircle, XCircle, MinusCircle, ChevronRight, Loader2,
-  Building2, Sparkles, Copy, FileText, FileDown
+  Building2, Sparkles, Copy, FileText, FileDown, MapPin, Calendar, 
+  DollarSign, TrendingUp, Users
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -483,6 +484,60 @@ export default function BattleCardsPage() {
           
           <div className="flex-1 overflow-y-auto pr-4" style={{ maxHeight: 'calc(85vh - 140px)' }}>
             <div className="space-y-6 py-4">
+              {/* Company Directory Info */}
+              {(() => {
+                const selectedCompetitorData = competitors.find((c: any) => c.id === selectedCard?.competitorId);
+                const hasDirectoryInfo = selectedCompetitorData?.headquarters || selectedCompetitorData?.founded || 
+                  selectedCompetitorData?.revenue || selectedCompetitorData?.fundingRaised;
+                
+                if (!hasDirectoryInfo) return null;
+                
+                return (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Company Profile</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-muted/30 rounded-lg p-4">
+                      {selectedCompetitorData.headquarters && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <MapPin className="h-3 w-3" />
+                            Headquarters
+                          </div>
+                          <p className="text-sm font-medium">{selectedCompetitorData.headquarters}</p>
+                        </div>
+                      )}
+                      {selectedCompetitorData.founded && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <Calendar className="h-3 w-3" />
+                            Founded
+                          </div>
+                          <p className="text-sm font-medium">{selectedCompetitorData.founded}</p>
+                        </div>
+                      )}
+                      {selectedCompetitorData.revenue && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <DollarSign className="h-3 w-3" />
+                            Revenue
+                          </div>
+                          <p className="text-sm font-medium">{selectedCompetitorData.revenue}</p>
+                        </div>
+                      )}
+                      {selectedCompetitorData.fundingRaised && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <TrendingUp className="h-3 w-3" />
+                            Funding
+                          </div>
+                          <p className="text-sm font-medium">{selectedCompetitorData.fundingRaised}</p>
+                        </div>
+                      )}
+                    </div>
+                    <Separator />
+                  </div>
+                );
+              })()}
+              
               {(selectedCard?.strengths?.length || selectedCard?.weaknesses?.length) ? (
                 <div className="space-y-4">
                   <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Competitor Overview</h3>
