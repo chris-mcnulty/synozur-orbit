@@ -1,9 +1,33 @@
 import puppeteer, { Browser, Page } from "puppeteer";
+import * as fs from "fs";
 
 interface HeadlessCrawlResult {
   html: string;
   finalUrl: string;
   renderedContent: string;
+}
+
+// Find system Chromium executable for production deployment
+async function findChromiumPath(): Promise<string | undefined> {
+  const possiblePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+  ].filter(Boolean) as string[];
+  
+  for (const execPath of possiblePaths) {
+    try {
+      if (fs.existsSync(execPath)) {
+        return execPath;
+      }
+    } catch {
+      continue;
+    }
+  }
+  
+  return undefined;
 }
 
 const USER_AGENTS = [
@@ -28,14 +52,20 @@ async function getBrowser(): Promise<Browser> {
     return browserInstance;
   }
 
+  const executablePath = await findChromiumPath();
+  console.log(`[Headless Crawler] Using chromium path: ${executablePath || 'auto-detect'}`);
+
   browserInstance = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-accelerated-2d-canvas",
       "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
       "--window-size=1920,1080",
       "--disable-blink-features=AutomationControlled",
       "--disable-infobars",
