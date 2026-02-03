@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -777,6 +777,68 @@ export default function CompanyBaseline() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Company Directory - populated from AI analysis */}
+              {analysisData && (analysisData.headquarters || analysisData.foundedYear || analysisData.employeeCount || analysisData.industry || analysisData.revenueRange) && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Briefcase className="w-5 h-5 text-primary" />
+                      Company Directory
+                    </CardTitle>
+                    <CardDescription>Business information extracted from website analysis</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {analysisData.headquarters && (
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Headquarters</p>
+                            <p className="text-sm font-medium">{analysisData.headquarters}</p>
+                          </div>
+                        </div>
+                      )}
+                      {analysisData.foundedYear && (
+                        <div className="flex items-start gap-2">
+                          <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Founded</p>
+                            <p className="text-sm font-medium">{analysisData.foundedYear}</p>
+                          </div>
+                        </div>
+                      )}
+                      {analysisData.employeeCount && (
+                        <div className="flex items-start gap-2">
+                          <Users className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Employees</p>
+                            <p className="text-sm font-medium">{typeof analysisData.employeeCount === 'number' ? analysisData.employeeCount.toLocaleString() : analysisData.employeeCount}</p>
+                          </div>
+                        </div>
+                      )}
+                      {analysisData.industry && (
+                        <div className="flex items-start gap-2">
+                          <Building2 className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Industry</p>
+                            <p className="text-sm font-medium">{analysisData.industry}</p>
+                          </div>
+                        </div>
+                      )}
+                      {analysisData.revenueRange && (
+                        <div className="flex items-start gap-2">
+                          <DollarSign className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Revenue Range</p>
+                            <p className="text-sm font-medium">{analysisData.revenueRange}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {hasAnalysis && (
                 <Card>
