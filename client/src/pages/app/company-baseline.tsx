@@ -32,6 +32,12 @@ export default function CompanyBaseline() {
     twitterUrl: "",
     blogUrl: "",
     description: "",
+    // Directory fields
+    headquarters: "",
+    founded: "",
+    employeeCount: "",
+    industry: "",
+    revenue: "",
   });
 
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery({
@@ -242,6 +248,11 @@ export default function CompanyBaseline() {
         twitterUrl: companyProfile.twitterUrl || "",
         blogUrl: companyProfile.blogUrl || "",
         description: companyProfile.description || "",
+        headquarters: companyProfile.headquarters || "",
+        founded: companyProfile.founded || "",
+        employeeCount: companyProfile.employeeCount || "",
+        industry: companyProfile.industry || "",
+        revenue: companyProfile.revenue || "",
       });
       setLogoUploadTab("url");
     } else {
@@ -254,6 +265,11 @@ export default function CompanyBaseline() {
         twitterUrl: "",
         blogUrl: "",
         description: "",
+        headquarters: "",
+        founded: "",
+        employeeCount: "",
+        industry: "",
+        revenue: "",
       });
     }
     setIsProfileDialogOpen(true);
@@ -468,6 +484,61 @@ export default function CompanyBaseline() {
                             rows={3}
                             data-testid="input-description"
                           />
+                        </div>
+                        
+                        {/* Directory fields */}
+                        <div className="border-t pt-4 mt-2">
+                          <p className="text-sm font-medium mb-3">Company Directory (optional)</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="grid gap-1">
+                              <Label htmlFor="headquarters" className="text-xs flex items-center gap-1">
+                                <MapPin className="h-3 w-3" /> Headquarters
+                              </Label>
+                              <Input
+                                id="headquarters"
+                                placeholder="City, Country"
+                                value={profileForm.headquarters}
+                                onChange={(e) => setProfileForm({ ...profileForm, headquarters: e.target.value })}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label htmlFor="founded" className="text-xs flex items-center gap-1">
+                                <Calendar className="h-3 w-3" /> Founded
+                              </Label>
+                              <Input
+                                id="founded"
+                                placeholder="2010"
+                                value={profileForm.founded}
+                                onChange={(e) => setProfileForm({ ...profileForm, founded: e.target.value })}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label htmlFor="employeeCount" className="text-xs flex items-center gap-1">
+                                <Users className="h-3 w-3" /> Employees
+                              </Label>
+                              <Input
+                                id="employeeCount"
+                                placeholder="50-100"
+                                value={profileForm.employeeCount}
+                                onChange={(e) => setProfileForm({ ...profileForm, employeeCount: e.target.value })}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label htmlFor="industry" className="text-xs flex items-center gap-1">
+                                <Building2 className="h-3 w-3" /> Industry
+                              </Label>
+                              <Input
+                                id="industry"
+                                placeholder="Technology"
+                                value={profileForm.industry}
+                                onChange={(e) => setProfileForm({ ...profileForm, industry: e.target.value })}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <DialogFooter>
@@ -712,6 +783,61 @@ export default function CompanyBaseline() {
                                   rows={3}
                                 />
                               </div>
+                              
+                              {/* Directory fields */}
+                              <div className="border-t pt-4 mt-2">
+                                <p className="text-sm font-medium mb-3">Company Directory (optional)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="grid gap-1">
+                                    <Label htmlFor="headquarters-edit" className="text-xs flex items-center gap-1">
+                                      <MapPin className="h-3 w-3" /> Headquarters
+                                    </Label>
+                                    <Input
+                                      id="headquarters-edit"
+                                      placeholder="City, Country"
+                                      value={profileForm.headquarters}
+                                      onChange={(e) => setProfileForm({ ...profileForm, headquarters: e.target.value })}
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                  <div className="grid gap-1">
+                                    <Label htmlFor="founded-edit" className="text-xs flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" /> Founded
+                                    </Label>
+                                    <Input
+                                      id="founded-edit"
+                                      placeholder="2010"
+                                      value={profileForm.founded}
+                                      onChange={(e) => setProfileForm({ ...profileForm, founded: e.target.value })}
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                  <div className="grid gap-1">
+                                    <Label htmlFor="employeeCount-edit" className="text-xs flex items-center gap-1">
+                                      <Users className="h-3 w-3" /> Employees
+                                    </Label>
+                                    <Input
+                                      id="employeeCount-edit"
+                                      placeholder="50-100"
+                                      value={profileForm.employeeCount}
+                                      onChange={(e) => setProfileForm({ ...profileForm, employeeCount: e.target.value })}
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                  <div className="grid gap-1">
+                                    <Label htmlFor="industry-edit" className="text-xs flex items-center gap-1">
+                                      <Building2 className="h-3 w-3" /> Industry
+                                    </Label>
+                                    <Input
+                                      id="industry-edit"
+                                      placeholder="Technology"
+                                      value={profileForm.industry}
+                                      onChange={(e) => setProfileForm({ ...profileForm, industry: e.target.value })}
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                             <DialogFooter>
                               <Button type="submit" disabled={saveProfile.isPending}>
@@ -778,60 +904,60 @@ export default function CompanyBaseline() {
                 </CardContent>
               </Card>
 
-              {/* Company Directory - populated from AI analysis */}
-              {analysisData && (analysisData.headquarters || analysisData.foundedYear || analysisData.employeeCount || analysisData.industry || analysisData.revenueRange) && (
+              {/* Company Directory - uses stable database columns */}
+              {(companyProfile.headquarters || companyProfile.founded || companyProfile.employeeCount || companyProfile.industry || companyProfile.revenue) && (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <Briefcase className="w-5 h-5 text-primary" />
                       Company Directory
                     </CardTitle>
-                    <CardDescription>Business information extracted from website analysis</CardDescription>
+                    <CardDescription>Business information - edit via profile settings</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {analysisData.headquarters && (
+                      {companyProfile.headquarters && (
                         <div className="flex items-start gap-2">
                           <MapPin className="w-4 h-4 text-muted-foreground mt-0.5" />
                           <div>
                             <p className="text-xs text-muted-foreground">Headquarters</p>
-                            <p className="text-sm font-medium">{analysisData.headquarters}</p>
+                            <p className="text-sm font-medium">{companyProfile.headquarters}</p>
                           </div>
                         </div>
                       )}
-                      {analysisData.foundedYear && (
+                      {companyProfile.founded && (
                         <div className="flex items-start gap-2">
                           <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
                           <div>
                             <p className="text-xs text-muted-foreground">Founded</p>
-                            <p className="text-sm font-medium">{analysisData.foundedYear}</p>
+                            <p className="text-sm font-medium">{companyProfile.founded}</p>
                           </div>
                         </div>
                       )}
-                      {analysisData.employeeCount && (
+                      {companyProfile.employeeCount && (
                         <div className="flex items-start gap-2">
                           <Users className="w-4 h-4 text-muted-foreground mt-0.5" />
                           <div>
                             <p className="text-xs text-muted-foreground">Employees</p>
-                            <p className="text-sm font-medium">{typeof analysisData.employeeCount === 'number' ? analysisData.employeeCount.toLocaleString() : analysisData.employeeCount}</p>
+                            <p className="text-sm font-medium">{companyProfile.employeeCount}</p>
                           </div>
                         </div>
                       )}
-                      {analysisData.industry && (
+                      {companyProfile.industry && (
                         <div className="flex items-start gap-2">
                           <Building2 className="w-4 h-4 text-muted-foreground mt-0.5" />
                           <div>
                             <p className="text-xs text-muted-foreground">Industry</p>
-                            <p className="text-sm font-medium">{analysisData.industry}</p>
+                            <p className="text-sm font-medium">{companyProfile.industry}</p>
                           </div>
                         </div>
                       )}
-                      {analysisData.revenueRange && (
+                      {companyProfile.revenue && (
                         <div className="flex items-start gap-2">
                           <DollarSign className="w-4 h-4 text-muted-foreground mt-0.5" />
                           <div>
                             <p className="text-xs text-muted-foreground">Revenue Range</p>
-                            <p className="text-sm font-medium">{analysisData.revenueRange}</p>
+                            <p className="text-sm font-medium">{companyProfile.revenue}</p>
                           </div>
                         </div>
                       )}

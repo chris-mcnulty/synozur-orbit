@@ -3752,16 +3752,39 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
       // Update profile with analysis data
       // But protect manual research data from being overwritten
+      const directoryUpdates: any = {};
+      
+      // Extract directory fields from analysis and store in stable columns
+      if (analysisResult) {
+        if (analysisResult.headquarters && !profile.headquarters) {
+          directoryUpdates.headquarters = analysisResult.headquarters;
+        }
+        if (analysisResult.foundedYear && !profile.founded) {
+          directoryUpdates.founded = String(analysisResult.foundedYear);
+        }
+        if (analysisResult.employeeCount && !profile.employeeCount) {
+          directoryUpdates.employeeCount = String(analysisResult.employeeCount);
+        }
+        if (analysisResult.industry && !profile.industry) {
+          directoryUpdates.industry = analysisResult.industry;
+        }
+        if (analysisResult.revenueRange && !profile.revenue) {
+          directoryUpdates.revenue = analysisResult.revenueRange;
+        }
+      }
+      
       if (hasManualResearch) {
-        // Preserve manual research, only update crawl metadata
+        // Preserve manual research, only update crawl metadata and directory fields
         console.log(`Skipping analysis update for ${profile.companyName} - has manual research data`);
         await storage.updateCompanyProfile(profile.id, {
           lastAnalysis: new Date(),
+          ...directoryUpdates,
         });
       } else {
         await storage.updateCompanyProfile(profile.id, {
           lastAnalysis: new Date(),
           analysisData: analysisResult,
+          ...directoryUpdates,
         });
       }
       

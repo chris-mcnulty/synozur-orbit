@@ -752,6 +752,12 @@ export const companyProfiles = pgTable("company_profiles", {
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
   blogUrl: text("blog_url"), // Blog or RSS feed URL for baseline company
   description: text("description"),
+  // Directory fields - stable columns for company information
+  headquarters: text("headquarters"), // City, State/Country
+  founded: text("founded"), // Year founded
+  employeeCount: text("employee_count"), // Employee count or range
+  industry: text("industry"), // Industry/sector
+  revenue: text("revenue"), // Revenue range
   lastAnalysis: timestamp("last_analysis"),
   analysisData: jsonb("analysis_data"),
   lastCrawl: text("last_crawl"),

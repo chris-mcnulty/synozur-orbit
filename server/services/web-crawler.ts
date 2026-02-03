@@ -187,6 +187,7 @@ function extractSocialLinks(html: string): CrawlSummary["socialLinks"] {
 function extractBlogInfo(html: string): CrawlSummary["blogSnapshot"] | undefined {
   const blogTitles: string[] = [];
   
+  // Look for article tags with headings (common blog structure)
   const articleRegex = /<article[^>]*>[\s\S]*?<h[1-3][^>]*>([^<]+)<\/h[1-3]>/gi;
   let articleMatch;
   while ((articleMatch = articleRegex.exec(html)) !== null) {
@@ -195,11 +196,23 @@ function extractBlogInfo(html: string): CrawlSummary["blogSnapshot"] | undefined
     }
   }
   
-  const blogLinkRegex = /href=["'][^"']*\/blog\/[^"']*["'][^>]*>([^<]+)</gi;
+  // Look for links in blog/insights/news/articles sections
+  const blogLinkRegex = /href=["'][^"']*\/(blog|insights|insight|news|articles?)\/[^"']*["'][^>]*>([^<]+)</gi;
   let blogMatch;
   while ((blogMatch = blogLinkRegex.exec(html)) !== null) {
-    if (blogMatch[1] && blogMatch[1].trim().length > 10 && !blogTitles.includes(blogMatch[1].trim())) {
-      blogTitles.push(blogMatch[1].trim().substring(0, 100));
+    const title = blogMatch[2];
+    if (title && title.trim().length > 10 && !blogTitles.includes(title.trim())) {
+      blogTitles.push(title.trim().substring(0, 100));
+    }
+  }
+  
+  // Also look for common blog listing patterns (div with class containing 'post', 'article', 'blog-item')
+  const postTitleRegex = /<(?:div|li)[^>]*class=["'][^"']*(?:post|article|blog-item|insight)[^"']*["'][^>]*>[\s\S]*?<(?:h[1-4]|a)[^>]*>([^<]{15,100})</gi;
+  let postMatch;
+  while ((postMatch = postTitleRegex.exec(html)) !== null) {
+    const title = postMatch[1].trim();
+    if (title.length > 10 && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 100));
     }
   }
   
