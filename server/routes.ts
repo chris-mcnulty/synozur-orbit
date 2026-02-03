@@ -4268,6 +4268,39 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // Get accessible tenants for current user (for tenant switcher)
+  // IMPORTANT: Must be defined BEFORE /api/tenants/:id to avoid matching "accessible" as an ID
+  app.get("/api/tenants/accessible", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      
+      if (!userTenant) {
+        return res.status(404).json({ error: "No tenant found for your organization. Please contact your administrator." });
+      }
+      
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      
+      res.json({
+        tenants: accessibleTenants,
+        activeTenantId: req.session.activeTenantId || userTenant.id,
+        activeMarketId: req.session.activeMarketId || null,
+        canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/tenants/:id", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -4401,38 +4434,6 @@ Return ONLY valid JSON, no markdown or explanations.`;
   });
 
   // ==================== MARKET MANAGEMENT & CONTEXT SWITCHING ====================
-
-  // Get accessible tenants for current user (for tenant switcher)
-  app.get("/api/tenants/accessible", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ error: "User not found" });
-      }
-
-      const userDomain = user.email.split("@")[1];
-      const userTenant = await storage.getTenantByDomain(userDomain);
-      
-      if (!userTenant) {
-        return res.status(404).json({ error: "No tenant found for your organization. Please contact your administrator." });
-      }
-      
-      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
-      
-      res.json({
-        tenants: accessibleTenants,
-        activeTenantId: req.session.activeTenantId || userTenant.id,
-        activeMarketId: req.session.activeMarketId || null,
-        canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
-      });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
 
   // Switch active tenant context (Global Admin and Consultant only)
   app.post("/api/context/tenant", async (req, res) => {

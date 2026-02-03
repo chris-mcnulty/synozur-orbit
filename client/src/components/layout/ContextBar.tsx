@@ -364,14 +364,6 @@ export default function ContextBar() {
   const canSwitchTenants = user?.role === "Global Admin" || user?.role === "Consultant";
   const canDeleteMarket = user?.role === "Global Admin" || user?.role === "Domain Admin";
   const showMarketSelector = marketsData?.multiMarketEnabled;
-
-  // Debug logging for tenant switcher visibility
-  console.log("[ContextBar] Tenant switcher conditions:", {
-    canSwitchTenants,
-    accessibleTenants: !!accessibleTenants,
-    tenantsCount: accessibleTenants?.tenants?.length,
-    userRole: user?.role,
-  });
   const isMarketAdmin = user?.role === "Global Admin" || user?.role === "Domain Admin";
   const hasMarketCapacity = !marketsData?.marketLimit || marketsData.markets.length < marketsData.marketLimit;
   const canCreateMarket = marketsData?.multiMarketEnabled && isMarketAdmin && hasMarketCapacity;
