@@ -1,0 +1,224 @@
+2026-02-03 14:31:39.55
+8be5b881
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-03 14:31:39.55
+8be5b881
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 14:31:39.55
+8be5b881
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 14:31:39.55
+8be5b881
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 14:31:39.55
+8be5b881
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async jR (/home/runner/workspace/dist/index.cjs:754:15704)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 14:31:41.35
+8be5b881
+User
+Headless fetch failed for https://www.synozur.com/case-studies (attempt 1): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-03 14:31:41.35
+8be5b881
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-03 14:31:41.35
+8be5b881
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-03 14:31:41.35
+8be5b881
+User
+at async zee (/home/runner/workspace/dist/index.cjs:754:14159)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async jR (/home/runner/workspace/dist/index.cjs:754:15704)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async zee (/home/runner/workspace/dist/index.cjs:754:14159)
+2026-02-03 14:32:29.65
+8be5b881
+User
+Headless fetch failed for https://www.synozur.com/insights (attempt 2): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-03 14:32:29.65
+8be5b881
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 14:32:29.65
+8be5b881
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async zee (/home/runner/workspace/dist/index.cjs:754:14159)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-02-03 14:32:33.55
+8be5b881
+User
+Headless fetch failed for https://www.synozur.com/case-studies (attempt 2): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async jR (/home/runner/workspace/dist/index.cjs:754:15704)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 14:32:33.55
+8be5b881
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-03 14:32:33.55
+8be5b881
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
