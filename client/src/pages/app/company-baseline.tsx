@@ -1011,6 +1011,80 @@ export default function CompanyBaseline() {
                 </Card>
               )}
 
+              {/* Social & Content Signals - LinkedIn followers, blog posts */}
+              {(() => {
+                const linkedIn = companyProfile.linkedInEngagement as { followers?: number; posts?: number; reactions?: number; comments?: number } | null;
+                const blog = companyProfile.blogSnapshot as { postCount?: number; latestTitles?: string[] } | null;
+                const hasSocialData = linkedIn?.followers || blog?.postCount;
+                
+                if (!hasSocialData) return null;
+                
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <TrendingUp className="w-5 h-5 text-primary" />
+                        Social & Content Signals
+                      </CardTitle>
+                      <CardDescription>LinkedIn presence and blog activity</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {linkedIn?.followers && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Linkedin className="w-5 h-5 text-[#0A66C2]" />
+                              <span className="font-medium">LinkedIn</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <p className="text-muted-foreground">Followers</p>
+                                <p className="text-lg font-semibold">{linkedIn.followers.toLocaleString()}</p>
+                              </div>
+                              {linkedIn.posts && (
+                                <div>
+                                  <p className="text-muted-foreground">Recent Posts</p>
+                                  <p className="text-lg font-semibold">{linkedIn.posts}</p>
+                                </div>
+                              )}
+                              {linkedIn.reactions && (
+                                <div>
+                                  <p className="text-muted-foreground">Reactions</p>
+                                  <p className="text-lg font-semibold">{linkedIn.reactions.toLocaleString()}</p>
+                                </div>
+                              )}
+                              {linkedIn.comments && (
+                                <div>
+                                  <p className="text-muted-foreground">Comments</p>
+                                  <p className="text-lg font-semibold">{linkedIn.comments.toLocaleString()}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {blog?.postCount && blog.postCount > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Rss className="w-5 h-5 text-orange-500" />
+                              <span className="font-medium">Blog / Insights</span>
+                              <Badge variant="secondary">{blog.postCount} posts</Badge>
+                            </div>
+                            {blog.latestTitles && blog.latestTitles.length > 0 && (
+                              <ul className="space-y-1 text-sm text-muted-foreground">
+                                {blog.latestTitles.slice(0, 5).map((title, i) => (
+                                  <li key={i} className="truncate">• {title}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
               {hasAnalysis && (
                 <Card>
                   <CardHeader>
