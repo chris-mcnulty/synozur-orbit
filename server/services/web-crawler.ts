@@ -486,39 +486,44 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
   const additionalPages = await Promise.all(
     pagesToCrawl.map(({ url: pageUrl, type }) =>
       limit(async () => {
-        if (crawledUrls.has(pageUrl)) return null;
-        crawledUrls.add(pageUrl);
-        
-        const page = await fetchPage(pageUrl, useHeadless);
-        if (!page) return null;
-        
-        const content = page.renderedContent || extractTextContent(page.html);
-        
-        if (type === "blog" && !blogSnapshot) {
-          blogSnapshot = extractBlogInfo(page.html);
+        try {
+          if (crawledUrls.has(pageUrl)) return null;
+          crawledUrls.add(pageUrl);
+          
+          const page = await fetchPage(pageUrl, useHeadless);
+          if (!page) return null;
+          
+          const content = page.renderedContent || extractTextContent(page.html);
+          
+          if (type === "blog" && !blogSnapshot) {
+            blogSnapshot = extractBlogInfo(page.html);
+          }
+          
+          const pageSocialLinks = extractSocialLinks(page.html);
+          if (!socialLinks.linkedIn && pageSocialLinks.linkedIn) socialLinks.linkedIn = pageSocialLinks.linkedIn;
+          if (!socialLinks.instagram && pageSocialLinks.instagram) socialLinks.instagram = pageSocialLinks.instagram;
+          if (!socialLinks.twitter && pageSocialLinks.twitter) socialLinks.twitter = pageSocialLinks.twitter;
+          if (!socialLinks.facebook && pageSocialLinks.facebook) socialLinks.facebook = pageSocialLinks.facebook;
+          
+          // For services/solutions pages, discover sub-pages
+          if (type === "services") {
+            subPagesToDiscover.push({ parentUrl: page.finalUrl, parentType: type });
+          }
+          
+          return {
+            url: page.finalUrl,
+            pageType: type,
+            title: extractTitle(page.html),
+            content: content.substring(0, 30000),
+            wordCount: content.split(/\s+/).length,
+            crawledAt,
+            crawlMethod: page.method,
+            html: page.html, // Keep HTML for sub-page discovery
+          };
+        } catch (pageError: any) {
+          console.error(`[Web Crawler] Failed to fetch ${type} page ${pageUrl}:`, pageError.message);
+          return null; // Continue with other pages
         }
-        
-        const pageSocialLinks = extractSocialLinks(page.html);
-        if (!socialLinks.linkedIn && pageSocialLinks.linkedIn) socialLinks.linkedIn = pageSocialLinks.linkedIn;
-        if (!socialLinks.instagram && pageSocialLinks.instagram) socialLinks.instagram = pageSocialLinks.instagram;
-        if (!socialLinks.twitter && pageSocialLinks.twitter) socialLinks.twitter = pageSocialLinks.twitter;
-        if (!socialLinks.facebook && pageSocialLinks.facebook) socialLinks.facebook = pageSocialLinks.facebook;
-        
-        // For services/solutions pages, discover sub-pages
-        if (type === "services") {
-          subPagesToDiscover.push({ parentUrl: page.finalUrl, parentType: type });
-        }
-        
-        return {
-          url: page.finalUrl,
-          pageType: type,
-          title: extractTitle(page.html),
-          content: content.substring(0, 30000),
-          wordCount: content.split(/\s+/).length,
-          crawledAt,
-          crawlMethod: page.method,
-          html: page.html, // Keep HTML for sub-page discovery
-        };
       })
     )
   );
@@ -554,22 +559,27 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
     const subPages = await Promise.all(
       subPageUrls.slice(0, 10).map((subUrl) =>
         limit(async () => {
-          if (crawledUrls.has(subUrl)) return null;
-          crawledUrls.add(subUrl);
-          
-          const page = await fetchPage(subUrl, useHeadless);
-          if (!page) return null;
-          
-          const content = page.renderedContent || extractTextContent(page.html);
-          return {
-            url: page.finalUrl,
-            pageType: classifyPageType(page.finalUrl, page.html),
-            title: extractTitle(page.html),
-            content: content.substring(0, 20000),
-            wordCount: content.split(/\s+/).length,
-            crawledAt,
-            crawlMethod: page.method,
-          };
+          try {
+            if (crawledUrls.has(subUrl)) return null;
+            crawledUrls.add(subUrl);
+            
+            const page = await fetchPage(subUrl, useHeadless);
+            if (!page) return null;
+            
+            const content = page.renderedContent || extractTextContent(page.html);
+            return {
+              url: page.finalUrl,
+              pageType: classifyPageType(page.finalUrl, page.html),
+              title: extractTitle(page.html),
+              content: content.substring(0, 20000),
+              wordCount: content.split(/\s+/).length,
+              crawledAt,
+              crawlMethod: page.method,
+            };
+          } catch (subPageError: any) {
+            console.error(`[Web Crawler] Failed to fetch sub-page ${subUrl}:`, subPageError.message);
+            return null; // Continue with other sub-pages
+          }
         })
       )
     );
