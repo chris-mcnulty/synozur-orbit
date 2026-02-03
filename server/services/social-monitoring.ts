@@ -613,14 +613,17 @@ export async function monitorCompanyProfileSocialMedia(
   if (companyProfile.linkedInUrl || companyProfile.websiteUrl) {
     // Try RapidAPI LinkedIn Data API first if configured (same as competitors)
     const rapidApiKey = process.env.RAPIDAPI_KEY;
+    console.log(`[Social Monitor] Company profile ${companyProfile.companyName}: RAPIDAPI_KEY=${rapidApiKey ? 'configured' : 'missing'}, linkedInUrl=${companyProfile.linkedInUrl || 'none'}`);
     
     if (rapidApiKey) {
       try {
+        console.log(`[Social Monitor] Calling fetchLinkedInData for ${companyProfile.linkedInUrl || companyProfile.websiteUrl}`);
         const apiResult = await fetchLinkedInData(
           companyProfile.id,
           companyProfile.linkedInUrl || undefined,
           companyProfile.websiteUrl
         );
+        console.log(`[Social Monitor] LinkedIn API result: success=${apiResult.success}, followers=${apiResult.followerCount || 0}, error=${apiResult.error || 'none'}`);
         
         if (apiResult.success) {
           // Get previous metrics for comparison from linkedInEngagement stored on profile

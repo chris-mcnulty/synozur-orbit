@@ -1631,7 +1631,10 @@ Return ONLY the JSON object, no other text.`;
         return res.status(404).json({ error: "Company profile not found" });
       }
       
-      const results: any = { website: null, linkedin: null };
+      const results: any = { website: null, linkedin: null, blog: null, errors: [] };
+      
+      console.log(`[Baseline Refresh] Starting refresh for ${profile.companyName} (${profile.id})`);
+      console.log(`[Baseline Refresh] URLs: website=${profile.websiteUrl}, linkedin=${profile.linkedInUrl}, blog=${profile.blogUrl}`);
       
       // Crawl website
       if (profile.websiteUrl) {
@@ -1689,11 +1692,30 @@ Return ONLY the JSON object, no other text.`;
       
       // Refresh LinkedIn - using company profile social monitoring
       if (profile.linkedInUrl) {
-        const { monitorCompanyProfileSocialMedia } = await import("./services/social-monitoring");
-        await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
-        results.linkedin = { success: true };
+        try {
+          console.log(`[Baseline Refresh] Fetching LinkedIn data for ${profile.linkedInUrl}`);
+          const { monitorCompanyProfileSocialMedia } = await import("./services/social-monitoring");
+          await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
+          
+          // Verify data was saved
+          const updatedProfile = await storage.getCompanyProfile(profile.id);
+          const linkedInData = updatedProfile?.linkedInEngagement as any;
+          console.log(`[Baseline Refresh] LinkedIn result: followers=${linkedInData?.followers || 'none'}, posts=${linkedInData?.posts || 'none'}`);
+          results.linkedin = { 
+            success: !!linkedInData?.followers, 
+            followers: linkedInData?.followers || 0,
+            posts: linkedInData?.posts || 0,
+          };
+        } catch (linkedInError: any) {
+          console.error(`[Baseline Refresh] LinkedIn error:`, linkedInError.message);
+          results.linkedin = { success: false, error: linkedInError.message };
+          results.errors.push(`LinkedIn: ${linkedInError.message}`);
+        }
+      } else {
+        console.log(`[Baseline Refresh] No LinkedIn URL configured`);
       }
       
+      console.log(`[Baseline Refresh] Completed for ${profile.companyName}:`, JSON.stringify(results));
       res.json({ success: true, results });
     } catch (error: any) {
       if (error instanceof ContextError) {
