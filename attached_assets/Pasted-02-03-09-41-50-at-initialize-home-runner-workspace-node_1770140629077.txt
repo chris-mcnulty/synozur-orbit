@@ -1,0 +1,65 @@
+02-03 09:41:50
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+02-03 09:41:50
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+02-03 09:41:50
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+02-03 09:41:50
+Headless fetch failed for https://www.synozur.com/insights (attempt 2): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+02-03 09:41:50
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+02-03 09:41:50
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+02-03 09:41:50
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+02-03 09:41:50
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+02-03 09:41:50
+at async jR (/home/runner/workspace/dist/index.cjs:754:14996)
+02-03 09:41:50
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+02-03 09:41:50
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+02-03 09:41:50
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+02-03 09:41:50
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+02-03 09:41:50
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+02-03 09:41:50
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+02-03 09:41:50
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+02-03 09:41:50
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+02-03 09:41:50
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+02-03 09:41:50
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+02-03 09:41:50
+at async zee (/home/runner/workspace/dist/index.cjs:754:13451)
+02-03 09:41:50
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+02-03 09:41:50
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+02-03 09:41:50
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+02-03 09:41:50
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+02-03 09:41:50
+Headless fetch failed for https://www.synozur.com/insights (attempt 2): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+02-03 09:41:50
+at async jR (/home/runner/workspace/dist/index.cjs:754:14996)
+02-03 09:41:50
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+02-03 09:41:50
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+02-03 09:41:50
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+02-03 09:41:50
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+02-03 09:41:50
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+02-03 09:41:50
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+02-03 09:41:50
