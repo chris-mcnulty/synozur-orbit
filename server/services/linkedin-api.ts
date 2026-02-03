@@ -97,11 +97,13 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
       return { success: false, error: data.message || "No company data found" };
     }
 
+    // API returns employee_count, staff_count, or company_size_on_linkedin depending on company
+    const apiData = data.data as any;
     return {
       success: true,
       companyData: data.data,
-      followerCount: data.data.follower_count,
-      employeeCount: data.data.staff_count || data.data.company_size_on_linkedin,
+      followerCount: apiData.follower_count,
+      employeeCount: apiData.employee_count || apiData.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
     console.error("[LinkedIn API] Error fetching company by domain:", error);
@@ -142,11 +144,13 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
       return { success: false, error: data.message || "No company data found" };
     }
 
+    // API returns employee_count, staff_count, or company_size_on_linkedin depending on company
+    const apiData = data.data as any;
     return {
       success: true,
       companyData: data.data,
-      followerCount: data.data.follower_count,
-      employeeCount: data.data.staff_count || data.data.company_size_on_linkedin,
+      followerCount: apiData.follower_count,
+      employeeCount: apiData.employee_count || apiData.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
     console.error("[LinkedIn API] Error fetching company details:", error);
