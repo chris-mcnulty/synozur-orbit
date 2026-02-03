@@ -190,6 +190,7 @@ export interface IStorage {
   createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
   getRecommendation(id: string): Promise<Recommendation | undefined>;
   updateRecommendation(id: string, data: Partial<Recommendation>): Promise<Recommendation>;
+  deleteRecommendation(id: string): Promise<void>;
   
   // Report methods
   getAllReports(): Promise<Report[]>;
@@ -684,6 +685,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(recommendations.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteRecommendation(id: string): Promise<void> {
+    await db.delete(recommendations).where(eq(recommendations.id, id));
   }
 
   // Report methods

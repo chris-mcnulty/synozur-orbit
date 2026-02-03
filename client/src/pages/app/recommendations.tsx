@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download } from "lucide-react";
+import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -102,6 +103,24 @@ export default function Recommendations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/recommendations/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      toast.success("Recommendation deleted");
+    },
+    onError: () => {
+      toast.error("Failed to delete recommendation");
     },
   });
 
@@ -202,6 +221,14 @@ export default function Recommendations() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => hideMutation.mutate({ id: rec.id, reason: "other" })}>
                     Other
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => deleteMutation.mutate(rec.id)}
+                    className="text-destructive focus:text-destructive"
+                    data-testid={`delete-${rec.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete permanently
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

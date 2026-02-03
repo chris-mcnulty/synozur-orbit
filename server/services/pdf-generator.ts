@@ -728,6 +728,36 @@ function generateReportHtml(data: ReportData): string {
   
   <div class="page-break"></div>
 
+  <!-- Table of Contents -->
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Contents</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title" style="font-size: 22px; border-bottom: 2px solid #6366F1; padding-bottom: 10px; margin-bottom: 24px;">Table of Contents</div>
+      <div style="font-size: 14px; line-height: 2.2;">
+        ${data.executiveSummary ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Executive Summary</span></div>` : ""}
+        ${data.companyProfile ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Company Baseline</span></div>` : ""}
+        ${data.competitors.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Competitors Overview (${data.competitors.length})</span></div>` : ""}
+        ${data.analysis?.themes?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Competitive Themes</span></div>` : ""}
+        ${data.analysis?.messaging?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Messaging Comparison</span></div>` : ""}
+        ${data.analysis?.gaps?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Gap Analysis (${data.analysis.gaps.length} gaps identified)</span></div>` : ""}
+        ${data.recommendations.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Recommendations (${data.recommendations.length})</span></div>` : ""}
+        ${data.battlecards.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Battlecards (${data.battlecards.length})</span></div>` : ""}
+        ${data.marketingPlans?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Marketing Plans (${data.marketingPlans.length})</span></div>` : ""}
+        ${data.gtmPlan ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Go-To-Market Plan</span></div>` : ""}
+        ${data.messagingFramework ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Messaging & Positioning Framework</span></div>` : ""}
+      </div>
+    </div>
+    ${ORBIT_FOOTER}
+  </div>
+
+  <div class="page-break"></div>
+
   ${data.executiveSummary ? `
   <div class="content-wrapper">
     <div class="header">
@@ -1297,13 +1327,13 @@ export async function generatePdfReport(
   let executiveSummary: ExecutiveSummaryData | null = null;
   if (scope === "baseline") {
     const execSummaryRecord = await storage.getExecutiveSummaryByContext(contextFilter);
-    if (execSummaryRecord && execSummaryRecord.content) {
-      const content = execSummaryRecord.content as any;
+    if (execSummaryRecord) {
+      // Executive summary fields are stored directly on the record, not in a nested content object
       executiveSummary = {
-        companySnapshot: content.companySnapshot || "",
-        marketPosition: content.marketPosition || "",
-        competitiveLandscape: content.competitiveLandscape || "",
-        opportunities: content.opportunities || "",
+        companySnapshot: execSummaryRecord.companySnapshot || "",
+        marketPosition: execSummaryRecord.marketPosition || "",
+        competitiveLandscape: execSummaryRecord.competitiveLandscape || "",
+        opportunities: execSummaryRecord.opportunities || "",
       };
     }
   }

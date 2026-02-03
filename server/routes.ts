@@ -11758,6 +11758,31 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Delete a recommendation
+  app.delete("/api/recommendations/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== ctx.tenantDomain && ctx.userRole !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteRecommendation(req.params.id);
+      res.json({ success: true, message: "Recommendation deleted" });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Delete recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Vote on a recommendation (thumbs up/down)
   app.post("/api/recommendations/:id/vote", async (req, res) => {
     try {
