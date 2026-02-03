@@ -1638,57 +1638,68 @@ Return ONLY the JSON object, no other text.`;
       console.log(`[Baseline Refresh] Starting refresh for ${profile.companyName} (${profile.id})`);
       console.log(`[Baseline Refresh] URLs: website=${profile.websiteUrl}, linkedin=${profile.linkedInUrl}, blog=${profile.blogUrl}`);
       
-      // Crawl website
+      // Crawl website - wrapped in try/catch so LinkedIn still runs even if this fails
       if (profile.websiteUrl) {
-        const { crawlCompetitorWebsite, getCombinedContent } = await import("./services/web-crawler");
-        const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
-        
-        if (crawlResult.pages.length > 0) {
-          const combinedContent = getCombinedContent(crawlResult);
-          const updateData: any = {
-            crawlData: {
-              pagesCrawled: crawlResult.pages.map(p => ({
-                url: p.url,
-                pageType: p.pageType,
-                title: p.title,
-                wordCount: p.wordCount,
-              })),
-              totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
-              crawledAt: crawlResult.crawledAt,
-              socialLinks: crawlResult.socialLinks,
-            },
-            previousWebsiteContent: combinedContent.substring(0, 100000),
-            lastCrawl: new Date().toISOString(),
-            lastFullCrawl: new Date(),
-          };
+        try {
+          console.log(`[Baseline Refresh] Starting website crawl for ${profile.websiteUrl}`);
+          const { crawlCompetitorWebsite, getCombinedContent } = await import("./services/web-crawler");
+          const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
           
-          // Capture blog snapshot if found
-          if (crawlResult.blogSnapshot) {
-            updateData.blogSnapshot = {
-              ...crawlResult.blogSnapshot,
-              capturedAt: new Date().toISOString(),
+          if (crawlResult.pages.length > 0) {
+            const combinedContent = getCombinedContent(crawlResult);
+            const updateData: any = {
+              crawlData: {
+                pagesCrawled: crawlResult.pages.map(p => ({
+                  url: p.url,
+                  pageType: p.pageType,
+                  title: p.title,
+                  wordCount: p.wordCount,
+                })),
+                totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
+                crawledAt: crawlResult.crawledAt,
+                socialLinks: crawlResult.socialLinks,
+              },
+              previousWebsiteContent: combinedContent.substring(0, 100000),
+              lastCrawl: new Date().toISOString(),
+              lastFullCrawl: new Date(),
             };
+            
+            // Capture blog snapshot if found
+            if (crawlResult.blogSnapshot) {
+              updateData.blogSnapshot = {
+                ...crawlResult.blogSnapshot,
+                capturedAt: new Date().toISOString(),
+              };
+            }
+            
+            // Update social URLs if discovered during crawl and not already set
+            if (crawlResult.socialLinks) {
+              if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
+                updateData.linkedInUrl = crawlResult.socialLinks.linkedIn;
+              }
+              if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
+                updateData.twitterUrl = crawlResult.socialLinks.twitter;
+              }
+              if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
+                updateData.instagramUrl = crawlResult.socialLinks.instagram;
+              }
+            }
+            
+            await storage.updateCompanyProfile(profile.id, updateData);
+            results.website = { 
+              success: true, 
+              pages: crawlResult.pages.length,
+              blogPosts: crawlResult.blogSnapshot?.postCount || 0,
+            };
+            console.log(`[Baseline Refresh] Website crawl success: ${crawlResult.pages.length} pages`);
+          } else {
+            console.log(`[Baseline Refresh] Website crawl returned no pages`);
+            results.website = { success: false, error: "No pages found" };
           }
-          
-          // Update social URLs if discovered during crawl and not already set
-          if (crawlResult.socialLinks) {
-            if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
-              updateData.linkedInUrl = crawlResult.socialLinks.linkedIn;
-            }
-            if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
-              updateData.twitterUrl = crawlResult.socialLinks.twitter;
-            }
-            if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
-              updateData.instagramUrl = crawlResult.socialLinks.instagram;
-            }
-          }
-          
-          await storage.updateCompanyProfile(profile.id, updateData);
-          results.website = { 
-            success: true, 
-            pages: crawlResult.pages.length,
-            blogPosts: crawlResult.blogSnapshot?.postCount || 0,
-          };
+        } catch (websiteError: any) {
+          console.error(`[Baseline Refresh] Website crawl failed:`, websiteError.message);
+          results.website = { success: false, error: websiteError.message };
+          results.errors.push(`Website: ${websiteError.message}`);
         }
       }
       
