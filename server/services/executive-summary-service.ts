@@ -171,9 +171,10 @@ Generate the following sections in JSON format. Each section should be substanti
 
 CRITICAL FORMATTING RULES:
 1. Output ONLY valid JSON - no markdown, no code blocks, no asterisks, no bullet points
-2. Use plain text sentences only - no formatting characters like *, **, -, or bullet symbols
-3. Separate items with semicolons or numbered format like "1) First item 2) Second item"
-4. Keep each section as flowing prose, not lists
+2. Use plain text sentences only - no formatting characters like *, **, -, or bullet symbols  
+3. Structure each section with 2-3 logical paragraphs separated by double newlines (\\n\\n)
+4. First paragraph: overview/context. Second paragraph: specific details/metrics. Third paragraph: implications/actions
+5. Each paragraph should be 2-3 sentences for readability
 
 Sections needed: ${sectionsToGenerate.join(", ")}
 
