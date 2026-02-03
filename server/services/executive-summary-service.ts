@@ -51,7 +51,10 @@ export async function generateExecutiveSummary(
 
   const dataHash = generateDataHash(companyProfile, competitors, analysis, recommendations);
 
-  const anthropic = new Anthropic();
+  const anthropic = new Anthropic({
+    apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  });
 
   const companyContext = companyProfile ? `
 Company: ${companyProfile.companyName}
