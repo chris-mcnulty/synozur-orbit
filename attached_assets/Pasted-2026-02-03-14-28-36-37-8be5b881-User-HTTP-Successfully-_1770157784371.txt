@@ -1,0 +1,76 @@
+2026-02-03 14:28:36.37
+8be5b881
+User
+[HTTP] Successfully crawled: https://www.synozur.com
+2026-02-03 14:28:36.39
+8be5b881
+User
+[Headless] Attempting to crawl: https://www.synozur.com/solutions/company-os
+2026-02-03 14:28:36.39
+8be5b881
+User
+[Headless] Attempting to crawl: https://www.synozur.com/about
+2026-02-03 14:28:36.39
+8be5b881
+User
+[Headless] Attempting to crawl: https://www.synozur.com/services-overview/default
+2026-02-03 14:28:38.49
+8be5b881
+User
+10:28:38 PM [express] GET /api/battlecards 304 in 775ms :: [{"id":"14445db2-a12f-45a8-b3f7-02a5fdbb4624","competitorId":"ff3f7fb9-9972-4004-aa14-4001ca74ad8d","tenantDomain":"synozur.com","marketId":"137db123-4906-4e61-af99-f0d23d86a622","strengths":["Global ...[truncated]
+2026-02-03 14:28:44.99
+8be5b881
+User
+10:28:44 PM [express] GET /api/me 304 in 49ms :: {"id":"116500d0-357e-4ace-a7af-7264ed58e22a","email":"chris.mcnulty@synozur.com","name":"Chris McNulty","role":"Global Admin","company":"Synozur","companySize":"small","jobTitle":"C-Suite / Executive"...[truncated]
+2026-02-03 14:28:45.25
+8be5b881
+User
+10:28:45 PM [express] GET /api/company-profile 304 in 300ms :: {"id":"37d74323-ec27-4651-bf69-7bd164c175cf","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":null,"companyName":"The Synozur Alliance","websiteUrl":"https://www...[truncated]
+2026-02-03 14:28:45.25
+8be5b881
+User
+10:28:45 PM [express] GET /api/tenant/settings 304 in 85ms :: {"id":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","domain":"synozur.com","name":"The Synozur Alliance","plan":"enterprise","status":"active","trialStartDate":null,"trialEndsAt":null,"lastTrialReminderSent"...[truncated]
+2026-02-03 14:28:45.29
+8be5b881
+User
+10:28:45 PM [express] GET /api/context 304 in 125ms :: {"activeTenantId":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","activeMarketId":"137db123-4906-4e61-af99-f0d23d86a622","activeTenant":{"id":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","domain":"synozur.com","nam...[truncated]
+2026-02-03 14:28:45.38
+8be5b881
+User
+10:28:45 PM [express] GET /api/documents 304 in 269ms :: [{"id":"15b1b418-b826-4ea2-9f73-467c7465b671","name":"Synozur MPF","description":"Synozur MPF","fileType":"docx","fileUrl":"/objects/uploads/d7f77f0b-6ce7-4265-a058-58c98ec85ad8","fileSize":200555,"ex...[truncated]
+2026-02-03 14:28:45.38
+8be5b881
+User
+10:28:45 PM [express] GET /api/reports 304 in 218ms :: [{"id":"29adbb96-6628-4f61-a727-90b18c763746","name":"Full Analysis Report - 1/25/2026","date":"2026-01-25","type":"Competitive Analysis","size":"1.0 MB","author":"Chris McNulty","status":"Generated",...[truncated]
+2026-02-03 14:28:45.38
+8be5b881
+User
+10:28:45 PM [express] GET /api/analysis 304 in 220ms :: {"id":"79363ee6-d4de-4eef-8700-80278784be57","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":"137db123-4906-4e61-af99-f0d23d86a622","themes":[{"us":"Based on pr...[truncated]
+2026-02-03 14:28:45.42
+8be5b881
+User
+10:28:45 PM [express] GET /api/activity 304 in 237ms :: [{"id":"f1e79872-ddf5-40bc-8fc8-55502b16b9ad","type":"crawl","sourceType":"competitor","competitorId":"4a7d1f2b-28a6-4196-b23f-0b6d273d1507","companyProfileId":null,"competitorName":"West Monroe","des...[truncated]
+2026-02-03 14:28:45.44
+8be5b881
+User
+10:28:45 PM [express] GET /api/tenants/accessible 304 in 97ms :: {"tenants":[{"id":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","domain":"chrismcnulty.net","name":"chrismcnulty.net","plan":"trial","status":"active","trialStartDate":"2026-01-19T19:47:54.257Z","trialEndsAt...[truncated]
+2026-02-03 14:28:45.59
+8be5b881
+User
+10:28:45 PM [express] GET /api/markets 304 in 279ms :: {"markets":[{"id":"137db123-4906-4e61-af99-f0d23d86a622","tenantId":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","name":"Default","description":"Default market for The Synozur Alliance","isDefault":true,"st...[truncated]
+2026-02-03 14:28:45.60
+8be5b881
+User
+10:28:45 PM [express] GET /api/company-profile 304 in 255ms :: {"id":"37d74323-ec27-4651-bf69-7bd164c175cf","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":null,"companyName":"The Synozur Alliance","websiteUrl":"https://www...[truncated]
+2026-02-03 14:28:45.61
+8be5b881
+User
+10:28:45 PM [express] GET /api/recommendations 304 in 265ms :: [{"id":"2b61d136-4fde-48c2-836b-f63c077d99a7","title":"Establish 'Client Continuity Score' Metric with Public Transparency Dashboard","description":"Develop and prominently display a proprietary 'Clie...[truncated]
+2026-02-03 14:28:45.91
+8be5b881
+User
+10:28:45 PM [express] GET /api/company-profile 304 in 197ms :: {"id":"37d74323-ec27-4651-bf69-7bd164c175cf","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":null,"companyName":"The Synozur Alliance","websiteUrl":"https://www...[truncated]
+2026-02-03 14:28:47.67
+8be5b881
+User
+10:28:47 PM [express] GET /api/competitors 304 in 327ms :: [{"id":"61097f1e-2254-462d-8d49-5eabf51e9f7b","name":"Perficient","url":"https://www.perficient.com","linkedInUrl":"https://www.linkedin.com/company/perficient/","instagramUrl":"https://www.instagram....[truncated]
