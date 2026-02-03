@@ -3552,7 +3552,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, blogUrl, logoUrl } = parsed.data;
+      const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, blogUrl, logoUrl,
+              headquarters, founded, employeeCount, industry, revenue } = parsed.data as any;
       
       // Validate websiteUrl for security (SSRF protection)
       const urlValidation = await validateCompetitorUrl(websiteUrl);
@@ -3599,6 +3600,12 @@ Return ONLY valid JSON, no markdown or explanations.`;
           twitterUrl: twitterUrl || null,
           blogUrl: validatedBlogUrl,
           description,
+          // Directory fields
+          headquarters: headquarters || null,
+          founded: founded || null,
+          employeeCount: employeeCount || null,
+          industry: industry || null,
+          revenue: revenue || null,
         });
         res.json(updated);
       } else {
@@ -3614,6 +3621,12 @@ Return ONLY valid JSON, no markdown or explanations.`;
           twitterUrl: twitterUrl || null,
           blogUrl: validatedBlogUrl,
           description,
+          // Directory fields
+          headquarters: headquarters || null,
+          founded: founded || null,
+          employeeCount: employeeCount || null,
+          industry: industry || null,
+          revenue: revenue || null,
         });
         res.json(profile);
       }
