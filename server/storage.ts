@@ -568,9 +568,37 @@ export class DatabaseStorage implements IStorage {
 
   async updateCompetitorAnalysis(id: string, analysisData: any): Promise<void> {
     await withRetry(async () => {
+      const updateData: any = { analysisData };
+      
+      // Extract directory info from AI analysis to populate competitor fields
+      // Only update if values are extracted (not null/undefined) and field is currently empty
+      if (analysisData) {
+        const existing = await db.select({
+          headquarters: competitors.headquarters,
+          founded: competitors.founded,
+          revenue: competitors.revenue,
+          fundingRaised: competitors.fundingRaised,
+        }).from(competitors).where(eq(competitors.id, id)).limit(1);
+        
+        const current = existing[0];
+        
+        if (analysisData.headquarters && !current?.headquarters) {
+          updateData.headquarters = analysisData.headquarters;
+        }
+        if (analysisData.foundedYear && !current?.founded) {
+          updateData.founded = String(analysisData.foundedYear);
+        }
+        if (analysisData.revenueRange && !current?.revenue) {
+          updateData.revenue = analysisData.revenueRange;
+        }
+        if (analysisData.fundingInfo && !current?.fundingRaised) {
+          updateData.fundingRaised = analysisData.fundingInfo;
+        }
+      }
+      
       await db
         .update(competitors)
-        .set({ analysisData })
+        .set(updateData)
         .where(eq(competitors.id, id));
     });
   }

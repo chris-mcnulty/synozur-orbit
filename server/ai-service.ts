@@ -12,6 +12,11 @@ export interface CompetitorAnalysis {
   valueProposition: string;
   keywords: string[];
   tone: string;
+  // Directory info extracted from website
+  headquarters?: string;
+  foundedYear?: number;
+  revenueRange?: string;
+  fundingInfo?: string;
   // LinkedIn-enhanced fields
   companyDescription?: string;
   industry?: string;
@@ -124,7 +129,11 @@ Please provide a JSON response with the following structure:
   "targetAudience": "Who they are targeting",
   "valueProposition": "Their main value proposition",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-  "tone": "Professional/Casual/Technical/etc"${linkedInData ? `,
+  "tone": "Professional/Casual/Technical/etc",
+  "headquarters": "City, State/Country if mentioned on About page or footer (null if not found)",
+  "foundedYear": 2010,
+  "revenueRange": "Revenue range if mentioned, e.g. '$10M-$50M' or 'Enterprise' (null if not found)",
+  "fundingInfo": "Funding info if mentioned, e.g. 'Series B, $25M raised' (null if not found)"${linkedInData ? `,
   "companyDescription": "Their LinkedIn company description or tagline",
   "industry": "Their stated industry",
   "employeeCount": ${linkedInData.employeeCount ?? "null"},
@@ -132,6 +141,8 @@ Please provide a JSON response with the following structure:
   "socialPresence": "Assessment of their LinkedIn activity level and engagement (Strong/Moderate/Minimal)",
   "recentPostThemes": ["Theme 1 from their posts", "Theme 2", "Theme 3"]` : ""}
 }
+
+Note: For headquarters, foundedYear, revenueRange, and fundingInfo, only include if explicitly stated on the website (About page, footer, press releases). Return null if not found - do not guess.
 
 Return ONLY valid JSON, no additional text.`,
       },
