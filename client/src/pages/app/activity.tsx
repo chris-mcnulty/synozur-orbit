@@ -283,11 +283,36 @@ export default function Activity() {
             <Card className="p-8">
               <div className="text-center">
                 <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No significant changes detected yet</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Orbit monitors competitor websites for meaningful changes like positioning updates, new offerings, or campaign launches. 
-                  Changes will appear here when detected.
+                <h3 className="text-lg font-semibold mb-2">No website changes detected yet</h3>
+                <p className="text-muted-foreground max-w-md mx-auto mb-4">
+                  This tab shows AI-summarized changes to competitor websites (positioning updates, new offerings, campaign launches).
                 </p>
+                {(competitorsWithSocial.length > 0 || competitorsWithBlogs.length > 0) && (
+                  <div className="flex flex-wrap justify-center gap-2 mt-4">
+                    {competitorsWithSocial.length > 0 && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleTabChange("social")}
+                        className="gap-2"
+                      >
+                        <Linkedin className="h-4 w-4" />
+                        View {competitorsWithSocial.length} social profile{competitorsWithSocial.length !== 1 ? 's' : ''}
+                      </Button>
+                    )}
+                    {competitorsWithBlogs.length > 0 && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleTabChange("blog")}
+                        className="gap-2"
+                      >
+                        <Rss className="h-4 w-4" />
+                        View {competitorsWithBlogs.length} blog{competitorsWithBlogs.length !== 1 ? 's' : ''} with posts
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
           ) : (

@@ -301,6 +301,19 @@ export default function Dashboard() {
     a.type === "website_update" || a.type === "blog_update" || a.type === "social_update"
   );
 
+  const hasWebsiteInsights = activity.some((a: any) => a.type === "website_update");
+  const hasBlogActivity = competitors.some((c: any) => c.blogSnapshot?.postCount > 0);
+  const hasSocialActivity = competitors.some((c: any) => 
+    c.linkedInEngagement?.followers || c.instagramEngagement?.followers
+  );
+  
+  const getBestActivityTab = () => {
+    if (hasWebsiteInsights) return "insights";
+    if (hasSocialActivity) return "social";
+    if (hasBlogActivity) return "blog";
+    return "log";
+  };
+
   // Onboarding checklist items
   const onboardingSteps = [
     {
@@ -703,7 +716,7 @@ export default function Dashboard() {
           </Card>
         </Link>
 
-        <Link href="/app/activity">
+        <Link href={`/app/activity?tab=${getBestActivityTab()}`}>
           <Card className={cn(
             "cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full",
             highImpactActivity.length > 0 && "border-destructive/30"
