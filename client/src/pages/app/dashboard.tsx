@@ -1,6 +1,6 @@
 import React from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -194,6 +194,28 @@ export default function Dashboard() {
       if (!response.ok) return null;
       return response.json();
     },
+  });
+
+  // Fetch score history for baseline trend chart
+  const { data: scoreHistory = [] } = useQuery<{
+    id: string;
+    entityType: string;
+    entityId: string;
+    entityName: string;
+    overallScore: number;
+    innovationScore: number;
+    marketPresenceScore: number;
+    period: string;
+    recordedAt: string;
+  }[]>({
+    queryKey: ["/api/score-history", companyProfile?.id],
+    queryFn: async () => {
+      if (!companyProfile?.id) return [];
+      const response = await fetch(`/api/score-history/baseline/${companyProfile.id}?limit=12`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!companyProfile?.id,
   });
 
   const { data: tenantUsers = [] } = useQuery<{ id: string; name: string; email: string }[]>({
@@ -963,20 +985,71 @@ export default function Dashboard() {
             </CardTitle>
             <CardDescription>Your Orbit Score over time</CardDescription>
           </CardHeader>
-          <CardContent className="h-[200px] flex flex-col items-center justify-center">
-            <div className="text-center">
-              <TrendingUp className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">Historical data coming soon</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Score trends will appear as you track competitors over time
-              </p>
-              {baselineScore > 0 && (
-                <div className="mt-4 px-4 py-2 bg-primary/10 rounded-lg inline-block">
-                  <p className="text-xs text-muted-foreground">Current Score</p>
-                  <p className="text-2xl font-bold text-primary">{baselineScore.toFixed(0)}</p>
-                </div>
-              )}
-            </div>
+          <CardContent className="h-[200px]">
+            {scoreHistory.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[...scoreHistory].reverse().map(h => ({
+                  period: h.period,
+                  score: h.overallScore,
+                  innovation: h.innovationScore,
+                  presence: h.marketPresenceScore,
+                }))}>
+                  <defs>
+                    <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis 
+                    dataKey="period" 
+                    tick={{ fontSize: 10 }} 
+                    stroke="hsl(var(--muted-foreground))"
+                    tickFormatter={(val) => val?.slice(-5) || val}
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    tick={{ fontSize: 10 }} 
+                    stroke="hsl(var(--muted-foreground))"
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px'
+                    }}
+                    formatter={(value: number, name: string) => [
+                      value?.toFixed(1), 
+                      name === 'score' ? 'Overall' : name === 'innovation' ? 'Innovation' : 'Presence'
+                    ]}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="score" 
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={2}
+                    fill="url(#scoreGradient)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <TrendingUp className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">
+                  {scoreHistory.length === 1 ? "One data point recorded" : "No historical data yet"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Score trends will build as Orbit tracks your competitive landscape over time
+                </p>
+                {baselineScore > 0 && (
+                  <div className="mt-4 px-4 py-2 bg-primary/10 rounded-lg inline-block">
+                    <p className="text-xs text-muted-foreground">Current Score</p>
+                    <p className="text-2xl font-bold text-primary">{baselineScore.toFixed(0)}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
           <CardFooter className="pt-0">
             <p className="text-xs text-muted-foreground">

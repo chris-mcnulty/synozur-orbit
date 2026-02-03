@@ -709,7 +709,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised } = req.body;
+      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
@@ -727,6 +727,7 @@ export async function registerRoutes(
       if (employeeCount !== undefined) updateData.employeeCount = employeeCount || null;
       if (revenue !== undefined) updateData.revenue = revenue || null;
       if (fundingRaised !== undefined) updateData.fundingRaised = fundingRaised || null;
+      if (industry !== undefined) updateData.industry = industry || null;
 
       // Handle projectId changes with security validation
       if (projectId !== undefined) {
@@ -3553,7 +3554,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
       }
 
       const { companyName, websiteUrl, description, linkedInUrl, instagramUrl, twitterUrl, blogUrl, logoUrl,
-              headquarters, founded, employeeCount, industry, revenue } = parsed.data as any;
+              headquarters, founded, employeeCount, industry, revenue, fundingRaised } = parsed.data as any;
       
       // Validate websiteUrl for security (SSRF protection)
       const urlValidation = await validateCompetitorUrl(websiteUrl);
@@ -3606,6 +3607,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           employeeCount: employeeCount || null,
           industry: industry || null,
           revenue: revenue || null,
+          fundingRaised: fundingRaised || null,
         });
         res.json(updated);
       } else {
@@ -3627,6 +3629,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           employeeCount: employeeCount || null,
           industry: industry || null,
           revenue: revenue || null,
+          fundingRaised: fundingRaised || null,
         });
         res.json(profile);
       }

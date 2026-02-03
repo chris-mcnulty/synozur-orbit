@@ -38,6 +38,7 @@ export default function CompanyBaseline() {
     employeeCount: "",
     industry: "",
     revenue: "",
+    fundingRaised: "",
   });
 
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery({
@@ -284,6 +285,7 @@ export default function CompanyBaseline() {
         employeeCount: companyProfile.employeeCount || "",
         industry: companyProfile.industry || "",
         revenue: companyProfile.revenue || "",
+        fundingRaised: companyProfile.fundingRaised || "",
       });
       setLogoUploadTab("url");
     } else {
@@ -301,6 +303,7 @@ export default function CompanyBaseline() {
         employeeCount: "",
         industry: "",
         revenue: "",
+        fundingRaised: "",
       });
     }
     setIsProfileDialogOpen(true);
@@ -566,6 +569,18 @@ export default function CompanyBaseline() {
                                 placeholder="Technology"
                                 value={profileForm.industry}
                                 onChange={(e) => setProfileForm({ ...profileForm, industry: e.target.value })}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div className="grid gap-1">
+                              <Label htmlFor="fundingRaised" className="text-xs flex items-center gap-1">
+                                <TrendingUp className="h-3 w-3" /> Funding Raised
+                              </Label>
+                              <Input
+                                id="fundingRaised"
+                                placeholder="$10M Series A"
+                                value={profileForm.fundingRaised}
+                                onChange={(e) => setProfileForm({ ...profileForm, fundingRaised: e.target.value })}
                                 className="h-8 text-sm"
                               />
                             </div>
@@ -881,6 +896,18 @@ export default function CompanyBaseline() {
                                       className="h-8 text-sm"
                                     />
                                   </div>
+                                  <div className="grid gap-1">
+                                    <Label htmlFor="fundingRaised-edit" className="text-xs flex items-center gap-1">
+                                      <TrendingUp className="h-3 w-3" /> Funding Raised
+                                    </Label>
+                                    <Input
+                                      id="fundingRaised-edit"
+                                      placeholder="$10M Series A"
+                                      value={profileForm.fundingRaised}
+                                      onChange={(e) => setProfileForm({ ...profileForm, fundingRaised: e.target.value })}
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -950,7 +977,7 @@ export default function CompanyBaseline() {
               </Card>
 
               {/* Company Directory - uses stable database columns */}
-              {(companyProfile.headquarters || companyProfile.founded || companyProfile.employeeCount || companyProfile.industry || companyProfile.revenue) && (
+              {(companyProfile.headquarters || companyProfile.founded || companyProfile.employeeCount || companyProfile.industry || companyProfile.revenue || companyProfile.fundingRaised) && (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
@@ -1003,6 +1030,15 @@ export default function CompanyBaseline() {
                           <div>
                             <p className="text-xs text-muted-foreground">Revenue Range</p>
                             <p className="text-sm font-medium">{companyProfile.revenue}</p>
+                          </div>
+                        </div>
+                      )}
+                      {companyProfile.fundingRaised && (
+                        <div className="flex items-start gap-2">
+                          <TrendingUp className="w-4 h-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-xs text-muted-foreground">Funding Raised</p>
+                            <p className="text-sm font-medium">{companyProfile.fundingRaised}</p>
                           </div>
                         </div>
                       )}

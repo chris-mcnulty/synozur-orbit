@@ -33,6 +33,7 @@ export default function CompetitorDetail() {
   const [editEmployeeCount, setEditEmployeeCount] = useState("");
   const [editRevenue, setEditRevenue] = useState("");
   const [editFundingRaised, setEditFundingRaised] = useState("");
+  const [editIndustry, setEditIndustry] = useState("");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -135,7 +136,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string; industry?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -174,6 +175,7 @@ export default function CompetitorDetail() {
     setEditEmployeeCount(competitor?.employeeCount || "");
     setEditRevenue(competitor?.revenue || "");
     setEditFundingRaised(competitor?.fundingRaised || "");
+    setEditIndustry(competitor?.industry || "");
     setEditOpen(true);
   };
 
@@ -191,6 +193,7 @@ export default function CompetitorDetail() {
       employeeCount: editEmployeeCount,
       revenue: editRevenue,
       fundingRaised: editFundingRaised,
+      industry: editIndustry,
     });
   };
 
@@ -612,6 +615,17 @@ export default function CompetitorDetail() {
                                 data-testid="input-funding"
                               />
                             </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="industry" className="text-xs">Industry</Label>
+                              <Input
+                                id="industry"
+                                placeholder="e.g. Technology"
+                                value={editIndustry}
+                                onChange={(e) => setEditIndustry(e.target.value)}
+                                className="h-9"
+                                data-testid="input-industry"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -849,8 +863,8 @@ export default function CompetitorDetail() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {(competitor?.headquarters || competitor?.founded || competitor?.employeeCount || competitor?.revenue || competitor?.fundingRaised) ? (
-                  <div className="grid gap-4 md:grid-cols-5">
+                {(competitor?.headquarters || competitor?.founded || competitor?.employeeCount || competitor?.revenue || competitor?.fundingRaised || competitor?.industry) ? (
+                  <div className="grid gap-4 md:grid-cols-6">
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
                         <Building2 className="h-3 w-3" /> Headquarters
@@ -880,6 +894,12 @@ export default function CompetitorDetail() {
                         <TrendingUp className="h-3 w-3" /> Funding Raised
                       </p>
                       <p className="text-sm">{competitor.fundingRaised || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                        <Building2 className="h-3 w-3" /> Industry
+                      </p>
+                      <p className="text-sm">{competitor.industry || "—"}</p>
                     </div>
                   </div>
                 ) : (

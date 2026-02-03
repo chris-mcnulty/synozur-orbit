@@ -63,6 +63,8 @@ interface BlogSnapshot {
   postCount?: number;
   latestTitles?: string[];
   capturedAt?: string;
+  postsLast90Days?: number; // Blog posts detected in last 90 days
+  avgPostsPerMonth?: number; // Average posts per month over 90 days
 }
 
 export interface ScoreBreakdown {
@@ -129,10 +131,25 @@ export function calculateScores(
   }
 
   // === BLOG ACTIVITY (0-100) ===
+  // Prioritize 90-day average, fall back to total post count
   if (blogSnapshot) {
-    const postCount = blogSnapshot.postCount || 0;
-    // Score based on blog post count (cap at 10 for max score)
-    blogActivity = Math.min(100, (postCount / 10) * 100);
+    const postsLast90Days = blogSnapshot.postsLast90Days;
+    const avgPostsPerMonth = blogSnapshot.avgPostsPerMonth;
+    
+    if (avgPostsPerMonth !== undefined && avgPostsPerMonth > 0) {
+      // Score based on average posts per month (4+ per month = max score)
+      // 0 posts = 0, 1 post/month = 25, 2 = 50, 3 = 75, 4+ = 100
+      blogActivity = Math.min(100, (avgPostsPerMonth / 4) * 100);
+    } else if (postsLast90Days !== undefined && postsLast90Days > 0) {
+      // Calculate monthly average from 90-day total (90 days = 3 months)
+      const monthlyAvg = postsLast90Days / 3;
+      blogActivity = Math.min(100, (monthlyAvg / 4) * 100);
+    } else {
+      // Fall back to total post count for legacy data
+      const postCount = blogSnapshot.postCount || 0;
+      // Score based on blog post count (cap at 10 for max score)
+      blogActivity = Math.min(100, (postCount / 10) * 100);
+    }
   }
 
   // === SOCIAL FOLLOWERS (0-100) ===
