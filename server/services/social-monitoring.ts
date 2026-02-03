@@ -331,13 +331,18 @@ export async function monitorCompetitorSocialMedia(
           // Get previous metrics for comparison
           const previousMetricsArray = await storage.getSocialMetrics(competitor.id, "linkedin");
           const previousMetrics = previousMetricsArray.length > 0 ? previousMetricsArray[0] : null;
+          const isFirstFetch = !previousMetrics || previousMetrics.followers === null;
           
           const hasFollowerChange = previousMetrics?.followers !== undefined && 
             previousMetrics.followers !== null &&
+            previousMetrics.followers > 0 &&
             apiResult.followerCount !== undefined &&
-            Math.abs(apiResult.followerCount - previousMetrics.followers) > 100;
+            Math.abs(apiResult.followerCount - previousMetrics.followers) / previousMetrics.followers > 0.01; // 1% change threshold
           
           const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
+          
+          // Create activity on first fetch or when changes detected
+          const shouldCreateActivity = hasFollowerChange || hasNewPosts || isFirstFetch;
           
           // Store metrics
           if (tenantDomain) {
@@ -354,9 +359,11 @@ export async function monitorCompetitorSocialMedia(
           }
           
           let summary: string | undefined;
-          if (hasFollowerChange || hasNewPosts) {
+          if (shouldCreateActivity) {
             const changes: string[] = [];
-            if (hasFollowerChange && previousMetrics?.followers && apiResult.followerCount) {
+            if (isFirstFetch && apiResult.followerCount) {
+              changes.push(`Initial LinkedIn data captured: ${apiResult.followerCount.toLocaleString()} followers`);
+            } else if (hasFollowerChange && previousMetrics?.followers && apiResult.followerCount) {
               const diff = apiResult.followerCount - previousMetrics.followers;
               changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
             }
@@ -629,12 +636,16 @@ export async function monitorCompanyProfileSocialMedia(
           // Get previous metrics for comparison from linkedInEngagement stored on profile
           const previousEngagement = companyProfile.linkedInEngagement as any;
           const previousFollowers = previousEngagement?.followers || 0;
+          const isFirstFetch = previousFollowers === 0;
           
           const hasFollowerChange = previousFollowers > 0 && 
             apiResult.followerCount !== undefined &&
-            Math.abs(apiResult.followerCount - previousFollowers) > 100;
+            Math.abs(apiResult.followerCount - previousFollowers) / previousFollowers > 0.01; // 1% change threshold
           
           const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
+          
+          // Create initial activity on first successful fetch
+          const shouldCreateActivity = hasFollowerChange || hasNewPosts || isFirstFetch;
           
           // Build engagement data
           const engagement: EngagementSnapshot = {
@@ -647,9 +658,11 @@ export async function monitorCompanyProfileSocialMedia(
           updates.linkedInEngagement = engagement;
           
           let summary: string | undefined;
-          if (hasFollowerChange || hasNewPosts) {
+          if (shouldCreateActivity) {
             const changes: string[] = [];
-            if (hasFollowerChange && apiResult.followerCount) {
+            if (isFirstFetch && apiResult.followerCount) {
+              changes.push(`Initial LinkedIn data captured: ${apiResult.followerCount.toLocaleString()} followers`);
+            } else if (hasFollowerChange && apiResult.followerCount) {
               const diff = apiResult.followerCount - previousFollowers;
               changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
             }
