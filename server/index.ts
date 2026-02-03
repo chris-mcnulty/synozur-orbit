@@ -97,7 +97,10 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        // Truncate response body to keep logs readable
+        const jsonStr = JSON.stringify(capturedJsonResponse);
+        const truncated = jsonStr.length > 200 ? jsonStr.substring(0, 200) + "...[truncated]" : jsonStr;
+        logLine += ` :: ${truncated}`;
       }
 
       log(logLine);
