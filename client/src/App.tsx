@@ -30,6 +30,7 @@ import AdminPage from "@/pages/app/admin";
 import ProductsPage from "@/pages/app/products";
 import ProductDetail from "@/pages/app/product-detail";
 import ExecutiveSummary from "@/pages/app/executive-summary";
+import BaselineSummary from "@/pages/app/baseline-summary";
 import UserGuidePage from "@/pages/app/user-guide";
 import BattleCardsPage from "@/pages/app/battlecards";
 import UsagePage from "@/pages/app/usage";
@@ -85,6 +86,7 @@ function Router() {
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />
       <Route path="/app/products/:id/roadmap" component={ProductRoadmapRedirect} />
       <Route path="/app/products/:productId/executive-summary" component={ExecutiveSummary} />
+      <Route path="/app/executive-summary" component={BaselineSummary} />
       <Route path="/app/products/:id" component={ProductDetail} />
       <Route path="/app/guide" component={UserGuidePage} />
       <Route path="/app/about" component={AppAbout} />

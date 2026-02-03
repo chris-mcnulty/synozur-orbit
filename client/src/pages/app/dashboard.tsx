@@ -12,7 +12,7 @@ import {
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
   Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
   RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare, HelpCircle,
-  ThumbsUp, ThumbsDown
+  ThumbsUp, ThumbsDown, FileSpreadsheet, Lock, Unlock
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
@@ -81,6 +81,33 @@ export default function Dashboard() {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
       return response.json();
+    },
+  });
+
+  const { data: execSummary, isLoading: execSummaryLoading } = useQuery({
+    queryKey: ["/api/baseline/executive-summary"],
+    queryFn: async () => {
+      const response = await fetch("/api/baseline/executive-summary", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const generateSummary = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/baseline/executive-summary/generate", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to generate summary");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary"] });
+      toast({ title: "Executive Summary Generated", description: "Your market intelligence summary is ready." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -506,6 +533,113 @@ export default function Dashboard() {
                   </Link>
                 );
               })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Executive Summary Card */}
+      {execSummary?.exists && execSummary.data && (
+        <Card className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75 fill-mode-backwards" data-testid="card-executive-summary">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <FileSpreadsheet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Executive Summary</CardTitle>
+                  <CardDescription>
+                    {execSummary.lastGeneratedAt 
+                      ? `Updated ${formatSignalDate(execSummary.lastGeneratedAt)}`
+                      : "AI-generated market intelligence overview"}
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link href="/app/executive-summary">
+                  <Button variant="outline" size="sm" data-testid="button-view-exec-summary">
+                    View & Edit <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </Link>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => generateSummary.mutate()}
+                  disabled={generateSummary.isPending}
+                  data-testid="button-refresh-exec-summary"
+                >
+                  {generateSummary.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase">
+                  <Building2 className="w-3 h-3" /> Company
+                </div>
+                <p className="text-sm line-clamp-3">{execSummary.data.companySnapshot || "Not yet generated"}</p>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase">
+                  <Target className="w-3 h-3" /> Market Position
+                </div>
+                <p className="text-sm line-clamp-3">{execSummary.data.marketPosition || "Not yet generated"}</p>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase">
+                  <Users className="w-3 h-3" /> Competitive Landscape
+                </div>
+                <p className="text-sm line-clamp-3">{execSummary.data.competitiveLandscape || "Not yet generated"}</p>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase">
+                  <Lightbulb className="w-3 h-3" /> Opportunities
+                </div>
+                <p className="text-sm line-clamp-3">{execSummary.data.opportunities || "Not yet generated"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Generate Summary CTA if not exists */}
+      {!execSummary?.exists && baselineComplete && competitors.length > 0 && (
+        <Card className="mb-6 border-dashed border-primary/30 bg-primary/5 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75 fill-mode-backwards" data-testid="card-generate-exec-summary">
+          <CardContent className="py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <FileSpreadsheet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">Generate Executive Summary</p>
+                  <p className="text-sm text-muted-foreground">Get AI-powered insights about your market position and opportunities</p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => generateSummary.mutate()}
+                disabled={generateSummary.isPending}
+                data-testid="button-generate-exec-summary"
+              >
+                {generateSummary.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate Summary
+                  </>
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
