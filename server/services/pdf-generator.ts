@@ -1125,16 +1125,23 @@ export async function generatePdfReport(
   let projects: ProjectSummary[] = [];
   let baselineProducts: ProductSummary[] = [];
 
+  // Determine if the market is the default market for correct context filtering
+  const defaultMarket = await storage.getDefaultMarket(tenant.id);
+  const effectiveMarketId = marketId || defaultMarket?.id || "";
+  const isDefaultMarket = defaultMarket?.id === effectiveMarketId;
+  
   const contextFilter = { 
     tenantId: tenant.id, 
     tenantDomain, 
-    marketId: marketId || "",
-    isDefaultMarket: !marketId
+    marketId: effectiveMarketId,
+    isDefaultMarket
   };
 
   if (marketId) {
     const market = await storage.getMarket(marketId);
     marketName = market?.name;
+  } else if (defaultMarket) {
+    marketName = defaultMarket.name;
   }
 
   let baselineProductId: string | null = null;
