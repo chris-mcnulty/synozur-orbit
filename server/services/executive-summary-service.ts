@@ -125,9 +125,9 @@ Differentiators: ${Array.isArray((analysis as any).differentiators) ? ((analysis
       : "No recommendations yet.";
 
   const docsContext = groundingDocs.length > 0
-    ? groundingDocs.slice(0, 10).map((d: any) => {
+    ? groundingDocs.slice(0, 15).map((d: any) => {
         const content = d.extractedContent || d.content || "";
-        return `- ${d.name} (${d.documentType || "document"}): ${content.substring(0, 500)}...`;
+        return `### ${d.name} (${d.documentType || "document"})\n${content.substring(0, 3000)}`;
       }).join("\n\n")
     : "No grounding documents uploaded.";
 
