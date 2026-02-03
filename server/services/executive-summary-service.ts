@@ -99,6 +99,22 @@ Revenue Range: ${profile.revenue || "Not specified"}
       ).join("\n")
     : "No competitors analyzed yet.";
 
+  // Blog activity comparison across market players
+  const baselineBlogCount = (profile?.blogSnapshot as any)?.postCount || 0;
+  const blogComparison = competitorDetails.filter(c => c.blogPostCount > 0);
+  const avgBlogPosts = blogComparison.length > 0 
+    ? Math.round(blogComparison.reduce((sum, c) => sum + c.blogPostCount, 0) / blogComparison.length) 
+    : 0;
+  const maxBlogPosts = blogComparison.length > 0 ? Math.max(...blogComparison.map(c => c.blogPostCount)) : 0;
+  const blogLeader = blogComparison.find(c => c.blogPostCount === maxBlogPosts);
+  
+  const blogContext = `
+## Content Marketing Comparison
+Baseline (${profile?.companyName || "Your Company"}): ${baselineBlogCount} blog posts
+Competitor Average: ${avgBlogPosts} blog posts
+Most Active: ${blogLeader ? `${blogLeader.name} with ${blogLeader.blogPostCount} posts` : "None tracked"}
+${baselineBlogCount > avgBlogPosts ? "Your content output is above market average." : baselineBlogCount < avgBlogPosts ? "Your content output is below market average - consider increasing blog frequency." : "Your content output matches market average."}`;
+
   const analysisContext = analysis ? `
 Key Themes: ${Array.isArray(analysis.themes) ? (analysis.themes as any[]).map((t: any) => {
     if (typeof t === 'object') return `${t.theme || t.name || t}${t.description ? `: ${t.description}` : ""}`;
@@ -157,6 +173,7 @@ ${companyContext}
 
 ## Competitor Intelligence (${competitorDetails.length} tracked)
 ${competitorContext}
+${blogContext}
 
 ## Competitive Analysis Insights
 ${analysisContext}
