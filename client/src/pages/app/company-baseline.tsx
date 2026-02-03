@@ -152,6 +152,37 @@ export default function CompanyBaseline() {
     },
   });
 
+  const refreshAllMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      const response = await fetch(`/api/company-profile/${profileId}/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to refresh data");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      const websitePages = data.results?.website?.pages || 0;
+      const blogPosts = data.results?.website?.blogPosts || 0;
+      const hasLinkedIn = data.results?.linkedin?.success;
+      toast({
+        title: "Data Refreshed",
+        description: `Crawled ${websitePages} pages${blogPosts > 0 ? `, found ${blogPosts} blog posts` : ""}${hasLinkedIn ? ", updated LinkedIn" : ""}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const monitorAllMutation = useMutation({
     mutationFn: async (profileId: string) => {
       const response = await fetch(`/api/company-profile/${profileId}/monitor-all`, {
@@ -619,6 +650,20 @@ export default function CompanyBaseline() {
                           <Globe className="w-4 h-4 mr-2" />
                         )}
                         Check All for Changes
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
+                        disabled={!companyProfile?.id || refreshAllMutation.isPending}
+                        data-testid="button-refresh-all"
+                      >
+                        {refreshAllMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Refresh All Data
                       </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>

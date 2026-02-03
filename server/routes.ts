@@ -1639,7 +1639,7 @@ Return ONLY the JSON object, no other text.`;
         
         if (crawlResult.pages.length > 0) {
           const combinedContent = getCombinedContent(crawlResult);
-          await storage.updateCompanyProfile(profile.id, {
+          const updateData: any = {
             crawlData: {
               pagesCrawled: crawlResult.pages.map(p => ({
                 url: p.url,
@@ -1649,12 +1649,40 @@ Return ONLY the JSON object, no other text.`;
               })),
               totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
               crawledAt: crawlResult.crawledAt,
+              socialLinks: crawlResult.socialLinks,
             },
             previousWebsiteContent: combinedContent.substring(0, 100000),
             lastCrawl: new Date().toISOString(),
             lastFullCrawl: new Date(),
-          });
-          results.website = { success: true, pages: crawlResult.pages.length };
+          };
+          
+          // Capture blog snapshot if found
+          if (crawlResult.blogSnapshot) {
+            updateData.blogSnapshot = {
+              ...crawlResult.blogSnapshot,
+              capturedAt: new Date().toISOString(),
+            };
+          }
+          
+          // Update social URLs if discovered during crawl and not already set
+          if (crawlResult.socialLinks) {
+            if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
+              updateData.linkedInUrl = crawlResult.socialLinks.linkedIn;
+            }
+            if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
+              updateData.twitterUrl = crawlResult.socialLinks.twitter;
+            }
+            if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
+              updateData.instagramUrl = crawlResult.socialLinks.instagram;
+            }
+          }
+          
+          await storage.updateCompanyProfile(profile.id, updateData);
+          results.website = { 
+            success: true, 
+            pages: crawlResult.pages.length,
+            blogPosts: crawlResult.blogSnapshot?.postCount || 0,
+          };
         }
       }
       
