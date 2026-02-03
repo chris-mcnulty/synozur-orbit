@@ -742,7 +742,7 @@ export default function Activity() {
                             <Badge variant="secondary" className="text-xs">
                               {item.type}
                             </Badge>
-                            <span className="text-xs text-muted-foreground">{item.date}</span>
+                            <span className="text-xs text-muted-foreground">{formatTimeAgo(item.date)}</span>
                           </div>
                           <Badge variant={item.impact === "High" ? "destructive" : "secondary"}>
                             {item.impact} Impact
