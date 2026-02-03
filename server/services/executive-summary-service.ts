@@ -33,6 +33,7 @@ export async function generateExecutiveSummary(
   const competitors = await storage.getCompetitorsByContext(contextFilter);
   const analysis = await storage.getLatestAnalysisByContext(contextFilter);
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
+  const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter);
   
   const existingSummary = await storage.getExecutiveSummaryByContext(contextFilter);
   
@@ -56,26 +57,79 @@ export async function generateExecutiveSummary(
     baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
   });
 
+  const profile = companyProfile as any;
   const companyContext = companyProfile ? `
-Company: ${companyProfile.companyName}
-Description: ${companyProfile.description || "N/A"}
-Website: ${companyProfile.websiteUrl || "N/A"}
+Company: ${profile.companyName}
+Description: ${profile.description || "N/A"}
+Website: ${profile.websiteUrl || "N/A"}
+Value Proposition: ${profile.valueProposition || "Not defined"}
+Target Audience: ${profile.targetAudience || "Not defined"}
+Industry: ${profile.industry || "Not specified"}
+Headquarters: ${profile.headquarters || "Not specified"}
+Founded: ${profile.founded || "Not specified"}
+Employee Count: ${profile.employeeCount || "Not specified"}
+Revenue Range: ${profile.revenue || "Not specified"}
 ` : "No baseline company profile configured.";
 
-  const competitorContext = competitorScores.length > 0 
-    ? competitorScores.slice(0, 5).map((c, i) => `${i + 1}. ${c.name} (Score: ${c.score}/100)`).join("\n")
+  const competitorDetails = await Promise.all(competitors.slice(0, 8).map(async (c) => {
+    const scores = await storage.getCompetitorScore(c.id) as any;
+    const comp = c as any;
+    return {
+      name: comp.name,
+      url: comp.url,
+      description: comp.description,
+      score: scores?.overallScore || 0,
+      contentScore: scores?.contentScore || 0,
+      messagingScore: scores?.messagingScore || 0,
+      linkedInUrl: comp.linkedInUrl,
+      blogPostCount: comp.blogSnapshot?.postCount || 0,
+      headquarters: comp.headquarters,
+      employeeCount: comp.employeeCount
+    };
+  }));
+  
+  const competitorContext = competitorDetails.length > 0 
+    ? competitorDetails.map((c, i) => 
+        `${i + 1}. ${c.name} (Overall: ${c.score}/100, Content: ${c.contentScore}/100, Messaging: ${c.messagingScore}/100)${c.description ? ` - ${c.description.substring(0, 150)}` : ""}${c.employeeCount ? ` | Employees: ${c.employeeCount}` : ""}${c.blogPostCount > 0 ? ` | ${c.blogPostCount} blog posts` : ""}`
+      ).join("\n")
     : "No competitors analyzed yet.";
 
   const analysisContext = analysis ? `
-Key Themes: ${Array.isArray(analysis.themes) ? (analysis.themes as any[]).map((t: any) => t.theme || t).slice(0, 5).join(", ") : "None identified"}
-Messaging Patterns: ${Array.isArray(analysis.messaging) ? (analysis.messaging as any[]).map((m: any) => m.pattern || m).slice(0, 3).join("; ") : "None identified"}
-Gaps: ${Array.isArray(analysis.gaps) ? (analysis.gaps as any[]).slice(0, 5).map((g: any) => g.gap || g).join("; ") : "None identified"}
+Key Themes: ${Array.isArray(analysis.themes) ? (analysis.themes as any[]).map((t: any) => {
+    if (typeof t === 'object') return `${t.theme || t.name || t}${t.description ? `: ${t.description}` : ""}`;
+    return t;
+  }).slice(0, 6).join("; ") : "None identified"}
+
+Messaging Patterns: ${Array.isArray(analysis.messaging) ? (analysis.messaging as any[]).map((m: any) => {
+    if (typeof m === 'object') return `${m.pattern || m.name || m}${m.description ? `: ${m.description}` : ""}`;
+    return m;
+  }).slice(0, 4).join("; ") : "None identified"}
+
+Competitive Gaps: ${Array.isArray(analysis.gaps) ? (analysis.gaps as any[]).slice(0, 6).map((g: any) => {
+    if (typeof g === 'object') return `${g.gap || g.name || g}${g.description ? `: ${g.description}` : ""}`;
+    return g;
+  }).join("; ") : "None identified"}
+
+Differentiators: ${Array.isArray((analysis as any).differentiators) ? ((analysis as any).differentiators as any[]).slice(0, 4).map((d: any) => {
+    if (typeof d === 'object') return d.differentiator || d.name || d;
+    return d;
+  }).join("; ") : "None identified"}
 ` : "No competitive analysis available yet.";
 
-  const topRecs = recommendations.filter(r => r.impact === "High").slice(0, 5);
+  const topRecs = recommendations.filter(r => r.impact === "High").slice(0, 8);
+  const allRecs = recommendations.slice(0, 12);
   const recsContext = topRecs.length > 0 
-    ? topRecs.map(r => `- ${r.title} (${r.area})`).join("\n")
-    : "No high-impact recommendations yet.";
+    ? topRecs.map(r => `- ${r.title} (${r.area})${r.description ? `: ${r.description.substring(0, 100)}` : ""}`).join("\n")
+    : allRecs.length > 0 
+      ? allRecs.slice(0, 5).map(r => `- ${r.title} (${r.area})`).join("\n")
+      : "No recommendations yet.";
+
+  const docsContext = groundingDocs.length > 0
+    ? groundingDocs.slice(0, 10).map((d: any) => {
+        const content = d.extractedContent || d.content || "";
+        return `- ${d.name} (${d.documentType || "document"}): ${content.substring(0, 500)}...`;
+      }).join("\n\n")
+    : "No grounding documents uploaded.";
 
   const summaryData: SummaryData = {
     companySnapshot: existingSummary?.companySnapshot || "",
@@ -91,36 +145,45 @@ Gaps: ${Array.isArray(analysis.gaps) ? (analysis.gaps as any[]).slice(0, 5).map(
     return summaryData;
   }
 
-  const prompt = `You are an executive briefing specialist creating a concise market intelligence summary. Based on the following data, generate the requested sections.
+  const prompt = `You are an executive briefing specialist creating a comprehensive market intelligence summary for a C-level audience. Based on the following data, generate detailed, actionable executive summaries.
 
 ## Baseline Company
 ${companyContext}
 
-## Top Competitors (by score)
+## Competitor Intelligence (${competitorDetails.length} tracked)
 ${competitorContext}
 
-## Competitive Analysis Summary
+## Competitive Analysis Insights
 ${analysisContext}
 
-## High-Impact Recommendations
+## Strategic Recommendations
 ${recsContext}
 
-Generate the following sections in JSON format. Each section should be 2-4 sentences, crisp and actionable. Focus on strategic insights an executive needs to make decisions.
+## Grounding Documents (${groundingDocs.length} uploaded)
+${docsContext}
+
+Generate the following sections in JSON format. Each section should be substantive (4-6 sentences), data-driven, and focused on actionable strategic insights. Include specific metrics, competitor names, and concrete recommendations where available.
 
 Sections needed: ${sectionsToGenerate.join(", ")}
 
-Response format (JSON only, no markdown):
+Guidelines for each section:
+- companySnapshot: Include company fundamentals (industry, size, location if known), core value proposition, target market, and competitive positioning summary. Reference specific data points.
+- marketPosition: Describe current competitive standing with score context (e.g., "scoring X/100 against Y competitors"). Highlight key differentiators, relative strengths/weaknesses, and positioning gaps. Be specific about where the company leads or lags.
+- competitiveLandscape: Name top 3-5 competitors with their scores. Identify dominant themes and messaging patterns in the market. Highlight specific competitive gaps that represent vulnerabilities or opportunities. Include content and engagement observations if available.
+- opportunities: List 3-5 concrete, prioritized strategic opportunities derived from the analysis. Each should include the opportunity, why it matters, and a specific recommended action. Reference competitor weaknesses or market gaps that support each opportunity.
+
+Response format (JSON only, no markdown code blocks):
 {
-  ${sectionsToGenerate.includes("companySnapshot") ? '"companySnapshot": "Brief company overview with key facts",' : ""}
-  ${sectionsToGenerate.includes("marketPosition") ? '"marketPosition": "Current competitive standing, score context, key differentiators",' : ""}
-  ${sectionsToGenerate.includes("competitiveLandscape") ? '"competitiveLandscape": "Top competitors, main competitive themes, notable gaps",' : ""}
-  ${sectionsToGenerate.includes("opportunities") ? '"opportunities": "Top 2-3 strategic opportunities with recommended actions"' : ""}
+  ${sectionsToGenerate.includes("companySnapshot") ? '"companySnapshot": "Detailed company overview with specifics",' : ""}
+  ${sectionsToGenerate.includes("marketPosition") ? '"marketPosition": "Comprehensive competitive standing analysis with metrics",' : ""}
+  ${sectionsToGenerate.includes("competitiveLandscape") ? '"competitiveLandscape": "Detailed competitor breakdown with themes and gaps",' : ""}
+  ${sectionsToGenerate.includes("opportunities") ? '"opportunities": "Prioritized strategic opportunities with specific actions"' : ""}
 }`;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{ role: "user", content: prompt }]
     });
 
