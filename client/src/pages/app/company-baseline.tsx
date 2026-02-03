@@ -1121,6 +1121,123 @@ export default function CompanyBaseline() {
                 );
               })()}
 
+              {/* Tracked Sources - show what pages/URLs are being monitored */}
+              {(() => {
+                const crawlData = companyProfile.crawlData as { pages?: { url: string; type?: string; title?: string }[]; crawledAt?: string } | null;
+                const hasSources = companyProfile.websiteUrl || companyProfile.linkedInUrl || companyProfile.blogUrl || (crawlData?.pages && crawlData.pages.length > 0);
+                
+                if (!hasSources) return null;
+                
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Globe className="w-5 h-5 text-primary" />
+                        Tracked Sources
+                      </CardTitle>
+                      <CardDescription>Pages and profiles being monitored</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Website & Crawled Pages */}
+                      {companyProfile.websiteUrl && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-muted-foreground" />
+                              Website
+                            </span>
+                            {companyProfile.lastCrawl && (
+                              <span className="text-xs text-muted-foreground">
+                                Last crawled: {new Date(companyProfile.lastCrawl).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          <div className="pl-6 space-y-1">
+                            <a href={companyProfile.websiteUrl} target="_blank" rel="noopener noreferrer" 
+                               className="text-xs text-primary hover:underline block truncate">
+                              {companyProfile.websiteUrl}
+                            </a>
+                            {crawlData?.pages && crawlData.pages.length > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                <span className="font-medium">{crawlData.pages.length} pages tracked:</span>
+                                <ul className="mt-1 space-y-0.5">
+                                  {crawlData.pages.slice(0, 6).map((page, i) => (
+                                    <li key={i} className="truncate flex items-center gap-1">
+                                      <span className="text-muted-foreground/50">•</span>
+                                      <span className="capitalize text-muted-foreground/70">{page.type || 'page'}</span>
+                                      <a href={page.url} target="_blank" rel="noopener noreferrer" 
+                                         className="hover:underline truncate">
+                                        {page.url.replace(companyProfile.websiteUrl || '', '') || '/'}
+                                      </a>
+                                    </li>
+                                  ))}
+                                  {crawlData.pages.length > 6 && (
+                                    <li className="text-muted-foreground/50">+{crawlData.pages.length - 6} more</li>
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Social Profiles */}
+                      {(companyProfile.linkedInUrl || companyProfile.instagramUrl || companyProfile.twitterUrl) && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Social Profiles</span>
+                            {companyProfile.lastSocialCrawl && (
+                              <span className="text-xs text-muted-foreground">
+                                Last checked: {new Date(companyProfile.lastSocialCrawl).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          <div className="pl-6 space-y-1">
+                            {companyProfile.linkedInUrl && (
+                              <a href={companyProfile.linkedInUrl} target="_blank" rel="noopener noreferrer"
+                                 className="text-xs text-primary hover:underline flex items-center gap-2">
+                                <Linkedin className="w-3 h-3" />
+                                {companyProfile.linkedInUrl.replace('https://www.linkedin.com/company/', '').replace('/', '')}
+                              </a>
+                            )}
+                            {companyProfile.instagramUrl && (
+                              <a href={companyProfile.instagramUrl} target="_blank" rel="noopener noreferrer"
+                                 className="text-xs text-primary hover:underline flex items-center gap-2">
+                                <Instagram className="w-3 h-3" />
+                                {companyProfile.instagramUrl.replace('https://www.instagram.com/', '').replace('/', '')}
+                              </a>
+                            )}
+                            {companyProfile.twitterUrl && (
+                              <a href={companyProfile.twitterUrl} target="_blank" rel="noopener noreferrer"
+                                 className="text-xs text-primary hover:underline flex items-center gap-2">
+                                <Twitter className="w-3 h-3" />
+                                {companyProfile.twitterUrl.replace('https://twitter.com/', '').replace('https://x.com/', '').replace('/', '')}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Blog URL */}
+                      {companyProfile.blogUrl && (
+                        <div className="space-y-2">
+                          <span className="text-sm font-medium flex items-center gap-2">
+                            <Rss className="w-4 h-4 text-muted-foreground" />
+                            Blog / RSS Feed
+                          </span>
+                          <div className="pl-6">
+                            <a href={companyProfile.blogUrl} target="_blank" rel="noopener noreferrer"
+                               className="text-xs text-primary hover:underline truncate block">
+                              {companyProfile.blogUrl}
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
               {hasAnalysis && (
                 <Card>
                   <CardHeader>
