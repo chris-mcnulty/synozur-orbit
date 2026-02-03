@@ -1622,8 +1622,10 @@ Return ONLY the JSON object, no other text.`;
 
   // Simple baseline refresh: Crawl company profile website and LinkedIn
   app.post("/api/company-profile/:id/refresh", async (req, res) => {
+    console.log(`[Baseline Refresh] Endpoint called for profile ID: ${req.params.id}`);
     try {
       const ctx = await getRequestContext(req);
+      console.log(`[Baseline Refresh] Context obtained for user: ${ctx.userId}, tenant: ${ctx.tenantId}`);
       const profileId = req.params.id;
       const profile = await storage.getCompanyProfile(profileId);
       
