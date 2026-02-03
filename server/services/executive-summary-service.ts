@@ -78,6 +78,7 @@ Revenue Range: ${profile.revenue || "Not specified"}
   const competitorDetails = await Promise.all(competitors.slice(0, 8).map(async (c) => {
     const scores = await storage.getCompetitorScore(c.id) as any;
     const comp = c as any;
+    console.log(`[ExecutiveSummary] Competitor ${comp.name} scores:`, scores ? { overall: scores.overallScore, content: scores.contentScore, messaging: scores.messagingScore } : "No scores");
     return {
       name: comp.name,
       url: comp.url,
@@ -168,20 +169,26 @@ ${docsContext}
 
 Generate the following sections in JSON format. Each section should be substantive (4-6 sentences), data-driven, and focused on actionable strategic insights. Include specific metrics, competitor names, and concrete recommendations where available.
 
+CRITICAL FORMATTING RULES:
+1. Output ONLY valid JSON - no markdown, no code blocks, no asterisks, no bullet points
+2. Use plain text sentences only - no formatting characters like *, **, -, or bullet symbols
+3. Separate items with semicolons or numbered format like "1) First item 2) Second item"
+4. Keep each section as flowing prose, not lists
+
 Sections needed: ${sectionsToGenerate.join(", ")}
 
 Guidelines for each section:
-- companySnapshot: Include company fundamentals (industry, size, location if known), core value proposition, target market, and competitive positioning summary. Reference specific data points.
-- marketPosition: Describe current competitive standing with score context (e.g., "scoring X/100 against Y competitors"). Highlight key differentiators, relative strengths/weaknesses, and positioning gaps. Be specific about where the company leads or lags.
-- competitiveLandscape: Name top 3-5 competitors with their scores. Identify dominant themes and messaging patterns in the market. Highlight specific competitive gaps that represent vulnerabilities or opportunities. Include content and engagement observations if available.
-- opportunities: List 3-5 concrete, prioritized strategic opportunities derived from the analysis. Each should include the opportunity, why it matters, and a specific recommended action. Reference competitor weaknesses or market gaps that support each opportunity.
+- companySnapshot: Include company fundamentals (industry, size, location if known), core value proposition, target market, and competitive positioning summary. Reference specific data points from the grounding documents and analysis.
+- marketPosition: Describe current competitive standing with actual score context from the data above. Highlight key differentiators, relative strengths/weaknesses, and positioning gaps. Be specific about where the company leads or lags versus named competitors.
+- competitiveLandscape: Name the top 3-5 competitors with their actual scores from the data above. Identify dominant themes and messaging patterns in the market. Highlight specific competitive gaps that represent vulnerabilities or opportunities.
+- opportunities: List 3-5 concrete, prioritized strategic opportunities as flowing sentences. Each should include the opportunity, why it matters, and a specific recommended action. Reference competitor weaknesses or market gaps.
 
-Response format (JSON only, no markdown code blocks):
+Response format (raw JSON only, absolutely no markdown):
 {
-  ${sectionsToGenerate.includes("companySnapshot") ? '"companySnapshot": "Detailed company overview with specifics",' : ""}
-  ${sectionsToGenerate.includes("marketPosition") ? '"marketPosition": "Comprehensive competitive standing analysis with metrics",' : ""}
-  ${sectionsToGenerate.includes("competitiveLandscape") ? '"competitiveLandscape": "Detailed competitor breakdown with themes and gaps",' : ""}
-  ${sectionsToGenerate.includes("opportunities") ? '"opportunities": "Prioritized strategic opportunities with specific actions"' : ""}
+  ${sectionsToGenerate.includes("companySnapshot") ? '"companySnapshot": "Plain text company overview with specifics",' : ""}
+  ${sectionsToGenerate.includes("marketPosition") ? '"marketPosition": "Plain text competitive standing analysis with real metrics",' : ""}
+  ${sectionsToGenerate.includes("competitiveLandscape") ? '"competitiveLandscape": "Plain text competitor breakdown with real scores and gaps",' : ""}
+  ${sectionsToGenerate.includes("opportunities") ? '"opportunities": "Plain text strategic opportunities with actions"' : ""}
 }`;
 
   console.log("[ExecutiveSummary] Calling Anthropic API with prompt length:", prompt.length, "chars, sections:", sectionsToGenerate);
