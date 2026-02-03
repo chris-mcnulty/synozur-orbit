@@ -1,0 +1,224 @@
+2026-02-03 13:35:38.21
+abd413c3
+User
+[Web Crawler] Starting crawl of https://www.synozur.com (headless: true)
+2026-02-03 13:35:38.21
+abd413c3
+User
+[Headless] Attempting to crawl: https://www.synozur.com
+2026-02-03 13:37:39.24
+abd413c3
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async jR (/home/runner/workspace/dist/index.cjs:754:15683)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-03 13:37:39.24
+abd413c3
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async zee (/home/runner/workspace/dist/index.cjs:754:14138)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-02-03 13:37:39.24
+abd413c3
+User
+Headless fetch failed for https://www.synozur.com (attempt 1): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-03 13:37:39.24
+abd413c3
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-03 13:37:39.24
+abd413c3
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 13:38:09.35
+abd413c3
+User
+9:38:09 PM [express] POST /api/context/tenant 200 in 330ms :: {"activeTenantId":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","activeMarketId":"08610095-ef99-4205-b5ae-13264021a471","message":"Tenant context switched successfully"}
+2026-02-03 13:38:09.73
+abd413c3
+User
+9:38:09 PM [express] GET /api/company-profile 200 in 257ms :: {"id":"0dcb6e62-5cb0-41a8-ab97-118d449f1903","userId":"cfb63c72-81e0-44ff-9c96-7d6632a72dde","tenantDomain":"chrismcnulty.net","marketId":"08610095-ef99-4205-b5ae-13264021a471","companyName":"Cascadia...[truncated]
+2026-02-03 13:38:09.89
+abd413c3
+User
+9:38:09 PM [express] GET /api/analysis 200 in 390ms :: {"id":"be8d7525-0003-4611-ae89-2e1c6bbf02c2","userId":"cfb63c72-81e0-44ff-9c96-7d6632a72dde","tenantDomain":"chrismcnulty.net","marketId":"08610095-ef99-4205-b5ae-13264021a471","themes":[{"us":"Based ...[truncated]
+2026-02-03 13:38:09.95
+abd413c3
+User
+9:38:09 PM [express] GET /api/tenants/accessible 200 in 258ms :: {"tenants":[{"id":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","domain":"chrismcnulty.net","name":"chrismcnulty.net","plan":"trial","status":"active","trialStartDate":"2026-01-19T19:47:54.257Z","trialEndsAt...[truncated]
+2026-02-03 13:38:09.95
+abd413c3
+User
+9:38:09 PM [express] GET /api/reports 200 in 418ms :: []
+2026-02-03 13:38:09.96
+abd413c3
+User
+9:38:09 PM [express] GET /api/tenant/settings 304 in 259ms :: {"id":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","domain":"synozur.com","name":"The Synozur Alliance","plan":"enterprise","status":"active","trialStartDate":null,"trialEndsAt":null,"lastTrialReminderSent"...[truncated]
+2026-02-03 13:38:10.01
+abd413c3
+User
+9:38:10 PM [express] GET /api/context 200 in 285ms :: {"activeTenantId":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","activeMarketId":"08610095-ef99-4205-b5ae-13264021a471","activeTenant":{"id":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","domain":"chrismcnulty.net"...[truncated]
+2026-02-03 13:38:10.04
+abd413c3
+User
+9:38:10 PM [express] GET /api/company-profile 304 in 202ms :: {"id":"0dcb6e62-5cb0-41a8-ab97-118d449f1903","userId":"cfb63c72-81e0-44ff-9c96-7d6632a72dde","tenantDomain":"chrismcnulty.net","marketId":"08610095-ef99-4205-b5ae-13264021a471","companyName":"Cascadia...[truncated]
+2026-02-03 13:38:10.08
+abd413c3
+User
+9:38:10 PM [express] GET /api/competitors 200 in 373ms :: [{"id":"e31607aa-d71e-4bbe-92d5-5dd7cbed2546","name":"Ryan Dyar Photography","url":"https://www.ryandyar.com","linkedInUrl":null,"instagramUrl":"https://www.instagram.com/ryandyar/","twitterUrl":null,...[truncated]
+2026-02-03 13:38:10.09
+abd413c3
+User
+9:38:10 PM [express] GET /api/documents 200 in 375ms :: []
+2026-02-03 13:38:10.11
+abd413c3
+User
+9:38:10 PM [express] GET /api/activity 200 in 386ms :: [{"id":"a2ae8770-01ab-491e-b340-b63a6147e06b","type":"scheduled_crawl","sourceType":"competitor","competitorId":"f0f706f0-e485-48f5-80d2-2b4f4dd04d67","companyProfileId":null,"competitorName":"Greg Va...[truncated]
+2026-02-03 13:38:10.11
+abd413c3
+User
+9:38:10 PM [express] GET /api/recommendations 200 in 420ms :: [{"id":"f88806f5-e025-4c2d-98ad-51a02fb16449","title":"Develop Content Marketing Strategy Showcasing Location Expertise and Access","description":"Create regular content (blog posts, social media seri...[truncated]
+2026-02-03 13:38:10.13
+abd413c3
+User
+9:38:10 PM [express] GET /api/markets 200 in 381ms :: {"markets":[{"id":"08610095-ef99-4205-b5ae-13264021a471","tenantId":"d63dce69-960c-4643-ad8e-f7f7ca9e36d2","name":"Default","description":"Default market for chrismcnulty.net","isDefault":true,"status...[truncated]
+2026-02-03 13:38:10.41
+abd413c3
+User
+9:38:10 PM [express] GET /api/company-profile 304 in 186ms :: {"id":"0dcb6e62-5cb0-41a8-ab97-118d449f1903","userId":"cfb63c72-81e0-44ff-9c96-7d6632a72dde","tenantDomain":"chrismcnulty.net","marketId":"08610095-ef99-4205-b5ae-13264021a471","companyName":"Cascadia...[truncated]
+2026-02-03 13:38:12.86
+abd413c3
+User
+9:38:12 PM [express] GET /api/tenant/info 304 in 70ms :: {"plan":"enterprise","isPremium":true,"name":"The Synozur Alliance"}
+2026-02-03 13:38:13.20
+abd413c3
+User
+9:38:13 PM [express] GET /api/projects 403 in 414ms :: {"error":"Client Projects require a Pro or Enterprise plan","upgradeRequired":true}
+2026-02-03 13:38:22.47
+abd413c3
+User
+[Headless] Attempting to crawl: https://www.zackschnepf.com
+2026-02-03 13:38:22.47
+abd413c3
+User
+[Web Crawler] Starting crawl of https://www.zackschnepf.com (headless: true)
+2026-02-03 13:38:27.32
+abd413c3
+User
+[Headless] Attempting to crawl: https://www.marcadamus.com
+2026-02-03 13:38:27.32
+abd413c3
+User
+[Web Crawler] Starting crawl of https://www.marcadamus.com (headless: true)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async zee (/home/runner/workspace/dist/index.cjs:754:14138)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at FrameManager.initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/FrameManager.js:174:38)
+2026-02-03 13:38:38.23
+abd413c3
+User
+Headless fetch failed for https://www.synozur.com (attempt 1): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-03 13:38:38.23
+abd413c3
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async jR (/home/runner/workspace/dist/index.cjs:754:15683)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-03 13:38:38.23
+abd413c3
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)

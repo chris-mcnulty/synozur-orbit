@@ -58,6 +58,7 @@ async function getBrowser(): Promise<Browser> {
   browserInstance = await puppeteer.launch({
     headless: true,
     executablePath,
+    protocolTimeout: 45000, // 45s timeout for CDP protocol commands (prevents 2+ minute hangs)
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
