@@ -190,33 +190,68 @@ function extractSocialLinks(html: string): CrawlSummary["socialLinks"] {
 function extractBlogInfo(html: string): CrawlSummary["blogSnapshot"] | undefined {
   const blogTitles: string[] = [];
   
+  // Filter out navigation/category items (too short, common nav terms)
+  const navTerms = ["home", "about", "contact", "services", "products", "pricing", "team", "careers", 
+                    "login", "sign up", "subscribe", "read more", "learn more", "view all", "see all",
+                    "previous", "next", "back", "menu", "close", "search"];
+  
+  const isValidBlogTitle = (title: string): boolean => {
+    const cleaned = title.trim().toLowerCase();
+    if (cleaned.length < 20 || cleaned.length > 200) return false; // Blog titles are typically 20-200 chars
+    if (navTerms.some(term => cleaned === term || cleaned.startsWith(term + " "))) return false;
+    if (/^\d+$/.test(cleaned)) return false; // Just numbers
+    if (cleaned.split(" ").length < 3) return false; // At least 3 words for a proper title
+    return true;
+  };
+  
   // Look for article tags with headings (common blog structure)
   const articleRegex = /<article[^>]*>[\s\S]*?<h[1-3][^>]*>([^<]+)<\/h[1-3]>/gi;
   let articleMatch;
   while ((articleMatch = articleRegex.exec(html)) !== null) {
-    if (articleMatch[1] && articleMatch[1].trim().length > 10) {
-      blogTitles.push(articleMatch[1].trim().substring(0, 100));
+    const title = articleMatch[1].trim();
+    if (isValidBlogTitle(title) && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 150));
     }
   }
   
   // Look for links in blog/insights/news/articles sections using consolidated slugs
   const slugPattern = BLOG_SLUGS.join("|");
-  const blogLinkRegex = new RegExp(`href=["'][^"']*\\/(${slugPattern})\\/[^"']*["'][^>]*>([^<]+)`, "gi");
+  const blogLinkRegex = new RegExp(`href=["'][^"']*\\/(${slugPattern})\\/[^"']+["'][^>]*>([^<]+)`, "gi");
   let blogMatch;
   while ((blogMatch = blogLinkRegex.exec(html)) !== null) {
-    const title = blogMatch[2];
-    if (title && title.trim().length > 10 && !blogTitles.includes(title.trim())) {
-      blogTitles.push(title.trim().substring(0, 100));
+    const title = blogMatch[2].trim();
+    if (isValidBlogTitle(title) && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 150));
     }
   }
   
   // Also look for common blog listing patterns (div with class containing 'post', 'article', 'blog-item')
-  const postTitleRegex = /<(?:div|li)[^>]*class=["'][^"']*(?:post|article|blog-item|insight)[^"']*["'][^>]*>[\s\S]*?<(?:h[1-4]|a)[^>]*>([^<]{15,100})</gi;
+  const postTitleRegex = /<(?:div|li|section)[^>]*class=["'][^"']*(?:post|article|blog-item|insight|entry|card)[^"']*["'][^>]*>[\s\S]*?<(?:h[1-4]|a)[^>]*>([^<]{20,150})</gi;
   let postMatch;
   while ((postMatch = postTitleRegex.exec(html)) !== null) {
     const title = postMatch[1].trim();
-    if (title.length > 10 && !blogTitles.includes(title)) {
-      blogTitles.push(title.substring(0, 100));
+    if (isValidBlogTitle(title) && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 150));
+    }
+  }
+  
+  // For Wix/JavaScript sites: look for data attributes that often contain post info
+  const wixDataRegex = /data-(?:hook|testid|automation-id)=["'][^"']*(?:post|blog|article)[^"']*["'][^>]*>[\s\S]*?<[^>]*>([^<]{20,150})</gi;
+  let wixMatch;
+  while ((wixMatch = wixDataRegex.exec(html)) !== null) {
+    const title = wixMatch[1].trim();
+    if (isValidBlogTitle(title) && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 150));
+    }
+  }
+  
+  // Look for title/heading elements that might be blog post titles
+  const headingRegex = /<h[2-4][^>]*class=["'][^"']*(?:title|heading|post|entry)[^"']*["'][^>]*>([^<]{20,150})</gi;
+  let headingMatch;
+  while ((headingMatch = headingRegex.exec(html)) !== null) {
+    const title = headingMatch[1].trim();
+    if (isValidBlogTitle(title) && !blogTitles.includes(title)) {
+      blogTitles.push(title.substring(0, 150));
     }
   }
   
@@ -224,7 +259,7 @@ function extractBlogInfo(html: string): CrawlSummary["blogSnapshot"] | undefined
   
   return {
     postCount: blogTitles.length,
-    latestTitles: blogTitles.slice(0, 5),
+    latestTitles: blogTitles.slice(0, 10), // Return up to 10 titles
   };
 }
 
