@@ -184,6 +184,43 @@ export default function CompanyBaseline() {
     },
   });
 
+  const refreshSocialMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      const response = await fetch(`/api/company-profile/${profileId}/refresh-social`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to refresh social data");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      const linkedInData = data.results?.linkedin;
+      if (linkedInData?.success) {
+        toast({
+          title: "Social Data Refreshed",
+          description: `LinkedIn: ${linkedInData.followers?.toLocaleString() || 0} followers, ${linkedInData.posts || 0} recent posts`,
+        });
+      } else {
+        toast({
+          title: "Social Refresh Complete",
+          description: linkedInData?.error || "No LinkedIn data found",
+          variant: "default",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const monitorAllMutation = useMutation({
     mutationFn: async (profileId: string) => {
       const response = await fetch(`/api/company-profile/${profileId}/monitor-all`, {
@@ -672,13 +709,29 @@ export default function CompanyBaseline() {
                         onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
                         disabled={!companyProfile?.id || refreshAllMutation.isPending}
                         data-testid="button-refresh-all"
+                        title="Crawl website pages and fetch LinkedIn data"
                       >
                         {refreshAllMutation.isPending ? (
                           <Loader2 className="w-4 h-4 animate-spin mr-2" />
                         ) : (
                           <RefreshCw className="w-4 h-4 mr-2" />
                         )}
-                        Refresh All Data
+                        Refresh Website
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => companyProfile?.id && refreshSocialMutation.mutate(companyProfile.id)}
+                        disabled={!companyProfile?.id || refreshSocialMutation.isPending || !companyProfile?.linkedInUrl}
+                        data-testid="button-refresh-social"
+                        title="Refresh LinkedIn data only (faster)"
+                      >
+                        {refreshSocialMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Linkedin className="w-4 h-4 mr-2" />
+                        )}
+                        Refresh Social
                       </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>

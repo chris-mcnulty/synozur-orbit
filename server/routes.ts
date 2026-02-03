@@ -1738,6 +1738,57 @@ Return ONLY the JSON object, no other text.`;
     }
   });
 
+  // Social-only refresh: Just LinkedIn/blog without website crawl (faster)
+  app.post("/api/company-profile/:id/refresh-social", async (req, res) => {
+    console.log(`[Social Refresh] Endpoint called for profile ID: ${req.params.id}`);
+    try {
+      const ctx = await getRequestContext(req);
+      const profileId = req.params.id;
+      const profile = await storage.getCompanyProfile(profileId);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+      
+      const results: any = { linkedin: null, errors: [] };
+      
+      console.log(`[Social Refresh] Starting social refresh for ${profile.companyName}`);
+      
+      // Refresh LinkedIn only
+      if (profile.linkedInUrl) {
+        try {
+          console.log(`[Social Refresh] Fetching LinkedIn data for ${profile.linkedInUrl}`);
+          const { monitorCompanyProfileSocialMedia } = await import("./services/social-monitoring");
+          await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
+          
+          const updatedProfile = await storage.getCompanyProfile(profile.id);
+          const linkedInData = updatedProfile?.linkedInEngagement as any;
+          console.log(`[Social Refresh] LinkedIn result: followers=${linkedInData?.followers || 'none'}, posts=${linkedInData?.posts || 'none'}`);
+          results.linkedin = { 
+            success: !!linkedInData?.followers, 
+            followers: linkedInData?.followers || 0,
+            posts: linkedInData?.posts || 0,
+          };
+        } catch (linkedInError: any) {
+          console.error(`[Social Refresh] LinkedIn error:`, linkedInError.message);
+          results.linkedin = { success: false, error: linkedInError.message };
+          results.errors.push(`LinkedIn: ${linkedInError.message}`);
+        }
+      } else {
+        console.log(`[Social Refresh] No LinkedIn URL configured`);
+        results.linkedin = { success: false, error: "No LinkedIn URL configured" };
+      }
+      
+      console.log(`[Social Refresh] Completed for ${profile.companyName}:`, JSON.stringify(results));
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Batch monitor: All competitor products in a project
   app.post("/api/projects/:id/monitor-all", async (req, res) => {
     try {
