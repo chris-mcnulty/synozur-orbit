@@ -562,19 +562,34 @@ export default function Dashboard() {
                     View & Edit <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </Link>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => generateSummary.mutate()}
-                  disabled={generateSummary.isPending}
-                  data-testid="button-refresh-exec-summary"
-                >
-                  {generateSummary.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                </Button>
+                {(!execSummary.data?.companySnapshot && !execSummary.data?.marketPosition) ? (
+                  <Button 
+                    size="sm"
+                    onClick={() => generateSummary.mutate()}
+                    disabled={generateSummary.isPending}
+                    data-testid="button-generate-exec-summary"
+                  >
+                    {generateSummary.isPending ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating...</>
+                    ) : (
+                      <><Sparkles className="w-4 h-4 mr-2" /> Generate</>
+                    )}
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => generateSummary.mutate()}
+                    disabled={generateSummary.isPending}
+                    data-testid="button-refresh-exec-summary"
+                  >
+                    {generateSummary.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
