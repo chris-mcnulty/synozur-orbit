@@ -426,7 +426,7 @@ export default function CompetitorDetail() {
                   </a>
                   <span className="text-border hidden sm:inline">|</span>
                   <span className="flex items-center">
-                    <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl || "Never"}
+                    <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl ? new Date(competitor.lastCrawl).toLocaleString() : "Never"}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 mt-2">

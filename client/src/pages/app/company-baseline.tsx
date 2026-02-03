@@ -1148,7 +1148,7 @@ export default function CompanyBaseline() {
                             </span>
                             {companyProfile.lastCrawl && (
                               <span className="text-xs text-muted-foreground">
-                                Last crawled: {new Date(companyProfile.lastCrawl).toLocaleDateString()}
+                                Last crawled: {new Date(companyProfile.lastCrawl).toLocaleString()}
                               </span>
                             )}
                           </div>
