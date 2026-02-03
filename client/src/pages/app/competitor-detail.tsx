@@ -13,6 +13,7 @@ import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileTex
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
@@ -630,21 +631,12 @@ export default function CompetitorDetail() {
               <Button 
                 variant="outline" 
                 className="gap-2"
-                onClick={() => crawlMutation.mutate()}
-                disabled={crawlMutation.isPending}
-              >
-                <RefreshCw className="h-4 w-4" /> {crawlMutation.isPending ? "Crawling..." : "Re-crawl"}
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="gap-2"
                 onClick={() => websiteMonitorMutation.mutate()}
                 disabled={websiteMonitorMutation.isPending}
-                data-testid="button-check-changes"
+                data-testid="button-scan-website"
               >
-                <Globe className="h-4 w-4" /> 
-                {websiteMonitorMutation.isPending ? "Checking..." : "Check for Changes"}
+                <RefreshCw className={cn("h-4 w-4", websiteMonitorMutation.isPending && "animate-spin")} /> 
+                {websiteMonitorMutation.isPending ? "Scanning..." : "Scan Website"}
               </Button>
               
               {hasSocialUrls && (
