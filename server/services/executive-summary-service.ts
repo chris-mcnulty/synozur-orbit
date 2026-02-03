@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import crypto from "crypto";
+import { calculateScores } from "./scoring-service";
 
 interface SummaryData {
   companySnapshot: string;
@@ -76,16 +77,37 @@ Revenue Range: ${profile.revenue || "Not specified"}
 ` : "No baseline company profile configured.";
 
   const competitorDetails = await Promise.all(competitors.slice(0, 8).map(async (c) => {
-    const scores = await storage.getCompetitorScore(c.id) as any;
     const comp = c as any;
-    console.log(`[ExecutiveSummary] Competitor ${comp.name} scores:`, scores ? { overall: scores.overallScore, content: scores.contentScore, messaging: scores.messagingScore } : "No scores");
+    
+    // Try stored scores first, then calculate on-the-fly if not found
+    let storedScores = await storage.getCompetitorScore(c.id) as any;
+    let overallScore = storedScores?.overallScore || 0;
+    let contentScore = storedScores?.contentActivityScore || 0;
+    let marketPresence = storedScores?.marketPresenceScore || 0;
+    
+    // If no stored scores, calculate from competitor data
+    if (!storedScores || overallScore === 0) {
+      const calculatedScores = calculateScores(
+        comp.analysisData,
+        comp.linkedInEngagement,
+        comp.instagramEngagement,
+        comp.crawlData,
+        comp.blogSnapshot,
+        comp.lastCrawl || comp.lastAnalysis
+      );
+      overallScore = Math.round(calculatedScores.overallScore * 100) / 100;
+      contentScore = Math.round(calculatedScores.contentActivityScore * 100) / 100;
+      marketPresence = Math.round(calculatedScores.marketPresenceScore * 100) / 100;
+    }
+    
+    console.log(`[ExecutiveSummary] Competitor ${comp.name} scores:`, { overall: overallScore, content: contentScore, marketPresence });
     return {
       name: comp.name,
       url: comp.url,
-      description: comp.description,
-      score: scores?.overallScore || 0,
-      contentScore: scores?.contentScore || 0,
-      messagingScore: scores?.messagingScore || 0,
+      description: comp.analysisData?.summary || "",
+      score: overallScore,
+      contentScore: contentScore,
+      marketPresenceScore: marketPresence,
       linkedInUrl: comp.linkedInUrl,
       blogPostCount: comp.blogSnapshot?.postCount || 0,
       headquarters: comp.headquarters,
@@ -95,7 +117,7 @@ Revenue Range: ${profile.revenue || "Not specified"}
   
   const competitorContext = competitorDetails.length > 0 
     ? competitorDetails.map((c, i) => 
-        `${i + 1}. ${c.name} (Overall: ${c.score}/100, Content: ${c.contentScore}/100, Messaging: ${c.messagingScore}/100)${c.description ? ` - ${c.description.substring(0, 150)}` : ""}${c.employeeCount ? ` | Employees: ${c.employeeCount}` : ""}${c.blogPostCount > 0 ? ` | ${c.blogPostCount} blog posts` : ""}`
+        `${i + 1}. ${c.name} (Overall: ${c.score}/100, Content: ${c.contentScore}/100, Market Presence: ${c.marketPresenceScore}/100)${c.description ? ` - ${c.description.substring(0, 150)}` : ""}${c.employeeCount ? ` | Employees: ${c.employeeCount}` : ""}${c.blogPostCount > 0 ? ` | ${c.blogPostCount} blog posts` : ""}`
       ).join("\n")
     : "No competitors analyzed yet.";
 
@@ -196,10 +218,10 @@ CRITICAL FORMATTING RULES:
 Sections needed: ${sectionsToGenerate.join(", ")}
 
 Guidelines for each section:
-- companySnapshot: Include company fundamentals (industry, size, location if known), core value proposition, target market, and competitive positioning summary. Reference specific data points from the grounding documents and analysis.
-- marketPosition: Describe current competitive standing with actual score context from the data above. Highlight key differentiators, relative strengths/weaknesses, and positioning gaps. Be specific about where the company leads or lags versus named competitors.
-- competitiveLandscape: Name the top 3-5 competitors with their actual scores from the data above. Identify dominant themes and messaging patterns in the market. Highlight specific competitive gaps that represent vulnerabilities or opportunities.
-- opportunities: List 3-5 concrete, prioritized strategic opportunities as flowing sentences. Each should include the opportunity, why it matters, and a specific recommended action. Reference competitor weaknesses or market gaps.
+- companySnapshot: Include company fundamentals (industry, size, location if known), core value proposition, target market, and competitive positioning summary. Reference specific data points from the grounding documents and analysis. Use the data provided - don't say information is "unspecified" if data exists above.
+- marketPosition: Describe current competitive standing with actual score context from the competitor data above. If competitors have calculated scores (Overall, Content, Market Presence), reference those specific numbers. Highlight key differentiators and relative strengths/weaknesses.
+- competitiveLandscape: Name the top 3-5 competitors with their actual calculated scores from the data above. Use the specific Overall/Content/Market Presence scores provided. Identify dominant themes and highlight competitive gaps.
+- opportunities: List 3-5 concrete, prioritized strategic opportunities as flowing sentences. Each should include the opportunity, why it matters, and a specific recommended action. Reference competitor weaknesses or market gaps from the analysis data.
 
 Response format (raw JSON only, absolutely no markdown):
 {
