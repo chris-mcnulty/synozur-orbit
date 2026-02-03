@@ -21,6 +21,8 @@ export async function generateExecutiveSummary(
   companyProfileId?: string,
   lockedSections: string[] = []
 ): Promise<SummaryData> {
+  console.log("[ExecutiveSummary] Starting generation for tenant:", tenantDomain, "market:", marketId);
+  
   const tenant = await storage.getTenantByDomain(tenantDomain);
   if (!tenant) throw new Error("Tenant not found");
 
@@ -34,6 +36,8 @@ export async function generateExecutiveSummary(
   const analysis = await storage.getLatestAnalysisByContext(contextFilter);
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
   const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter);
+  
+  console.log("[ExecutiveSummary] Data loaded - Competitors:", competitors.length, "Docs:", groundingDocs.length, "Recs:", recommendations.length);
   
   const existingSummary = await storage.getExecutiveSummaryByContext(contextFilter);
   
@@ -180,15 +184,20 @@ Response format (JSON only, no markdown code blocks):
   ${sectionsToGenerate.includes("opportunities") ? '"opportunities": "Prioritized strategic opportunities with specific actions"' : ""}
 }`;
 
+  console.log("[ExecutiveSummary] Calling Anthropic API with prompt length:", prompt.length, "chars, sections:", sectionsToGenerate);
+  
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }]
     });
+    
+    console.log("[ExecutiveSummary] API response received, usage:", response.usage);
 
     const content = response.content[0];
     if (content.type === "text") {
+      console.log("[ExecutiveSummary] Response text length:", content.text.length);
       const cleanJson = content.text.replace(/```json\n?|\n?```/g, "").trim();
       const generated = JSON.parse(cleanJson);
       
@@ -205,8 +214,9 @@ Response format (JSON only, no markdown code blocks):
         summaryData.opportunities = generated.opportunities;
       }
     }
-  } catch (error) {
-    console.error("[ExecutiveSummary] AI generation failed:", error);
+  } catch (error: any) {
+    console.error("[ExecutiveSummary] AI generation failed:", error?.message || error);
+    console.error("[ExecutiveSummary] Full error:", JSON.stringify(error, null, 2));
     if (!summaryData.companySnapshot && companyProfile) {
       summaryData.companySnapshot = `${companyProfile.companyName} is a company with active competitive intelligence tracking.`;
     }
