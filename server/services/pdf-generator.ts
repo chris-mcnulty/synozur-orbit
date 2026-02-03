@@ -330,7 +330,12 @@ function generateReportHtml(data: ReportData): string {
   `;
   }).filter(Boolean).join("");
 
-  const gapCards = (data.analysis?.gaps || []).map((gap: any) => {
+  // Filter to only show active/accepted gaps, not dismissed
+  const activeGaps = (data.analysis?.gaps || []).filter((gap: any) => 
+    !gap.status || gap.status === "pending" || gap.status === "accepted"
+  );
+  
+  const gapCards = activeGaps.map((gap: any) => {
     const gapArea = gap.area || gap.title || gap.name || "Gap Identified";
     const gapDesc = gap.observation || gap.description || gap.details || gap.summary || "";
     const gapOpp = gap.opportunity || gap.recommendation || "";
@@ -745,7 +750,7 @@ function generateReportHtml(data: ReportData): string {
         ${data.competitors.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Competitors Overview (${data.competitors.length})</span></div>` : ""}
         ${data.analysis?.themes?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Competitive Themes</span></div>` : ""}
         ${data.analysis?.messaging?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Messaging Comparison</span></div>` : ""}
-        ${data.analysis?.gaps?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Gap Analysis (${data.analysis.gaps.length} gaps identified)</span></div>` : ""}
+        ${activeGaps.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Gap Analysis (${activeGaps.length} gaps identified)</span></div>` : ""}
         ${data.recommendations.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Recommendations (${data.recommendations.length})</span></div>` : ""}
         ${data.battlecards.length > 0 ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Battlecards (${data.battlecards.length})</span></div>` : ""}
         ${data.marketingPlans?.length ? `<div style="display: flex; justify-content: space-between; border-bottom: 1px dotted #cbd5e1; padding: 4px 0;"><span style="font-weight: 500;">Marketing Plans (${data.marketingPlans.length})</span></div>` : ""}
@@ -911,8 +916,8 @@ function generateReportHtml(data: ReportData): string {
     </div>
 
     <div class="section">
-      <div class="section-title">Identified Gaps</div>
-      ${gapCards || '<div class="empty-state">No gaps identified. Run analysis to discover opportunities.</div>'}
+      <div class="section-title">Identified Gaps${activeGaps.length > 0 ? ` (${activeGaps.length})` : ''}</div>
+      ${gapCards || '<div class="empty-state">No active gaps identified. Run analysis to discover opportunities.</div>'}
     </div>
 
     <div class="section">
