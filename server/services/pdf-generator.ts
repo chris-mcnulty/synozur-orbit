@@ -95,9 +95,17 @@ interface RecentActivityItem {
   date?: Date;
 }
 
+interface ExecutiveSummaryData {
+  companySnapshot: string;
+  marketPosition: string;
+  competitiveLandscape: string;
+  opportunities: string;
+}
+
 interface ReportData {
   companyProfile: CompanyProfile | null;
   companyName: string;
+  executiveSummary?: ExecutiveSummaryData | null;
   competitors: CompetitorWithAnalysis[];
   analysis: {
     themes: any[];
@@ -720,6 +728,68 @@ function generateReportHtml(data: ReportData): string {
   
   <div class="page-break"></div>
 
+  ${data.executiveSummary ? `
+  <div class="content-wrapper">
+    <div class="header">
+      ${headerLogo}
+      <div class="report-meta">
+        <div>${formattedDate}</div>
+        <div>Executive Summary</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title" style="font-size: 22px; border-bottom: 2px solid #6366F1; padding-bottom: 10px; margin-bottom: 24px;">Executive Summary</div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <div style="width: 32px; height: 32px; background: #6366f1; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 16px;">🏢</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 600; color: #1e293b;">Company Snapshot</div>
+          </div>
+          <div style="color: #475569; font-size: 13px; line-height: 1.7;">${escapeHtml(data.executiveSummary.companySnapshot || "")}</div>
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <div style="width: 32px; height: 32px; background: #10b981; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 16px;">🎯</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 600; color: #1e293b;">Market Position</div>
+          </div>
+          <div style="color: #475569; font-size: 13px; line-height: 1.7;">${escapeHtml(data.executiveSummary.marketPosition || "")}</div>
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <div style="width: 32px; height: 32px; background: #f59e0b; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 16px;">⚔️</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 600; color: #1e293b;">Competitive Landscape</div>
+          </div>
+          <div style="color: #475569; font-size: 13px; line-height: 1.7;">${escapeHtml(data.executiveSummary.competitiveLandscape || "")}</div>
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <div style="width: 32px; height: 32px; background: #8b5cf6; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 16px;">💡</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 600; color: #1e293b;">Opportunities</div>
+          </div>
+          <div style="color: #475569; font-size: 13px; line-height: 1.7;">${escapeHtml(data.executiveSummary.opportunities || "")}</div>
+        </div>
+      </div>
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+
+  <div class="page-break"></div>
+  ` : ""}
+
   <div class="content-wrapper">
     <div class="header">
       ${headerLogo}
@@ -1216,6 +1286,21 @@ export async function generatePdfReport(
     }
   }
 
+  // Fetch executive summary for baseline reports
+  let executiveSummary: ExecutiveSummaryData | null = null;
+  if (scope === "baseline") {
+    const execSummaryRecord = await storage.getExecutiveSummaryByContext(contextFilter);
+    if (execSummaryRecord && execSummaryRecord.content) {
+      const content = execSummaryRecord.content as any;
+      executiveSummary = {
+        companySnapshot: content.companySnapshot || "",
+        marketPosition: content.marketPosition || "",
+        competitiveLandscape: content.competitiveLandscape || "",
+        opportunities: content.opportunities || "",
+      };
+    }
+  }
+
   // For project-scoped reports, don't include market-level analysis (themes/messaging)
   // as it's not relevant to product-vs-product comparison
   const analysis = scope === "baseline" ? await storage.getLatestAnalysisByContext(contextFilter) : null;
@@ -1349,6 +1434,7 @@ export async function generatePdfReport(
   const reportData: ReportData = {
     companyProfile,
     companyName: companyProfile?.companyName || tenant.name || tenantDomain,
+    executiveSummary,
     competitors: competitorsWithAnalysis,
     analysis: analysis ? {
       themes: Array.isArray(analysis.themes) ? analysis.themes : [],
