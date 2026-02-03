@@ -28,6 +28,9 @@ interface CrawlSummary {
   crawlMethod?: "headless" | "http" | "mixed";
 }
 
+// Consolidated blog/content section URL slugs - used consistently throughout crawler
+const BLOG_SLUGS = ["blog", "blogs", "news", "insights", "insight", "articles", "article", "resources", "updates", "press", "media"];
+
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -196,8 +199,9 @@ function extractBlogInfo(html: string): CrawlSummary["blogSnapshot"] | undefined
     }
   }
   
-  // Look for links in blog/insights/news/articles sections
-  const blogLinkRegex = /href=["'][^"']*\/(blog|insights|insight|news|articles?)\/[^"']*["'][^>]*>([^<]+)</gi;
+  // Look for links in blog/insights/news/articles sections using consolidated slugs
+  const slugPattern = BLOG_SLUGS.join("|");
+  const blogLinkRegex = new RegExp(`href=["'][^"']*\\/(${slugPattern})\\/[^"']*["'][^>]*>([^<]+)`, "gi");
   let blogMatch;
   while ((blogMatch = blogLinkRegex.exec(html)) !== null) {
     const title = blogMatch[2];
@@ -261,7 +265,7 @@ function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   if (urlLower.includes("/product") || urlLower.includes("/pricing")) {
     return "products";
   }
-  if (urlLower.includes("/blog") || urlLower.includes("/insight") || urlLower.includes("/article") || urlLower.includes("/news")) {
+  if (BLOG_SLUGS.some(slug => urlLower.includes(`/${slug}`))) {
     return "blog";
   }
   if (urlLower.includes("/case") || urlLower.includes("/success") || urlLower.includes("/customer-stor")) {
@@ -331,10 +335,7 @@ function findKeyPages(html: string, baseUrl: string): KeyPages {
       if (!pages.products && (text.includes("product") || text.includes("pricing") || hrefLower.includes("/product"))) {
         pages.products = url.href;
       }
-      if (!pages.blog && (text.includes("blog") || text.includes("insight") || hrefLower.includes("/blog") || hrefLower.includes("/insight"))) {
-        pages.blog = url.href;
-      }
-      if (!pages.blog && (text.includes("news") || hrefLower.includes("/news") || hrefLower.includes("/article"))) {
+      if (!pages.blog && (BLOG_SLUGS.some(slug => text.includes(slug)) || BLOG_SLUGS.some(slug => hrefLower.includes(`/${slug}`)))) {
         pages.blog = url.href;
       }
       if (!pages.caseStudies && (text.includes("case stud") || text.includes("success stor") || hrefLower.includes("/case") || hrefLower.includes("/success"))) {
