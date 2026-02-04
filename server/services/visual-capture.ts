@@ -24,7 +24,6 @@ async function uploadToObjectStorage(
 
     await file.save(buffer, {
       contentType,
-      public: true,
     });
 
     return `https://storage.googleapis.com/${BUCKET_ID}/public/competitor-assets/${filename}`;

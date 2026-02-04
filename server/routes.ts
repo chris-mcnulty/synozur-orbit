@@ -4088,7 +4088,6 @@ Return ONLY valid JSON, no markdown or explanations.`;
       
       await gcsFile.save(file.data, {
         contentType: file.mimetype,
-        public: true,
       });
 
       const url = `https://storage.googleapis.com/${BUCKET_ID}/public/logos/${filename}`;
