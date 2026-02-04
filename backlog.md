@@ -262,6 +262,17 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
 **Effort**: High (Phase 1 complete, remaining phases in progress)
 
+#### Product Competitive Position Summaries
+**Status**: Backlogged
+When products are attached to a baseline company, generate and display 2-3 sentence competitive position summaries:
+- [ ] Add `competitivePositionSummary` field to products schema
+- [ ] Generate summary during full regeneration (rebuild all) process
+- [ ] Display product summaries on Overview page (not just product names)
+- [ ] Include summaries in Capstone PDF reports (listing just product names isn't helpful)
+- [ ] Allow manual editing of summaries if needed
+- [ ] AI generates summary based on product features, competitor analysis, and market positioning
+**Effort**: Medium
+
 #### Editable GTM Plan
 **Status**: Not implemented
 The draft GTM plan is the primary strategic input for Marketing Planner task generation. Users should be able to edit it directly:
