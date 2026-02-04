@@ -2603,6 +2603,57 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // Delete a report (Domain Admin or Global Admin only)
+  app.delete("/api/reports/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      
+      if (!user || (user.role !== "Domain Admin" && user.role !== "Global Admin")) {
+        return res.status(403).json({ error: "Admin access required to delete reports" });
+      }
+      
+      const report = await storage.getReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ error: "Report not found" });
+      }
+      
+      if (report.tenantDomain !== ctx.tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      await storage.deleteReport(req.params.id);
+      res.json({ success: true, message: "Report deleted" });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Delete report error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Clear all recommendations (Domain Admin or Global Admin only)
+  app.delete("/api/recommendations/clear", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      
+      if (!user || (user.role !== "Domain Admin" && user.role !== "Global Admin")) {
+        return res.status(403).json({ error: "Admin access required to clear recommendations" });
+      }
+      
+      const count = await storage.clearRecommendationsByContext(toContextFilter(ctx));
+      res.json({ success: true, message: `${count} recommendations cleared` });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Clear recommendations error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== ANALYSIS ROUTES ====================
 
   app.get("/api/analysis", async (req, res) => {

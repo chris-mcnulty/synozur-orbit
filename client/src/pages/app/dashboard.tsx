@@ -1234,7 +1234,7 @@ export default function Dashboard() {
             </Link>
           </CardHeader>
           <CardContent>
-            {recommendations.length === 0 ? (
+            {recommendations.filter((r: any) => r.status !== "dismissed").length === 0 ? (
               <div className="text-center py-8">
                 <Sparkles className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
                 <p className="text-sm text-muted-foreground">No insights yet</p>
@@ -1247,7 +1247,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {recommendations.slice(0, 4).map((rec: any) => (
+                {recommendations.filter((r: any) => r.status !== "dismissed").slice(0, 4).map((rec: any) => (
                   <div key={rec.id} className="p-3 rounded-lg border border-border hover:border-primary/30 transition-colors" data-testid={`insight-${rec.id}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 flex-1 min-w-0">

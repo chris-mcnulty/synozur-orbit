@@ -197,6 +197,7 @@ export interface IStorage {
   getReportsByTenant(tenantDomain: string): Promise<Report[]>;
   getReport(id: string): Promise<Report | undefined>;
   createReport(report: InsertReport): Promise<Report>;
+  deleteReport(id: string): Promise<void>;
   
   // Analysis methods
   getLatestAnalysis(): Promise<Analysis | undefined>;
@@ -370,6 +371,7 @@ export interface IStorage {
   getReportsByContext(ctx: ContextFilter): Promise<(Report & { marketName?: string })[]>;
   getReportByIdWithContext(id: string, ctx: ContextFilter): Promise<Report | undefined>;
   getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]>;
+  clearRecommendationsByContext(ctx: ContextFilter): Promise<number>;
   getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
   getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]>;
   getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]>;
@@ -713,6 +715,10 @@ export class DatabaseStorage implements IStorage {
       .values(insertReport)
       .returning();
     return report;
+  }
+
+  async deleteReport(id: string): Promise<void> {
+    await db.delete(reports).where(eq(reports.id, id));
   }
 
   // Analysis methods
@@ -2100,6 +2106,22 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(recommendations.createdAt));
+  }
+
+  async clearRecommendationsByContext(ctx: ContextFilter): Promise<number> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(recommendations.marketId, ctx.marketId), isNull(recommendations.marketId))
+      : eq(recommendations.marketId, ctx.marketId);
+    
+    const result = await db.delete(recommendations)
+      .where(
+        and(
+          eq(recommendations.tenantDomain, ctx.tenantDomain),
+          marketCondition
+        )
+      )
+      .returning();
+    return result.length;
   }
 
   async getActivityByContext(ctx: ContextFilter): Promise<Activity[]> {

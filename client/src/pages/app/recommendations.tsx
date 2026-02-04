@@ -5,8 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download, Trash2 } from "lucide-react";
+import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -121,6 +132,38 @@ export default function Recommendations() {
     },
     onError: () => {
       toast.error("Failed to delete recommendation");
+    },
+  });
+
+  const { data: user } = useQuery({
+    queryKey: ["/api/me"],
+    queryFn: async () => {
+      const response = await fetch("/api/me", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/recommendations/clear", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to clear recommendations");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      toast.success(data.message || "All recommendations cleared");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
     },
   });
 
@@ -286,12 +329,47 @@ export default function Recommendations() {
 
   return (
     <AppLayout>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
-          <Sparkles className="text-primary h-8 w-8" />
-          AI Recommendations
-        </h1>
-        <p className="text-muted-foreground">Actionable insights generated from your competitive data.</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
+            <Sparkles className="text-primary h-8 w-8" />
+            AI Recommendations
+          </h1>
+          <p className="text-muted-foreground">Actionable insights generated from your competitive data.</p>
+        </div>
+        {isAdmin && recommendations.length > 0 && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                data-testid="clear-all-recommendations"
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Clear All
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all recommendations?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all {recommendations.length} recommendations. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => clearAllMutation.mutate()}
+                  disabled={clearAllMutation.isPending}
+                >
+                  {clearAllMutation.isPending ? "Clearing..." : "Clear All"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
 
       <Tabs defaultValue="active" className="space-y-6">

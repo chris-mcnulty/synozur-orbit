@@ -3,8 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -63,6 +63,45 @@ export default function Reports() {
       const response = await fetch("/api/projects", { credentials: "include" });
       if (!response.ok) return [];
       return response.json();
+    },
+  });
+
+  const { data: user } = useQuery({
+    queryKey: ["/api/me"],
+    queryFn: async () => {
+      const response = await fetch("/api/me", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
+  const deleteReportMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/reports/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete report");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+      toast({
+        title: "Report deleted",
+        description: "The report has been removed.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -446,16 +485,28 @@ export default function Reports() {
                   )}
                 </div>
               </CardHeader>
-              <CardFooter className="pt-0">
+              <CardFooter className="pt-0 gap-2">
                 <Button 
                   variant="outline" 
                   size="sm"
-                  className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-all" 
+                  className="flex-1 group-hover:bg-primary group-hover:text-primary-foreground transition-all" 
                   onClick={() => handleDownloadReport(report)}
                   data-testid={`button-download-${report.id}`}
                 >
                   <Download className="w-4 h-4 mr-2" /> Download
                 </Button>
+                {isAdmin && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => deleteReportMutation.mutate(report.id)}
+                    disabled={deleteReportMutation.isPending}
+                    data-testid={`button-delete-${report.id}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           ))}
