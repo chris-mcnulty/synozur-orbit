@@ -3,10 +3,11 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -704,36 +705,50 @@ export default function CompanyBaseline() {
                         )}
                         Check All for Changes
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
-                        disabled={!companyProfile?.id || refreshAllMutation.isPending}
-                        data-testid="button-refresh-all"
-                        title="Crawl website pages and fetch LinkedIn data"
-                      >
-                        {refreshAllMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Refresh Website
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => companyProfile?.id && refreshSocialMutation.mutate(companyProfile.id)}
-                        disabled={!companyProfile?.id || refreshSocialMutation.isPending || !companyProfile?.linkedInUrl}
-                        data-testid="button-refresh-social"
-                        title="Refresh LinkedIn data only (faster)"
-                      >
-                        {refreshSocialMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Linkedin className="w-4 h-4 mr-2" />
-                        )}
-                        Refresh Social
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                            data-testid="button-refresh-dropdown"
+                          >
+                            {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            Refresh Data
+                            <ChevronDown className="w-3 h-3 ml-2" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuLabel>Refresh Options</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
+                            disabled={!companyProfile?.id || refreshAllMutation.isPending}
+                            data-testid="menu-refresh-website"
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            <div className="flex flex-col">
+                              <span className="font-medium">Refresh Website</span>
+                              <span className="text-xs text-muted-foreground">Crawl all pages + LinkedIn (~3-5 min)</span>
+                            </div>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => companyProfile?.id && refreshSocialMutation.mutate(companyProfile.id)}
+                            disabled={!companyProfile?.id || refreshSocialMutation.isPending || !companyProfile?.linkedInUrl}
+                            data-testid="menu-refresh-social"
+                          >
+                            <Linkedin className="w-4 h-4 mr-2" />
+                            <div className="flex flex-col">
+                              <span className="font-medium">Refresh Social Only</span>
+                              <span className="text-xs text-muted-foreground">LinkedIn only, faster (~30s)</span>
+                            </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm" onClick={openProfileDialog} data-testid="button-edit-profile">

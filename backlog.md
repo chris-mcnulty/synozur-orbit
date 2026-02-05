@@ -178,8 +178,8 @@
 **Proposed Quick Wins (Phase 1: 1-2 weeks)**:
 - [x] Global Refresh Status Indicator (header notification with progress)
 - [x] Data Staleness Indicators (🟢🟡🔴 dots throughout UI)
-- [ ] Consolidate Duplicate Buttons (single dropdown per page)
-- [ ] Contextual Tooltips (explain what each action does, time/cost estimates)
+- [x] Consolidate Duplicate Buttons (single dropdown per page)
+- [x] Contextual Tooltips (explain what each action does, time/cost estimates)
 
 **Proposed Core Improvements (Phase 2: 2-3 weeks)**:
 - [ ] Command Palette (Cmd+K fuzzy search for all actions)
