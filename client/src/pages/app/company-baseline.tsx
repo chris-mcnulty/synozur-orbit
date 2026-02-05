@@ -16,11 +16,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import StalenessDot from "@/components/ui/StalenessDot";
+import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 
 export default function CompanyBaseline() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
   const [logoUploadTab, setLogoUploadTab] = useState<"url" | "upload">("url");
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -705,50 +707,20 @@ export default function CompanyBaseline() {
                         )}
                         Check All for Changes
                       </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
-                            data-testid="button-refresh-dropdown"
-                          >
-                            {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
-                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            ) : (
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                            )}
-                            Refresh Data
-                            <ChevronDown className="w-3 h-3 ml-2" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                          <DropdownMenuLabel>Refresh Options</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
-                            disabled={!companyProfile?.id || refreshAllMutation.isPending}
-                            data-testid="menu-refresh-website"
-                          >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            <div className="flex flex-col">
-                              <span className="font-medium">Refresh Website</span>
-                              <span className="text-xs text-muted-foreground">Crawl all pages + LinkedIn (~3-5 min)</span>
-                            </div>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => companyProfile?.id && refreshSocialMutation.mutate(companyProfile.id)}
-                            disabled={!companyProfile?.id || refreshSocialMutation.isPending || !companyProfile?.linkedInUrl}
-                            data-testid="menu-refresh-social"
-                          >
-                            <Linkedin className="w-4 h-4 mr-2" />
-                            <div className="flex flex-col">
-                              <span className="font-medium">Refresh Social Only</span>
-                              <span className="text-xs text-muted-foreground">LinkedIn only, faster (~30s)</span>
-                            </div>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRefreshStrategyOpen(true)}
+                        disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                        data-testid="button-refresh-strategy"
+                      >
+                        {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Refresh Data
+                      </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm" onClick={openProfileDialog} data-testid="button-edit-profile">
@@ -1474,14 +1446,37 @@ export default function CompanyBaseline() {
         )}
       </div>
       {companyProfile && (
-        <ManualResearchDialog
-          open={manualResearchOpen}
-          onOpenChange={setManualResearchOpen}
-          entityType="company"
-          entityId={companyProfile.id}
-          entityName={companyProfile.companyName}
-          entityUrl={companyProfile.websiteUrl}
-        />
+        <>
+          <ManualResearchDialog
+            open={manualResearchOpen}
+            onOpenChange={setManualResearchOpen}
+            entityType="company"
+            entityId={companyProfile.id}
+            entityName={companyProfile.companyName}
+            entityUrl={companyProfile.websiteUrl}
+          />
+          <RefreshStrategyDialog
+            open={refreshStrategyOpen}
+            onOpenChange={setRefreshStrategyOpen}
+            entityName={companyProfile.companyName}
+            entityType="company"
+            sources={{
+              website: { lastUpdated: companyProfile.lastCrawl },
+              social: { lastUpdated: companyProfile.lastCrawl },
+            }}
+            onConfirm={async (selectedSources, timing) => {
+              if (selectedSources.includes("website")) {
+                await refreshAllMutation.mutateAsync(companyProfile.id);
+              } else if (selectedSources.includes("social")) {
+                await refreshSocialMutation.mutateAsync(companyProfile.id);
+              }
+              toast({
+                title: "Refresh Started",
+                description: `Refreshing ${selectedSources.join(", ")} for ${companyProfile.companyName}`,
+              });
+            }}
+          />
+        </>
       )}
     </AppLayout>
   );

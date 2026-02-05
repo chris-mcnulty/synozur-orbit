@@ -183,7 +183,7 @@
 
 **Proposed Core Improvements (Phase 2: 2-3 weeks)**:
 - [x] Command Palette (Cmd+K fuzzy search for all actions)
-- [ ] Unified Refresh Strategy Dialog (intelligent guidance)
+- [x] Unified Refresh Strategy Dialog (intelligent guidance)
 - [x] Batch Operations (select multiple, refresh all)
 - [x] Improved Job Status (make admin panel available to all)
 
