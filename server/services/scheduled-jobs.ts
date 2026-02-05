@@ -89,6 +89,36 @@ async function trackJobComplete(
   }
 }
 
+// Clean up jobs that have been running for too long (stuck jobs)
+async function cleanupStuckJobs(): Promise<void> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const stuckJobs = await storage.getRunningJobs();
+  
+  const jobsToFail = stuckJobs.filter(job => {
+    if (!job.startedAt) return true;
+    return new Date(job.startedAt) < oneHourAgo;
+  });
+  
+  if (jobsToFail.length > 0) {
+    console.log(`[Scheduled Jobs] Cleaning up ${jobsToFail.length} stuck job(s)...`);
+    for (const job of jobsToFail) {
+      try {
+        await storage.updateScheduledJobRun(job.id, {
+          status: "failed",
+          completedAt: new Date(),
+          result: { error: "Job timed out - automatically marked as failed after running too long" },
+          errorMessage: "Job timed out after 1 hour",
+        });
+        console.log(`[Scheduled Jobs] Marked stuck job ${job.id} (${job.jobType}) as failed`);
+      } catch (error) {
+        console.error(`[Scheduled Jobs] Failed to clean up stuck job ${job.id}:`, error);
+      }
+    }
+  } else {
+    console.log("[Scheduled Jobs] No stuck jobs to clean up");
+  }
+}
+
 async function trackJobRun<T>(
   jobType: string,
   tenantDomain: string,
@@ -994,6 +1024,12 @@ export function startScheduledJobs(): void {
     }
   }, 60 * 60 * 1000);
 
+  // CRITICAL: Clean up any stuck jobs from previous runs
+  // Jobs running for more than 1 hour are likely stuck and should be marked as failed
+  cleanupStuckJobs().catch(err => {
+    console.error("[Scheduled Jobs] Error cleaning up stuck jobs:", err);
+  });
+  
   // CRITICAL: Run jobs immediately on startup to catch up after app sleep
   // This ensures overdue jobs run even if app was sleeping for days
   console.log("[Scheduled Jobs] Running initial job sweep for any overdue items...");
