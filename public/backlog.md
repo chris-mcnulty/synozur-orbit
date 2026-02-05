@@ -160,6 +160,38 @@
 - [ ] Export chart data as CSV
 **Effort**: High (data collection expansion required first)
 
+### 3.8 UX Optimization: Refresh/Rebuild Discoverability & Flow ✅
+**Status**: Phases 1-3 Implemented
+**Problem**: Users must navigate 8+ different pages to trigger rebuild/refresh/recrawl actions, creating poor discoverability and fragmented workflow
+**Documentation**: See `docs/ux-optimization-proposal.md` and `docs/ux-optimization-summary.md`
+
+**Phase 1: Quick Wins (Completed)**:
+- [x] Global Refresh Status Indicator (header notification with progress)
+- [x] Data Staleness Indicators (🟢🟡🔴 dots throughout UI)
+- [x] Consolidate Duplicate Buttons (single dropdown per page)
+- [x] Contextual Tooltips (explain what each action does, time/cost estimates)
+
+**Phase 2: Core Improvements (Completed)**:
+- [x] Command Palette (Cmd+K fuzzy search for all actions)
+- [x] Unified Refresh Strategy Dialog (intelligent guidance)
+- [x] Batch Operations (select multiple, refresh all)
+- [x] Improved Job Status (make admin panel available to all)
+
+**Phase 3: Advanced Features (Completed)**:
+- [x] Refresh Center Dashboard (dedicated page for all data ops at `/app/refresh-center`)
+- [x] Smart Suggestions (proactive toast prompts when data stale >7 days)
+- [x] Keyboard Shortcuts (Ctrl+Shift+R for Refresh Center, Ctrl+Shift+A for Analysis, Cmd/Ctrl+K for Command Palette)
+- [ ] Onboarding Tutorial (interactive guide) - Deferred to post-MVP
+
+**Achieved Impact**:
+- Unified refresh operations in dedicated Refresh Center
+- Proactive notifications prevent stale data going unnoticed
+- Power user keyboard shortcuts accelerate workflows
+- All three phases implemented and tested
+
+**Effort**: Completed
+**Priority**: Completed
+
 ---
 
 ## Post-MVP Roadmap (Year One)

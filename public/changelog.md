@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- UX Optimization Phase 3: Refresh Center & Smart Suggestions
+  - Dedicated Refresh Center page (`/app/refresh-center`) for managing all data refresh operations
+  - Quick action cards: Refresh Baseline, Refresh All Websites, Refresh All Social, View Job Queue
+  - Three tabs: Active Jobs (live status), Job History (past refreshes), Scheduled (monitoring schedule)
+  - Smart Suggestions with proactive toast notifications when data becomes stale (>7 days old)
+  - Dismissals stored in localStorage for 1 hour to prevent notification fatigue
+  - Keyboard shortcuts: Ctrl+Shift+R (Refresh Center), Ctrl+Shift+A (Analysis), Cmd/Ctrl+K (Command Palette)
+- UX Optimization Phase 2: Batch Operations & Command Palette
+  - Command Palette (Cmd/Ctrl+K) for quick navigation across the application
+  - Batch operations on Competitors page: select multiple competitors for bulk refresh
+  - Recent Jobs Panel showing latest crawl activity with status indicators
+  - Refresh Strategy Dialog for advanced scheduling options
+- UX Optimization Phase 1: Staleness Indicators & Refresh Controls
+  - Global refresh status indicator in header showing overall data freshness
+  - Data staleness dots throughout the UI (🟢 fresh <2 days, 🟡 aging 2-7 days, 🔴 stale >7 days)
+  - Consolidated refresh dropdown in header for quick access to common refresh actions
+  - Contextual tooltips explaining refresh options and data age
 - Company Profile fields for competitors (headquarters, founded year, revenue, funding raised)
   - View and edit company profile data on the Competitor Detail page (Overview tab)
   - Manual AI Research prompt now requests company profile information
