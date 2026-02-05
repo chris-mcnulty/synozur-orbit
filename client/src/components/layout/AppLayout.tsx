@@ -43,6 +43,7 @@ import { useQuery } from "@tanstack/react-query";
 import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
 import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDialog";
 import ContextBar from "@/components/layout/ContextBar";
+import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -488,6 +489,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             />
             <span className="text-sidebar-foreground/50">|</span>
             <span className="font-semibold text-base text-sidebar-foreground">Orbit</span>
+          </div>
+          <div className="ml-auto">
+            <RefreshStatusIndicator />
           </div>
         </header>
 

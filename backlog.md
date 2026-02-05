@@ -176,7 +176,7 @@
 - Admin Panel (job management)
 
 **Proposed Quick Wins (Phase 1: 1-2 weeks)**:
-- [ ] Global Refresh Status Indicator (header notification with progress)
+- [x] Global Refresh Status Indicator (header notification with progress)
 - [ ] Data Staleness Indicators (🟢🟡🔴 dots throughout UI)
 - [ ] Consolidate Duplicate Buttons (single dropdown per page)
 - [ ] Contextual Tooltips (explain what each action does, time/cost estimates)
