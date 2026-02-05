@@ -3,10 +3,11 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,11 +15,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import StalenessDot from "@/components/ui/StalenessDot";
+import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 
 export default function CompanyBaseline() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
   const [logoUploadTab, setLogoUploadTab] = useState<"url" | "upload">("url");
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -706,32 +710,16 @@ export default function CompanyBaseline() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => companyProfile?.id && refreshAllMutation.mutate(companyProfile.id)}
-                        disabled={!companyProfile?.id || refreshAllMutation.isPending}
-                        data-testid="button-refresh-all"
-                        title="Crawl website pages and fetch LinkedIn data"
+                        onClick={() => setRefreshStrategyOpen(true)}
+                        disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                        data-testid="button-refresh-strategy"
                       >
-                        {refreshAllMutation.isPending ? (
+                        {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
                           <Loader2 className="w-4 h-4 animate-spin mr-2" />
                         ) : (
                           <RefreshCw className="w-4 h-4 mr-2" />
                         )}
-                        Refresh Website
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => companyProfile?.id && refreshSocialMutation.mutate(companyProfile.id)}
-                        disabled={!companyProfile?.id || refreshSocialMutation.isPending || !companyProfile?.linkedInUrl}
-                        data-testid="button-refresh-social"
-                        title="Refresh LinkedIn data only (faster)"
-                      >
-                        {refreshSocialMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Linkedin className="w-4 h-4 mr-2" />
-                        )}
-                        Refresh Social
+                        Refresh Data
                       </Button>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
@@ -1200,9 +1188,16 @@ export default function CompanyBaseline() {
                               Website
                             </span>
                             {companyProfile.lastCrawl && (
-                              <span className="text-xs text-muted-foreground">
-                                Last crawled: {new Date(companyProfile.lastCrawl).toLocaleString()}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <StalenessDot 
+                                  lastUpdated={companyProfile.lastCrawl} 
+                                  label="Website data freshness"
+                                  size="sm"
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  Last crawled: {new Date(companyProfile.lastCrawl).toLocaleString()}
+                                </span>
+                              </div>
                             )}
                           </div>
                           <div className="pl-6 space-y-1">
@@ -1451,14 +1446,37 @@ export default function CompanyBaseline() {
         )}
       </div>
       {companyProfile && (
-        <ManualResearchDialog
-          open={manualResearchOpen}
-          onOpenChange={setManualResearchOpen}
-          entityType="company"
-          entityId={companyProfile.id}
-          entityName={companyProfile.companyName}
-          entityUrl={companyProfile.websiteUrl}
-        />
+        <>
+          <ManualResearchDialog
+            open={manualResearchOpen}
+            onOpenChange={setManualResearchOpen}
+            entityType="company"
+            entityId={companyProfile.id}
+            entityName={companyProfile.companyName}
+            entityUrl={companyProfile.websiteUrl}
+          />
+          <RefreshStrategyDialog
+            open={refreshStrategyOpen}
+            onOpenChange={setRefreshStrategyOpen}
+            entityName={companyProfile.companyName}
+            entityType="company"
+            sources={{
+              website: { lastUpdated: companyProfile.lastCrawl },
+              social: { lastUpdated: companyProfile.lastCrawl },
+            }}
+            onConfirm={async (selectedSources, timing) => {
+              if (selectedSources.includes("website")) {
+                await refreshAllMutation.mutateAsync(companyProfile.id);
+              } else if (selectedSources.includes("social")) {
+                await refreshSocialMutation.mutateAsync(companyProfile.id);
+              }
+              toast({
+                title: "Refresh Started",
+                description: `Refreshing ${selectedSources.join(", ")} for ${companyProfile.companyName}`,
+              });
+            }}
+          />
+        </>
       )}
     </AppLayout>
   );

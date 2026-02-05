@@ -160,6 +160,48 @@
 - [ ] Export chart data as CSV
 **Effort**: High (data collection expansion required first)
 
+### 3.8 UX Optimization: Refresh/Rebuild Discoverability & Flow 📋
+**Status**: Proposal created - NOT IMPLEMENTED
+**Problem**: Users must navigate 8+ different pages to trigger rebuild/refresh/recrawl actions, creating poor discoverability and fragmented workflow
+**Documentation**: See `docs/ux-optimization-proposal.md` and `docs/ux-optimization-summary.md`
+
+**Current State**: Refresh actions scattered across:
+- Data Sources (news refresh, 3 buttons)
+- Company Baseline (website + social refresh)
+- Competitor Detail (crawl, monitor, regenerate)
+- Analysis (3 modes + full regeneration)
+- Battlecards (regenerate per competitor)
+- Baseline Summary (generate/regenerate)
+- Competitors (analyze dropdown)
+- Admin Panel (job management)
+
+**Proposed Quick Wins (Phase 1: 1-2 weeks)**:
+- [x] Global Refresh Status Indicator (header notification with progress)
+- [x] Data Staleness Indicators (🟢🟡🔴 dots throughout UI)
+- [x] Consolidate Duplicate Buttons (single dropdown per page)
+- [x] Contextual Tooltips (explain what each action does, time/cost estimates)
+
+**Proposed Core Improvements (Phase 2: 2-3 weeks)**:
+- [x] Command Palette (Cmd+K fuzzy search for all actions)
+- [x] Unified Refresh Strategy Dialog (intelligent guidance)
+- [x] Batch Operations (select multiple, refresh all)
+- [x] Improved Job Status (make admin panel available to all)
+
+**Proposed Advanced Features (Phase 3: 3-4 weeks)**:
+- [ ] Refresh Center Dashboard (dedicated page for all data ops)
+- [ ] Smart Suggestions (proactive prompts when data stale)
+- [ ] Keyboard Shortcuts (power user accelerators)
+- [ ] Onboarding Tutorial (interactive guide)
+
+**Expected Impact**:
+- 70% reduction in time to find refresh actions
+- 50% decrease in support tickets about data freshness
+- 3x faster workflow with batch operations
+- 40% improvement in new user onboarding
+
+**Effort**: Low (Phase 1) to High (full implementation)
+**Priority**: High (major UX friction point)
+
 ---
 
 ## Post-MVP Roadmap (Year One)

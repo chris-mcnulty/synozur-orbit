@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import StalenessDot from "@/components/ui/StalenessDot";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -24,6 +26,8 @@ export default function Competitors() {
   const [url, setUrl] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [expandedCompetitors, setExpandedCompetitors] = useState<Set<string>>(new Set());
+  const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
+  const [batchRefreshing, setBatchRefreshing] = useState(false);
 
   const [faviconErrors, setFaviconErrors] = useState<Set<string>>(new Set());
   const [isSuggestDialogOpen, setIsSuggestDialogOpen] = useState(false);
@@ -438,6 +442,71 @@ export default function Competitors() {
     });
   };
 
+  // Batch operations handlers
+  const toggleSelectCompetitor = (competitorId: string) => {
+    setSelectedCompetitors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(competitorId)) {
+        newSet.delete(competitorId);
+      } else {
+        newSet.add(competitorId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllCompetitors = () => {
+    setSelectedCompetitors(new Set(competitors.map((c: any) => c.id)));
+  };
+
+  const deselectAllCompetitors = () => {
+    setSelectedCompetitors(new Set());
+  };
+
+  const batchRefreshCompetitors = async () => {
+    if (selectedCompetitors.size === 0) return;
+    
+    setBatchRefreshing(true);
+    const selectedIds = Array.from(selectedCompetitors);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Refresh competitors sequentially to avoid overloading
+      for (const competitorId of selectedIds) {
+        try {
+          const response = await fetch(`/api/competitors/${competitorId}/crawl`, {
+            method: "POST",
+            credentials: "include",
+          });
+          if (response.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          errorCount++;
+        }
+      }
+
+      toast({
+        title: "Batch Refresh Complete",
+        description: `${successCount} competitor(s) refreshed successfully${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      setSelectedCompetitors(new Set());
+    } catch (error) {
+      toast({
+        title: "Batch Refresh Failed",
+        description: "An error occurred during batch refresh",
+        variant: "destructive",
+      });
+    } finally {
+      setBatchRefreshing(false);
+    }
+  };
+
   const getSuggestions = async () => {
     setIsLoadingSuggestions(true);
     setSuggestions([]);
@@ -750,7 +819,50 @@ export default function Competitors() {
         )}
 
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Tracked Competitors</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Tracked Competitors</h2>
+            {competitors.length > 0 && (
+              <div className="flex items-center gap-2">
+                {selectedCompetitors.size > 0 && (
+                  <>
+                    <Badge variant="secondary" className="text-sm">
+                      {selectedCompetitors.size} selected
+                    </Badge>
+                    <Button
+                      size="sm"
+                      onClick={batchRefreshCompetitors}
+                      disabled={batchRefreshing}
+                      data-testid="button-batch-refresh"
+                    >
+                      {batchRefreshing ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      Refresh Selected
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={deselectAllCompetitors}
+                    >
+                      Clear
+                    </Button>
+                  </>
+                )}
+                {selectedCompetitors.size === 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={selectAllCompetitors}
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Select All
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
           {competitors.length === 0 ? (
             <Card className="p-12 text-center">
               <p className="text-muted-foreground mb-4">No competitors tracked yet</p>
@@ -771,6 +883,12 @@ export default function Competitors() {
                         <CardContent className="p-6">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
+                              <Checkbox
+                                checked={selectedCompetitors.has(competitor.id)}
+                                onCheckedChange={() => toggleSelectCompetitor(competitor.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`checkbox-competitor-${competitor.id}`}
+                              />
                               {competitor.faviconUrl && !faviconErrors.has(competitor.id) ? (
                                 <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center overflow-hidden group-hover:ring-2 group-hover:ring-primary/50 transition-all flex-shrink-0">
                                   <img 
@@ -819,7 +937,14 @@ export default function Competitors() {
 
                             <div className="flex items-center gap-6">
                               <div className="text-right hidden md:block">
-                                <p className="text-sm font-medium">Last Crawl</p>
+                                <div className="flex items-center gap-2 justify-end mb-1">
+                                  <p className="text-sm font-medium">Last Crawl</p>
+                                  <StalenessDot 
+                                    lastUpdated={competitor.lastCrawl} 
+                                    label="Data freshness"
+                                    size="sm"
+                                  />
+                                </div>
                                 <p className="text-xs text-muted-foreground">
                                   {competitor.lastCrawl 
                                     ? new Date(competitor.lastCrawl).toLocaleString(undefined, { 

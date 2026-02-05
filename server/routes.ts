@@ -11311,6 +11311,74 @@ Return only the description text, no quotes or formatting.`;
     }
   });
 
+  // ==================== ACTIVE JOBS STATUS (ALL USERS) ====================
+  
+  // Get active/running jobs for current user's tenant
+  app.get("/api/jobs/active", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Get all running jobs
+      const runningJobs = await storage.getRunningJobs();
+      
+      // Filter to user's tenant or show all for admins
+      const userTenantDomain = user.tenantDomain;
+      const relevantJobs = runningJobs.filter(job => 
+        !job.tenantDomain || // Global jobs (no tenant)
+        job.tenantDomain === userTenantDomain || // User's tenant jobs
+        user.role === "Global Admin" // Admins see all
+      );
+
+      // Format response with useful information
+      const activeJobs = relevantJobs.map(job => ({
+        id: job.id,
+        type: job.jobType,
+        target: job.targetName || job.targetId,
+        startedAt: job.startedAt,
+        duration: job.startedAt ? Math.floor((Date.now() - new Date(job.startedAt).getTime()) / 1000) : 0,
+      }));
+
+      res.json({ 
+        active: activeJobs,
+        count: activeJobs.length 
+      });
+    } catch (error: any) {
+      console.error("Error fetching active jobs:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get recent job history for current user's tenant
+  app.get("/api/jobs/recent", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 10;
+      
+      // Get recent jobs for user's tenant
+      const recentJobs = await storage.getScheduledJobRunsByTenant(user.tenantDomain, limit);
+      
+      res.json(recentJobs);
+    } catch (error: any) {
+      console.error("Error fetching recent jobs:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Admin endpoint to backfill marketId for existing activities
   app.post("/api/admin/backfill-activity-markets", async (req, res) => {
     try {

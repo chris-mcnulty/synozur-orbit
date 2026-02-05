@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -550,6 +551,9 @@ export default function ContextBar() {
         )}
 
         <div className="flex-1" />
+
+        {/* Refresh Status Indicator */}
+        <RefreshStatusIndicator />
 
         {context?.activeTenant && (
           <div className="text-xs text-muted-foreground flex items-center gap-2">

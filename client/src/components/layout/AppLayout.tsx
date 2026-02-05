@@ -43,6 +43,8 @@ import { useQuery } from "@tanstack/react-query";
 import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
 import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDialog";
 import ContextBar from "@/components/layout/ContextBar";
+import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
+import CommandPalette from "@/components/CommandPalette";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -57,7 +59,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const { user, logout, loading, refetch: refetchUser } = useUser();
+  
+  // Keyboard shortcut for command palette (Cmd/Ctrl + K)
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      }
+    };
+
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
   
   // Load expanded sections from localStorage or use defaults
   const [expandedSections, setExpandedSections] = useState<string[]>(() => {
@@ -489,6 +505,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-sidebar-foreground/50">|</span>
             <span className="font-semibold text-base text-sidebar-foreground">Orbit</span>
           </div>
+          <div className="ml-auto">
+            <RefreshStatusIndicator />
+          </div>
         </header>
 
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}
@@ -536,6 +555,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           refetchUser();
         }}
         userName={user?.name || user?.email?.split("@")[0] || ""}
+      />
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
       />
     </div>
   );
