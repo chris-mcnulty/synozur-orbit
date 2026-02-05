@@ -21,6 +21,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import RecentJobsPanel from "@/components/RecentJobsPanel";
 
 const hasAdminAccess = (role: string) => 
   role === "Global Admin" || role === "Domain Admin";
@@ -1487,6 +1488,7 @@ export default function Dashboard() {
             </Link>
           </CardFooter>
         </Card>
+        <RecentJobsPanel />
       </div>
     </AppLayout>
   );

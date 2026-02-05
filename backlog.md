@@ -185,7 +185,7 @@
 - [x] Command Palette (Cmd+K fuzzy search for all actions)
 - [ ] Unified Refresh Strategy Dialog (intelligent guidance)
 - [x] Batch Operations (select multiple, refresh all)
-- [ ] Improved Job Status (make admin panel available to all)
+- [x] Improved Job Status (make admin panel available to all)
 
 **Proposed Advanced Features (Phase 3: 3-4 weeks)**:
 - [ ] Refresh Center Dashboard (dedicated page for all data ops)
