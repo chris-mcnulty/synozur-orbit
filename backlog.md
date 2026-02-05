@@ -182,7 +182,7 @@
 - [x] Contextual Tooltips (explain what each action does, time/cost estimates)
 
 **Proposed Core Improvements (Phase 2: 2-3 weeks)**:
-- [ ] Command Palette (Cmd+K fuzzy search for all actions)
+- [x] Command Palette (Cmd+K fuzzy search for all actions)
 - [ ] Unified Refresh Strategy Dialog (intelligent guidance)
 - [ ] Batch Operations (select multiple, refresh all)
 - [ ] Improved Job Status (make admin panel available to all)
