@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import StalenessDot from "@/components/ui/StalenessDot";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -819,7 +820,14 @@ export default function Competitors() {
 
                             <div className="flex items-center gap-6">
                               <div className="text-right hidden md:block">
-                                <p className="text-sm font-medium">Last Crawl</p>
+                                <div className="flex items-center gap-2 justify-end mb-1">
+                                  <p className="text-sm font-medium">Last Crawl</p>
+                                  <StalenessDot 
+                                    lastUpdated={competitor.lastCrawl} 
+                                    label="Data freshness"
+                                    size="sm"
+                                  />
+                                </div>
                                 <p className="text-xs text-muted-foreground">
                                   {competitor.lastCrawl 
                                     ? new Date(competitor.lastCrawl).toLocaleString(undefined, { 

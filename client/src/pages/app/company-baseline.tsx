@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import StalenessDot from "@/components/ui/StalenessDot";
 
 export default function CompanyBaseline() {
   const { toast } = useToast();
@@ -1200,9 +1201,16 @@ export default function CompanyBaseline() {
                               Website
                             </span>
                             {companyProfile.lastCrawl && (
-                              <span className="text-xs text-muted-foreground">
-                                Last crawled: {new Date(companyProfile.lastCrawl).toLocaleString()}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <StalenessDot 
+                                  lastUpdated={companyProfile.lastCrawl} 
+                                  label="Website data freshness"
+                                  size="sm"
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  Last crawled: {new Date(companyProfile.lastCrawl).toLocaleString()}
+                                </span>
+                              </div>
                             )}
                           </div>
                           <div className="pl-6 space-y-1">
