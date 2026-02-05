@@ -105,7 +105,7 @@ export default function RefreshStatusIndicator() {
             <div className="flex items-center justify-center py-4">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
-          ) : hasActiveJobs ? (
+          ) : hasActiveJobs && data ? (
             <div className="space-y-2">
               {data.active.map((job) => (
                 <div
