@@ -26,7 +26,8 @@ import {
   Database,
   Info,
   Gem,
-  ChevronDown
+  ChevronDown,
+  RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDi
 import ContextBar from "@/components/layout/ContextBar";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import CommandPalette from "@/components/CommandPalette";
+import SmartSuggestions from "@/components/SmartSuggestions";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -62,18 +64,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const { user, logout, loading, refetch: refetchUser } = useUser();
   
-  // Keyboard shortcut for command palette (Cmd/Ctrl + K)
+  // Keyboard shortcuts (Cmd/Ctrl + K for command palette, Ctrl+Shift+R for refresh center, etc.)
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      const target = e.target as HTMLElement;
+      const isInputField = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+      
+      // Cmd/Ctrl + K: Open command palette (works everywhere)
+      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setCommandPaletteOpen((open) => !open);
+        return;
+      }
+      
+      // Skip other shortcuts if in input field
+      if (isInputField) return;
+      
+      // Ctrl/Cmd + Shift + R: Full refresh (go to refresh center)
+      if (e.key.toLowerCase() === "r" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        setLocation("/app/refresh-center");
+      }
+      
+      // Ctrl/Cmd + Shift + A: Run analysis
+      if (e.key.toLowerCase() === "a" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        setLocation("/app/analysis");
       }
     };
 
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
-  }, []);
+  }, [setLocation]);
   
   // Load expanded sections from localStorage or use defaults
   const [expandedSections, setExpandedSections] = useState<string[]>(() => {
@@ -315,6 +337,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {
       group: "System",
       items: [
+        { label: "Refresh Center", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "User Management", icon: Users, href: "/app/users" },
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },
@@ -561,6 +584,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         open={commandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
       />
+      
+      <SmartSuggestions />
     </div>
   );
 }
