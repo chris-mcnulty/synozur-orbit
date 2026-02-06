@@ -1,0 +1,124 @@
+2026-02-05 16:25:12.90
+811ae43b
+User
+[Scheduled Job] Starting website change monitor job...
+2026-02-05 16:25:12.90
+811ae43b
+User
+[Scheduled Jobs] Starting website monitor job sweep...
+2026-02-05 16:25:12.95
+811ae43b
+User
+[HTTP] Successfully crawled: https://www.fugro.com/industries
+2026-02-05 16:25:13.00
+811ae43b
+User
+[HTTP] Successfully crawled: https://www.fugro.com/expertise
+2026-02-05 16:25:13.00
+811ae43b
+User
+[Headless] Attempting to crawl: https://www.fugro.com/expertise/flood-risk-mapping-and-flood-defence
+2026-02-05 16:25:13.00
+811ae43b
+User
+[Headless] Attempting to crawl: https://www.fugro.com/expertise/fibre-optic-cable-route-surveys
+2026-02-05 16:25:13.00
+811ae43b
+User
+[Headless] Attempting to crawl: https://www.fugro.com/expertise/environmental-site-assessments-and-remediation
+2026-02-05 16:25:13.30
+811ae43b
+User
+[Scheduled Jobs] Starting product monitor job sweep...
+2026-02-05 16:25:13.40
+811ae43b
+User
+[Scheduled Job] Starting product monitor job...
+2026-02-05 16:25:13.60
+811ae43b
+User
+[Scheduled Jobs] Starting trial reminder job sweep...
+2026-02-05 16:25:13.70
+811ae43b
+User
+[Scheduled Job] Starting trial reminder job...
+2026-02-05 16:25:14.43
+811ae43b
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at CallbackRegistry.create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:25:26)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async Gee (/home/runner/workspace/dist/index.cjs:754:14159)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at /home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:205:42
+2026-02-05 16:25:14.43
+811ae43b
+User
+[Headless] Failed, falling back to HTTP for: https://dynatest.com/cases/
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async CdpBrowser.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:189:16)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async CdpBrowserContext.newPage (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/BrowserContext.js:123:20)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async PageTarget.page (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Target.js:208:17)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at CdpCDPSession.send (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/CdpSession.js:74:33)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at NetworkManager.addClient (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/NetworkManager.js:75:24)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at #initialize (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:297:36)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:103:14)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async CdpBrowser._createPageInContext (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Browser.js:219:22)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at Connection._rawSend (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Connection.js:108:26)
+2026-02-05 16:25:14.43
+811ae43b
+User
+at async DR (/home/runner/workspace/dist/index.cjs:754:15704)
+2026-02-05 16:25:14.43
+811ae43b
+User
+Headless fetch failed for https://dynatest.com/cases/ (attempt 3): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-05 16:25:14.43
+811ae43b
+User
+at CdpPage._create (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/cdp/Page.js:104:31)
+2026-02-05 16:25:15.59
+811ae43b
+User
+Headless fetch failed for https://www.dynatest.com (attempt 1): ProtocolError: Network.enable timed out. Increase the 'protocolTimeout' setting in launch/connect calls for a higher timeout if needed.
+2026-02-05 16:25:15.59
+811ae43b
+User
+at new Callback (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js:107:16)
+2026-02-05 16:25:15.59
+811ae43b
+User
+at (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/c

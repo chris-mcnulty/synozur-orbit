@@ -46,10 +46,21 @@ async function delay(ms: number): Promise<void> {
 }
 
 let browserInstance: Browser | null = null;
+let activeCrawls = 0;
+const MAX_CONCURRENT_CRAWLS = 2;
 
 async function getBrowser(): Promise<Browser> {
-  if (browserInstance && browserInstance.connected) {
-    return browserInstance;
+  if (browserInstance) {
+    try {
+      if (browserInstance.connected) {
+        return browserInstance;
+      }
+    } catch {
+      // Browser reference is stale
+    }
+    // Clean up dead browser instance
+    try { await browserInstance.close(); } catch {}
+    browserInstance = null;
   }
 
   const executablePath = await findChromiumPath();
@@ -58,7 +69,7 @@ async function getBrowser(): Promise<Browser> {
   browserInstance = await puppeteer.launch({
     headless: true,
     executablePath,
-    protocolTimeout: 45000, // 45s timeout for CDP protocol commands (prevents 2+ minute hangs)
+    protocolTimeout: 30000,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -72,7 +83,13 @@ async function getBrowser(): Promise<Browser> {
       "--disable-infobars",
       "--disable-web-security",
       "--disable-features=IsolateOrigins,site-per-process",
+      "--js-flags=--max-old-space-size=256",
     ],
+  });
+
+  browserInstance.on("disconnected", () => {
+    console.log("[Headless Crawler] Browser disconnected, will recreate on next request");
+    browserInstance = null;
   });
 
   return browserInstance;
@@ -159,6 +176,28 @@ export async function fetchPageHeadless(
     timeout?: number;
   } = {}
 ): Promise<HeadlessCrawlResult | null> {
+  if (activeCrawls >= MAX_CONCURRENT_CRAWLS) {
+    console.log(`[Headless] Skipping ${url} - max concurrent crawls (${MAX_CONCURRENT_CRAWLS}) reached`);
+    return null;
+  }
+  
+  activeCrawls++;
+  try {
+    return await _fetchPageHeadlessInner(url, options);
+  } finally {
+    activeCrawls--;
+  }
+}
+
+async function _fetchPageHeadlessInner(
+  url: string,
+  options: {
+    waitForSelector?: string;
+    waitTime?: number;
+    retries?: number;
+    timeout?: number;
+  } = {}
+): Promise<HeadlessCrawlResult | null> {
   const {
     waitForSelector,
     waitTime = 2000,
@@ -174,52 +213,78 @@ export async function fetchPageHeadless(
         await delay(1000 + Math.random() * 2000);
       }
 
-      const browser = await getBrowser();
-      page = await setupStealthPage(browser);
-
-      page.setDefaultNavigationTimeout(timeout);
-      page.setDefaultTimeout(timeout);
-
-      await page.goto(url, {
-        waitUntil: "networkidle2",
-        timeout,
+      const hardTimeout = new Promise<null>((resolve) => {
+        setTimeout(() => {
+          console.warn(`[Headless] Hard timeout reached for ${url} (attempt ${attempt + 1})`);
+          resolve(null);
+        }, timeout + 10000);
       });
 
-      if (waitForSelector) {
-        try {
-          await page.waitForSelector(waitForSelector, { timeout: 5000 });
-        } catch {
+      const crawlWork = async (): Promise<HeadlessCrawlResult | null> => {
+        const browser = await getBrowser();
+        page = await setupStealthPage(browser);
+
+        page.setDefaultNavigationTimeout(timeout);
+        page.setDefaultTimeout(timeout);
+
+        await page.goto(url, {
+          waitUntil: "networkidle2",
+          timeout,
+        });
+
+        if (waitForSelector) {
+          try {
+            await page.waitForSelector(waitForSelector, { timeout: 5000 });
+          } catch {
+          }
         }
-      }
 
-      await delay(waitTime + Math.random() * 1000);
+        await delay(waitTime + Math.random() * 1000);
 
-      const html = await page.content();
-      const finalUrl = page.url();
+        const html = await page.content();
+        const finalUrl = page.url();
 
-      const renderedContent = await page.evaluate(() => {
-        const elementsToRemove = document.querySelectorAll(
-          "script, style, nav, footer, header, noscript, svg, iframe"
-        );
-        elementsToRemove.forEach(el => el.remove());
-        return document.body?.innerText || "";
-      });
+        const renderedContent = await page.evaluate(() => {
+          const elementsToRemove = document.querySelectorAll(
+            "script, style, nav, footer, header, noscript, svg, iframe"
+          );
+          elementsToRemove.forEach(el => el.remove());
+          return document.body?.innerText || "";
+        });
 
-      await page.close();
+        await page.close();
+        page = null;
 
-      return {
-        html,
-        finalUrl,
-        renderedContent: renderedContent.replace(/\s+/g, " ").trim(),
+        return {
+          html,
+          finalUrl,
+          renderedContent: renderedContent.replace(/\s+/g, " ").trim(),
+        };
       };
-    } catch (error) {
-      console.error(`Headless fetch failed for ${url} (attempt ${attempt + 1}):`, error);
 
-      if (page) {
-        try {
-          await page.close();
-        } catch {}
+      const result = await Promise.race([crawlWork(), hardTimeout]);
+      if (result) return result;
+      
+      try { if (page) await (page as Page).close(); } catch {}
+      page = null;
+      
+      if (attempt >= retries) return null;
+    } catch (error: any) {
+      const isProtocolError = error?.message?.includes("ProtocolError") || 
+                               error?.message?.includes("timed out") ||
+                               error?.message?.includes("Target closed") ||
+                               error?.message?.includes("Session closed");
+
+      if (isProtocolError) {
+        console.warn(`[Headless] Protocol error for ${url}, resetting browser: ${error.message?.substring(0, 100)}`);
+        try { if (browserInstance) await browserInstance.close(); } catch {}
+        browserInstance = null;
+      } else {
+        console.error(`Headless fetch failed for ${url} (attempt ${attempt + 1}):`, error);
       }
+
+      try { if (page) await (page as Page).close(); } catch {}
+      page = null;
 
       if (attempt >= retries) {
         return null;

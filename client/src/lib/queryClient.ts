@@ -1,9 +1,34 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+async function safeJsonParse(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.includes("<!DOCTYPE") || text.includes("<html") || text.includes("<HTML")) {
+      throw new Error("Server temporarily unavailable. Please try again in a moment.");
+    }
+    throw new Error(`Invalid response from server: ${text.substring(0, 100)}`);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let errorMessage = res.statusText;
+    try {
+      const text = await res.text();
+      if (text.includes("<!DOCTYPE") || text.includes("<html") || text.includes("<HTML")) {
+        errorMessage = "Server temporarily unavailable. Please try again in a moment.";
+      } else {
+        try {
+          const json = JSON.parse(text);
+          errorMessage = json.error || json.message || text;
+        } catch {
+          errorMessage = text || res.statusText;
+        }
+      }
+    } catch {}
+    throw new Error(`${res.status}: ${errorMessage}`);
   }
 }
 
@@ -38,7 +63,7 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return await safeJsonParse(res);
   };
 
 export const queryClient = new QueryClient({
