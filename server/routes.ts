@@ -11300,12 +11300,60 @@ Return only the description text, no quotes or formatting.`;
       }
 
       const result = cancelJob(jobType);
+      console.log(`[Jobs] Cancel request for ${jobType} by ${user.email}: wasRunning=${result.wasRunning}`);
       res.json({ 
         success: true, 
         cancelled: result.cancelled,
         wasRunning: result.wasRunning,
         message: result.wasRunning ? `Job ${jobType} cancelled` : `Job ${jobType} was not running`
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/:jobId/cancel", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || (user.role !== "Global Admin" && user.role !== "Domain Admin")) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const { jobId } = req.params;
+      const userTenantDomain = user.email.split("@")[1];
+
+      const runningJobs = await storage.getRunningJobs();
+      const existingJob = runningJobs.find(j => j.id === jobId);
+
+      if (!existingJob) {
+        return res.status(404).json({ error: "Running job not found" });
+      }
+
+      if (user.role !== "Global Admin") {
+        if (!existingJob.tenantDomain) {
+          return res.status(403).json({ error: "Access denied - only Global Admins can cancel system-wide jobs" });
+        }
+        if (existingJob.tenantDomain !== userTenantDomain) {
+          return res.status(403).json({ error: "Access denied - cannot cancel jobs from other tenants" });
+        }
+      }
+
+      const job = await storage.updateScheduledJobRun(jobId, {
+        status: "failed",
+        completedAt: new Date(),
+        errorMessage: `Cancelled by ${user.name || user.email}`,
+      });
+
+      if (existingJob.jobType) {
+        const scheduledResult = cancelJob(existingJob.jobType);
+        console.log(`[Jobs] Cancelled job ${jobId} (${existingJob.jobType}) by ${user.email}, scheduled abort: ${scheduledResult.wasRunning}`);
+      }
+
+      res.json({ success: true, message: `Job cancelled` });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -11328,12 +11376,11 @@ Return only the description text, no quotes or formatting.`;
       // Get all running jobs
       const runningJobs = await storage.getRunningJobs();
       
-      // Filter to user's tenant or show all for admins
-      const userTenantDomain = user.tenantDomain;
+      const userTenantDomain = user.email.split("@")[1];
       const relevantJobs = runningJobs.filter(job => 
-        !job.tenantDomain || // Global jobs (no tenant)
-        job.tenantDomain === userTenantDomain || // User's tenant jobs
-        user.role === "Global Admin" // Admins see all
+        !job.tenantDomain ||
+        job.tenantDomain === userTenantDomain ||
+        user.role === "Global Admin"
       );
 
       // Format response with useful information
@@ -11369,8 +11416,7 @@ Return only the description text, no quotes or formatting.`;
 
       const limit = parseInt(req.query.limit as string) || 10;
       
-      // Get recent jobs for user's tenant
-      const recentJobs = await storage.getScheduledJobRunsByTenant(user.tenantDomain, limit);
+      const recentJobs = await storage.getScheduledJobRunsByTenant(user.email.split("@")[1], limit);
       
       res.json(recentJobs);
     } catch (error: any) {

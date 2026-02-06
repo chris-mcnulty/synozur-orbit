@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useUser } from "@/lib/userContext";
 import {
   RefreshCw,
   Globe,
@@ -23,6 +24,8 @@ import {
   History,
   Play,
   AlertCircle,
+  Square,
+  Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getFullStalenessInfo } from "@/lib/staleness";
@@ -42,7 +45,11 @@ interface QuickAction {
 export default function RefreshCenter() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useUser();
   const [loadingActions, setLoadingActions] = useState<Set<string>>(new Set());
+  const [cancellingJobs, setCancellingJobs] = useState<Set<string>>(new Set());
+
+  const isAdmin = user?.role === "Global Admin" || user?.role === "Domain Admin";
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -173,6 +180,75 @@ export default function RefreshCenter() {
     } finally {
       setActionLoading("all", false);
     }
+  };
+
+  const cancelJobById = async (jobId: string, jobType: string) => {
+    setCancellingJobs((prev) => new Set(prev).add(jobId));
+    try {
+      const res = await fetch(`/api/admin/jobs/${jobId}/cancel`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to cancel job");
+      }
+      toast({ title: "Job cancelled", description: `${formatJobType(jobType)} has been stopped` });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs/recent"] });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to cancel job", variant: "destructive" });
+    } finally {
+      setCancellingJobs((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  };
+
+  const cancelAllJobs = async () => {
+    const jobTypes = ["websiteCrawl", "socialMonitor", "websiteMonitor", "productMonitor"];
+    let cancelled = 0;
+    let failed = 0;
+
+    for (const jobType of jobTypes) {
+      try {
+        await fetch("/api/admin/jobs/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ jobType }),
+        });
+      } catch {}
+    }
+
+    for (const job of activeJobs.active) {
+      try {
+        const res = await fetch(`/api/admin/jobs/${job.id}/cancel`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (res.ok) {
+          cancelled++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    if (failed > 0 && cancelled > 0) {
+      toast({ title: "Partial success", description: `Stopped ${cancelled} job(s), ${failed} could not be cancelled` });
+    } else if (failed > 0) {
+      toast({ title: "Error", description: "Failed to stop jobs", variant: "destructive" });
+    } else {
+      toast({ title: "All jobs cancelled", description: "All running operations have been stopped" });
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["/api/jobs/active"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/jobs/recent"] });
   };
 
   const getOldestUpdate = (items: any[], field: string): string | null => {
@@ -412,8 +488,24 @@ export default function RefreshCenter() {
           <TabsContent value="active">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Active Jobs</CardTitle>
-                <CardDescription>Currently running refresh operations</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Active Jobs</CardTitle>
+                    <CardDescription>Currently running refresh operations</CardDescription>
+                  </div>
+                  {isAdmin && activeJobs.active.length > 0 && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={cancelAllJobs}
+                      className="gap-2"
+                      data-testid="stop-all-jobs-button"
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      Stop All
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {activeJobs.active.length === 0 ? (
@@ -436,8 +528,30 @@ export default function RefreshCenter() {
                               )}
                             </div>
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {formatDuration(job.startedAt, null)}
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-muted-foreground">
+                              {formatDuration(job.startedAt, null)}
+                            </span>
+                            {isAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  cancelJobById(job.id, job.type);
+                                }}
+                                disabled={cancellingJobs.has(job.id)}
+                                className="gap-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 h-8 px-2"
+                                data-testid={`cancel-job-${job.id}`}
+                              >
+                                {cancellingJobs.has(job.id) ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Square className="w-3.5 h-3.5" />
+                                )}
+                                Stop
+                              </Button>
+                            )}
                           </div>
                         </div>
                         <Progress value={50} className="h-2" />
