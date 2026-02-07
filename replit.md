@@ -134,6 +134,18 @@ This pattern applies broadly to any ecosystem partner scenario (Salesforce AppEx
 - AI provider keys (optional)
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
 
+## Critical Development Rules
+
+### Competitor Edit Dialogs — DUAL LOCATION
+There are TWO separate competitor edit dialogs that must ALWAYS be updated together:
+1. **`client/src/pages/app/competitors.tsx`** — Edit dialog on the competitors list page (opened via pencil icon on competitor cards)
+2. **`client/src/pages/app/competitor-detail.tsx`** — Edit dialog on the individual competitor detail page
+
+**Any change to competitor editing fields, form state, or save logic MUST be applied to BOTH files.** Before completing any competitor edit feature, grep for all files containing PATCH calls to `/api/competitors/` and verify every edit surface has been updated.
+
+### General Pattern: Search Before Assuming
+When adding UI to an entity (competitor, project, product, etc.), always search the full codebase for ALL edit/create/update surfaces for that entity before implementing. Never assume there's only one.
+
 ## Standing Orders
 
 ### Changelog & Backlog Maintenance
