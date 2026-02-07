@@ -82,7 +82,11 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function sendEmail(options: EmailOptions, retries = 3): Promise<boolean> {
+// Constants for retry logic
+const MAX_EMAIL_RETRIES = 3;
+const MAX_BACKOFF_MS = 10000; // 10 seconds maximum backoff
+
+export async function sendEmail(options: EmailOptions, retries = MAX_EMAIL_RETRIES): Promise<boolean> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const { client, fromEmail } = await getUncachableSendGridClient();
@@ -98,7 +102,11 @@ export async function sendEmail(options: EmailOptions, retries = 3): Promise<boo
       console.log(`Email sent successfully to ${options.to}`);
       return true;
     } catch (error: any) {
-      const isAuthError = error.code === 401 || error.message?.includes('authentication');
+      // Check for authentication errors (can be status code or message-based)
+      const isAuthError = error.code === 401 || error.code === '401' || 
+                         error.statusCode === 401 || 
+                         error.message?.includes('authentication') ||
+                         error.message?.includes('unauthorized');
       
       // If authentication error, invalidate cache and retry
       if (isAuthError && attempt === 0) {
@@ -113,7 +121,7 @@ export async function sendEmail(options: EmailOptions, retries = 3): Promise<boo
       }
       
       // Exponential backoff: wait longer between retries
-      const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000);
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt), MAX_BACKOFF_MS);
       console.warn(`Email send failed (attempt ${attempt + 1}/${retries}), retrying in ${backoffMs}ms...`);
       await delay(backoffMs);
     }
