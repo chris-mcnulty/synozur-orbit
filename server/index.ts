@@ -7,7 +7,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startScheduledJobs } from "./services/scheduled-jobs";
 import { storage } from "./storage";
-import pg from "pg";
+import { pool } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -47,14 +47,12 @@ app.use(fileUpload({
 }));
 
 const PgSession = connectPgSimple(session);
-const pgPool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
+// Reuse the optimized connection pool from db.ts for session storage
 app.use(
   session({
     store: new PgSession({
-      pool: pgPool,
+      pool: pool,
       tableName: "user_sessions",
       createTableIfMissing: true,
     }),

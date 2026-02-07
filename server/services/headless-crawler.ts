@@ -47,7 +47,7 @@ async function delay(ms: number): Promise<void> {
 
 let browserInstance: Browser | null = null;
 let activeCrawls = 0;
-const MAX_CONCURRENT_CRAWLS = 2;
+const MAX_CONCURRENT_CRAWLS = 5; // Increased from 2 to 5 for better throughput
 
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
@@ -216,6 +216,10 @@ async function _fetchPageHeadlessInner(
       const hardTimeout = new Promise<null>((resolve) => {
         setTimeout(() => {
           console.warn(`[Headless] Hard timeout reached for ${url} (attempt ${attempt + 1})`);
+          // Try to close the page if it exists to prevent hanging resources
+          if (page) {
+            page.close().catch(() => {});
+          }
           resolve(null);
         }, timeout + 10000);
       });
