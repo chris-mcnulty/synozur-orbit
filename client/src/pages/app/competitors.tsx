@@ -57,7 +57,7 @@ export default function Competitors() {
   } | null>(null);
   const [linksForm, setLinksForm] = useState({ 
     linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "", projectId: "",
-    socialCheckFrequency: "daily", headquarters: "", founded: "", employeeCount: "", revenue: "", fundingRaised: ""
+    socialCheckFrequency: "daily", excludeFromCrawl: false, headquarters: "", founded: "", employeeCount: "", revenue: "", fundingRaised: ""
   });
   const [isBlogTesting, setIsBlogTesting] = useState(false);
   const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
@@ -350,6 +350,7 @@ export default function Competitors() {
           blogUrl: linksForm.blogUrl.trim() || "",
           projectId: linksForm.projectId || null,
           socialCheckFrequency: linksForm.socialCheckFrequency || "daily",
+          excludeFromCrawl: linksForm.excludeFromCrawl,
           headquarters: linksForm.headquarters.trim() || "",
           founded: linksForm.founded.trim() || "",
           employeeCount: linksForm.employeeCount.trim() || "",
@@ -414,6 +415,7 @@ export default function Competitors() {
       blogUrl: competitor.blogUrl || "",
       projectId: competitor.projectId || "",
       socialCheckFrequency: competitor.socialCheckFrequency || "daily",
+      excludeFromCrawl: competitor.excludeFromCrawl || false,
       headquarters: competitor.headquarters || "",
       founded: competitor.founded || "",
       employeeCount: competitor.employeeCount || "",
@@ -1344,6 +1346,23 @@ export default function Competitors() {
                   value={linksForm.fundingRaised}
                   onChange={(e) => setLinksForm(f => ({ ...f, fundingRaised: e.target.value }))}
                   data-testid="input-funding"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="exclude-crawl" className="text-sm font-medium">Exclude from Auto-Crawl</Label>
+                  <p className="text-xs text-muted-foreground">Skip this competitor during scheduled website crawls</p>
+                </div>
+                <input
+                  type="checkbox"
+                  id="exclude-crawl"
+                  checked={linksForm.excludeFromCrawl}
+                  onChange={(e) => setLinksForm(f => ({ ...f, excludeFromCrawl: e.target.checked }))}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                  data-testid="checkbox-exclude-crawl"
                 />
               </div>
             </div>

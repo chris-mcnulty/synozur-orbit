@@ -709,7 +709,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
+      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, excludeFromCrawl, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
@@ -718,6 +718,7 @@ export async function registerRoutes(
       if (blogUrl !== undefined) updateData.blogUrl = blogUrl || null;
       if (blogFeedUrl !== undefined) updateData.blogFeedUrl = blogFeedUrl || null;
       if (socialCheckFrequency !== undefined) updateData.socialCheckFrequency = socialCheckFrequency || null;
+      if (excludeFromCrawl !== undefined) updateData.excludeFromCrawl = excludeFromCrawl;
       if (name) updateData.name = name;
       if (url) updateData.url = url;
       
