@@ -133,7 +133,7 @@ async function trackJobRun<T>(
   try {
     // Add 30-minute timeout for individual job operations
     const timeoutMs = 30 * 60 * 1000; // 30 minutes
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(new Error(`Job timed out after ${timeoutMs / 1000} seconds`));
@@ -141,7 +141,7 @@ async function trackJobRun<T>(
     });
     
     const result = await Promise.race([work(), timeoutPromise]);
-    clearTimeout(timeoutId!); // Clean up timeout if work completes first
+    clearTimeout(timeoutId); // Clean up timeout if work completes first
     await trackJobComplete(jobRunId, "completed", result as Record<string, any>);
     return jobRunId;
   } catch (error) {

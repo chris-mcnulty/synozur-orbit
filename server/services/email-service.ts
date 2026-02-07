@@ -82,12 +82,21 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Helper function to check if error is an authentication error
+function isAuthenticationError(error: any): boolean {
+  return error.code === 401 || 
+         error.code === '401' || 
+         error.statusCode === 401 || 
+         error.message?.includes('authentication') ||
+         error.message?.includes('unauthorized');
+}
+
 // Constants for retry logic
 const MAX_EMAIL_RETRIES = 3;
 const MAX_BACKOFF_MS = 10000; // 10 seconds maximum backoff
 
-export async function sendEmail(options: EmailOptions, retries = MAX_EMAIL_RETRIES): Promise<boolean> {
-  for (let attempt = 0; attempt < retries; attempt++) {
+export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  for (let attempt = 0; attempt < MAX_EMAIL_RETRIES; attempt++) {
     try {
       const { client, fromEmail } = await getUncachableSendGridClient();
       
@@ -102,27 +111,21 @@ export async function sendEmail(options: EmailOptions, retries = MAX_EMAIL_RETRI
       console.log(`Email sent successfully to ${options.to}`);
       return true;
     } catch (error: any) {
-      // Check for authentication errors (can be status code or message-based)
-      const isAuthError = error.code === 401 || error.code === '401' || 
-                         error.statusCode === 401 || 
-                         error.message?.includes('authentication') ||
-                         error.message?.includes('unauthorized');
-      
-      // If authentication error, invalidate cache and retry
-      if (isAuthError && attempt === 0) {
+      // If authentication error on first attempt, invalidate cache and retry
+      if (isAuthenticationError(error) && attempt === 0) {
         console.warn('SendGrid auth error, invalidating credential cache');
         credentialsCache = null;
       }
       
       // If this is the last attempt, log and fail
-      if (attempt === retries - 1) {
+      if (attempt === MAX_EMAIL_RETRIES - 1) {
         console.error('Failed to send email after retries:', error.message);
         return false;
       }
       
       // Exponential backoff: wait longer between retries
       const backoffMs = Math.min(1000 * Math.pow(2, attempt), MAX_BACKOFF_MS);
-      console.warn(`Email send failed (attempt ${attempt + 1}/${retries}), retrying in ${backoffMs}ms...`);
+      console.warn(`Email send failed (attempt ${attempt + 1}/${MAX_EMAIL_RETRIES}), retrying in ${backoffMs}ms...`);
       await delay(backoffMs);
     }
   }
