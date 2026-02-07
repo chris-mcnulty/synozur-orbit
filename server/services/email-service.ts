@@ -16,7 +16,16 @@ import {
 
 let connectionSettings: any;
 
+// Cache credentials with 1-hour TTL to reduce API calls
+let credentialsCache: { apiKey: string; email: string; timestamp: number } | null = null;
+const CREDENTIALS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 async function getCredentials() {
+  // Check cache first
+  if (credentialsCache && Date.now() - credentialsCache.timestamp < CREDENTIALS_CACHE_TTL) {
+    return { apiKey: credentialsCache.apiKey, email: credentialsCache.email };
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
@@ -41,7 +50,15 @@ async function getCredentials() {
   if (!connectionSettings || (!connectionSettings.settings.api_key || !connectionSettings.settings.from_email)) {
     throw new Error('SendGrid not connected');
   }
-  return { apiKey: connectionSettings.settings.api_key, email: connectionSettings.settings.from_email };
+
+  // Cache the credentials
+  credentialsCache = {
+    apiKey: connectionSettings.settings.api_key,
+    email: connectionSettings.settings.from_email,
+    timestamp: Date.now()
+  };
+
+  return { apiKey: credentialsCache.apiKey, email: credentialsCache.email };
 }
 
 async function getUncachableSendGridClient() {
@@ -60,24 +77,60 @@ export interface EmailOptions {
   html?: string;
 }
 
+// Helper function for exponential backoff delay
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Helper function to check if error is an authentication error
+function isAuthenticationError(error: any): boolean {
+  return error.code === 401 || 
+         error.code === '401' || 
+         error.statusCode === 401 || 
+         error.message?.includes('authentication') ||
+         error.message?.includes('unauthorized');
+}
+
+// Constants for retry logic
+const MAX_EMAIL_RETRIES = 3;
+const MAX_BACKOFF_MS = 10000; // 10 seconds maximum backoff
+
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
-  try {
-    const { client, fromEmail } = await getUncachableSendGridClient();
-    
-    await client.send({
-      to: options.to,
-      from: fromEmail,
-      subject: options.subject,
-      text: options.text || '',
-      html: options.html || options.text || '',
-    });
-    
-    console.log(`Email sent successfully to ${options.to}`);
-    return true;
-  } catch (error: any) {
-    console.error('Failed to send email:', error.message);
-    return false;
+  for (let attempt = 0; attempt < MAX_EMAIL_RETRIES; attempt++) {
+    try {
+      const { client, fromEmail } = await getUncachableSendGridClient();
+      
+      await client.send({
+        to: options.to,
+        from: fromEmail,
+        subject: options.subject,
+        text: options.text || '',
+        html: options.html || options.text || '',
+      });
+      
+      console.log(`Email sent successfully to ${options.to}`);
+      return true;
+    } catch (error: any) {
+      // If authentication error on first attempt, invalidate cache and retry
+      if (isAuthenticationError(error) && attempt === 0) {
+        console.warn('SendGrid auth error, invalidating credential cache');
+        credentialsCache = null;
+      }
+      
+      // If this is the last attempt, log and fail
+      if (attempt === MAX_EMAIL_RETRIES - 1) {
+        console.error('Failed to send email after retries:', error.message);
+        return false;
+      }
+      
+      // Exponential backoff: wait longer between retries (2s after 1st failure, 4s after 2nd)
+      const backoffMs = Math.min(2000 * Math.pow(2, attempt), MAX_BACKOFF_MS);
+      console.warn(`Email send failed (attempt ${attempt + 1}/${MAX_EMAIL_RETRIES}), retrying in ${backoffMs}ms...`);
+      await delay(backoffMs);
+    }
   }
+  
+  return false;
 }
 
 // Standard email header image URL - from centralized config

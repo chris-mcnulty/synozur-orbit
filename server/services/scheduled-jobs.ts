@@ -91,12 +91,13 @@ async function trackJobComplete(
 
 // Clean up jobs that have been running for too long (stuck jobs)
 async function cleanupStuckJobs(): Promise<void> {
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  // Reduced from 1 hour to 30 minutes for faster recovery from hung jobs
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
   const stuckJobs = await storage.getRunningJobs();
   
   const jobsToFail = stuckJobs.filter(job => {
     if (!job.startedAt) return true;
-    return new Date(job.startedAt) < oneHourAgo;
+    return new Date(job.startedAt) < thirtyMinutesAgo;
   });
   
   if (jobsToFail.length > 0) {
@@ -107,7 +108,7 @@ async function cleanupStuckJobs(): Promise<void> {
           status: "failed",
           completedAt: new Date(),
           result: { error: "Job timed out - automatically marked as failed after running too long" },
-          errorMessage: "Job timed out after 1 hour",
+          errorMessage: "Job timed out after 30 minutes",
         });
         console.log(`[Scheduled Jobs] Marked stuck job ${job.id} (${job.jobType}) as failed`);
       } catch (error) {
@@ -129,8 +130,17 @@ async function trackJobRun<T>(
   const jobRunId = await trackJobStart(jobType, tenantDomain, targetId, targetName);
   if (!jobRunId) return null;
   
+  let timeoutId: NodeJS.Timeout | undefined;
   try {
-    const result = await work();
+    // Add 30-minute timeout for individual job operations
+    const timeoutMs = 30 * 60 * 1000; // 30 minutes
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`Job timed out after ${timeoutMs / 1000} seconds`));
+      }, timeoutMs);
+    });
+    
+    const result = await Promise.race([work(), timeoutPromise]);
     await trackJobComplete(jobRunId, "completed", result as Record<string, any>);
     return jobRunId;
   } catch (error) {
@@ -138,6 +148,11 @@ async function trackJobRun<T>(
     await trackJobComplete(jobRunId, "failed", undefined, errorMessage);
     console.error(`[Scheduled Job] Job failed for ${targetName}:`, error);
     return jobRunId;
+  } finally {
+    // Always clean up timeout handle to prevent memory leaks
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -277,15 +292,20 @@ async function runWebsiteCrawlJob(): Promise<void> {
             await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
 
             // Capture visual assets if not already captured
+            // Await the promise to ensure it completes within the job context
             if (!competitor.faviconUrl || !competitor.screenshotUrl) {
-              captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+              try {
+                const visualAssets = await captureVisualAssets(competitor.url, competitor.id);
                 if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
                   await storage.updateCompetitor(competitor.id, {
                     faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
                     screenshotUrl: visualAssets.screenshotUrl || competitor.screenshotUrl,
                   });
                 }
-              }).catch(err => console.error(`Visual capture failed for ${competitor.name}:`, err));
+              } catch (err) {
+                console.error(`Visual capture failed for ${competitor.name}:`, err);
+                // Visual capture failure shouldn't fail the entire job
+              }
             }
 
             const websiteContent = getCombinedContent(crawlResult);

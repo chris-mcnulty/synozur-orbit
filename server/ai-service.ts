@@ -1,8 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+// Configure Anthropic with timeout to prevent hanging requests
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  timeout: 60000, // 60 second timeout for API calls
+  maxRetries: 2, // Retry failed requests up to 2 times
 });
 
 export interface CompetitorAnalysis {
