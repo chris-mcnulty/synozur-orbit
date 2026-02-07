@@ -198,10 +198,10 @@ async function runWebsiteCrawlJob(): Promise<void> {
           continue;
         }
         
-        // Skip competitors with manual research to avoid triggering bot detection
+        // Skip competitors with manual research or excluded from crawl
         const existingAnalysis = competitor.analysisData as any;
-        if (existingAnalysis?.source === "manual") {
-          console.log(`[Scheduled Job] Skipping ${competitor.name} - has manual research`);
+        if (existingAnalysis?.source === "manual" || (competitor as any).excludeFromCrawl === true) {
+          console.log(`[Scheduled Job] Skipping ${competitor.name} - manual research or excluded`);
           continue;
         }
 

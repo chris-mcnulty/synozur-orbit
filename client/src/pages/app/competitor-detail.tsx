@@ -26,6 +26,7 @@ export default function CompetitorDetail() {
   const [editTwitter, setEditTwitter] = useState("");
   const [editBlogUrl, setEditBlogUrl] = useState("");
   const [editSocialFrequency, setEditSocialFrequency] = useState("daily");
+  const [excludeFromCrawl, setExcludeFromCrawl] = useState(false);
   
   // Company Profile editing state (shared with main edit dialog)
   const [editHeadquarters, setEditHeadquarters] = useState("");
@@ -136,7 +137,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string; industry?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; excludeFromCrawl?: boolean; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string; industry?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -169,6 +170,7 @@ export default function CompetitorDetail() {
     setEditTwitter(competitor?.twitterUrl || "");
     setEditBlogUrl(competitor?.blogFeedUrl || "");
     setEditSocialFrequency(competitor?.socialCheckFrequency || "daily");
+    setExcludeFromCrawl(competitor?.excludeFromCrawl || false);
     // Also populate company profile fields
     setEditHeadquarters(competitor?.headquarters || "");
     setEditFounded(competitor?.founded || "");
@@ -187,6 +189,7 @@ export default function CompetitorDetail() {
       twitterUrl: editTwitter,
       blogFeedUrl: editBlogUrl,
       socialCheckFrequency: editSocialFrequency,
+      excludeFromCrawl: excludeFromCrawl,
       // Include company profile fields
       headquarters: editHeadquarters,
       founded: editFounded,
@@ -537,6 +540,20 @@ export default function CompetitorDetail() {
                             data-testid="input-blog-url"
                           />
                           <p className="text-xs text-muted-foreground">RSS feeds, Atom feeds, or blog page URLs</p>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="exclude-crawl" className="text-base">Exclude from Auto-Crawl</Label>
+                            <p className="text-sm text-muted-foreground">Stop this competitor from being automatically crawled during scheduled jobs.</p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            id="exclude-crawl"
+                            checked={excludeFromCrawl}
+                            onChange={(e) => setExcludeFromCrawl(e.target.checked)}
+                            className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                            data-testid="checkbox-exclude-crawl"
+                          />
                         </div>
                         <div className="space-y-2 pt-2 border-t">
                           <Label htmlFor="frequency" className="flex items-center gap-2">
