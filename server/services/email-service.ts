@@ -123,7 +123,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
         return false;
       }
       
-      // Exponential backoff: wait longer between retries (2s, 4s, 8s)
+      // Exponential backoff: wait longer between retries (2s after 1st failure, 4s after 2nd)
       const backoffMs = Math.min(2000 * Math.pow(2, attempt), MAX_BACKOFF_MS);
       console.warn(`Email send failed (attempt ${attempt + 1}/${MAX_EMAIL_RETRIES}), retrying in ${backoffMs}ms...`);
       await delay(backoffMs);

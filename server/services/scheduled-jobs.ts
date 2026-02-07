@@ -150,7 +150,9 @@ async function trackJobRun<T>(
     return jobRunId;
   } finally {
     // Always clean up timeout handle to prevent memory leaks
-    clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
