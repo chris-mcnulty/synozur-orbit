@@ -1025,10 +1025,16 @@ export function startScheduledJobs(): void {
   }, 60 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
-  // Jobs running for more than 1 hour are likely stuck and should be marked as failed
   cleanupStuckJobs().catch(err => {
     console.error("[Scheduled Jobs] Error cleaning up stuck jobs:", err);
   });
+
+  // Periodic stuck job cleanup every 15 minutes (catches jobs that get stuck while server is running)
+  setInterval(() => {
+    cleanupStuckJobs().catch(err => {
+      console.error("[Scheduled Jobs] Periodic stuck job cleanup error:", err);
+    });
+  }, 15 * 60 * 1000);
   
   // CRITICAL: Run jobs immediately on startup to catch up after app sleep
   // This ensures overdue jobs run even if app was sleeping for days
