@@ -242,16 +242,20 @@ Generate competitive battlecards for sales enablement:
 
 ### High Priority
 
-#### Service Plan Feature Gating
-**Status**: Designed, deferred until all features verified working
-Implement tiered access control with blurred overlays and upgrade prompts:
-- [ ] Free tier: 1 company, 1-2 competitors, no projects/GTM/messaging rewrites
-- [ ] Trial (60 days): full Pro features
-- [ ] Pro: 7 competitors, projects, GTM, messaging
-- [ ] Enterprise: unlimited + markets
-- [ ] Each tier has RW/RO user limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit)
-- [ ] Show locked features with diamond icon and blur effect
-**Effort**: High
+#### Service Plan Feature Gating ✅
+**Status**: Implemented
+Tiered access control with upgrade prompts and enforcement:
+- [x] Centralized plan policy service (`server/services/plan-policy.ts`) with feature matrix for Free/Trial/Pro/Enterprise
+- [x] Backend enforcement: competitor count limits, monthly analysis quotas, feature gating on battlecards/reports/GTM/messaging/projects
+- [x] Enhanced `/api/tenant/info` returns plan features, usage counts, and limits
+- [x] Frontend gating: competitor limit badge, analysis limit badge, upgrade prompts on locked features
+- [x] Sidebar lock indicators for features not available on current plan
+- [x] Free tier: 1 competitor, 1 analysis/month, no battlecards/recommendations/PDF reports/GTM/messaging
+- [x] Trial (60 days): 3 competitors, 5 analyses/month, battlecards/recommendations/PDF reports/GTM/messaging
+- [x] Pro: 10 competitors, unlimited analyses, social monitoring, client projects, SSO
+- [x] Enterprise: unlimited everything including marketing planner, product management, multi-market
+- [ ] User role limits enforcement (adminUserLimit, readWriteUserLimit, readOnlyUserLimit) - future
+**Effort**: High - COMPLETED
 
 #### Manual Action Rate Limits by Plan
 **Status**: Backlogged

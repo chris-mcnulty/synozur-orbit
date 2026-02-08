@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Service Plan Feature Gating
+  - Centralized plan policy service defining feature access for Free, Trial, Pro, and Enterprise tiers
+  - Backend enforcement of competitor count limits and monthly analysis generation quotas
+  - Feature-level gating on battlecards, PDF reports, GTM plans, messaging frameworks, and client projects
+  - Enhanced tenant info API returning plan features, current usage, and remaining quotas
+  - Frontend upgrade prompts with contact-to-upgrade flow for locked features
+  - Competitor and analysis limit badges showing remaining quota
+  - Sidebar lock indicators for features unavailable on current plan
 - Editable GTM Plan & Messaging Framework
   - Inline edit mode with markdown editor for both GTM Plan and Messaging Framework tabs
   - Edit/Cancel/Save controls with immediate content updates

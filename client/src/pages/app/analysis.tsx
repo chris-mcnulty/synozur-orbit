@@ -9,7 +9,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History, Lock } from "lucide-react";
+import { PlanLimitBadge, FeatureGate } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -71,6 +72,10 @@ export default function Analysis() {
   });
 
   const isPremium = tenant?.isPremium || tenant?.plan === "pro" || tenant?.plan === "enterprise";
+  const analysisLimit = tenant?.limits?.analysisLimit ?? tenant?.features?.analysisLimit ?? -1;
+  const analysisCount = tenant?.usage?.monthlyAnalysisCount ?? 0;
+  const gtmAllowed = tenant?.features?.gtmPlan !== false;
+  const messagingAllowed = tenant?.features?.messagingFramework !== false;
 
   const { data: companyProfile } = useQuery({
     queryKey: ["/api/company-profile"],
@@ -307,6 +312,7 @@ export default function Analysis() {
            <p className="text-muted-foreground">AI-powered analysis of your competitors' websites and positioning.</p>
         </div>
         <div className="flex items-center gap-2">
+          <PlanLimitBadge current={analysisCount} limit={analysisLimit} label="Analyses" />
           <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
@@ -716,6 +722,7 @@ export default function Analysis() {
 
           {/* GTM Plan Tab */}
           <TabsContent value="gtm_plan">
+            <FeatureGate feature="GTM Plan" requiredPlan="Trial" isAllowed={gtmAllowed} description="Generate AI-powered Go-To-Market plans based on your competitive analysis. Upgrade to Trial or higher to access this feature.">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -916,10 +923,12 @@ export default function Analysis() {
                 )}
               </CardContent>
             </Card>
+            </FeatureGate>
           </TabsContent>
 
           {/* Messaging Rewrite Tab */}
           <TabsContent value="messaging_rewrite">
+            <FeatureGate feature="Messaging Framework" requiredPlan="Trial" isAllowed={messagingAllowed} description="Generate AI-powered messaging frameworks based on competitive gaps. Upgrade to Trial or higher to access this feature.">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1120,6 +1129,7 @@ export default function Analysis() {
                 )}
               </CardContent>
             </Card>
+            </FeatureGate>
           </TabsContent>
 
           {/* Full Report Tab */}

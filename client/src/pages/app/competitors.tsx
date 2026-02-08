@@ -3,7 +3,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users, Lock } from "lucide-react";
+import { PlanLimitBadge } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -144,8 +145,7 @@ export default function Competitors() {
     },
   });
 
-  // Fetch tenant info to check plan
-  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean }>({
+  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any; usage?: any; limits?: any }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/info", {
@@ -157,6 +157,9 @@ export default function Competitors() {
   });
   
   const isPremiumPlan = tenantInfo?.isPremium || ["pro", "professional", "enterprise"].includes(tenantInfo?.plan || "");
+  const competitorLimit = tenantInfo?.limits?.competitorLimit ?? tenantInfo?.features?.competitorLimit ?? -1;
+  const competitorCount = tenantInfo?.usage?.competitorCount ?? competitors.length;
+  const isAtCompetitorLimit = competitorLimit !== -1 && competitorCount >= competitorLimit;
 
   const addCompetitor = useMutation({
     mutationFn: async (data: { name: string; url: string; projectId?: string }) => {
@@ -584,6 +587,7 @@ export default function Competitors() {
           <p className="text-muted-foreground">Compare your company against the competition.</p>
         </div>
         <div className="flex items-center gap-2">
+          <PlanLimitBadge current={competitorCount} limit={competitorLimit} label="Competitors" />
           {companyProfile && (
             <Button 
               variant="outline" 
@@ -596,8 +600,20 @@ export default function Competitors() {
           )}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
-                <Plus className="w-4 h-4 mr-2" /> Add Competitor
+              <Button 
+                className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
+                disabled={isAtCompetitorLimit}
+                data-testid="button-add-competitor"
+              >
+                {isAtCompetitorLimit ? (
+                  <>
+                    <Lock className="w-4 h-4 mr-2" /> Competitor Limit Reached
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" /> Add Competitor
+                  </>
+                )}
               </Button>
             </DialogTrigger>
           <DialogContent>

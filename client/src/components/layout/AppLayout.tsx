@@ -27,7 +27,8 @@ import {
   Info,
   Gem,
   ChevronDown,
-  RefreshCw
+  RefreshCw,
+  Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -214,6 +215,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const isEnterprise = tenantSettings?.plan === "enterprise";
+
+  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!response.ok) return { plan: "trial", isPremium: false };
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
+  const lockedNavItems = useMemo((): Set<string> => {
+    const locked = new Set<string>();
+    if (!tenantInfo?.features) return locked;
+    const f = tenantInfo.features;
+    if (f.battlecards === false) locked.add("/app/battlecards");
+    if (f.recommendations === false) locked.add("/app/action-items");
+    if (f.pdfReports === false) locked.add("/app/reports");
+    if (f.marketingPlanner === false) locked.add("/app/marketing-planner");
+    if (f.socialMonitoring === false) locked.add("/app/activity");
+    return locked;
+  }, [tenantInfo]);
 
   const getLastVisited = (path: string): number => {
     try {
@@ -435,15 +458,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       {group.items.map((item) => {
                         const isActive = location === item.href;
                         const indicator = navIndicators[item.href];
+                        const isLocked = lockedNavItems.has(item.href);
                         return (
                           <Link 
                             key={item.href} 
                             href={item.href}
+                            data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
                               isActive 
                                 ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
-                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                              isLocked && !isActive && "opacity-50"
                             )}
                           >
                             <div className="relative">
@@ -456,7 +482,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                               )}
                             </div>
                             <span className="flex-1">{item.label}</span>
-                            {indicator?.type === "count" && indicator.count && indicator.count > 0 && (
+                            {isLocked && (
+                              <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
+                            )}
+                            {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
                               <Badge 
                                 variant="secondary" 
                                 className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"

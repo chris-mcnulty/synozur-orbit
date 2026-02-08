@@ -9,6 +9,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
+import { checkCompetitorLimit, checkAnalysisLimit, checkFeatureAccess, getPlanFeatures, getTenantCompetitorCount, getMonthlyAnalysisCount, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { z } from "zod";
@@ -888,6 +889,24 @@ export async function registerRoutes(
             error: "Client Projects require a Pro or Enterprise plan",
             upgradeRequired: true
           });
+        }
+      }
+
+      // Plan gating: check competitor count limit (only for baseline competitors, not project competitors)
+      if (!projectId) {
+        const tenant = await storage.getTenant(ctx.tenantId);
+        if (tenant) {
+          const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
+          const limitCheck = checkCompetitorLimit(tenant.plan, currentCount);
+          if (!limitCheck.allowed) {
+            return res.status(403).json({
+              error: limitCheck.reason,
+              upgradeRequired: true,
+              requiredPlan: limitCheck.requiredPlan,
+              currentUsage: limitCheck.currentUsage,
+              limit: limitCheck.limit,
+            });
+          }
         }
       }
 
@@ -1890,11 +1909,26 @@ Return ONLY the JSON object, no other text.`;
       const analysisType = req.body?.analysisType || "full";
 
       // Check premium for full_with_change mode
+      const tenant = await storage.getTenantByDomain(tenantDomain);
       if (analysisType === "full_with_change") {
-        const tenant = await storage.getTenantByDomain(tenantDomain);
         const isPremium = tenant?.plan === "pro" || tenant?.plan === "enterprise";
         if (!isPremium) {
           return res.status(403).json({ error: "Change detection requires a Pro or Enterprise plan", upgradeRequired: true });
+        }
+      }
+
+      // Plan gating: check monthly analysis limit
+      if (tenant) {
+        const monthlyCount = await getMonthlyAnalysisCount(tenantDomain);
+        const analysisCheck = checkAnalysisLimit(tenant.plan, monthlyCount);
+        if (!analysisCheck.allowed) {
+          return res.status(403).json({
+            error: analysisCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: analysisCheck.requiredPlan,
+            currentUsage: analysisCheck.currentUsage,
+            limit: analysisCheck.limit,
+          });
         }
       }
 
@@ -2518,6 +2552,20 @@ Return ONLY valid JSON, no markdown or explanation.`;
   app.post("/api/reports/generate", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+
+      // Plan gating: check feature access
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = checkFeatureAccess(tenant.plan, "pdfReports");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({
+            error: featureCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: featureCheck.requiredPlan,
+          });
+        }
+      }
+
       const { scope, projectId, name, includeStrategicPlans } = req.body;
 
       // Validate scope
@@ -2850,6 +2898,20 @@ Return ONLY valid JSON, no markdown or explanation.`;
   app.post("/api/battlecards/generate/:competitorId", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+
+      // Plan gating: check feature access
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = checkFeatureAccess(tenant.plan, "battlecards");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({
+            error: featureCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: featureCheck.requiredPlan,
+          });
+        }
+      }
+
       const competitorId = req.params.competitorId;
 
       const competitor = await storage.getCompetitor(competitorId);
@@ -6203,12 +6265,16 @@ Respond in JSON format:
       const ctx = await getRequestContext(req);
       const tenant = await storage.getTenant(ctx.tenantId);
       
-      // Plan-gating
-      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
-        return res.status(403).json({ 
-          error: "Client Projects require a Pro or Enterprise plan",
-          upgradeRequired: true
-        });
+      // Plan gating: check feature access
+      if (tenant) {
+        const featureCheck = checkFeatureAccess(tenant.plan, "clientProjects");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({
+            error: featureCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: featureCheck.requiredPlan,
+          });
+        }
       }
 
       const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl } = req.body;
@@ -9610,6 +9676,20 @@ Generate a messaging framework in markdown format with sections:
   app.post("/api/baseline/recommendations/gtm_plan/generate", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+
+      // Plan gating: check feature access
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = checkFeatureAccess(tenant.plan, "gtmPlan");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({
+            error: featureCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: featureCheck.requiredPlan,
+          });
+        }
+      }
+
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
@@ -9758,6 +9838,20 @@ Make this practical and actionable for the team.`;
   app.post("/api/baseline/recommendations/messaging_framework/generate", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+
+      // Plan gating: check feature access
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = checkFeatureAccess(tenant.plan, "messagingFramework");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({
+            error: featureCheck.reason,
+            upgradeRequired: true,
+            requiredPlan: featureCheck.requiredPlan,
+          });
+        }
+      }
+
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       if (!companyProfile) {
@@ -11337,15 +11431,31 @@ Return only the description text, no quotes or formatting.`;
       const tenant = await storage.getTenantByDomain(domain);
       
       if (!tenant) {
-        return res.json({ plan: "trial", isPremium: false });
+        const defaultFeatures = getPlanFeatures("trial");
+        return res.json({ plan: "trial", isPremium: false, features: defaultFeatures, usage: { competitorCount: 0, monthlyAnalysisCount: 0 } });
       }
 
       const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise";
+      const features = getPlanFeatures(tenant.plan);
+      
+      const [competitorCount, monthlyAnalysisCount] = await Promise.all([
+        getTenantCompetitorCount(domain),
+        getMonthlyAnalysisCount(domain),
+      ]);
       
       res.json({
         plan: tenant.plan,
         isPremium,
         name: tenant.name,
+        features,
+        usage: {
+          competitorCount,
+          monthlyAnalysisCount,
+        },
+        limits: {
+          competitorLimit: features.competitorLimit,
+          analysisLimit: features.analysisLimit,
+        },
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

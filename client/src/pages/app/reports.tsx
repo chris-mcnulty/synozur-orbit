@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type ReportSections = {
   executiveSummary: boolean;
@@ -77,6 +78,17 @@ export default function Reports() {
   });
 
   const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
+  const { data: tenantInfo, isLoading: tenantLoading } = useQuery<{ plan: string; isPremium: boolean; features?: any }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!response.ok) return { plan: "trial", isPremium: false };
+      return response.json();
+    },
+  });
+
+  const pdfReportsAllowed = tenantInfo?.features?.pdfReports !== false;
 
   const deleteReportMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -227,6 +239,14 @@ export default function Reports() {
         <p className="text-muted-foreground">Generate branded competitive intelligence reports in one click.</p>
       </div>
 
+      {!tenantLoading && !pdfReportsAllowed ? (
+        <UpgradePrompt
+          feature="PDF Reports"
+          requiredPlan="Trial"
+          description="Generate branded competitive intelligence reports in PDF format. Upgrade your plan to unlock this feature."
+          className="mb-8"
+        />
+      ) : (
       <Card className="mb-8 border-primary/20">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2">
@@ -464,6 +484,7 @@ export default function Reports() {
           </Button>
         </CardFooter>
       </Card>
+      )}
 
       <div className="mb-4">
         <h2 className="text-xl font-semibold">Report History</h2>
