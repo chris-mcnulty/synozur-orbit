@@ -206,6 +206,8 @@ export const products = pgTable("products", {
   lastSocialCrawl: timestamp("last_social_crawl"), // When social was last checked
   previousWebsiteContent: text("previous_website_content"), // Previous crawl content for change detection
   lastWebsiteMonitor: timestamp("last_website_monitor"), // When website was last monitored for changes
+  competitivePositionSummary: text("competitive_position_summary"), // AI-generated 2-3 sentence summary of competitive positioning
+  summaryGeneratedAt: timestamp("summary_generated_at"), // When the summary was last generated
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

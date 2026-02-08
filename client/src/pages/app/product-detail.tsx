@@ -1377,6 +1377,11 @@ export default function ProductDetail() {
                           {!baselineProduct.product.description && (
                             <p className="text-sm text-muted-foreground/60 italic mt-1">No description - click edit to add one</p>
                           )}
+                          {(baselineProduct.product as any).competitivePositionSummary && (
+                            <div className="mt-2 p-2 rounded bg-primary/5 border border-primary/10">
+                              <p className="text-xs text-muted-foreground italic" data-testid="text-baseline-position-summary">{(baselineProduct.product as any).competitivePositionSummary}</p>
+                            </div>
+                          )}
                           {baselineProduct.product.url && (
                             <a 
                               href={baselineProduct.product.url} 
@@ -1389,6 +1394,22 @@ export default function ProductDetail() {
                           )}
                         </div>
                         <div className="flex gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/products/${baselineProduct.productId}/generate-summary`, { method: "POST", credentials: "include" });
+                                if (!res.ok) throw new Error("Failed");
+                                queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/products`] });
+                                toast({ title: "Summary Generated", description: "Competitive position summary has been updated." });
+                              } catch { toast({ title: "Error", description: "Failed to generate summary", variant: "destructive" }); }
+                            }}
+                            data-testid="button-generate-baseline-summary"
+                            title="Generate competitive position summary"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                          </Button>
                           <Button 
                             variant="ghost" 
                             size="icon" 
@@ -1752,6 +1773,9 @@ export default function ProductDetail() {
                               >
                                 View <ExternalLink className="h-3 w-3" />
                               </a>
+                            )}
+                            {(pp.product as any).competitivePositionSummary && (
+                              <p className="text-xs text-muted-foreground italic mt-1 line-clamp-2" data-testid={`text-position-summary-${pp.productId}`}>{(pp.product as any).competitivePositionSummary}</p>
                             )}
                           </div>
                           <div className="flex gap-1">

@@ -47,6 +47,7 @@ export default function Reports() {
   const [reportName, setReportName] = useState("");
   const [sections, setSections] = useState<ReportSections>(defaultSections);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [includeStrategicPlans, setIncludeStrategicPlans] = useState(false);
 
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["/api/reports"],
@@ -126,6 +127,7 @@ export default function Reports() {
           scope,
           projectId: scope === "project" ? selectedProjectId : undefined,
           sections: reportType === "capstone" ? sections : undefined,
+          includeStrategicPlans: includeStrategicPlans || undefined,
         }),
       });
 

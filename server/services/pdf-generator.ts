@@ -50,6 +50,7 @@ interface ProductSummary {
   id: string;
   name: string;
   description: string | null;
+  competitivePositionSummary?: string | null;
   status: string;
   featureCount: number;
   roadmapCount: number;
@@ -305,11 +306,13 @@ function generateReportHtml(data: ReportData): string {
     const themeName = theme.theme || theme.name || theme.title || "";
     const themeDesc = theme.description || theme.details || theme.observation || "";
     const competitorRef = theme.competitorName || theme.competitor || "";
+    const source = theme.source || "";
     if (!themeName && !themeDesc) return "";
+    const displayDesc = themeDesc && themeDesc !== "Based on profile" ? themeDesc : "";
     return `
     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="font-weight: 600; color: #1E293B; margin-bottom: 4px;">${escapeHtml(themeName)}</div>
-      ${themeDesc ? `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">${escapeHtml(themeDesc)}</div>` : ''}
+      ${displayDesc ? `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">${escapeHtml(displayDesc)}</div>` : ''}
       ${competitorRef ? `<div style="color: #64748B; font-size: 12px; font-style: italic;">Source: ${escapeHtml(competitorRef)}</div>` : ''}
     </div>
   `;
@@ -321,11 +324,13 @@ function generateReportHtml(data: ReportData): string {
     const ourMsg = msg.us || msg.ourMessage || msg.ourPosition || "";
     const compMsg = msg.competitorMessage || msg.competitorA || msg.keyMessage || msg.message || msg.them || msg.competitorPosition || "";
     if (!ourMsg && !compMsg) return "";
+    const displayTitle = competitorName || (category.length > 60 ? "Market Positioning" : category);
+    const headerLabel = competitorName ? competitorName : "Competitor";
     return `
     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #1E293B; margin-bottom: 10px;">${escapeHtml(competitorName || category)}</div>
+      <div style="font-weight: 600; color: #1E293B; margin-bottom: 10px;">${escapeHtml(displayTitle)}</div>
       ${ourMsg ? `<div style="color: #059669; font-size: 13px; margin-bottom: 8px;"><strong>Our Position:</strong> ${escapeHtml(ourMsg)}</div>` : ""}
-      ${compMsg ? `<div style="color: #475569; font-size: 14px;"><strong>${escapeHtml(competitorName || 'Competitor')}:</strong> ${escapeHtml(compMsg)}</div>` : ""}
+      ${compMsg ? `<div style="color: #475569; font-size: 14px;"><strong>${escapeHtml(headerLabel)}:</strong> ${escapeHtml(compMsg)}</div>` : ""}
     </div>
   `;
   }).filter(Boolean).join("");
@@ -464,11 +469,12 @@ function generateReportHtml(data: ReportData): string {
   const productCards = data.products.map(prod => `
     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
+        <div style="flex: 1;">
           <div style="font-weight: 600; color: #1E293B;">${escapeHtml(prod.name)}</div>
           ${prod.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(prod.description.slice(0, 150))}${prod.description.length > 150 ? "..." : ""}</div>` : ""}
+          ${prod.competitivePositionSummary ? `<div style="font-size: 12px; color: #6B7280; margin-top: 6px; padding: 8px; background: #F1F5F9; border-radius: 4px; border-left: 3px solid #7C3AED; font-style: italic;">${escapeHtml(prod.competitivePositionSummary)}</div>` : ""}
         </div>
-        <div style="text-align: right;">
+        <div style="text-align: right; margin-left: 16px;">
           <span style="background: ${prod.status === "baseline" ? "#EDE9FE" : "#F1F5F9"}; color: ${prod.status === "baseline" ? "#7C3AED" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${prod.status === "baseline" ? "Your Product" : "Competitor"}</span>
           <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${prod.featureCount} features, ${prod.roadmapCount} roadmap items</div>
         </div>
@@ -1218,6 +1224,7 @@ export async function generatePdfReport(
         id: pp.product.id,
         name: pp.product.name,
         description: pp.product.description,
+        competitivePositionSummary: pp.product.competitivePositionSummary,
         status: "competitor",
         featureCount: (await storage.getProductFeaturesByProduct(pp.product.id)).length,
         roadmapCount: (await storage.getRoadmapItemsByProduct(pp.product.id)).length,
@@ -1233,8 +1240,9 @@ export async function generatePdfReport(
         id: baselineProduct.product.id,
         name: baselineProduct.product.name,
         description: baselineProduct.product.description,
+        competitivePositionSummary: baselineProduct.product.competitivePositionSummary,
         status: "baseline",
-        featureCount: 0, // Will be set below
+        featureCount: 0,
         roadmapCount: 0,
       });
       
@@ -1296,6 +1304,7 @@ export async function generatePdfReport(
         id: prod.id,
         name: prod.name,
         description: prod.description,
+        competitivePositionSummary: prod.competitivePositionSummary,
         status: prod.isBaseline ? "baseline" : "competitor",
         featureCount: features.length,
         roadmapCount: roadmap.length,

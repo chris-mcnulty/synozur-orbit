@@ -36,7 +36,7 @@ export async function startFullRegeneration(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 7,
+    totalSteps: 8,
     startedAt: new Date(),
   };
   
@@ -683,8 +683,68 @@ Make this practical and ready to use in marketing materials.`;
       console.error("Full regen: Failed to record score history:", scoreError);
     }
     
-    progress.currentStep = "Complete";
+    // Step 8: Generate product competitive position summaries
+    progress.currentStep = "Generating product summaries";
     progress.stepsCompleted = 7;
+    
+    try {
+      const allProducts = await storage.getProductsByContext(contextFilter);
+      if (allProducts.length > 0) {
+        const anthropic = new Anthropic({
+          apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+          baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+        });
+
+        let competitorSummaryContext = "";
+        for (const c of competitors.slice(0, 5)) {
+          const analysis = c.analysisData as any;
+          competitorSummaryContext += `\n- ${c.name}: ${analysis?.summary || "No details"}`;
+        }
+
+        for (const product of allProducts) {
+          try {
+            const productAnalysis = product.analysisData as any;
+            const features = await storage.getProductFeaturesByProduct(product.id);
+            const featureList = features.slice(0, 10).map(f => f.name).join(", ");
+
+            const prompt = `Write a concise 2-3 sentence competitive position summary for this product.
+
+Product: ${product.name}
+Company: ${product.companyName || companyProfile?.companyName || "Unknown"}
+Description: ${product.description || "N/A"}
+${productAnalysis?.summary ? `Analysis: ${productAnalysis.summary}` : ""}
+${featureList ? `Key Features: ${featureList}` : ""}
+${product.isBaseline ? "This is the user's own product." : `This is a competitor product from ${product.companyName || "an unknown company"}.`}
+
+Competitive Landscape:${competitorSummaryContext || " No competitor data available."}
+
+Write 2-3 sentences that capture what this product does, its key differentiators, and how it compares to alternatives. Be specific and analytical. Return ONLY the summary text.`;
+
+            const message = await anthropic.messages.create({
+              model: "claude-sonnet-4-5",
+              max_tokens: 300,
+              messages: [{ role: "user", content: prompt }],
+            });
+
+            const content = message.content[0];
+            if (content.type === "text") {
+              await storage.updateProduct(product.id, {
+                competitivePositionSummary: content.text.trim(),
+                summaryGeneratedAt: new Date(),
+              });
+            }
+          } catch (e) {
+            console.error(`Full regen: Failed to generate summary for product ${product.name}:`, e);
+          }
+        }
+        console.log(`Full regen: Generated competitive position summaries for ${allProducts.length} products`);
+      }
+    } catch (productSummaryError) {
+      console.error("Full regen: Failed to generate product summaries:", productSummaryError);
+    }
+
+    progress.currentStep = "Complete";
+    progress.stepsCompleted = 8;
     progress.status = "completed";
     progress.completedAt = new Date();
 

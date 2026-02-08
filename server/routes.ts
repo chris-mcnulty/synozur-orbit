@@ -2417,7 +2417,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
   app.post("/api/reports/generate", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const { scope, projectId, name } = req.body;
+      const { scope, projectId, name, includeStrategicPlans } = req.body;
 
       // Validate scope
       if (scope && !["baseline", "project"].includes(scope)) {
@@ -2455,7 +2455,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
         reportName,
         scope || "baseline",
         projectId,
-        false,
+        !!includeStrategicPlans,
         ctx.marketId || undefined
       );
 
@@ -6455,6 +6455,190 @@ Respond in JSON format:
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate competitive position summary for a product
+  app.post("/api/products/:id/generate-summary", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      if (!validateResourceContext(product, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      const allProducts = await storage.getProductsByContext(toContextFilter(ctx));
+      const competitorProducts = allProducts.filter(p => p.id !== product.id && !p.isBaseline);
+
+      let competitorContext = "";
+      for (const cp of competitorProducts.slice(0, 5)) {
+        const analysis = cp.analysisData as any;
+        competitorContext += `\n- ${cp.name} (${cp.companyName || "Unknown"}): ${cp.description || analysis?.summary || "No details"}`;
+      }
+      for (const c of competitors.slice(0, 5)) {
+        const analysis = c.analysisData as any;
+        competitorContext += `\n- ${c.name}: ${analysis?.summary || "No details"}`;
+      }
+
+      const productAnalysis = product.analysisData as any;
+      const features = await storage.getProductFeaturesByProduct(product.id);
+      const featureList = features.slice(0, 10).map(f => f.name).join(", ");
+
+      const prompt = `Write a concise 2-3 sentence competitive position summary for this product.
+
+Product: ${product.name}
+Company: ${product.companyName || companyProfile?.companyName || "Unknown"}
+Description: ${product.description || "N/A"}
+${productAnalysis?.summary ? `Analysis: ${productAnalysis.summary}` : ""}
+${featureList ? `Key Features: ${featureList}` : ""}
+${product.isBaseline ? "This is the user's own product." : `This is a competitor product from ${product.companyName || "an unknown company"}.`}
+
+Competitive Landscape:${competitorContext || " No competitor data available."}
+
+Write 2-3 sentences that capture:
+1. What this product does and who it serves
+2. Its key differentiators or competitive position
+3. How it compares to alternatives in the market
+
+Be specific and analytical. Do not use generic marketing language. Return ONLY the summary text, no quotes or labels.`;
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 300,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = message.content[0];
+      if (content.type !== "text") {
+        return res.status(500).json({ error: "Failed to generate summary" });
+      }
+
+      const summary = content.text.trim();
+      await storage.updateProduct(product.id, {
+        competitivePositionSummary: summary,
+        summaryGeneratedAt: new Date(),
+      });
+
+      res.json({ summary, generatedAt: new Date().toISOString() });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Product summary generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update product competitive position summary (manual edit)
+  app.patch("/api/products/:id/summary", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      if (!validateResourceContext(product, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { summary } = req.body;
+      if (typeof summary !== "string") {
+        return res.status(400).json({ error: "Summary must be a string" });
+      }
+
+      await storage.updateProduct(product.id, {
+        competitivePositionSummary: summary,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate competitive position summaries for all products in context
+  app.post("/api/products/generate-all-summaries", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const products = await storage.getProductsByContext(toContextFilter(ctx));
+
+      if (products.length === 0) {
+        return res.json({ generated: 0, message: "No products found" });
+      }
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+
+      let competitorContext = "";
+      for (const c of competitors.slice(0, 5)) {
+        const analysis = c.analysisData as any;
+        competitorContext += `\n- ${c.name}: ${analysis?.summary || "No details"}`;
+      }
+
+      let generated = 0;
+      for (const product of products) {
+        try {
+          const productAnalysis = product.analysisData as any;
+          const features = await storage.getProductFeaturesByProduct(product.id);
+          const featureList = features.slice(0, 10).map(f => f.name).join(", ");
+
+          const prompt = `Write a concise 2-3 sentence competitive position summary for this product.
+
+Product: ${product.name}
+Company: ${product.companyName || companyProfile?.companyName || "Unknown"}
+Description: ${product.description || "N/A"}
+${productAnalysis?.summary ? `Analysis: ${productAnalysis.summary}` : ""}
+${featureList ? `Key Features: ${featureList}` : ""}
+${product.isBaseline ? "This is the user's own product." : `This is a competitor product from ${product.companyName || "an unknown company"}.`}
+
+Competitive Landscape:${competitorContext || " No competitor data available."}
+
+Write 2-3 sentences that capture what this product does, its key differentiators, and how it compares to alternatives. Be specific and analytical. Return ONLY the summary text.`;
+
+          const message = await anthropic.messages.create({
+            model: "claude-sonnet-4-5",
+            max_tokens: 300,
+            messages: [{ role: "user", content: prompt }],
+          });
+
+          const content = message.content[0];
+          if (content.type === "text") {
+            await storage.updateProduct(product.id, {
+              competitivePositionSummary: content.text.trim(),
+              summaryGeneratedAt: new Date(),
+            });
+            generated++;
+          }
+        } catch (e) {
+          console.error(`Failed to generate summary for product ${product.name}:`, e);
+        }
+      }
+
+      res.json({ generated, total: products.length });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Batch product summary generation error:", error);
       res.status(500).json({ error: error.message });
     }
   });
