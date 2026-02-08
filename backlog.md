@@ -315,16 +315,17 @@ When products are attached to a baseline company, generate and display 2-3 sente
 - [x] Fix LSP type errors in PDF generator (faviconUrl, talkingPoints, companyProfile)
 **Effort**: Low - COMPLETED
 
-#### Editable GTM Plan
-**Status**: Not implemented
-The draft GTM plan is the primary strategic input for Marketing Planner task generation. Users should be able to edit it directly:
-- [ ] View GTM plan in editable markdown/rich text editor
-- [ ] Add, edit, and delete strategic elements (goals, initiatives, messaging pillars)
-- [ ] Track version history of GTM plan changes
-- [ ] Manual save vs auto-save options
-- [ ] Indicate which elements are AI-generated vs user-edited
-- [ ] Re-generate specific sections while preserving user edits
-**Effort**: Medium
+#### Editable GTM Plan ✅
+**Status**: Implemented
+The draft GTM plan is the primary strategic input for Marketing Planner task generation. Users can edit it directly:
+- [x] View GTM plan in editable markdown editor (inline edit mode toggle)
+- [x] Edit content directly with save/cancel controls
+- [x] Track version history of GTM plan changes (up to 10 versions retained)
+- [x] Manual save with version history auto-creation on edit
+- [x] Same editing capability for Messaging Framework
+- [x] Restore previous versions from version history dialog
+- [ ] Re-generate specific sections while preserving user edits (future enhancement)
+**Effort**: Medium - COMPLETED
 
 #### Microsoft Planner Integration
 **Status**: Planned (not implemented)
@@ -397,13 +398,20 @@ Replace HTTP-based crawling with Puppeteer headless browser:
 - [x] Browser instance pooling for efficiency
 **Effort**: Medium - COMPLETED
 
-#### Consolidated Action Items
-**Status**: Not implemented
+#### Consolidated Action Items ✅
+**Status**: Implemented (Phase 1)
 Dashboard view showing all action items across baseline and projects for a tenant:
-- [ ] Aggregate view of all recommendations and action items
-- [ ] Ability to assign to users
-- [ ] Close, dismiss, or add comments
-**Effort**: Medium
+- [x] Aggregate view of all recommendations, feature recommendations, and gap analysis items
+- [x] Filter by source (Competitive Intel, Product Roadmap, Gap Analysis), impact, and status
+- [x] Search across all action items
+- [x] Accept/dismiss actions with status mutation
+- [x] Priority starring for recommendations
+- [x] Expandable detail cards with opportunity info
+- [x] Export to CSV
+- [x] Summary stats (total, high impact, priorities, by source)
+- [ ] Ability to assign to users (future phase)
+- [ ] Comments on action items (future phase)
+**Effort**: Medium - Phase 1 COMPLETED
 
 #### Wire AI Usage Logging
 **Status**: Not implemented

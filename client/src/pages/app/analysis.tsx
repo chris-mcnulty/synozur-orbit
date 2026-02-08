@@ -9,7 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -22,7 +22,8 @@ type LongFormRecommendation = {
   content: string | null;
   status: string;
   lastGeneratedAt: string | null;
-  savedPrompts?: { customGuidance?: string };
+  updatedAt?: string | null;
+  savedPrompts?: { customGuidance?: string; lastManualEdit?: string; versionHistory?: Array<{ content: string; savedAt: string; savedBy: string }> };
 };
 
 export default function Analysis() {
@@ -36,6 +37,11 @@ export default function Analysis() {
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
   const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
   const [gapCategoryFilter, setGapCategoryFilter] = useState<string>("all");
+  const [isEditingGtm, setIsEditingGtm] = useState(false);
+  const [gtmEditContent, setGtmEditContent] = useState("");
+  const [isEditingMessaging, setIsEditingMessaging] = useState(false);
+  const [messagingEditContent, setMessagingEditContent] = useState("");
+  const [versionHistoryType, setVersionHistoryType] = useState<"gtm" | "messaging" | null>(null);
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analysis"],
@@ -156,6 +162,35 @@ export default function Analysis() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/messaging_framework"] });
       toast.success("Messaging framework generated successfully!");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const saveContentMutation = useMutation({
+    mutationFn: async ({ id, content }: { id: string; content: string }) => {
+      const response = await fetch(`/api/baseline/recommendations/${id}/content`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to save content");
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      const type = variables.id === gtmPlan?.id ? "gtm_plan" : "messaging_framework";
+      queryClient.invalidateQueries({ queryKey: [`/api/baseline/recommendations/${type}`] });
+      if (type === "gtm_plan") {
+        setIsEditingGtm(false);
+      } else {
+        setIsEditingMessaging(false);
+      }
+      toast.success("Content saved successfully!");
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -763,6 +798,56 @@ export default function Analysis() {
                     ) : gtmPlan?.status === "generated" && gtmPlan.content ? (
                       <div className="space-y-4">
                         <div className="flex gap-2 justify-end">
+                          {!isEditingGtm ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setGtmEditContent(gtmPlan.content || "");
+                                setIsEditingGtm(true);
+                              }}
+                              data-testid="button-edit-gtm"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsEditingGtm(false)}
+                                data-testid="button-cancel-edit-gtm"
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => saveContentMutation.mutate({ id: gtmPlan.id, content: gtmEditContent })}
+                                disabled={saveContentMutation.isPending}
+                                data-testid="button-save-gtm"
+                              >
+                                {saveContentMutation.isPending ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Save className="mr-2 h-4 w-4" />
+                                )}
+                                Save
+                              </Button>
+                            </>
+                          )}
+                          {(gtmPlan.savedPrompts?.versionHistory?.length ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setVersionHistoryType("gtm")}
+                              data-testid="button-gtm-version-history"
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              History ({gtmPlan.savedPrompts?.versionHistory?.length})
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -790,19 +875,33 @@ export default function Analysis() {
                             Download Word
                           </Button>
                         </div>
-                        <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                          <div dangerouslySetInnerHTML={{ 
-                            __html: gtmPlan.content
-                              .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                              .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                              .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                              .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                              .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                              .replace(/^- (.*$)/gim, '<li>$1</li>')
-                              .replace(/\n\n/gim, '</p><p>')
-                              .replace(/\n/gim, '<br/>')
-                          }} />
-                        </div>
+                        {isEditingGtm ? (
+                          <Textarea
+                            value={gtmEditContent}
+                            onChange={(e) => setGtmEditContent(e.target.value)}
+                            className="min-h-[500px] font-mono text-sm"
+                            data-testid="input-gtm-edit"
+                          />
+                        ) : (
+                          <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
+                            <div dangerouslySetInnerHTML={{ 
+                              __html: gtmPlan.content
+                                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                                .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                                .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                                .replace(/^- (.*$)/gim, '<li>$1</li>')
+                                .replace(/\n\n/gim, '</p><p>')
+                                .replace(/\n/gim, '<br/>')
+                            }} />
+                          </div>
+                        )}
+                        {gtmPlan.savedPrompts?.lastManualEdit && (
+                          <p className="text-xs text-muted-foreground text-right">
+                            Last manually edited: {new Date(gtmPlan.savedPrompts.lastManualEdit).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-12 border-2 border-dashed rounded-lg">
@@ -903,6 +1002,56 @@ export default function Analysis() {
                     ) : messagingFramework?.status === "generated" && messagingFramework.content ? (
                       <div className="space-y-4">
                         <div className="flex gap-2 justify-end">
+                          {!isEditingMessaging ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setMessagingEditContent(messagingFramework.content || "");
+                                setIsEditingMessaging(true);
+                              }}
+                              data-testid="button-edit-messaging"
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsEditingMessaging(false)}
+                                data-testid="button-cancel-edit-messaging"
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => saveContentMutation.mutate({ id: messagingFramework.id, content: messagingEditContent })}
+                                disabled={saveContentMutation.isPending}
+                                data-testid="button-save-messaging"
+                              >
+                                {saveContentMutation.isPending ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Save className="mr-2 h-4 w-4" />
+                                )}
+                                Save
+                              </Button>
+                            </>
+                          )}
+                          {(messagingFramework.savedPrompts?.versionHistory?.length ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setVersionHistoryType("messaging")}
+                              data-testid="button-messaging-version-history"
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              History ({messagingFramework.savedPrompts?.versionHistory?.length})
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -930,19 +1079,33 @@ export default function Analysis() {
                             Download Word
                           </Button>
                         </div>
-                        <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                          <div dangerouslySetInnerHTML={{ 
-                            __html: messagingFramework.content
-                              .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                              .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                              .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                              .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                              .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                              .replace(/^- (.*$)/gim, '<li>$1</li>')
-                              .replace(/\n\n/gim, '</p><p>')
-                              .replace(/\n/gim, '<br/>')
-                          }} />
-                        </div>
+                        {isEditingMessaging ? (
+                          <Textarea
+                            value={messagingEditContent}
+                            onChange={(e) => setMessagingEditContent(e.target.value)}
+                            className="min-h-[500px] font-mono text-sm"
+                            data-testid="input-messaging-edit"
+                          />
+                        ) : (
+                          <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
+                            <div dangerouslySetInnerHTML={{ 
+                              __html: messagingFramework.content
+                                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                                .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                                .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                                .replace(/^- (.*$)/gim, '<li>$1</li>')
+                                .replace(/\n\n/gim, '</p><p>')
+                                .replace(/\n/gim, '<br/>')
+                            }} />
+                          </div>
+                        )}
+                        {messagingFramework.savedPrompts?.lastManualEdit && (
+                          <p className="text-xs text-muted-foreground text-right">
+                            Last manually edited: {new Date(messagingFramework.savedPrompts.lastManualEdit).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-12 border-2 border-dashed rounded-lg">
@@ -1212,6 +1375,53 @@ export default function Analysis() {
           </TabsContent>
         </Tabs>
       )}
+      <Dialog open={!!versionHistoryType} onOpenChange={(open) => !open && setVersionHistoryType(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              {versionHistoryType === "gtm" ? "GTM Plan" : "Messaging Framework"} Version History
+            </DialogTitle>
+            <DialogDescription>
+              Previous versions are saved automatically when you edit content. Up to 10 versions are retained.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(versionHistoryType === "gtm" ? gtmPlan?.savedPrompts?.versionHistory : messagingFramework?.savedPrompts?.versionHistory)?.map((version: any, index: number, arr: any[]) => (
+              <div key={index} className="border rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Badge variant="outline">Version {arr.length - index}</Badge>
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(version.savedAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded p-3 max-h-[200px] overflow-y-auto">
+                  <pre className="whitespace-pre-wrap text-xs">{version.content?.substring(0, 500)}{version.content?.length > 500 ? "..." : ""}</pre>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (versionHistoryType === "gtm") {
+                      setGtmEditContent(version.content);
+                      setIsEditingGtm(true);
+                    } else {
+                      setMessagingEditContent(version.content);
+                      setIsEditingMessaging(true);
+                    }
+                    setVersionHistoryType(null);
+                    toast.info("Version loaded into editor. Click Save to apply.");
+                  }}
+                  data-testid={`button-restore-version-${index}`}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore This Version
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

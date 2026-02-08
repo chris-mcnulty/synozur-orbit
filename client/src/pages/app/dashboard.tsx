@@ -1232,7 +1232,7 @@ export default function Dashboard() {
               </CardTitle>
               <CardDescription>Recommended actions based on analysis</CardDescription>
             </div>
-            <Link href="/app/recommendations">
+            <Link href="/app/action-items">
               <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-insights">
                 View All <ChevronRight className="w-4 h-4 ml-1" />
               </Button>

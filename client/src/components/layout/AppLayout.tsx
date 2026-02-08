@@ -251,11 +251,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       indicators["/app/analysis"] = { type: "action" };
     }
     
-    const pendingRecs = recommendations.filter((r: any) => r.status === "Open" || r.status === "In Progress");
+    const pendingRecs = recommendations.filter((r: any) => r.status === "Open" || r.status === "In Progress" || r.status === "pending");
     if (pendingRecs.length > 0) {
-      indicators["/app/recommendations"] = { type: "count", count: pendingRecs.length };
-    } else if (hasNewContent("/app/recommendations", recommendations)) {
-      indicators["/app/recommendations"] = { type: "new" };
+      indicators["/app/action-items"] = { type: "count", count: pendingRecs.length };
+    } else if (hasNewContent("/app/action-items", recommendations)) {
+      indicators["/app/action-items"] = { type: "new" };
     }
     
     const highImpactActivity = activityData.filter((a: any) => a.impact === "High");
@@ -321,7 +321,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Insights",
       items: [
         { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
-        { label: "Recommendations", icon: Lightbulb, href: "/app/recommendations" },
+        { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
         { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
       ]

@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Editable GTM Plan & Messaging Framework
+  - Inline edit mode with markdown editor for both GTM Plan and Messaging Framework tabs
+  - Edit/Cancel/Save controls with immediate content updates
+  - Automatic version history tracking (up to 10 previous versions retained)
+  - Version history dialog with timestamps and content previews
+  - Restore any previous version directly into the editor
+  - Last manual edit timestamp displayed when content has been user-edited
 - Product Competitive Position Summaries
   - AI-generated 2-3 sentence competitive position analysis for each product
   - Integrated into full regeneration as step 8 (auto-generates for all baseline products)
@@ -20,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GTM Plan & Messaging Framework toggle in standard PDF reports
   - Reports page now has a checkbox to include strategic plans in any baseline report
   - Previously only available via the Full Analysis Report endpoint
+- Consolidated Action Items Dashboard (`/app/action-items`)
+  - Unified view aggregating recommendations, product feature suggestions, and gap analysis items
+  - Filter by source (Competitive Intel, Product Roadmap, Gap Analysis), impact level, and status
+  - Search across all action items with real-time filtering
+  - Accept/dismiss/star actions with expandable detail cards
+  - CSV export for digital visioning tools (Mural, Miro)
+  - Summary statistics cards showing totals, high impact items, priorities, and source breakdown
+  - Replaced "Recommendations" in sidebar navigation with "Action Items"
 
 ### Fixed
 - PDF Report: Theme cards no longer show "Based on profile" placeholder text

@@ -2360,6 +2360,107 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  // ==================== CONSOLIDATED ACTION ITEMS ====================
+
+  app.get("/api/action-items", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const contextFilter = toContextFilter(ctx);
+
+      const [recommendations, featureRecs, latestAnalysis, allProducts] = await Promise.all([
+        storage.getRecommendationsByContext(contextFilter),
+        storage.getFeatureRecommendationsByContext(contextFilter),
+        storage.getLatestAnalysisByContext(contextFilter),
+        storage.getProductsByContext(contextFilter),
+      ]);
+
+      const productMap = new Map(allProducts.map(p => [p.id, p.name]));
+
+      const actionItems: any[] = [];
+
+      for (const rec of recommendations) {
+        actionItems.push({
+          id: rec.id,
+          type: "recommendation",
+          title: rec.title,
+          description: rec.description,
+          area: rec.area,
+          impact: rec.impact,
+          status: rec.status,
+          isPriority: rec.isPriority,
+          thumbsUp: rec.thumbsUp,
+          thumbsDown: rec.thumbsDown,
+          source: "Competitive Intelligence",
+          sourceId: rec.competitorId || null,
+          productName: rec.productId ? productMap.get(rec.productId) || null : null,
+          assignedTo: rec.assignedTo,
+          createdAt: rec.createdAt,
+        });
+      }
+
+      for (const fr of featureRecs) {
+        actionItems.push({
+          id: fr.id,
+          type: "feature_recommendation",
+          title: fr.title,
+          description: fr.explanation,
+          area: fr.type,
+          impact: fr.suggestedPriority === "high" ? "High" : fr.suggestedPriority === "medium" ? "Medium" : "Low",
+          status: fr.status,
+          isPriority: fr.suggestedPriority === "high",
+          thumbsUp: 0,
+          thumbsDown: 0,
+          source: "Product Roadmap",
+          sourceId: fr.productId,
+          productName: productMap.get(fr.productId) || null,
+          suggestedQuarter: fr.suggestedQuarter,
+          assignedTo: null,
+          createdAt: fr.createdAt,
+        });
+      }
+
+      const gaps = Array.isArray(latestAnalysis?.gaps) ? latestAnalysis.gaps : [];
+      for (const gap of gaps as any[]) {
+        if (gap.status === "dismissed") continue;
+        actionItems.push({
+          id: gap.id || `gap-${gap.area || gap.title || "unknown"}`,
+          type: "gap",
+          title: gap.area || gap.title || gap.name || "Gap Identified",
+          description: gap.observation || gap.description || gap.details || "",
+          area: "Gap Analysis",
+          impact: gap.impact || "Medium",
+          status: gap.status || "pending",
+          isPriority: gap.impact === "High",
+          thumbsUp: 0,
+          thumbsDown: 0,
+          source: "Gap Analysis",
+          sourceId: null,
+          productName: null,
+          opportunity: gap.opportunity || gap.recommendation || "",
+          assignedTo: null,
+          createdAt: latestAnalysis?.createdAt || null,
+        });
+      }
+
+      actionItems.sort((a, b) => {
+        if (a.isPriority && !b.isPriority) return -1;
+        if (!a.isPriority && b.isPriority) return 1;
+        const impactOrder: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+        const aImpact = impactOrder[a.impact] ?? 2;
+        const bImpact = impactOrder[b.impact] ?? 2;
+        if (aImpact !== bImpact) return aImpact - bImpact;
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
+
+      res.json(actionItems);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== RECOMMENDATION ROUTES ====================
 
   app.get("/api/recommendations", async (req, res) => {
@@ -10075,6 +10176,83 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
       });
       res.json(updated);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/baseline/recommendations/:id/content", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { content } = req.body;
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ error: "Content is required" });
+      }
+
+      const recommendation = await storage.getLongFormRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== ctx.tenantDomain) {
+        const user = await storage.getUser(ctx.userId);
+        if (user?.role !== "Global Admin") {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      const previousVersions = ((recommendation.savedPrompts as any)?.versionHistory || []) as any[];
+      if (recommendation.content && recommendation.content !== content) {
+        previousVersions.push({
+          content: recommendation.content,
+          savedAt: recommendation.updatedAt || recommendation.lastGeneratedAt || new Date(),
+          savedBy: recommendation.generatedBy || ctx.userId,
+        });
+        if (previousVersions.length > 10) {
+          previousVersions.splice(0, previousVersions.length - 10);
+        }
+      }
+
+      const updated = await storage.updateLongFormRecommendation(req.params.id, {
+        content,
+        updatedAt: new Date(),
+        savedPrompts: {
+          ...((recommendation.savedPrompts as any) || {}),
+          versionHistory: previousVersions,
+          lastManualEdit: new Date().toISOString(),
+          lastEditedBy: ctx.userId,
+        },
+      });
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/baseline/recommendations/:id/versions", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const recommendation = await storage.getLongFormRecommendation(req.params.id);
+      if (!recommendation) {
+        return res.status(404).json({ error: "Recommendation not found" });
+      }
+
+      if (recommendation.tenantDomain !== ctx.tenantDomain) {
+        const user = await storage.getUser(ctx.userId);
+        if (user?.role !== "Global Admin") {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      const versions = ((recommendation.savedPrompts as any)?.versionHistory || []) as any[];
+      res.json(versions);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
