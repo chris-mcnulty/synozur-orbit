@@ -216,9 +216,11 @@ export default function MarkdownViewer({ url, className = "", maxHeight = "500px
   }
 
   return (
-    <ScrollArea className={className} style={{ maxHeight }}>
-      <div className="pr-4">{renderMarkdown(content)}</div>
-    </ScrollArea>
+    <div style={{ maxHeight, overflow: "hidden" }}>
+      <ScrollArea className={`h-full ${className}`} style={{ height: maxHeight }}>
+        <div className="pr-4">{renderMarkdown(content)}</div>
+      </ScrollArea>
+    </div>
   );
 }
 

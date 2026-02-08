@@ -44,7 +44,7 @@ export default function About() {
                       A detailed history of all updates, improvements, and new features.
                     </p>
                   </div>
-                  <MarkdownViewer url="/api/content/changelog.md" maxHeight="500px" />
+                  <MarkdownViewer url="/api/content/changelog.md" maxHeight="calc(100vh - 300px)" />
                 </TabsContent>
                 <TabsContent value="backlog" className="mt-0">
                   <div className="mb-4">
@@ -52,7 +52,7 @@ export default function About() {
                       Features and improvements we're tracking for future releases.
                     </p>
                   </div>
-                  <MarkdownViewer url="/api/content/backlog.md" maxHeight="500px" />
+                  <MarkdownViewer url="/api/content/backlog.md" maxHeight="calc(100vh - 300px)" />
                 </TabsContent>
                 <TabsContent value="roadmap" className="mt-0">
                   <div className="mb-4">
