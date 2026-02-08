@@ -26,7 +26,7 @@ import { captureVisualAssets } from "./services/visual-capture";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
-import { calculateScores, calculateBaselineScore, getCurrentPeriod, type ScoreBreakdown } from "./services/scoring-service";
+import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
@@ -3585,7 +3585,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
         analysisData: profile.analysisData as any,
       });
       
-      const period = getCurrentPeriod();
+      const period = getCurrentWeeklyPeriod();
       
       // Check if we already have a record for this period
       const existingHistory = await storage.getScoreHistory("baseline", profile.id, 1);
@@ -10905,8 +10905,8 @@ Return only the description text, no quotes or formatting.`;
       if (companyProfile && baselineScores) {
         try {
           const existingScore = await storage.getLatestScoreForEntity("baseline", companyProfile.id);
-          const currentPeriod = new Date().toISOString().slice(0, 7); // YYYY-MM format
-          const existingPeriod = existingScore?.recordedAt ? new Date(existingScore.recordedAt).toISOString().slice(0, 7) : null;
+          const currentPeriod = getCurrentWeeklyPeriod(); // YYYY-Wxx format
+          const existingPeriod = existingScore?.period || null;
           
           // Only save if no history exists yet OR we're in a new period
           if (!existingScore || existingPeriod !== currentPeriod) {

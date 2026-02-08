@@ -212,7 +212,7 @@ export default function Dashboard() {
     queryKey: ["/api/score-history", companyProfile?.id],
     queryFn: async () => {
       if (!companyProfile?.id) return [];
-      const response = await fetch(`/api/score-history/baseline/${companyProfile.id}?limit=12`, { credentials: "include" });
+      const response = await fetch(`/api/score-history/baseline/${companyProfile.id}?limit=26`, { credentials: "include" });
       if (!response.ok) return [];
       return response.json();
     },
@@ -1006,7 +1006,11 @@ export default function Dashboard() {
                     dataKey="period" 
                     tick={{ fontSize: 10 }} 
                     stroke="hsl(var(--muted-foreground))"
-                    tickFormatter={(val) => val?.slice(-5) || val}
+                    tickFormatter={(val) => {
+                      if (!val) return val;
+                      if (val.includes('W')) return val.replace(/^\d{4}-/, '');
+                      return val?.slice(-5) || val;
+                    }}
                   />
                   <YAxis 
                     domain={[0, 100]} 

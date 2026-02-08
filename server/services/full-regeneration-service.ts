@@ -614,8 +614,8 @@ Make this practical and ready to use in marketing materials.`;
     progress.stepsCompleted = 6;
     
     try {
-      const { calculateBaselineScore, calculateScores, getCurrentPeriod } = await import("./scoring-service");
-      const period = getCurrentPeriod();
+      const { calculateBaselineScore, calculateScores, getCurrentWeeklyPeriod } = await import("./scoring-service");
+      const period = getCurrentWeeklyPeriod();
       
       // Record baseline score history
       if (companyProfile) {
