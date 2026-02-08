@@ -42,7 +42,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
-- **Service Plans**: Database-driven plans (Trial, Free, Pro, Enterprise, Master) with flexible feature gating via a JSONB `features` column and a central Feature Registry (`server/services/plan-policy.ts`). Includes a 60-day trial system with automated email reminders.
+- **Service Plans**: Database-driven plans (Trial, Free, Pro, Enterprise, Unlimited) with flexible feature gating via a JSONB `features` column and a central Feature Registry (`server/services/plan-policy.ts`). Includes a 60-day trial system with automated email reminders.
 - **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining.
 - **AI Analysis**: Competitive website analysis, AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling, social media link discovery, blog post detection, scheduled background jobs.

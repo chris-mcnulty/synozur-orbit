@@ -623,8 +623,8 @@ export default function AdminPage() {
 
   const getPlanBadge = (plan: string) => {
     switch (plan) {
-      case "master":
-        return <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500">Master</Badge>;
+      case "unlimited":
+        return <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500">Unlimited</Badge>;
       case "enterprise":
         return <Badge className="bg-gradient-to-r from-purple-500 to-pink-500">Enterprise</Badge>;
       case "pro":

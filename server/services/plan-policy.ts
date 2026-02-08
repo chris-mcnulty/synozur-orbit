@@ -102,7 +102,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     ssoIntegration: true,
     customBranding: true,
   },
-  master: {
+  unlimited: {
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -124,7 +124,7 @@ const DEFAULT_PLAN_LIMITS: Record<string, { competitorLimit: number; analysisLim
   trial: { competitorLimit: 3, analysisLimit: 5, adminUserLimit: 1, readWriteUserLimit: 2, readOnlyUserLimit: 5 },
   pro: { competitorLimit: 10, analysisLimit: -1, adminUserLimit: 3, readWriteUserLimit: 10, readOnlyUserLimit: 20 },
   enterprise: { competitorLimit: -1, analysisLimit: -1, adminUserLimit: -1, readWriteUserLimit: -1, readOnlyUserLimit: -1 },
-  master: { competitorLimit: -1, analysisLimit: -1, adminUserLimit: -1, readWriteUserLimit: -1, readOnlyUserLimit: -1 },
+  unlimited: { competitorLimit: -1, analysisLimit: -1, adminUserLimit: -1, readWriteUserLimit: -1, readOnlyUserLimit: -1 },
 };
 
 let planCache: Map<string, { features: Record<string, boolean>; limits: typeof DEFAULT_PLAN_LIMITS.free }> | null = null;
@@ -413,11 +413,11 @@ export async function seedDefaultPlans(): Promise<void> {
       sortOrder: 3,
     },
     {
-      name: "master",
-      displayName: "Master (Internal)",
+      name: "unlimited",
+      displayName: "Unlimited (Internal)",
       description: "Synozur internal - unlimited access to all features",
-      ...DEFAULT_PLAN_LIMITS.master,
-      features: DEFAULT_PLAN_FEATURES.master,
+      ...DEFAULT_PLAN_LIMITS.unlimited,
+      features: DEFAULT_PLAN_FEATURES.unlimited,
       multiMarketEnabled: true,
       marketLimit: null,
       socialMonitoringEnabled: true,

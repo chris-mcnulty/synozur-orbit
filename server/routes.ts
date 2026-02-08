@@ -11452,7 +11452,7 @@ Return only the description text, no quotes or formatting.`;
         return res.json({ plan: "trial", isPremium: false, features: defaultFeatures, usage: { competitorCount: 0, monthlyAnalysisCount: 0 } });
       }
 
-      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "master";
+      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "unlimited";
       const features = await getPlanFeaturesAsync(tenant.plan);
       
       const [competitorCount, monthlyAnalysisCount] = await Promise.all([
