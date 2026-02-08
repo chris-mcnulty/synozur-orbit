@@ -148,6 +148,7 @@ function markdownToHtml(markdown: string): string {
   
   let html = escapeHtml(markdown);
   
+  html = html.replace(/^#### (.+)$/gm, '<h4 style="font-size: 14px; font-weight: 600; color: #1e293b; margin: 16px 0 8px 0;">$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3 style="font-size: 16px; font-weight: 600; color: #1e293b; margin: 20px 0 12px 0;">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 24px 0 14px 0;">$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1 style="font-size: 22px; font-weight: 700; color: #1e293b; margin: 28px 0 16px 0;">$1</h1>');
@@ -155,10 +156,11 @@ function markdownToHtml(markdown: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   
-  html = html.replace(/^- (.+)$/gm, '<li style="margin: 4px 0; padding-left: 4px;">$1</li>');
-  html = html.replace(/(<li[^>]*>.*<\/li>\n?)+/g, (match) => `<ul style="margin: 10px 0; padding-left: 24px; list-style-type: disc;">${match}</ul>`);
+  html = html.replace(/^- (.+)$/gm, '<li class="ul-item" style="margin: 4px 0; padding-left: 4px;">$1</li>');
+  html = html.replace(/(<li class="ul-item"[^>]*>.*<\/li>\n?)+/g, (match) => `<ul style="margin: 10px 0; padding-left: 24px; list-style-type: disc;">${match}</ul>`);
   
-  html = html.replace(/^\d+\. (.+)$/gm, '<li style="margin: 4px 0; padding-left: 4px;">$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, '<li class="ol-item" style="margin: 4px 0; padding-left: 4px;">$1</li>');
+  html = html.replace(/(<li class="ol-item"[^>]*>.*<\/li>\n?)+/g, (match) => `<ol style="margin: 10px 0; padding-left: 24px; list-style-type: decimal;">${match}</ol>`);
   
   const paragraphs = html.split(/\n{2,}/);
   html = paragraphs.map(p => {
@@ -845,7 +847,7 @@ function generateReportHtml(data: ReportData): string {
       <div class="section-title">Company Baseline</div>
       <div class="company-profile">
         <div style="display: flex; align-items: flex-start; gap: 16px;">
-          ${data.companyProfile.faviconUrl ? `<img src="${data.companyProfile.faviconUrl}" alt="Logo" style="width: 48px; height: 48px; border-radius: 8px; object-fit: contain; background: #f1f5f9;" />` : `<div style="width: 48px; height: 48px; border-radius: 8px; background: linear-gradient(135deg, #1e3a5f, #3b82f6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 18px;">${escapeHtml(data.companyProfile.companyName.charAt(0))}</div>`}
+          ${(data.companyProfile as any).faviconUrl ? `<img src="${(data.companyProfile as any).faviconUrl}" alt="Logo" style="width: 48px; height: 48px; border-radius: 8px; object-fit: contain; background: #f1f5f9;" />` : `<div style="width: 48px; height: 48px; border-radius: 8px; background: linear-gradient(135deg, #1e3a5f, #3b82f6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 18px;">${escapeHtml(data.companyProfile.companyName.charAt(0))}</div>`}
           <div style="flex: 1;">
             <div class="company-name">${escapeHtml(data.companyProfile.companyName)}</div>
             <div class="company-url">${escapeHtml(data.companyProfile.websiteUrl)}</div>
@@ -1679,7 +1681,7 @@ function generateCompetitorReportHtml(data: CompetitorReportData): string {
         </div>
         <div style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 16px;">
           <div style="font-weight: 600; color: #4F46E5; font-size: 13px; margin-bottom: 12px;">HOW TO WIN</div>
-          ${(Array.isArray(data.battlecard.talkingPoints) ? data.battlecard.talkingPoints : []).map((t: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(t))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No talking points defined</div>'}
+          ${(Array.isArray((data.battlecard as any).talkingPoints) ? (data.battlecard as any).talkingPoints : []).map((t: string) => `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">• ${escapeHtml(String(t))}</div>`).join("") || '<div style="color: #94A3B8; font-size: 13px;">No talking points defined</div>'}
         </div>
       </div>
     </div>
@@ -2075,7 +2077,7 @@ export async function generateCompetitorPdfReport(
 
   const reportData: CompetitorReportData = {
     competitor,
-    companyProfile,
+    companyProfile: companyProfile || null,
     battlecard,
     scores,
     generatedAt: new Date(),

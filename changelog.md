@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Product Competitive Position Summaries
+  - AI-generated 2-3 sentence competitive position analysis for each product
+  - Integrated into full regeneration as step 8 (auto-generates for all baseline products)
+  - Single-product and batch generation endpoints
+  - Manual edit capability with direct save
+  - Summaries displayed on product detail page and dashboard overview
+  - Included in branded PDF reports
+- GTM Plan & Messaging Framework toggle in standard PDF reports
+  - Reports page now has a checkbox to include strategic plans in any baseline report
+  - Previously only available via the Full Analysis Report endpoint
+
+### Fixed
+- PDF Report: Theme cards no longer show "Based on profile" placeholder text
+- PDF Report: Messaging comparison shows "Market Positioning" header instead of overly long audience text when competitor names unavailable
+- PDF Report: Numbered lists now properly wrapped in ordered list tags
+- PDF Report: Added h4 heading support in markdown-to-HTML conversion
+- PDF Report: Resolved LSP type errors for faviconUrl, talkingPoints, and companyProfile fields
+
 - UX Optimization Phase 3: Refresh Center & Smart Suggestions
   - Dedicated Refresh Center page (`/app/refresh-center`) for managing all data refresh operations
   - Quick action cards: Refresh Baseline, Refresh All Websites, Refresh All Social, View Job Queue

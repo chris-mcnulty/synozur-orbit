@@ -418,6 +418,29 @@ export default function Reports() {
               data-testid="input-report-name"
             />
           </div>
+
+          {scope === "baseline" && (
+            <div
+              className={cn(
+                "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                includeStrategicPlans
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/50"
+              )}
+              onClick={() => setIncludeStrategicPlans(!includeStrategicPlans)}
+              data-testid="toggle-strategic-plans"
+            >
+              <Checkbox
+                checked={includeStrategicPlans}
+                onCheckedChange={(checked) => setIncludeStrategicPlans(!!checked)}
+                className="h-4 w-4"
+              />
+              <div>
+                <span className="text-sm font-medium">Include GTM Plan & Messaging Framework</span>
+                <p className="text-xs text-muted-foreground">Add your Go-to-Market plan and messaging framework to the report</p>
+              </div>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="border-t pt-4">
           <Button 

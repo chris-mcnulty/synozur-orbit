@@ -294,16 +294,26 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
 **Effort**: High (Phase 1 complete, remaining phases in progress)
 
-#### Product Competitive Position Summaries
-**Status**: Backlogged
+#### Product Competitive Position Summaries ✅
+**Status**: Implemented
 When products are attached to a baseline company, generate and display 2-3 sentence competitive position summaries:
-- [ ] Add `competitivePositionSummary` field to products schema
-- [ ] Generate summary during full regeneration (rebuild all) process
-- [ ] Display product summaries on Overview page (not just product names)
-- [ ] Include summaries in Capstone PDF reports (listing just product names isn't helpful)
-- [ ] Allow manual editing of summaries if needed
-- [ ] AI generates summary based on product features, competitor analysis, and market positioning
-**Effort**: Medium
+- [x] Add `competitivePositionSummary` field to products schema
+- [x] Generate summary during full regeneration (rebuild all) process (step 8)
+- [x] Display product summaries on Overview page (not just product names)
+- [x] Include summaries in Capstone PDF reports
+- [x] Allow manual editing of summaries if needed
+- [x] AI generates summary based on product features, competitor analysis, and market positioning
+**Effort**: Medium - COMPLETED
+
+#### PDF Report Quality Fixes ✅
+**Status**: Implemented
+- [x] Filter "Based on profile" placeholder text from theme cards
+- [x] Better competitor name fallback in messaging comparison (avoid generic "Competitor")
+- [x] Include GTM Plan & Messaging Framework as toggleable option in standard reports
+- [x] Fix numbered list formatting in markdownToHtml (wrap in `<ol>` tags)
+- [x] Add h4 heading support in markdown-to-HTML conversion
+- [x] Fix LSP type errors in PDF generator (faviconUrl, talkingPoints, companyProfile)
+**Effort**: Low - COMPLETED
 
 #### Editable GTM Plan
 **Status**: Not implemented
