@@ -9,7 +9,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
-import { checkCompetitorLimit, checkAnalysisLimit, checkFeatureAccess, getPlanFeatures, getTenantCompetitorCount, getMonthlyAnalysisCount, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
+import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
 import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
 import { z } from "zod";
@@ -897,7 +897,7 @@ export async function registerRoutes(
         const tenant = await storage.getTenant(ctx.tenantId);
         if (tenant) {
           const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
-          const limitCheck = checkCompetitorLimit(tenant.plan, currentCount);
+          const limitCheck = await checkCompetitorLimitAsync(tenant.plan, currentCount);
           if (!limitCheck.allowed) {
             return res.status(403).json({
               error: limitCheck.reason,
@@ -1920,7 +1920,7 @@ Return ONLY the JSON object, no other text.`;
       // Plan gating: check monthly analysis limit
       if (tenant) {
         const monthlyCount = await getMonthlyAnalysisCount(tenantDomain);
-        const analysisCheck = checkAnalysisLimit(tenant.plan, monthlyCount);
+        const analysisCheck = await checkAnalysisLimitAsync(tenant.plan, monthlyCount);
         if (!analysisCheck.allowed) {
           return res.status(403).json({
             error: analysisCheck.reason,
@@ -2556,7 +2556,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       // Plan gating: check feature access
       const tenant = await storage.getTenant(ctx.tenantId);
       if (tenant) {
-        const featureCheck = checkFeatureAccess(tenant.plan, "pdfReports");
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "pdfReports");
         if (!featureCheck.allowed) {
           return res.status(403).json({
             error: featureCheck.reason,
@@ -2902,7 +2902,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       // Plan gating: check feature access
       const tenant = await storage.getTenant(ctx.tenantId);
       if (tenant) {
-        const featureCheck = checkFeatureAccess(tenant.plan, "battlecards");
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "battlecards");
         if (!featureCheck.allowed) {
           return res.status(403).json({
             error: featureCheck.reason,
@@ -6105,7 +6105,7 @@ Respond in JSON format:
         description,
         ...limits
       });
-      
+      invalidatePlanCache();
       res.status(201).json(plan);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -6138,6 +6138,7 @@ Respond in JSON format:
       }
 
       const updated = await storage.updateServicePlan(req.params.id, req.body);
+      invalidatePlanCache();
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -6167,7 +6168,23 @@ Respond in JSON format:
       }
 
       await storage.deleteServicePlan(req.params.id);
+      invalidatePlanCache();
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/feature-registry", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+      res.json({ features: FEATURE_REGISTRY, categories: FEATURE_CATEGORIES });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -6267,7 +6284,7 @@ Respond in JSON format:
       
       // Plan gating: check feature access
       if (tenant) {
-        const featureCheck = checkFeatureAccess(tenant.plan, "clientProjects");
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "clientProjects");
         if (!featureCheck.allowed) {
           return res.status(403).json({
             error: featureCheck.reason,
@@ -9680,7 +9697,7 @@ Generate a messaging framework in markdown format with sections:
       // Plan gating: check feature access
       const tenant = await storage.getTenant(ctx.tenantId);
       if (tenant) {
-        const featureCheck = checkFeatureAccess(tenant.plan, "gtmPlan");
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "gtmPlan");
         if (!featureCheck.allowed) {
           return res.status(403).json({
             error: featureCheck.reason,
@@ -9842,7 +9859,7 @@ Make this practical and actionable for the team.`;
       // Plan gating: check feature access
       const tenant = await storage.getTenant(ctx.tenantId);
       if (tenant) {
-        const featureCheck = checkFeatureAccess(tenant.plan, "messagingFramework");
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "messagingFramework");
         if (!featureCheck.allowed) {
           return res.status(403).json({
             error: featureCheck.reason,
@@ -11435,8 +11452,8 @@ Return only the description text, no quotes or formatting.`;
         return res.json({ plan: "trial", isPremium: false, features: defaultFeatures, usage: { competitorCount: 0, monthlyAnalysisCount: 0 } });
       }
 
-      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise";
-      const features = getPlanFeatures(tenant.plan);
+      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "master";
+      const features = await getPlanFeaturesAsync(tenant.plan);
       
       const [competitorCount, monthlyAnalysisCount] = await Promise.all([
         getTenantCompetitorCount(domain),
@@ -11453,8 +11470,8 @@ Return only the description text, no quotes or formatting.`;
           monthlyAnalysisCount,
         },
         limits: {
-          competitorLimit: features.competitorLimit,
-          analysisLimit: features.analysisLimit,
+          competitorLimit: features.competitorLimit as number,
+          analysisLimit: features.analysisLimit as number,
         },
       });
     } catch (error: any) {

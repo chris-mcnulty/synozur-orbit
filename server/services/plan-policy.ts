@@ -1,33 +1,48 @@
 import { storage } from "../storage";
 
+export interface FeatureDefinition {
+  key: string;
+  label: string;
+  description: string;
+  category: "intelligence" | "monitoring" | "planning" | "platform";
+}
+
+export const FEATURE_REGISTRY: FeatureDefinition[] = [
+  { key: "battlecards", label: "Sales Battlecards", description: "Generate competitive battlecards for sales teams", category: "intelligence" },
+  { key: "recommendations", label: "AI Recommendations", description: "AI-powered strategic recommendations", category: "intelligence" },
+  { key: "pdfReports", label: "PDF Reports", description: "Generate branded PDF competitive reports", category: "intelligence" },
+  { key: "gtmPlan", label: "GTM Plan", description: "AI-generated Go-To-Market plans", category: "intelligence" },
+  { key: "messagingFramework", label: "Messaging Framework", description: "AI-generated messaging frameworks", category: "intelligence" },
+  { key: "socialMonitoring", label: "Social Media Monitoring", description: "Track competitor social media presence", category: "monitoring" },
+  { key: "websiteMonitoring", label: "Website Change Detection", description: "AI-powered website change monitoring", category: "monitoring" },
+  { key: "clientProjects", label: "Client Projects", description: "Product-level competitive analysis projects", category: "intelligence" },
+  { key: "marketingPlanner", label: "Marketing Planner", description: "AI-powered quarterly/annual marketing planning", category: "planning" },
+  { key: "productManagement", label: "Product Management", description: "Roadmap prioritization and feature tracking", category: "planning" },
+  { key: "multiMarket", label: "Multi-Market Support", description: "Manage multiple client contexts in one tenant", category: "platform" },
+  { key: "ssoIntegration", label: "SSO Integration", description: "Microsoft Entra ID / Google SSO login", category: "platform" },
+  { key: "customBranding", label: "Custom Branding", description: "Custom logos, colors, and branded reports", category: "platform" },
+];
+
+export const FEATURE_CATEGORIES = [
+  { key: "intelligence", label: "Competitive Intelligence" },
+  { key: "monitoring", label: "Monitoring" },
+  { key: "planning", label: "Planning & Management" },
+  { key: "platform", label: "Platform" },
+] as const;
+
+export type FeatureKey = string;
+
 export interface PlanFeatures {
   competitorLimit: number;
-  analysisLimit: number; // per month, -1 = unlimited
+  analysisLimit: number;
   adminUserLimit: number;
   readWriteUserLimit: number;
   readOnlyUserLimit: number;
-  battlecards: boolean;
-  recommendations: boolean;
-  pdfReports: boolean;
-  socialMonitoring: boolean;
-  clientProjects: boolean;
-  gtmPlan: boolean;
-  messagingFramework: boolean;
-  marketingPlanner: boolean;
-  productManagement: boolean;
-  multiMarket: boolean;
-  websiteMonitoring: boolean;
-  ssoIntegration: boolean;
-  customBranding: boolean;
+  [key: string]: boolean | number;
 }
 
-const PLAN_FEATURES: Record<string, PlanFeatures> = {
+const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
   free: {
-    competitorLimit: 1,
-    analysisLimit: 1,
-    adminUserLimit: 1,
-    readWriteUserLimit: 0,
-    readOnlyUserLimit: 0,
     battlecards: false,
     recommendations: false,
     pdfReports: false,
@@ -43,11 +58,6 @@ const PLAN_FEATURES: Record<string, PlanFeatures> = {
     customBranding: false,
   },
   trial: {
-    competitorLimit: 3,
-    analysisLimit: 5,
-    adminUserLimit: 1,
-    readWriteUserLimit: 2,
-    readOnlyUserLimit: 5,
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -63,11 +73,6 @@ const PLAN_FEATURES: Record<string, PlanFeatures> = {
     customBranding: false,
   },
   pro: {
-    competitorLimit: 10,
-    analysisLimit: -1,
-    adminUserLimit: 3,
-    readWriteUserLimit: 10,
-    readOnlyUserLimit: 20,
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -83,11 +88,21 @@ const PLAN_FEATURES: Record<string, PlanFeatures> = {
     customBranding: false,
   },
   enterprise: {
-    competitorLimit: -1,
-    analysisLimit: -1,
-    adminUserLimit: -1,
-    readWriteUserLimit: -1,
-    readOnlyUserLimit: -1,
+    battlecards: true,
+    recommendations: true,
+    pdfReports: true,
+    socialMonitoring: true,
+    clientProjects: true,
+    gtmPlan: true,
+    messagingFramework: true,
+    marketingPlanner: true,
+    productManagement: true,
+    multiMarket: true,
+    websiteMonitoring: true,
+    ssoIntegration: true,
+    customBranding: true,
+  },
+  master: {
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -104,20 +119,91 @@ const PLAN_FEATURES: Record<string, PlanFeatures> = {
   },
 };
 
-export function getPlanFeatures(plan: string): PlanFeatures {
-  return PLAN_FEATURES[plan] || PLAN_FEATURES.free;
+const DEFAULT_PLAN_LIMITS: Record<string, { competitorLimit: number; analysisLimit: number; adminUserLimit: number; readWriteUserLimit: number; readOnlyUserLimit: number }> = {
+  free: { competitorLimit: 1, analysisLimit: 1, adminUserLimit: 1, readWriteUserLimit: 0, readOnlyUserLimit: 0 },
+  trial: { competitorLimit: 3, analysisLimit: 5, adminUserLimit: 1, readWriteUserLimit: 2, readOnlyUserLimit: 5 },
+  pro: { competitorLimit: 10, analysisLimit: -1, adminUserLimit: 3, readWriteUserLimit: 10, readOnlyUserLimit: 20 },
+  enterprise: { competitorLimit: -1, analysisLimit: -1, adminUserLimit: -1, readWriteUserLimit: -1, readOnlyUserLimit: -1 },
+  master: { competitorLimit: -1, analysisLimit: -1, adminUserLimit: -1, readWriteUserLimit: -1, readOnlyUserLimit: -1 },
+};
+
+let planCache: Map<string, { features: Record<string, boolean>; limits: typeof DEFAULT_PLAN_LIMITS.free }> | null = null;
+let planCacheTime = 0;
+const CACHE_TTL = 60_000;
+
+async function loadPlansFromDb(): Promise<Map<string, { features: Record<string, boolean>; limits: typeof DEFAULT_PLAN_LIMITS.free }>> {
+  if (planCache && Date.now() - planCacheTime < CACHE_TTL) {
+    return planCache;
+  }
+  try {
+    const dbPlans = await storage.getAllServicePlans();
+    const map = new Map<string, { features: Record<string, boolean>; limits: typeof DEFAULT_PLAN_LIMITS.free }>();
+    for (const plan of dbPlans) {
+      if (!plan.isActive) continue;
+      const dbFeatures = (plan.features && typeof plan.features === "object" && !Array.isArray(plan.features))
+        ? plan.features as Record<string, boolean>
+        : {};
+      const fallbackFeatures = DEFAULT_PLAN_FEATURES[plan.name] || DEFAULT_PLAN_FEATURES.free;
+      const mergedFeatures: Record<string, boolean> = { ...fallbackFeatures, ...dbFeatures };
+      map.set(plan.name, {
+        features: mergedFeatures,
+        limits: {
+          competitorLimit: plan.competitorLimit,
+          analysisLimit: plan.analysisLimit,
+          adminUserLimit: plan.adminUserLimit,
+          readWriteUserLimit: plan.readWriteUserLimit,
+          readOnlyUserLimit: plan.readOnlyUserLimit,
+        },
+      });
+    }
+    planCache = map;
+    planCacheTime = Date.now();
+    return map;
+  } catch {
+    return new Map();
+  }
 }
 
-export type FeatureKey = keyof Omit<PlanFeatures, "competitorLimit" | "analysisLimit" | "adminUserLimit" | "readWriteUserLimit" | "readOnlyUserLimit">;
+export function invalidatePlanCache() {
+  planCache = null;
+  planCacheTime = 0;
+}
+
+export async function getPlanFeaturesAsync(planName: string): Promise<PlanFeatures> {
+  const plans = await loadPlansFromDb();
+  const dbPlan = plans.get(planName);
+  if (dbPlan) {
+    return {
+      ...dbPlan.limits,
+      ...dbPlan.features,
+    };
+  }
+  const fallbackLimits = DEFAULT_PLAN_LIMITS[planName] || DEFAULT_PLAN_LIMITS.free;
+  const fallbackFeatures = DEFAULT_PLAN_FEATURES[planName] || DEFAULT_PLAN_FEATURES.free;
+  return { ...fallbackLimits, ...fallbackFeatures };
+}
+
+export function getPlanFeatures(planName: string): PlanFeatures {
+  const fallbackLimits = DEFAULT_PLAN_LIMITS[planName] || DEFAULT_PLAN_LIMITS.free;
+  const fallbackFeatures = DEFAULT_PLAN_FEATURES[planName] || DEFAULT_PLAN_FEATURES.free;
+  return { ...fallbackLimits, ...fallbackFeatures };
+}
 
 export function isFeatureEnabled(plan: string, feature: FeatureKey): boolean {
   const features = getPlanFeatures(plan);
-  return features[feature] as boolean;
+  return features[feature] === true;
+}
+
+export async function isFeatureEnabledAsync(plan: string, feature: FeatureKey): Promise<boolean> {
+  const features = await getPlanFeaturesAsync(plan);
+  return features[feature] === true;
 }
 
 export function getRequiredPlan(feature: FeatureKey): string {
-  if (PLAN_FEATURES.trial[feature]) return "Trial";
-  if (PLAN_FEATURES.pro[feature]) return "Pro";
+  const trialFeatures = DEFAULT_PLAN_FEATURES.trial;
+  if (trialFeatures[feature]) return "Trial";
+  const proFeatures = DEFAULT_PLAN_FEATURES.pro;
+  if (proFeatures[feature]) return "Pro";
   return "Enterprise";
 }
 
@@ -135,19 +221,58 @@ export interface PlanGateResult {
   limit?: number;
 }
 
-export function checkCompetitorLimit(plan: string, currentCount: number): PlanGateResult {
-  const features = getPlanFeatures(plan);
-  if (features.competitorLimit === -1) {
+export async function checkCompetitorLimitAsync(plan: string, currentCount: number): Promise<PlanGateResult> {
+  const features = await getPlanFeaturesAsync(plan);
+  const limit = features.competitorLimit as number;
+  if (limit === -1) {
     return { allowed: true };
   }
-  if (currentCount >= features.competitorLimit) {
+  if (currentCount >= limit) {
     return {
       allowed: false,
-      reason: `Your ${plan} plan allows up to ${features.competitorLimit} competitor${features.competitorLimit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
+      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
       upgradeRequired: true,
       requiredPlan: plan === "free" ? "Trial" : "Pro",
       currentUsage: currentCount,
-      limit: features.competitorLimit,
+      limit,
+    };
+  }
+  return { allowed: true };
+}
+
+export function checkCompetitorLimit(plan: string, currentCount: number): PlanGateResult {
+  const features = getPlanFeatures(plan);
+  const limit = features.competitorLimit as number;
+  if (limit === -1) {
+    return { allowed: true };
+  }
+  if (currentCount >= limit) {
+    return {
+      allowed: false,
+      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
+      upgradeRequired: true,
+      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      currentUsage: currentCount,
+      limit,
+    };
+  }
+  return { allowed: true };
+}
+
+export async function checkAnalysisLimitAsync(plan: string, monthlyCount: number): Promise<PlanGateResult> {
+  const features = await getPlanFeaturesAsync(plan);
+  const limit = features.analysisLimit as number;
+  if (limit === -1) {
+    return { allowed: true };
+  }
+  if (monthlyCount >= limit) {
+    return {
+      allowed: false,
+      reason: `Your ${plan} plan allows ${limit} analysis generation${limit === 1 ? "" : "s"} per month. Upgrade your plan for more.`,
+      upgradeRequired: true,
+      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      currentUsage: monthlyCount,
+      limit,
     };
   }
   return { allowed: true };
@@ -155,20 +280,37 @@ export function checkCompetitorLimit(plan: string, currentCount: number): PlanGa
 
 export function checkAnalysisLimit(plan: string, monthlyCount: number): PlanGateResult {
   const features = getPlanFeatures(plan);
-  if (features.analysisLimit === -1) {
+  const limit = features.analysisLimit as number;
+  if (limit === -1) {
     return { allowed: true };
   }
-  if (monthlyCount >= features.analysisLimit) {
+  if (monthlyCount >= limit) {
     return {
       allowed: false,
-      reason: `Your ${plan} plan allows ${features.analysisLimit} analysis generation${features.analysisLimit === 1 ? "" : "s"} per month. Upgrade your plan for more.`,
+      reason: `Your ${plan} plan allows ${limit} analysis generation${limit === 1 ? "" : "s"} per month. Upgrade your plan for more.`,
       upgradeRequired: true,
       requiredPlan: plan === "free" ? "Trial" : "Pro",
       currentUsage: monthlyCount,
-      limit: features.analysisLimit,
+      limit,
     };
   }
   return { allowed: true };
+}
+
+export async function checkFeatureAccessAsync(plan: string, feature: FeatureKey): Promise<PlanGateResult> {
+  const enabled = await isFeatureEnabledAsync(plan, feature);
+  if (enabled) {
+    return { allowed: true };
+  }
+  const requiredPlan = getRequiredPlan(feature);
+  const def = FEATURE_REGISTRY.find(f => f.key === feature);
+  const label = def?.label || feature;
+  return {
+    allowed: false,
+    reason: `${label} requires a ${requiredPlan} plan or higher.`,
+    upgradeRequired: true,
+    requiredPlan,
+  };
 }
 
 export function checkFeatureAccess(plan: string, feature: FeatureKey): PlanGateResult {
@@ -176,24 +318,11 @@ export function checkFeatureAccess(plan: string, feature: FeatureKey): PlanGateR
     return { allowed: true };
   }
   const requiredPlan = getRequiredPlan(feature);
-  const featureLabels: Record<string, string> = {
-    battlecards: "Sales Battlecards",
-    recommendations: "AI Recommendations",
-    pdfReports: "PDF Reports",
-    socialMonitoring: "Social Media Monitoring",
-    clientProjects: "Client Projects",
-    gtmPlan: "GTM Plan",
-    messagingFramework: "Messaging Framework",
-    marketingPlanner: "Marketing Planner",
-    productManagement: "Product Management",
-    multiMarket: "Multi-Market Support",
-    websiteMonitoring: "Website Change Monitoring",
-    ssoIntegration: "SSO Integration",
-    customBranding: "Custom Branding",
-  };
+  const def = FEATURE_REGISTRY.find(f => f.key === feature);
+  const label = def?.label || feature;
   return {
     allowed: false,
-    reason: `${featureLabels[feature] || feature} requires a ${requiredPlan} plan or higher.`,
+    reason: `${label} requires a ${requiredPlan} plan or higher.`,
     upgradeRequired: true,
     requiredPlan,
   };
@@ -218,4 +347,100 @@ export async function getMonthlyAnalysisCount(tenantDomain: string): Promise<num
 export async function getTenantCompetitorCount(tenantDomain: string): Promise<number> {
   const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
   return (competitors || []).filter((c: any) => !c.projectId).length;
+}
+
+export async function seedDefaultPlans(): Promise<void> {
+  const planDefs = [
+    {
+      name: "trial",
+      displayName: "Trial",
+      description: "60 days full access",
+      ...DEFAULT_PLAN_LIMITS.trial,
+      features: DEFAULT_PLAN_FEATURES.trial,
+      multiMarketEnabled: false,
+      marketLimit: null,
+      socialMonitoringEnabled: false,
+      websiteMonitorEnabled: false,
+      productMonitorEnabled: false,
+      trialDays: 60,
+      isActive: true,
+      isDefault: true,
+      sortOrder: 0,
+    },
+    {
+      name: "free",
+      displayName: "Free",
+      description: "Basic competitive monitoring",
+      ...DEFAULT_PLAN_LIMITS.free,
+      features: DEFAULT_PLAN_FEATURES.free,
+      multiMarketEnabled: false,
+      marketLimit: null,
+      socialMonitoringEnabled: false,
+      websiteMonitorEnabled: false,
+      productMonitorEnabled: false,
+      isActive: true,
+      isDefault: false,
+      sortOrder: 1,
+    },
+    {
+      name: "pro",
+      displayName: "Pro",
+      description: "Full intelligence suite",
+      ...DEFAULT_PLAN_LIMITS.pro,
+      features: DEFAULT_PLAN_FEATURES.pro,
+      multiMarketEnabled: false,
+      marketLimit: null,
+      socialMonitoringEnabled: true,
+      websiteMonitorEnabled: true,
+      productMonitorEnabled: true,
+      isActive: true,
+      isDefault: false,
+      sortOrder: 2,
+    },
+    {
+      name: "enterprise",
+      displayName: "Enterprise",
+      description: "Complete GTM platform",
+      ...DEFAULT_PLAN_LIMITS.enterprise,
+      features: DEFAULT_PLAN_FEATURES.enterprise,
+      multiMarketEnabled: true,
+      marketLimit: null,
+      socialMonitoringEnabled: true,
+      websiteMonitorEnabled: true,
+      productMonitorEnabled: true,
+      isActive: true,
+      isDefault: false,
+      sortOrder: 3,
+    },
+    {
+      name: "master",
+      displayName: "Master (Internal)",
+      description: "Synozur internal - unlimited access to all features",
+      ...DEFAULT_PLAN_LIMITS.master,
+      features: DEFAULT_PLAN_FEATURES.master,
+      multiMarketEnabled: true,
+      marketLimit: null,
+      socialMonitoringEnabled: true,
+      websiteMonitorEnabled: true,
+      productMonitorEnabled: true,
+      isActive: true,
+      isDefault: false,
+      sortOrder: 99,
+    },
+  ];
+
+  for (const def of planDefs) {
+    try {
+      const existing = await storage.getServicePlanByName(def.name);
+      if (!existing) {
+        await storage.createServicePlan(def as any);
+        console.log(`[Plan Seed] Created plan: ${def.displayName}`);
+      } else if (Object.keys((existing.features as Record<string, any>) || {}).length === 0) {
+        await storage.updateServicePlan(existing.id, { features: def.features } as any);
+        console.log(`[Plan Seed] Updated features for plan: ${def.displayName}`);
+      }
+    } catch (err: any) {
+      console.error(`[Plan Seed] Error seeding plan ${def.name}:`, err.message);
+    }
+  }
 }

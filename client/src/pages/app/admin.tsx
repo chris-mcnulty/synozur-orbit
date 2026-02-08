@@ -76,6 +76,7 @@ type ServicePlan = {
   socialMonitoringEnabled: boolean | null;
   websiteMonitorEnabled: boolean | null;
   productMonitorEnabled: boolean | null;
+  features: Record<string, boolean>;
   trialDays: number | null;
   monthlyPrice: number | null;
   annualPrice: number | null;
@@ -84,6 +85,18 @@ type ServicePlan = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+type FeatureDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  category: string;
+};
+
+type FeatureCategory = {
+  key: string;
+  label: string;
 };
 
 type JobStatusInfo = {
@@ -184,6 +197,7 @@ export default function AdminPage() {
     socialMonitoringEnabled: false,
     websiteMonitorEnabled: false,
     productMonitorEnabled: false,
+    features: {} as Record<string, boolean>,
     trialDays: null as number | null,
     monthlyPrice: null as number | null,
     annualPrice: null as number | null,
@@ -394,6 +408,17 @@ export default function AdminPage() {
     },
   });
 
+  const { data: featureRegistry } = useQuery<{ features: FeatureDefinition[]; categories: FeatureCategory[] }>({
+    queryKey: ["/api/admin/feature-registry"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/feature-registry", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch feature registry");
+      return response.json();
+    },
+  });
+
   // Scheduled Jobs queries
   const { data: jobStatus, refetch: refetchJobStatus } = useQuery<Record<string, JobStatusInfo>>({
     queryKey: ["/api/admin/jobs/status"],
@@ -551,6 +576,7 @@ export default function AdminPage() {
       socialMonitoringEnabled: false,
       websiteMonitorEnabled: false,
       productMonitorEnabled: false,
+      features: {},
       trialDays: null,
       monthlyPrice: null,
       annualPrice: null,
@@ -576,6 +602,7 @@ export default function AdminPage() {
       socialMonitoringEnabled: plan.socialMonitoringEnabled || false,
       websiteMonitorEnabled: plan.websiteMonitorEnabled || false,
       productMonitorEnabled: plan.productMonitorEnabled || false,
+      features: plan.features || {},
       trialDays: plan.trialDays,
       monthlyPrice: plan.monthlyPrice,
       annualPrice: plan.annualPrice,
@@ -596,6 +623,8 @@ export default function AdminPage() {
 
   const getPlanBadge = (plan: string) => {
     switch (plan) {
+      case "master":
+        return <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500">Master</Badge>;
       case "enterprise":
         return <Badge className="bg-gradient-to-r from-purple-500 to-pink-500">Enterprise</Badge>;
       case "pro":
@@ -1059,7 +1088,7 @@ export default function AdminPage() {
                   <TableRow>
                     <TableHead>Plan</TableHead>
                     <TableHead>Limits</TableHead>
-                    <TableHead>Multi-Market</TableHead>
+                    <TableHead>Features</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -1082,21 +1111,28 @@ export default function AdminPage() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm space-y-1">
-                          <div>{plan.competitorLimit} competitors, {plan.analysisLimit} analyses</div>
+                          <div>{plan.competitorLimit === -1 ? "Unlimited" : plan.competitorLimit} competitors, {plan.analysisLimit === -1 ? "Unlimited" : plan.analysisLimit} analyses</div>
                           <div className="text-muted-foreground">
-                            Users: {plan.adminUserLimit}A / {plan.readWriteUserLimit}RW / {plan.readOnlyUserLimit}RO
+                            Users: {plan.adminUserLimit === -1 ? "∞" : plan.adminUserLimit}A / {plan.readWriteUserLimit === -1 ? "∞" : plan.readWriteUserLimit}RW / {plan.readOnlyUserLimit === -1 ? "∞" : plan.readOnlyUserLimit}RO
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {plan.multiMarketEnabled ? (
-                          <div className="flex items-center gap-1 text-green-500">
-                            <Check className="h-4 w-4" />
-                            <span className="text-sm">{plan.marketLimit === null ? "Unlimited" : `${plan.marketLimit} markets`}</span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">Disabled</span>
-                        )}
+                        {(() => {
+                          const features = plan.features || {};
+                          const enabledCount = Object.values(features).filter(Boolean).length;
+                          const totalCount = featureRegistry?.features.length || 0;
+                          return (
+                            <div className="text-sm">
+                              <span className={enabledCount === totalCount ? "text-green-500" : enabledCount === 0 ? "text-muted-foreground" : "text-yellow-500"}>
+                                {enabledCount}/{totalCount} features
+                              </span>
+                              {plan.multiMarketEnabled && (
+                                <div className="text-xs text-muted-foreground mt-1">Multi-market</div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant={plan.isActive ? "default" : "secondary"}>
@@ -1730,6 +1766,39 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
+
+              {featureRegistry && featureRegistry.categories.length > 0 && (
+                <div className="border-t pt-4">
+                  <Label className="text-sm font-medium">Feature Access</Label>
+                  <p className="text-xs text-muted-foreground mb-3">Toggle which features are available on this plan</p>
+                  {featureRegistry.categories.map((category) => {
+                    const categoryFeatures = featureRegistry.features.filter(f => f.category === category.key);
+                    if (categoryFeatures.length === 0) return null;
+                    return (
+                      <div key={category.key} className="mb-3">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wider">{category.label}</Label>
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          {categoryFeatures.map((feature) => (
+                            <label key={feature.key} className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer" title={feature.description}>
+                              <input
+                                type="checkbox"
+                                checked={planForm.features[feature.key] === true}
+                                onChange={(e) => setPlanForm({
+                                  ...planForm,
+                                  features: { ...planForm.features, [feature.key]: e.target.checked },
+                                })}
+                                data-testid={`feature-${feature.key}`}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{feature.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="border-t pt-4">
                 <div className="grid grid-cols-2 gap-4">

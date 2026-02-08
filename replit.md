@@ -2,184 +2,88 @@
 
 ## Overview
 
-Orbit is an AI-driven go-to-market intelligence platform designed for The Synozur Alliance LLC. The platform unifies three core pillars: **Competitive Intelligence** (analyze competitors, identify gaps, generate battlecards), **Marketing Planner** (AI-powered quarterly/annual planning with activity-based organization), and **Product Management** (roadmap prioritization aligned with market intelligence).
-
-The platform is a multi-tenant SaaS application featuring role-based access control (RBAC), advanced competitive analysis tools, and branded PDF reporting capabilities. Orbit also offers competitor change monitoring with AI-summarized diffs, a dedicated module for grounding documents, and tenant demographics collection during signup. A key capability is company profile baselining, allowing users to analyze their own website against competitors. The platform emphasizes a dark mode default with Synozur's brand colors.
-
-**Homepage Positioning:** "From insight to action in one platform" - emphasizing the flow from Monitor → Analyze → Plan → Execute.
+Orbit is an AI-driven go-to-market intelligence platform developed for The Synozur Alliance LLC. Its primary purpose is to centralize and enhance go-to-market strategies by unifying Competitive Intelligence, Marketing Planning, and Product Management. The platform is designed as a multi-tenant SaaS application with robust features like role-based access control (RBAC), advanced competitive analysis, AI-powered insights, and branded PDF reporting. Key capabilities include competitor change monitoring, grounding document management, and company profile baselining for self-analysis against competitors. Orbit aims to transition users "from insight to action in one platform."
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
-## Use Case Examples
-
-### Ecosystem Partner vs Platform Provider (M365 Migration Services)
-A structural example for understanding Orbit's multi-layered competitive analysis:
-
-**Scenario:** A services provider operates as a Microsoft 365 ecosystem partner. They sell products that serve as "service accelerators" for migrations to M365 and SharePoint. However, Microsoft also publishes free lightweight migration utilities that directly compete with their paid tooling.
-
-**The Challenge:** Microsoft is simultaneously a platform partner AND a real competitor. This creates a nuanced competitive landscape:
-- **Platform Dependency:** The client's products run on/integrate with Microsoft's platform
-- **Direct Competition:** Microsoft's free tools compete for the same migration use cases
-- **Positioning Complexity:** Must differentiate against free tooling while maintaining ecosystem partnership
-
-**How Orbit Handles This:**
-1. **Company Profile (Baseline):** Track the client's migration products and service accelerators
-2. **Competitor Entry:** Add Microsoft's migration tools as a competitor (even though they're a partner)
-3. **Product-Level Analysis:** Create product entries for specific Microsoft tools (e.g., SharePoint Migration Tool)
-4. **Standalone Products:** For product-only analysis without cluttering the main competitor list, use standalone products with the "create as full competitor" option when deeper tracking is needed
-5. **Battlecards:** Generate positioning against Microsoft's free tools, emphasizing enterprise features, support, and time-to-value
-
-This pattern applies broadly to any ecosystem partner scenario (Salesforce AppExchange partners vs Salesforce native features, AWS partners vs AWS services, etc.).
-
-## Reference Projects
-
-### Orion - Synozur Maturity Model Platform
-- **Repository**: https://github.com/chris-mcnulty/synozur-maturitymodeler
-- **Purpose**: Digital maturity modeling AI platform by Synozur
-- **Use As Reference For**: UI/UX patterns, feature implementations, admin dashboards, AI usage tracking
-- **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
-- **Public GTM Assessment**: https://orion.synozur.com/gtm - Open Go-to-Market Maturity Assessment available for use in outbound emails, page footers, and marketing materials as a lead generation resource.
-
-### Constellation - Synozur SCDP (Public)
-- **Repository**: https://github.com/chris-mcnulty/synozur-scdp
-- **Purpose**: Synozur Customer Delivery Platform - estimation, time tracking, task management, expense management, invoicing, and reporting
-- **Use As Reference For**: Microsoft Planner integration via Graph API, task sync patterns, Teams/Planner connectivity
-- **Status**: Public repository - can be referenced directly
-
 ## System Architecture
 
 ### Frontend
-- **Framework**: React with TypeScript (Vite build tool)
+- **Framework**: React with TypeScript (Vite)
 - **Routing**: Wouter
 - **State Management**: TanStack React Query (server state), React Context (authentication)
 - **UI Components**: shadcn/ui (Radix UI primitives)
 - **Styling**: Tailwind CSS v4 with CSS variables
 - **Font**: Avenir Next LT Pro
-- **Structure**: Page-based (`client/src/pages/`) with distinct layouts for public and authenticated sections.
+- **Structure**: Page-based with distinct public and authenticated layouts.
 
 ### Backend
 - **Framework**: Express.js with TypeScript
 - **API Design**: RESTful JSON API (`/api/` prefix)
 - **Session Management**: Express-session (cookie-based)
 - **Password Hashing**: bcrypt
-- **Build System**: Custom esbuild script for server, Vite for client.
-- **Storage Abstraction**: Drizzle ORM for PostgreSQL, allowing database interchangeability.
+- **Build System**: Custom esbuild script.
+- **Storage Abstraction**: Drizzle ORM for PostgreSQL.
 
 ### Database
 - **ORM**: Drizzle ORM (PostgreSQL dialect)
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
-- **Validation**: Zod schemas from Drizzle.
-- **Key Tables**: `users` (RBAC, tenant demographics), `tenants`, `markets`, `consultantAccess`, `competitors`, `activity`, `recommendations`, `reports`, `analysis`, `groundingDocuments`, `companyProfiles`, `assessments`, `products`, `projectProducts`, `clientProjects`, `battlecards`, `competitorScores`, `socialMetrics`, `executiveSummaries`, `aiUsage`, `productFeatures`, `roadmapItems`, `featureRecommendations`.
+- **Validation**: Zod schemas.
+- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, and `aiUsage`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
-- **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO.
-- **Fallback**: Traditional email/password login for non-SSO users.
+- **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO. Traditional email/password login as fallback.
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
-- **Provisioning**: First user to register from a new domain is automatically promoted to Domain Admin (so they can configure their account). Subsequent users from the same domain get Standard User role. Global Admin and Consultant are privileged roles that must be manually assigned by existing admins.
-- **Consultant Role**: Privileged cross-tenant read role for Synozur platform staff. Can only be assigned by Global Admin, never auto-provisioned during signup.
-- **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
-- **Entra ID User Provisioning**: Admins can search their organization's Entra ID directory via Microsoft Graph API and add users directly without requiring invitation acceptance. SSO-provisioned users are marked with `authProvider: "entra"` and optional welcome emails are sent via SendGrid.
+- **Provisioning**: First user from a new domain becomes Domain Admin; subsequent users are Standard Users. Global Admin and Consultant roles are manually assigned. Consultant role provides cross-tenant read access for Synozur staff. Entra ID user provisioning via Microsoft Graph API is supported.
 
 ### Core Features
-- **Multi-Tenant Architecture**: Tenant isolation, role hierarchy, tenant-specific plan/usage limits.
-- **Service Plans**: Trial (default for new accounts: 60-day trial, 3 competitors, 5 analyses), Free (1 competitor, 1 analysis), Pro, Enterprise. Plans configurable per-tenant with user role limits (adminUserLimit, readWriteUserLimit, readOnlyUserLimit).
-- **Trial System**: 60-day trial with automated email reminders at days 7, 30, 46, 53, 57, 59, and 60. Final 14 days include contact CTA (contactus@synozur.com). Auto-revert to Free plan on expiration. Scheduled job runs every 6 hours.
+- **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
+- **Service Plans**: Database-driven plans (Trial, Free, Pro, Enterprise, Master) with flexible feature gating via a JSONB `features` column and a central Feature Registry (`server/services/plan-policy.ts`). Includes a 60-day trial system with automated email reminders.
 - **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining.
-- **AI Analysis**: Competitive website analysis (Claude Sonnet), AI-guided recommendations (RAG), gap analysis.
-- **Web Crawling Service**: Multi-page crawling (homepage, about, products/services, blog), social media link discovery, blog post detection, scheduled background jobs.
-- **Competitor Intelligence Dashboard**: Activity page with four tabs - Insights (AI-summarized website changes), Social Signals (competitor social media profiles and engagement), Blog Activity (detected blog posts), and Activity Log (raw crawl events). Dashboard Live Signals prioritizes meaningful changes over raw crawl events.
-- **Assessments**: Snapshots of competitive analysis with proxy assessment capabilities.
-- **Client Projects**: Primary purpose is to focus on individual products rather than overall company positioning. Projects enable product-level competitive analysis, comparing specific products against competitor products. Also supports proxy analysis for consulting firms.
-- **Product Analysis**: Product-level competitive analysis with baseline product selection, AI-suggested competitor products, and manual competitor additions.
-- **Product Management MVP**: Feature catalog (manual entry, status tracking, categorization), quarterly roadmap view (XS/S/M/L/XL effort sizing), AI-powered roadmap recommendations based on competitive intelligence (gap, opportunity, priority, risk types). Routes: `/app/products/:id/features`, `/app/products/:id/roadmap`.
-- **Report Generation**: Branded PDF reports that can be scoped to baseline (company profile + all competitors) or specific products. Product-scoped reports require project owner or Global Admin permissions.
-- **CSV Exports**: Lists throughout the system (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) can be exported to CSV format (title, description, category) for use in digital visioning tools like Mural or Miro. Export utility at `client/src/lib/csv-export.ts`.
-- **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) within a single organization. Each market contains its own baseline company, competitors, and projects. Enabled via `multiMarketEnabled` flag with configurable `marketLimit`.
-- **Cross-Tenant Access**: Global Admins can access all tenants. Consultants can access tenants they've been granted access to via `consultantAccess` table. Session stores `activeTenantId` and `activeMarketId` for context switching.
+- **AI Analysis**: Competitive website analysis, AI-guided recommendations (RAG), gap analysis.
+- **Web Crawling Service**: Multi-page crawling, social media link discovery, blog post detection, scheduled background jobs.
+- **Competitor Intelligence Dashboard**: Provides insights from AI-summarized website changes, social signals, blog activity, and a raw activity log.
+- **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
+- **Client Projects**: Facilitate product-level competitive analysis against competitor products, supporting proxy analysis for consulting firms.
+- **Product Management MVP**: Feature catalog, quarterly roadmap view with effort sizing, AI-powered roadmap recommendations based on competitive intelligence.
+- **Report Generation**: Branded PDF reports scoped to baseline or specific products.
+- **CSV Exports**: Export various lists (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) to CSV.
+- **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) with separate baselines, competitors, and projects.
+- **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants.
 
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary database.
-- **Drizzle ORM**: Database query builder and schema management.
+- **PostgreSQL**
+- **Drizzle ORM**
 
 ### AI Services
-- **Provider Abstraction**: Supports `MockAIProvider` for development and OpenAI/Azure OpenAI.
+- **OpenAI/Azure OpenAI** (via provider abstraction)
 
 ### UI Libraries
-- **Radix UI**: Headless component primitives.
-- **shadcn/ui**: Pre-styled component library.
-- **Lucide React**: Icon library.
-- **TanStack React Query**: Server state management.
+- **Radix UI**
+- **shadcn/ui**
+- **Lucide React**
+- **TanStack React Query**
 
 ### Development Tools
-- **Vite**: Frontend build tool.
-- **esbuild**: Server bundling.
-- **TypeScript**: Type safety.
+- **Vite**
+- **esbuild**
+- **TypeScript**
 
 ### Authentication
-- **@azure/msal-node**: Microsoft Entra ID integration.
+- **@azure/msal-node** (Microsoft Entra ID)
 
 ### Security Utilities
-- **URL Validation** (`server/utils/url-validator.ts`): SSRF protection with private IP blocking, protocol validation, internal domain blocking. Uses soft DNS validation that allows non-resolving domains while blocking URLs that resolve to private/internal IPs.
-- **File Validation** (`server/utils/file-validator.ts`): Magic bytes verification for PDF, DOCX, JPEG, PNG, GIF. Dangerous content pattern scanning. Size limits (5MB images, 10MB documents).
+- **URL Validation**: SSRF protection, private IP blocking, protocol validation.
+- **File Validation**: Magic bytes verification, dangerous content pattern scanning, size limits.
 
 ### Environment Variables
 - `DATABASE_URL`
 - `SESSION_SECRET`
-- AI provider keys (optional)
+- AI provider keys
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
-
-## Critical Development Rules
-
-### Competitor Edit Dialogs — DUAL LOCATION
-There are TWO separate competitor edit dialogs that must ALWAYS be updated together:
-1. **`client/src/pages/app/competitors.tsx`** — Edit dialog on the competitors list page (opened via pencil icon on competitor cards)
-2. **`client/src/pages/app/competitor-detail.tsx`** — Edit dialog on the individual competitor detail page
-
-**Any change to competitor editing fields, form state, or save logic MUST be applied to BOTH files.** Before completing any competitor edit feature, grep for all files containing PATCH calls to `/api/competitors/` and verify every edit surface has been updated.
-
-### General Pattern: Search Before Assuming
-When adding UI to an entity (competitor, project, product, etc.), always search the full codebase for ALL edit/create/update surfaces for that entity before implementing. Never assume there's only one.
-
-## Standing Orders
-
-### Changelog & Backlog Maintenance
-After completing significant features or bug fixes, update the following files:
-
-1. **changelog.md** - Add entries under `[Unreleased]` section:
-   - Group by: Added, Changed, Fixed, Security, Deprecated, Removed
-   - Write from user perspective, not technical details
-   - Include date when releasing versions
-
-2. **backlog.md** - Update feature status:
-   - Mark completed items with `[x]`
-   - Update status descriptions for partial progress
-   - Add new items under appropriate priority level
-   - Move items between priorities as needed
-
-3. **Sync to public folder** - After updates, copy files:
-   ```bash
-   cp changelog.md public/changelog.md && cp backlog.md public/backlog.md
-   ```
-   This ensures the About page viewers show current content.
-
-## Backlog
-
-The product backlog is maintained in **`backlog.md`** (displayed in the About > Backlog tab).
-
-### How to Update the Backlog
-1. Edit `backlog.md` directly for feature tracking, status updates, and new items
-2. Use checkbox format: `- [x]` for completed, `- [ ]` for pending
-3. Include status, effort estimates, and dependencies where applicable
-4. After updates, sync to public folder: `cp backlog.md public/backlog.md`
-
-### Backlog Structure
-- **Priority 1-3**: MVP features with implementation status
-- **Post-MVP Roadmap**: Year one features by quarter
-- **Strategic Backlog**: High-level features (service gating, Marketing Planner, etc.)
-- **Long-Range / Future**: Features that may become separate apps (Product Management Module)

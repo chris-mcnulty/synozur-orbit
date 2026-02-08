@@ -122,6 +122,9 @@ export const servicePlans = pgTable("service_plans", {
   socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false),
   websiteMonitorEnabled: boolean("website_monitor_enabled").default(false), // AI-powered website change detection
   productMonitorEnabled: boolean("product_monitor_enabled").default(false), // Standalone product URL monitoring
+  // Feature access flags - flexible JSONB for easy extensibility
+  // Keys are feature identifiers, values are booleans. See FEATURE_REGISTRY in plan-policy.ts.
+  features: jsonb("features").notNull().default({}),
   // Trial settings
   trialDays: integer("trial_days"), // Only applicable for trial plan
   // Pricing (for display purposes)
