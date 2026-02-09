@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -319,6 +319,27 @@ export default function Settings() {
     setWeeklyDigestEnabled(checked);
     updateNotificationsMutation.mutate(checked);
   };
+
+  const sendDigestNowMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/me/digest/send-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send digest");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Weekly digest email sent! Check your inbox.");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
 
   const updateEntraMutation = useMutation({
     mutationFn: async () => {
@@ -675,6 +696,29 @@ export default function Settings() {
                 disabled={updateNotificationsMutation.isPending}
                 data-testid="switch-weekly-digest"
               />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Send Test Digest</Label>
+                <p className="text-sm text-muted-foreground">
+                  Send a weekly digest email to yourself right now to preview it.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => sendDigestNowMutation.mutate()}
+                disabled={sendDigestNowMutation.isPending}
+                data-testid="button-send-digest-now"
+              >
+                {sendDigestNowMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Send Now
+              </Button>
             </div>
           </CardContent>
         </Card>

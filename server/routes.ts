@@ -24,7 +24,7 @@ import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
 import { captureVisualAssets } from "./services/visual-capture";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "./services/scheduled-jobs";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob, sendDigestNowForUser } from "./services/scheduled-jobs";
 import { syncNewAccountToHubSpot } from "./services/hubspot-service";
 import { startFullRegeneration, getRegenerationStatus } from "./services/full-regeneration-service";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "./services/scoring-service";
@@ -655,6 +655,24 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error updating notification preferences:", error);
       res.status(500).json({ error: "Failed to update notification preferences" });
+    }
+  });
+
+  app.post("/api/me/digest/send-now", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const result = await sendDigestNowForUser(req.session.userId);
+      if (result.success) {
+        res.json({ message: "Weekly digest email sent successfully" });
+      } else {
+        res.status(400).json({ error: result.error });
+      }
+    } catch (error: any) {
+      console.error("Error sending digest on demand:", error);
+      res.status(500).json({ error: "Failed to send digest email" });
     }
   });
 

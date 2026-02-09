@@ -906,6 +906,27 @@ async function runTrialReminderJob(): Promise<void> {
   }
 }
 
+const WEEKLY_DIGEST_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function checkAndRunWeeklyDigest(): Promise<void> {
+  try {
+    const recentRuns = await storage.getScheduledJobRunsByType("weeklyDigest");
+    const lastCompleted = recentRuns.find((r: { status: string; completedAt: Date | null }) => r.status === "completed");
+    
+    if (lastCompleted?.completedAt) {
+      const elapsed = Date.now() - new Date(lastCompleted.completedAt).getTime();
+      if (elapsed < WEEKLY_DIGEST_INTERVAL_MS) {
+        return;
+      }
+    }
+    
+    console.log("[Scheduled Job] Weekly digest is overdue, triggering now...");
+    await runWeeklyDigestJob();
+  } catch (err) {
+    console.error("[Scheduled Job] Error checking weekly digest schedule:", err);
+  }
+}
+
 async function runWeeklyDigestJob(): Promise<void> {
   if (jobStatus.weeklyDigest.isRunning) {
     console.log("[Scheduled Job] Weekly digest already running, skipping...");
@@ -915,14 +936,15 @@ async function runWeeklyDigestJob(): Promise<void> {
   jobStatus.weeklyDigest.isRunning = true;
   console.log("[Scheduled Job] Starting weekly digest job...");
 
+  const jobRun = await storage.createScheduledJobRun({
+    jobType: "weeklyDigest",
+    status: "running",
+    startedAt: new Date(),
+  });
+
   try {
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.REPLIT_DEPLOYMENT_URL 
-        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
-        : 'https://orbit.synozur.com';
+    const baseUrl = getBaseUrl();
     
-    // Get all users with digest enabled
     const usersWithDigest = await storage.getUsersWithDigestEnabled();
     console.log(`[Scheduled Job] Found ${usersWithDigest.length} users with digest enabled`);
     
@@ -931,39 +953,8 @@ async function runWeeklyDigestJob(): Promise<void> {
     
     for (const user of usersWithDigest) {
       try {
-        // Extract domain from user email
-        const domain = user.email.split('@')[1];
-        if (!domain) continue;
-        
-        // Get tenant for this user
-        const tenant = await storage.getTenantByDomain(domain);
-        if (!tenant || tenant.status !== 'active') continue;
-        
-        // Get weekly activity for this tenant
-        const weeklyActivity = await storage.getWeeklyActivityByTenant(domain);
-        
-        // Transform activity for email
-        const activities = weeklyActivity.map(act => ({
-          competitorName: act.competitorName,
-          type: act.type,
-          description: act.description,
-          summary: act.summary || undefined,
-        }));
-        
-        // Send digest email
-        const success = await sendWeeklyDigestEmail({
-          email: user.email,
-          name: user.name,
-          companyName: tenant.name,
-          activities,
-          baseUrl,
-        });
-        
-        if (success) {
-          sentCount++;
-        } else {
-          errorCount++;
-        }
+        const result = await sendDigestForUser(user, baseUrl);
+        if (result) sentCount++; else errorCount++;
       } catch (userError) {
         console.error(`[Scheduled Job] Failed to send digest to ${user.email}:`, userError);
         errorCount++;
@@ -971,11 +962,72 @@ async function runWeeklyDigestJob(): Promise<void> {
     }
     
     console.log(`[Scheduled Job] Weekly digest job completed: ${sentCount} sent, ${errorCount} errors`);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: "completed",
+      completedAt: new Date(),
+      result: { sentCount, errorCount },
+    });
   } catch (error) {
     console.error("[Scheduled Job] Weekly digest job failed:", error);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: "failed",
+      completedAt: new Date(),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
   } finally {
     jobStatus.weeklyDigest.isRunning = false;
     jobStatus.weeklyDigest.lastRun = new Date();
+  }
+}
+
+function getBaseUrl(): string {
+  return process.env.REPLIT_DEV_DOMAIN 
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : process.env.REPLIT_DEPLOYMENT_URL 
+      ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+      : 'https://orbit.synozur.com';
+}
+
+async function sendDigestForUser(user: { email: string; name: string }, baseUrl: string): Promise<boolean> {
+  const domain = user.email.split('@')[1];
+  if (!domain) return false;
+  
+  const tenant = await storage.getTenantByDomain(domain);
+  if (!tenant || tenant.status !== 'active') return false;
+  
+  const weeklyActivity = await storage.getWeeklyActivityByTenant(domain);
+  
+  const activities = weeklyActivity.map(act => ({
+    competitorName: act.competitorName,
+    type: act.type,
+    description: act.description,
+    summary: act.summary || undefined,
+  }));
+  
+  return await sendWeeklyDigestEmail({
+    email: user.email,
+    name: user.name,
+    companyName: tenant.name,
+    activities,
+    baseUrl,
+  });
+}
+
+export async function sendDigestNowForUser(userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await storage.getUser(userId);
+    if (!user) return { success: false, error: "User not found" };
+    
+    const baseUrl = getBaseUrl();
+    const sent = await sendDigestForUser(user, baseUrl);
+    
+    if (sent) {
+      return { success: true };
+    }
+    return { success: false, error: "Failed to send email. Check that your tenant is active and email service is configured." };
+  } catch (err) {
+    console.error(`[Digest] Error sending on-demand digest for user ${userId}:`, err);
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
 }
 
@@ -1018,10 +1070,7 @@ export function startScheduledJobs(): void {
   }, 6 * 60 * 60 * 1000);
 
   weeklyDigestInterval = setInterval(() => {
-    const now = new Date();
-    if (now.getDay() === 0 && now.getHours() >= 9 && now.getHours() < 10) {
-      runWeeklyDigestJob();
-    }
+    checkAndRunWeeklyDigest();
   }, 60 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
@@ -1066,7 +1115,12 @@ export function startScheduledJobs(): void {
     runTrialReminderJob();
   }, 25 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (Sundays)");
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Checking if weekly digest is overdue...");
+    checkAndRunWeeklyDigest();
+  }, 30 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
