@@ -8,6 +8,11 @@ Orbit is an AI-driven go-to-market intelligence platform developed for The Synoz
 
 Preferred communication style: Simple, everyday language.
 
+### Testing
+- **Test Login**: Auth page is at `/auth` (not `/login`). Test credentials: email=`test@synozur.com`, password=`TestPass123!`
+- **Auth Form Test IDs**: `input-signin-email`, `input-signin-password`, `button-signin`
+- After login, user is redirected to `/app`.
+
 ## System Architecture
 
 ### Frontend
