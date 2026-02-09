@@ -42,6 +42,7 @@ interface ProjectSummary {
   id: string;
   name: string;
   clientName?: string;
+  description?: string;
   status: string;
   productCount: number;
 }
@@ -304,6 +305,7 @@ function generateReportHtml(data: ReportData): string {
   `;
   }).join("");
 
+  const competitorNames = data.competitors.map(c => c.name);
   const themeCards = (data.analysis?.themes || []).map((theme: any) => {
     const themeName = theme.theme || theme.name || theme.title || "";
     const themeDesc = theme.description || theme.details || theme.observation || "";
@@ -311,31 +313,92 @@ function generateReportHtml(data: ReportData): string {
     const source = theme.source || "";
     if (!themeName && !themeDesc) return "";
     const displayDesc = themeDesc && themeDesc !== "Based on profile" ? themeDesc : "";
+    const isBaselineTheme = source === "baseline";
+    let sourceLabel = "";
+    if (competitorRef) {
+      sourceLabel = `Competitor: ${competitorRef}`;
+    } else if (isBaselineTheme) {
+      sourceLabel = `Source: ${data.companyName || "Your Company"}`;
+    } else {
+      sourceLabel = "Competitive Theme";
+    }
+    const isCompetitor = !!competitorRef || !isBaselineTheme;
+    const sourceBadgeBg = isCompetitor ? "#EFF6FF" : "#F0FDF4";
+    const sourceBadgeColor = isCompetitor ? "#1D4ED8" : "#15803D";
+    const sourceBadgeBorder = isCompetitor ? "#BFDBFE" : "#BBF7D0";
     return `
     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #1E293B; margin-bottom: 4px;">${escapeHtml(themeName)}</div>
-      ${displayDesc ? `<div style="color: #475569; font-size: 13px; margin-bottom: 6px;">${escapeHtml(displayDesc)}</div>` : ''}
-      ${competitorRef ? `<div style="color: #64748B; font-size: 12px; font-style: italic;">Source: ${escapeHtml(competitorRef)}</div>` : ''}
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+        <div style="font-weight: 600; color: #1E293B; flex: 1;">${escapeHtml(themeName)}</div>
+        <span style="background: ${sourceBadgeBg}; color: ${sourceBadgeColor}; border: 1px solid ${sourceBadgeBorder}; padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; margin-left: 8px;">${escapeHtml(sourceLabel)}</span>
+      </div>
+      ${displayDesc ? `<div style="color: #475569; font-size: 13px;">${escapeHtml(displayDesc)}</div>` : ''}
     </div>
   `;
   }).filter(Boolean).join("");
 
-  const messagingCards = (data.analysis?.messaging || []).map((msg: any) => {
+  const messagingCardsArray: string[] = [];
+  for (const msg of (data.analysis?.messaging || []) as any[]) {
     const competitorName = msg.competitorName || msg.competitor || "";
-    const category = msg.category || msg.name || "Market Positioning";
     const ourMsg = msg.us || msg.ourMessage || msg.ourPosition || "";
-    const compMsg = msg.competitorMessage || msg.competitorA || msg.keyMessage || msg.message || msg.them || msg.competitorPosition || "";
-    if (!ourMsg && !compMsg) return "";
-    const displayTitle = competitorName || (category.length > 60 ? "Market Positioning" : category);
-    const headerLabel = competitorName ? competitorName : "Competitor";
-    return `
-    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="font-weight: 600; color: #1E293B; margin-bottom: 10px;">${escapeHtml(displayTitle)}</div>
-      ${ourMsg ? `<div style="color: #059669; font-size: 13px; margin-bottom: 8px;"><strong>Our Position:</strong> ${escapeHtml(ourMsg)}</div>` : ""}
-      ${compMsg ? `<div style="color: #475569; font-size: 14px;"><strong>${escapeHtml(headerLabel)}:</strong> ${escapeHtml(compMsg)}</div>` : ""}
-    </div>
-  `;
-  }).filter(Boolean).join("");
+    const ourLabel = data.companyName || "Our Company";
+
+    const isLegacyFormat = !competitorName && msg.competitorA && typeof msg.competitorA === "string" 
+      && msg.competitorA !== "High" && msg.competitorA !== "Medium" && msg.competitorA !== "Low";
+    
+    if (isLegacyFormat) {
+      const compAMsg = msg.competitorA || "";
+      const compBMsg = msg.competitorB || "";
+      const compAName = competitorNames[0] || "Competitor A";
+      const compBName = competitorNames[1] || "Competitor B";
+      
+      if (ourMsg || compAMsg || compBMsg) {
+        messagingCardsArray.push(`
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+          <div style="font-weight: 600; color: #1E293B; margin-bottom: 12px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
+            Messaging Comparison
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div style="flex: 1; padding: 10px; background: #F0FDF4; border-radius: 6px; border-left: 3px solid #10B981;">
+              <div style="font-weight: 600; color: #059669; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(ourLabel)}</div>
+              <div style="color: #1E293B; font-size: 13px;">${ourMsg ? escapeHtml(ourMsg) : '<span style="color: #9CA3AF;">No positioning data</span>'}</div>
+            </div>
+            ${compAMsg ? `
+            <div style="flex: 1; padding: 10px; background: #EFF6FF; border-radius: 6px; border-left: 3px solid #3B82F6;">
+              <div style="font-weight: 600; color: #1D4ED8; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(compAName)}</div>
+              <div style="color: #1E293B; font-size: 13px;">${escapeHtml(compAMsg)}</div>
+            </div>` : ""}
+            ${compBMsg && compBMsg !== "High" && compBMsg !== "Medium" && compBMsg !== "Low" ? `
+            <div style="flex: 1; padding: 10px; background: #FEF3C7; border-radius: 6px; border-left: 3px solid #F59E0B;">
+              <div style="font-weight: 600; color: #92400E; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(compBName)}</div>
+              <div style="color: #1E293B; font-size: 13px;">${escapeHtml(compBMsg)}</div>
+            </div>` : ""}
+          </div>
+        </div>`);
+      }
+    } else {
+      const compMsg = msg.competitorMessage || msg.keyMessage || msg.message || msg.them || msg.competitorPosition || "";
+      if (!ourMsg && !compMsg) continue;
+      const displayCompetitor = competitorName || "Competitor";
+      messagingCardsArray.push(`
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+        <div style="font-weight: 600; color: #1E293B; margin-bottom: 12px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
+          ${escapeHtml(ourLabel)} vs. ${escapeHtml(displayCompetitor)}
+        </div>
+        <div style="display: flex; gap: 16px;">
+          <div style="flex: 1; padding: 10px; background: #F0FDF4; border-radius: 6px; border-left: 3px solid #10B981;">
+            <div style="font-weight: 600; color: #059669; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(ourLabel)}</div>
+            <div style="color: #1E293B; font-size: 13px;">${ourMsg ? escapeHtml(ourMsg) : '<span style="color: #9CA3AF;">No positioning data</span>'}</div>
+          </div>
+          <div style="flex: 1; padding: 10px; background: #EFF6FF; border-radius: 6px; border-left: 3px solid #3B82F6;">
+            <div style="font-weight: 600; color: #1D4ED8; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(displayCompetitor)}</div>
+            <div style="color: #1E293B; font-size: 13px;">${compMsg ? escapeHtml(compMsg) : '<span style="color: #9CA3AF;">No positioning data</span>'}</div>
+          </div>
+        </div>
+      </div>`);
+    }
+  }
+  const messagingCards = messagingCardsArray.join("");
 
   // Filter to only show active/accepted gaps, not dismissed
   const activeGaps = (data.analysis?.gaps || []).filter((gap: any) => 
@@ -456,11 +519,12 @@ function generateReportHtml(data: ReportData): string {
   const projectCards = data.projects.map(p => `
     <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
+        <div style="flex: 1;">
           <div style="font-weight: 600; color: #1E293B;">${escapeHtml(p.name)}</div>
           ${p.clientName ? `<div style="font-size: 12px; color: #64748B;">Client: ${escapeHtml(p.clientName)}</div>` : ""}
+          ${p.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(p.description.slice(0, 200))}${p.description.length > 200 ? "..." : ""}</div>` : ""}
         </div>
-        <div style="text-align: right;">
+        <div style="text-align: right; margin-left: 16px;">
           <span style="background: ${p.status === "active" ? "#DCFCE7" : "#F1F5F9"}; color: ${p.status === "active" ? "#059669" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(p.status)}</span>
           <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${p.productCount} products</div>
         </div>
@@ -1043,12 +1107,12 @@ function generateReportHtml(data: ReportData): string {
       ${headerLogo}
       <div class="report-meta">
         <div>${formattedDate}</div>
-        <div>Product Analysis Projects</div>
+        <div>Client Projects</div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">Active Projects (${data.projects.length})</div>
+      <div class="section-title">Client Projects (${data.projects.length})</div>
       ${projectCards}
     </div>
 
@@ -1292,6 +1356,7 @@ export async function generatePdfReport(
         id: p.id,
         name: p.name,
         clientName: p.clientName || undefined,
+        description: p.description || undefined,
         status: p.status,
         productCount: projProducts.length,
       });
