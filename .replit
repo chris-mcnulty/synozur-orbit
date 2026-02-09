@@ -47,3 +47,7 @@ integrations = ["javascript_anthropic_ai_integrations:2.0.0", "javascript_object
 
 [userenv.production]
 PRODUCTION_URL = "https://orbit.synozur.com"
+
+[userenv.shared]
+TEST_EMAIL = "test@synozur.com"
+TEST_PASSWORD = "TestPass123!"

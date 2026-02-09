@@ -17,6 +17,9 @@ import {
   Users,
   FileText,
   Rss,
+  ChevronDown,
+  ChevronRight,
+  FileCode,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +102,130 @@ const getPlatformIcon = (platform: string) => {
       return <Globe className="w-5 h-5" />;
   }
 };
+
+const getPageTypeLabel = (pageType: string) => {
+  const labels: Record<string, string> = {
+    homepage: "Home",
+    about: "About",
+    services: "Services",
+    products: "Products",
+    blog: "Blog",
+    other: "Other",
+  };
+  return labels[pageType] || pageType;
+};
+
+function WebsiteEntry({ name, url, lastCrawled, crawlData, badge, isBaseline }: {
+  name: string;
+  url: string;
+  lastCrawled?: string;
+  crawlData?: any;
+  badge: string;
+  isBaseline?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const pages = crawlData?.pagesCrawled || crawlData?.pages || [];
+
+  return (
+    <div className={`rounded-lg ${isBaseline ? "border-2 border-primary/30 bg-primary/5" : "border border-border/50 bg-card/50"}`}>
+      <div className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${isBaseline ? "bg-primary/20" : "bg-muted"}`}>
+              <Globe className={`w-5 h-5 ${isBaseline ? "text-primary" : ""}`} />
+            </div>
+            <div>
+              <h3 className="font-semibold">{name}</h3>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
+              >
+                {url} <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={isBaseline ? "bg-primary/10 text-primary border-primary/30" : ""}>
+              {badge}
+            </Badge>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center gap-3">
+            {lastCrawled && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Last crawled {new Date(lastCrawled).toLocaleDateString()}
+              </p>
+            )}
+            {pages.length > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {pages.length} {pages.length === 1 ? "page" : "pages"} monitored
+              </Badge>
+            )}
+          </div>
+          {pages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs"
+              data-testid={`button-expand-pages-${name.toLowerCase().replace(/\s+/g, '-')}`}
+            >
+              {expanded ? <ChevronDown className="w-4 h-4 mr-1" /> : <ChevronRight className="w-4 h-4 mr-1" />}
+              {expanded ? "Hide pages" : "Show pages"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {expanded && pages.length > 0 && (
+        <div className="border-t border-border/50 px-4 py-3">
+          <div className="space-y-2">
+            {pages.map((page: any, index: number) => (
+              <div
+                key={index}
+                className="flex items-center justify-between py-2 px-3 rounded-md bg-background/50 text-sm"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <FileCode className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <a
+                    href={page.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-primary truncate"
+                    title={page.url}
+                  >
+                    {page.title || page.url}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <Badge variant="outline" className="text-xs">
+                    {getPageTypeLabel(page.pageType)}
+                  </Badge>
+                  {page.wordCount != null && (
+                    <span className="text-xs text-muted-foreground">{page.wordCount.toLocaleString()} words</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {crawlData?.totalWordCount != null && (
+            <p className="text-xs text-muted-foreground mt-3 pt-2 border-t border-border/30">
+              Total content: {crawlData.totalWordCount.toLocaleString()} words across {pages.length} pages
+            </p>
+          )}
+        </div>
+      )}
+      {!lastCrawled && pages.length === 0 && (
+        <div className="border-t border-border/50 px-4 py-3">
+          <p className="text-xs text-muted-foreground">Not yet crawled. Run a refresh from the Refresh Center to start monitoring pages.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DataSourcesPage() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -609,73 +736,30 @@ export default function DataSourcesPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Website Tracking</CardTitle>
-                <CardDescription>Monitored websites and their crawl status</CardDescription>
+                <CardDescription>Monitored websites and their crawled pages</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {companyProfile && (
-                    <div className="p-4 rounded-lg border-2 border-primary/30 bg-primary/5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/20">
-                            <Globe className="w-5 h-5 text-primary" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold">{companyProfile.name}</h3>
-                            <a
-                              href={companyProfile.websiteUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
-                            >
-                              {companyProfile.websiteUrl} <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-                        </div>
-                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                          Baseline
-                        </Badge>
-                      </div>
-                      {companyProfile.lastCrawled && (
-                        <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Last crawled {new Date(companyProfile.lastCrawled).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
+                    <WebsiteEntry
+                      name={companyProfile.name || companyProfile.companyName}
+                      url={companyProfile.websiteUrl}
+                      lastCrawled={companyProfile.lastCrawled}
+                      crawlData={companyProfile.crawlData}
+                      badge="Baseline"
+                      isBaseline
+                    />
                   )}
 
                   {competitors.map((competitor: any) => (
-                    <div
+                    <WebsiteEntry
                       key={competitor.id}
-                      className="p-4 rounded-lg border border-border/50 bg-card/50"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-muted">
-                            <Globe className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold">{competitor.name}</h3>
-                            <a
-                              href={competitor.websiteUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
-                            >
-                              {competitor.websiteUrl} <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-                        </div>
-                        <Badge variant="outline">Competitor</Badge>
-                      </div>
-                      {competitor.lastCrawled && (
-                        <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Last crawled {new Date(competitor.lastCrawled).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
+                      name={competitor.name}
+                      url={competitor.websiteUrl || competitor.url}
+                      lastCrawled={competitor.lastCrawled || competitor.lastFullCrawl}
+                      crawlData={competitor.crawlData}
+                      badge="Competitor"
+                    />
                   ))}
 
                   {!companyProfile && competitors.length === 0 && (
