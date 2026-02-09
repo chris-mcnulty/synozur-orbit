@@ -33,6 +33,10 @@ interface SearchResult {
   date?: string;
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+}
+
 async function searchNews(query: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
   
@@ -48,48 +52,47 @@ async function searchNews(query: string): Promise<SearchResult[]> {
     });
 
     if (!response.ok) {
-      console.log(`News search returned status ${response.status}`);
+      console.log(`[News] Search returned status ${response.status}`);
       return results;
     }
 
     const html = await response.text();
     
-    const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([^<]+)<\/a>/gi;
+    const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+    
+    const titles: Array<{ href: string; title: string }> = [];
     let match;
-    let count = 0;
-    
-    while ((match = resultRegex.exec(html)) !== null && count < 10) {
-      const url = decodeURIComponent(match[1].replace(/.*uddg=/, "").split("&")[0]);
-      const title = match[2].replace(/<[^>]+>/g, "").trim();
-      const snippet = match[3].replace(/<[^>]+>/g, "").trim();
-      
-      if (title && url && !url.includes("duckduckgo.com")) {
-        results.push({
-          title,
-          link: url,
-          snippet,
-        });
-        count++;
-      }
-    }
-    
-    if (results.length === 0) {
-      const altRegex = /<a[^>]*href="([^"]*)"[^>]*class="[^"]*result[^"]*"[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/gi;
-      while ((match = altRegex.exec(html)) !== null && count < 10) {
-        const url = match[1];
-        const title = match[2].trim();
-        if (title && url && url.startsWith("http") && !url.includes("duckduckgo.com")) {
-          results.push({
-            title,
-            link: url,
-            snippet: "",
-          });
-          count++;
+    while ((match = titleRegex.exec(html)) !== null) {
+      const rawHref = match[1];
+      let url = rawHref;
+      if (rawHref.includes("uddg=")) {
+        try {
+          url = decodeURIComponent(rawHref.replace(/.*uddg=/, "").split("&")[0]);
+        } catch {
+          url = rawHref.replace(/.*uddg=/, "").split("&")[0];
         }
       }
+      titles.push({ href: url, title: stripHtml(match[2]) });
     }
+    
+    const snippets: string[] = [];
+    while ((match = snippetRegex.exec(html)) !== null) {
+      snippets.push(stripHtml(match[1]));
+    }
+    
+    for (let i = 0; i < titles.length && results.length < 10; i++) {
+      const { href, title } = titles[i];
+      const snippet = snippets[i] || "";
+      
+      if (title && href && href.startsWith("http") && !href.includes("duckduckgo.com")) {
+        results.push({ title, link: href, snippet });
+      }
+    }
+    
+    console.log(`[News] Found ${results.length} results for query: "${query}"`);
   } catch (error) {
-    console.error("Error searching news:", error);
+    console.error("[News] Error searching:", error);
   }
   
   return results;

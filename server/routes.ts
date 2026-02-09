@@ -12612,8 +12612,7 @@ Generate a comprehensive battlecard in this JSON format:
     try {
       const ctx = await getRequestContext(req);
       
-      const allCompetitors = await storage.getCompetitorsByUserId(req.session.userId!);
-      const competitors = allCompetitors.filter(c => validateResourceContext(c, ctx));
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       
       res.json({ 
         results: [], 
@@ -12638,8 +12637,9 @@ Generate a comprehensive battlecard in this JSON format:
         return res.status(403).json({ error: "News monitoring is a premium feature. Please upgrade your plan." });
       }
       
-      const allCompetitors = await storage.getCompetitorsByUserId(req.session.userId!);
-      const competitors = allCompetitors.filter(c => validateResourceContext(c, ctx));
+      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      
+      console.log(`[News] User ${req.session.userId} - ${competitors.length} competitors found`);
       
       const competitorData = competitors.slice(0, 5).map((c: Competitor) => ({
         id: c.id,
@@ -12647,7 +12647,12 @@ Generate a comprehensive battlecard in this JSON format:
         websiteUrl: c.url || undefined,
       }));
       
+      console.log(`[News] Searching news for: ${competitorData.map(c => c.name).join(', ')}`);
+      
       const results = await monitorMultipleCompetitorsNews(competitorData);
+      
+      const totalMentions = results.reduce((sum, r) => sum + r.mentions.length, 0);
+      console.log(`[News] Completed - ${results.length} competitors scanned, ${totalMentions} total mentions found`);
       
       res.json({ results, fetchedAt: new Date().toISOString() });
     } catch (error: any) {
