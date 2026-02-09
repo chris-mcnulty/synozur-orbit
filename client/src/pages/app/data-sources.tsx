@@ -30,6 +30,8 @@ import StalenessDot from "@/components/ui/StalenessDot";
 
 interface SocialMetrics {
   platform: string;
+  companyName: string;
+  isBaseline: boolean;
   url?: string;
   followers?: number;
   posts?: number;
@@ -146,15 +148,20 @@ export default function DataSourcesPage() {
         method: "POST",
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to refresh news");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to refresh news" }));
+        throw new Error(err.error || "Failed to refresh news");
+      }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/data-sources/news"] });
-      toast({ title: "News data refreshed", description: "Latest mentions have been fetched." });
+    onSuccess: (data) => {
+      if (data.results) {
+        setLiveNewsResults(data.results);
+      }
+      toast({ title: "News scan complete", description: `Found ${data.results?.reduce((sum: number, r: any) => sum + (r.mentions?.length || 0), 0) || 0} mentions across your competitors.` });
     },
     onError: (error: Error) => {
-      toast({ title: "Error refreshing news", description: error.message, variant: "destructive" });
+      toast({ title: "Error scanning news", description: error.message, variant: "destructive" });
     },
   });
 
@@ -167,9 +174,13 @@ export default function DataSourcesPage() {
     ];
 
     for (const company of allCompanies) {
+      const companyName = company.name || "Unknown";
+      const isBaseline = !!company.isBaseline;
       if (company.linkedInUrl) {
         metrics.push({
           platform: "LinkedIn",
+          companyName,
+          isBaseline,
           url: company.linkedInUrl,
           status: "connected",
           lastChecked: company.linkedinLastChecked,
@@ -178,6 +189,8 @@ export default function DataSourcesPage() {
       if (company.instagramUrl) {
         metrics.push({
           platform: "Instagram",
+          companyName,
+          isBaseline,
           url: company.instagramUrl,
           status: company.instagramContent ? "connected" : "blocked",
           lastChecked: company.instagramLastChecked,
@@ -198,12 +211,13 @@ export default function DataSourcesPage() {
     lastCrawl: competitors[0]?.lastCrawled || companyProfile?.lastCrawled,
   };
 
+  const [liveNewsResults, setLiveNewsResults] = useState<any[]>([]);
+
   const allMentions: Array<NewsMention & { competitorName: string }> = [];
-  if (newsData?.results) {
-    for (const result of newsData.results) {
-      for (const mention of result.mentions || []) {
-        allMentions.push({ ...mention, competitorName: result.competitorName });
-      }
+  const newsResults = liveNewsResults.length > 0 ? liveNewsResults : (newsData?.results || []);
+  for (const result of newsResults) {
+    for (const mention of result.mentions || []) {
+      allMentions.push({ ...mention, competitorName: result.competitorName });
     }
   }
   allMentions.sort((a, b) => b.relevanceScore - a.relevanceScore);
@@ -218,7 +232,7 @@ export default function DataSourcesPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold" data-testid="text-page-title">Data Sources</h1>
-              <p className="text-muted-foreground text-sm">Monitor external intelligence from websites, social media, and news</p>
+              <p className="text-muted-foreground text-sm">View all the intelligence sources feeding into your competitive analysis</p>
             </div>
           </div>
         </div>
@@ -343,7 +357,8 @@ export default function DataSourcesPage() {
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       <Newspaper className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p>No news mentions found</p>
+                      <p className="font-medium">No news mentions yet</p>
+                      <p className="text-xs mt-1 max-w-xs mx-auto">Scan the web for recent mentions of your competitors in news articles and blogs.</p>
                       <Button
                         variant="outline"
                         size="sm"
@@ -352,7 +367,7 @@ export default function DataSourcesPage() {
                         disabled={refreshNewsMutation.isPending}
                       >
                         <RefreshCw className={`w-4 h-4 mr-2 ${refreshNewsMutation.isPending ? "animate-spin" : ""}`} />
-                        Search for mentions
+                        {refreshNewsMutation.isPending ? "Scanning..." : "Scan for mentions"}
                       </Button>
                     </div>
                   )}
@@ -378,7 +393,11 @@ export default function DataSourcesPage() {
                           <div className="flex items-center gap-3">
                             {getPlatformIcon(metric.platform)}
                             <div>
-                              <p className="font-medium text-sm">{metric.platform}</p>
+                              <p className="font-medium text-sm">
+                                {metric.companyName}
+                                {metric.isBaseline && <span className="text-xs text-primary ml-1">(You)</span>}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{metric.platform}</p>
                               {metric.url && (
                                 <a
                                   href={metric.url}
@@ -568,15 +587,17 @@ export default function DataSourcesPage() {
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">
                     <Newspaper className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No news mentions found yet</p>
-                    <p className="text-xs mt-2 mb-4">Click refresh to search for competitor mentions</p>
+                    <p className="font-medium">No news mentions yet</p>
+                    <p className="text-sm mt-2 mb-4 max-w-md mx-auto">
+                      News scanning searches the web for recent articles, press releases, and blog posts mentioning your competitors. Results are fetched on-demand and analyzed for sentiment.
+                    </p>
                     <Button
                       variant="outline"
                       onClick={() => refreshNewsMutation.mutate()}
                       disabled={refreshNewsMutation.isPending}
                     >
                       <RefreshCw className={`w-4 h-4 mr-2 ${refreshNewsMutation.isPending ? "animate-spin" : ""}`} />
-                      Search for mentions
+                      {refreshNewsMutation.isPending ? "Scanning the web..." : "Scan for mentions"}
                     </Button>
                   </div>
                 )}

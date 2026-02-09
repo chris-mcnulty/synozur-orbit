@@ -12615,20 +12615,11 @@ Generate a comprehensive battlecard in this JSON format:
       const allCompetitors = await storage.getCompetitorsByUserId(req.session.userId!);
       const competitors = allCompetitors.filter(c => validateResourceContext(c, ctx));
       
-      const cachedResults: NewsMonitoringResult[] = [];
-      for (const competitor of competitors.slice(0, 5)) {
-        cachedResults.push({
-          competitorId: competitor.id,
-          competitorName: competitor.name,
-          mentions: [],
-          totalMentions: 0,
-          status: "success",
-          message: "Use refresh to fetch latest news",
-          fetchedAt: new Date().toISOString(),
-        });
-      }
-      
-      res.json({ results: cachedResults });
+      res.json({ 
+        results: [], 
+        competitorCount: competitors.length,
+        message: "Click 'Search for mentions' to scan for competitor news across the web. Results are fetched on-demand and are not stored."
+      });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

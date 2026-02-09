@@ -346,6 +346,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
         { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
         { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
+        { label: "Data Sources", icon: Database, href: "/app/data-sources" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
       ]
     },
@@ -371,7 +372,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Help",
       items: [
         { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
-        { label: "Data Sources", icon: Database, href: "/app/data-sources" },
         { label: "About", icon: Info, href: "/app/about" },
       ]
     }
