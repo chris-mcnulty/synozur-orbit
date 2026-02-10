@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info, Trash2 } from "lucide-react";
+import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info, Trash2, Megaphone, MessageSquareText } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -27,6 +27,8 @@ type ReportSections = {
   recommendations: boolean;
   battleCards: boolean;
   activityLog: boolean;
+  gtmPlan: boolean;
+  messagingFramework: boolean;
 };
 
 const defaultSections: ReportSections = {
@@ -37,6 +39,8 @@ const defaultSections: ReportSections = {
   recommendations: true,
   battleCards: true,
   activityLog: false,
+  gtmPlan: true,
+  messagingFramework: true,
 };
 
 export default function Reports() {
@@ -139,7 +143,9 @@ export default function Reports() {
           scope,
           projectId: scope === "project" ? selectedProjectId : undefined,
           sections: reportType === "capstone" ? sections : undefined,
-          includeStrategicPlans: includeStrategicPlans || undefined,
+          includeStrategicPlans: reportType === "capstone" 
+            ? (sections.gtmPlan || sections.messagingFramework) || undefined
+            : includeStrategicPlans || undefined,
         }),
       });
 
@@ -338,6 +344,8 @@ export default function Reports() {
                   { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
                   { key: "recommendations", label: "Recommendations", icon: Lightbulb },
                   { key: "battleCards", label: "Battle Cards", icon: Swords },
+                  { key: "gtmPlan", label: "GTM Plan", icon: Megaphone },
+                  { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText },
                   { key: "activityLog", label: "Activity Log", icon: Activity },
                 ].map(({ key, label, icon: Icon }) => (
                   <div 
@@ -439,7 +447,7 @@ export default function Reports() {
             />
           </div>
 
-          {scope === "baseline" && (
+          {scope === "baseline" && reportType === "quick" && (
             <div
               className={cn(
                 "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
