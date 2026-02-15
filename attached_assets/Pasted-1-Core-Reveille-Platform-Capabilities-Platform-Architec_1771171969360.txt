@@ -1,0 +1,110 @@
+1. Core Reveille Platform Capabilities
+Platform Architecture & Deployment
+• Cloud, on‑premises, and hybrid deployment support 23
+• Agentless architecture (no endpoint agents required) 4
+• Configuration‑only / no‑code setup using application‑specific wizards 2
+• Deployments typically measured in days or weeks (not months) 4
+Monitoring & Observability
+• Over 1,000 prebuilt monitoring tests and metrics for ECM, IDP, and RPA platforms 21
+• Continuous monitoring of:
+    • Application components
+    • Infrastructure dependencies
+    • Batch processes
+    • Queues and aging jobs
+    • User activity and sessions 21
+• Unified “single pane of glass” across multiple automation platforms 2
+Alerts, Dashboards & Reporting
+• Real‑time alerts when thresholds are exceeded 1
+• Historical dashboards and reports for trend analysis 2
+• Service‑level dashboards aligned to business outcomes 5
+
+---
+
+2. AI & Advanced Analytics Features
+Reveille AI (Machine‑Learning Based)
+• AI Dynamic Thresholding using machine‑learning models 67
+• Adaptive upper and lower thresholds that adjust to workload behavior 6
+• Reduction of false positives and alert fatigue 6
+• Forecast accuracy indicators for transparency (not black‑box AI) 6
+• AI can run on‑prem or in cloud environments 6
+
+---
+
+3. Proactive Remediation & Automation
+• Automated “self‑healing” actions triggered by failed tests or anomalies 1
+• Over 70 documented proactive remediation actions 2
+• Automated restart, cleanup, and corrective workflows (platform‑dependent) 5
+• Reduced Mean Time to Detect (MTTD) and Mean Time to Resolve (MTTR) 21
+
+---
+
+4. Service Level Assurance & Operational Management
+• End‑user experience–based service level monitoring (not just system uptime) 8
+• SLA reporting for ECM, IDP, RPA, and Microsoft 365 environments 5
+• Capacity planning metrics (response times, peak usage, transaction volume) 95
+• License usage and adoption tracking 5
+
+---
+
+5. Security, Compliance & User Analytics
+• Continuous user activity monitoring across content systems 98
+• Detection of suspicious or anomalous content access behavior 95
+• Automated security responses (e.g., revoke access, isolate devices – platform dependent) 8
+• Audit‑ready historical access and activity reports 9
+• Support for compliance and regulatory reporting workflows 5
+
+---
+
+6. Microsoft 365–Specific Features (Reveille for Microsoft / Reveille Sentry)
+Supported Microsoft Technologies
+• SharePoint Server & SharePoint Online (SPO) 10
+• SharePoint Embedded 10
+• OneDrive 10
+• Microsoft Teams 10
+• Microsoft 365 Backup 10
+• Copilot activity monitoring 10
+• Power Automate and Power BI integration 10
+• Azure Blob Storage 10
+Microsoft‑Focused Capabilities
+• Deep monitoring of internal M365 application components 10
+• Customer‑location experience monitoring (beyond Azure tenant health) 10
+• Monitoring of Copilot document access and activity events 10
+• Detection of unknown M365 Backup configuration changes 10
+
+---
+
+7. Solution Packs (Packaged Operational Capabilities)
+Documented Solution Packs include: 5
+• Service Level Management
+• Capacity Planning
+• Remediation Automation
+• Enterprise Integration
+• Compliance & Audit Support
+• Content Security
+• License Management
+• Chargeback / Cost Allocation
+
+---
+
+8. Integrations & Ecosystem
+• Native integrations with:
+    • ServiceNow
+    • Splunk
+    • Microsoft Sentinel
+    • Azure Monitor
+    • PagerDuty 54
+• Data export and visualization via Power BI 10
+• REST APIs with OAuth 2.0 / OpenID Connect support 4
+
+---
+
+9. Supported Platforms (Explicitly Listed)
+Reveille provides purpose‑built monitoring for: 21
+• OpenText (Documentum, Extended ECM, InfoArchive, Intelligent Capture)
+• IBM (FileNet, Datacap, CMOD)
+• Hyland (OnBase, Alfresco, Hyland RPA)
+• ABBYY (FlexiCapture, Vantage)
+• Tungsten Automation (TotalAgility, Capture, RPA)
+• UiPath
+• Microsoft 365 & Azure
+• Box

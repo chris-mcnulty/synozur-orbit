@@ -1,0 +1,60 @@
+02-15 08:06:35
+4:06:35 PM [express] GET /api/context 200 in 181ms :: {"activeTenantId":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","activeMarketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","activeTenant":{"id":"7b3e4d72-a5b3-4e71-bb42-97d034dd38b4","domain":"synozur.com","nam...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/recommendations 200 in 284ms :: [{"id":"00b21c6a-2e78-430b-b328-f935e62012a8","title":"Reframe Platform Specialization as Strategic Advantage","description":"Transform the perceived limitation of platform specialization into differe...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/activity 200 in 300ms :: [{"id":"a20ca2c9-29cd-41a6-9b6c-46602f9cdc98","type":"scheduled_crawl","sourceType":"competitor","competitorId":"c30714f5-fa25-4ba2-bc38-cc9a64bd567f","companyProfileId":null,"competitorName":"DataDog...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/company-profile 200 in 331ms :: {"id":"4de5ecfd-d57b-48c5-b9dd-6e3e0bdfbea9","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","companyName":"Reveille Soft...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/baseline/executive-summary 200 in 340ms :: {"exists":false,"data":null,"lockedSections":[],"lastGeneratedAt":null}
+02-15 08:06:36
+4:06:36 PM [express] GET /api/reports 304 in 295ms :: []
+02-15 08:06:36
+4:06:36 PM [express] GET /api/analysis 200 in 320ms :: {"id":"d2f3b3bb-9aca-4afd-9393-22a4e917c1c5","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","themes":[{"us":"Based on pr...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/company-profile 200 in 331ms :: {"id":"4de5ecfd-d57b-48c5-b9dd-6e3e0bdfbea9","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","companyName":"Reveille Soft...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/score-history/baseline/942d9347-728d-456c-be96-96e7cb276d3a 304 in 329ms :: [{"id":"2f93e1d8-f980-492c-8679-ac10a2eca990","entityType":"baseline","entityId":"942d9347-728d-456c-be96-96e7cb276d3a","entityName":"Avanade","tenantDomain":"synozur.com","marketId":"a8e7cd06-ed45-41...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/tenant/info 304 in 364ms :: {"plan":"enterprise","isPremium":true,"name":"The Synozur Alliance","features":{"competitorLimit":100,"analysisLimit":100,"adminUserLimit":10,"readWriteUserLimit":25,"readOnlyUserLimit":50,"battlecard...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/battlecards 200 in 414ms :: [{"id":"fe169c48-56ef-4958-9385-09cef421e36c","competitorId":"b061e353-891f-44e7-a56c-55b146fc4145","tenantDomain":"synozur.com","marketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","strengths":["Compreh...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/projects 200 in 469ms :: [{"id":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","name":"Reveille Sentry","clientName":"Reveille Software","clientDomain":"https://reveillesentry.com/","description":null,"analysisType":"product","status...[truncated]
+02-15 08:06:36
+4:06:36 PM [express] GET /api/company-profile 304 in 171ms :: {"id":"4de5ecfd-d57b-48c5-b9dd-6e3e0bdfbea9","userId":"116500d0-357e-4ace-a7af-7264ed58e22a","tenantDomain":"synozur.com","marketId":"bc7e3c6b-277f-4220-81d8-2bc62426ad25","companyName":"Reveille Soft...[truncated]
+02-15 08:06:41
+4:06:41 PM [express] GET /api/jobs/active 304 in 67ms :: {"active":[],"count":0}
+02-15 08:06:46
+4:06:46 PM [express] GET /api/jobs/recent 304 in 85ms :: [{"id":"4a83e9a0-33cb-4aea-92f8-fad36eb47dd3","jobType":"websiteCrawl","tenantDomain":"synozur.com","targetId":"86bd0436-dee4-4fc7-a88b-3400aef23dd5","targetName":"NTT DATA","status":"failed","result"...[truncated]
+02-15 08:06:46
+4:06:46 PM [express] GET /api/jobs/active 304 in 65ms :: {"active":[],"count":0}
+02-15 08:06:51
+4:06:51 PM [express] GET /api/jobs/active 304 in 73ms :: {"active":[],"count":0}
+02-15 08:07:00
+4:07:00 PM [express] GET /api/jobs/active 304 in 65ms :: {"active":[],"count":0}
+02-15 08:07:06
+4:07:06 PM [express] GET /api/jobs/active 304 in 64ms :: {"active":[],"count":0}
+02-15 08:07:11
+4:07:11 PM [express] GET /api/jobs/active 304 in 64ms :: {"active":[],"count":0}
+02-15 08:07:11
+[Scheduled Job] Starting product monitor job...
+02-15 08:07:11
+[Scheduled Job] Product monitor job completed
+02-15 08:07:15
+[Scheduled Jobs] No stuck jobs to clean up
+02-15 08:07:16
+4:07:16 PM [express] GET /api/jobs/active 304 in 67ms :: {"active":[],"count":0}
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd 200 in 192ms :: {"id":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","name":"Reveille Sentry","clientName":"Reveille Software","clientDomain":"https://reveillesentry.com/","description":null,"analysisType":"product","status"...[truncated]
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd/recommendations/competitive_summary 200 in 202ms :: {"type":"competitive_summary","projectId":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","status":"not_generated","content":null,"savedPrompts":null,"lastGeneratedAt":null}
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd/recommendations/gap_analysis 200 in 191ms :: {"type":"gap_analysis","projectId":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","status":"not_generated","content":null,"savedPrompts":null,"lastGeneratedAt":null}
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd/recommendations/strategic_recommendations 200 in 364ms :: {"type":"strategic_recommendations","projectId":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","status":"not_generated","content":null,"savedPrompts":null,"lastGeneratedAt":null}
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd/recommendations/product_one_sheet 200 in 342ms :: {"type":"product_one_sheet","projectId":"6691b3b4-e18a-468c-adb2-2ff36fc253dd","status":"not_generated","content":null,"savedPrompts":null,"lastGeneratedAt":null}
+02-15 08:07:19
+4:07:19 PM [express] GET /api/projects/6691b3b4-e18a-468c-adb2-2ff36fc253dd/messaging-comparison 200 in 357ms :: {"baseline":{"id":"9f319b71-869a-4e43-a4f7-824208c81ee0","name":"Reveille Sentry","companyName":"Reveille","messaging":{"summary":null,"valueProposition":null,"targetAudience":null,"keyMessages":[],"d...[truncated]

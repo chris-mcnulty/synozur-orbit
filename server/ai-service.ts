@@ -597,9 +597,19 @@ Return ONLY valid JSON array, no additional text.`,
     if (text.endsWith("```")) {
       text = text.slice(0, -3);
     }
-    return JSON.parse(text.trim());
+    text = text.trim();
+    
+    try {
+      return JSON.parse(text);
+    } catch {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      throw new Error("No JSON array found in response");
+    }
   } catch (e) {
-    console.error("Failed to parse extracted features:", responseContent.text, e);
+    console.error("Failed to parse extracted features:", responseContent.text.slice(0, 500), e);
     return [];
   }
 }
@@ -663,9 +673,19 @@ Return ONLY valid JSON array, no additional text.`,
     if (text.endsWith("```")) {
       text = text.slice(0, -3);
     }
-    return JSON.parse(text.trim());
+    text = text.trim();
+    
+    try {
+      return JSON.parse(text);
+    } catch {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      throw new Error("No JSON array found in response");
+    }
   } catch (e) {
-    console.error("Failed to parse extracted roadmap:", responseContent.text, e);
+    console.error("Failed to parse extracted roadmap:", responseContent.text.slice(0, 500), e);
     return [];
   }
 }

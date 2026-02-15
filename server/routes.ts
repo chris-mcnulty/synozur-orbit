@@ -7135,6 +7135,10 @@ Provide analysis in this JSON format:
       const { extractFeaturesFromContent } = await import("./ai-service");
       const extractedFeatures = await extractFeaturesFromContent(text, "text", product.name);
       
+      if (extractedFeatures.length === 0) {
+        return res.status(400).json({ error: "No features could be extracted from the provided text. Try reformatting the content or breaking it into smaller sections." });
+      }
+      
       // Create features in database
       const createdFeatures = [];
       for (const feature of extractedFeatures) {
