@@ -541,7 +541,7 @@ export async function extractFeaturesFromContent(
   
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [
       {
         role: "user",
@@ -577,7 +577,7 @@ Return a JSON array of features. Each feature should have:
 - status: "backlog" | "planned" | "in_progress" | "released"
 
 Be comprehensive! Extract 10-30 features if the content has that many. Each distinct capability, module, integration, or security feature should be its own entry. Do not be conservative - if something sounds like a feature, include it.
-Return ONLY valid JSON array, no additional text.`,
+Return ONLY valid JSON array, no additional text or code fences.`,
       },
     ],
   });
@@ -589,23 +589,41 @@ Return ONLY valid JSON array, no additional text.`,
 
   try {
     let text = responseContent.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    text = text.trim();
+    text = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "").trim();
+    
+    console.log(`[Feature Parse] stop_reason: ${message.stop_reason}, text length: ${text.length}`);
     
     try {
       return JSON.parse(text);
     } catch {
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch {
+          // ignore, will try truncation recovery below
+        }
       }
+      
+      const arrayStart = text.indexOf("[");
+      if (arrayStart !== -1) {
+        let partial = text.slice(arrayStart);
+        
+        partial = partial.replace(/,\s*\{[^}]*$/, "");
+        
+        if (!partial.endsWith("]")) {
+          partial = partial + "]";
+        }
+        
+        try {
+          const recovered = JSON.parse(partial);
+          console.log(`[Feature Parse] Recovered ${recovered.length} features from truncated response`);
+          return recovered;
+        } catch {
+          // ignore
+        }
+      }
+      
       throw new Error("No JSON array found in response");
     }
   } catch (e) {
@@ -665,15 +683,7 @@ Return ONLY valid JSON array, no additional text.`,
 
   try {
     let text = responseContent.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    text = text.trim();
+    text = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "").trim();
     
     try {
       return JSON.parse(text);

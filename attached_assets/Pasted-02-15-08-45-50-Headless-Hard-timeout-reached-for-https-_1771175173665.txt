@@ -1,0 +1,60 @@
+02-15 08:45:50
+[Headless] Hard timeout reached for https://www.protiviti.com/us-en/technology-consulting-services (attempt 1)
+02-15 08:46:18
+at async /home/runner/workspace/dist/index.cjs:754:27153
+02-15 08:46:18
+at ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:180:23)
+02-15 08:46:18
+at async o2 (/home/runner/workspace/dist/index.cjs:754:15873)
+02-15 08:46:18
+at async Jte (/home/runner/workspace/dist/index.cjs:754:16732)
+02-15 08:46:18
+at async dk (/home/runner/workspace/dist/index.cjs:754:19483)
+02-15 08:46:18
+at async Yte (/home/runner/workspace/dist/index.cjs:754:13770)
+02-15 08:46:18
+Headless fetch failed for https://www.protiviti.com/us-en/technology-consulting-services (attempt 2): TimeoutError: Timed out after 30000 ms while waiting for the WS endpoint URL to appear in stdout!
+02-15 08:46:18
+at async l (/home/runner/workspace/dist/index.cjs:754:16212)
+02-15 08:46:18
+at async a (/home/runner/workspace/dist/index.cjs:754:24744)
+02-15 08:46:21
+at async a (/home/runner/workspace/dist/index.cjs:754:24744)
+02-15 08:46:21
+at async dk (/home/runner/workspace/dist/index.cjs:754:19483)
+02-15 08:46:21
+at async o2 (/home/runner/workspace/dist/index.cjs:754:15873)
+02-15 08:46:21
+[Headless Crawler] Using chromium path: /nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium
+02-15 08:46:21
+at process.processTimers (node:internal/timers:516:9)
+02-15 08:46:21
+at ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:180:23)
+02-15 08:46:21
+at async l (/home/runner/workspace/dist/index.cjs:754:16212)
+02-15 08:46:21
+at runNextTicks (node:internal/process/task_queues:60:5)
+02-15 08:46:21
+at async /home/runner/workspace/dist/index.cjs:754:27153
+02-15 08:46:21
+Headless fetch failed for https://www.protiviti.com/us-en/technology-media-and-telecommunications (attempt 2): TimeoutError: Timed out after 30000 ms while waiting for the WS endpoint URL to appear in stdout!
+02-15 08:46:21
+at async Yte (/home/runner/workspace/dist/index.cjs:754:13770)
+02-15 08:46:25
+[Headless] Hard timeout reached for https://www.protiviti.com/us-en/technology-consulting-services (attempt 2)
+02-15 08:46:26
+[Headless] Hard timeout reached for https://www.protiviti.com/us-en/technology-media-and-telecommunications (attempt 2)
+02-15 08:46:56
+Headless fetch failed for https://www.protiviti.com/us-en/technology-consulting-services (attempt 3): TimeoutError: Timed out after 30000 ms while waiting for the WS endpoint URL to appear in stdout!
+02-15 08:46:56
+[Headless] Failed, falling back to HTTP for: https://www.protiviti.com/us-en/technology-consulting-services
+02-15 08:46:56
+at async Jte (/home/runner/workspace/dist/index.cjs:754:16732)
+02-15 08:46:56
+at async l (/home/runner/workspace/dist/index.cjs:754:16212)
+02-15 08:46:56
+at async a (/home/runner/workspace/dist/index.cjs:754:24744)
+02-15 08:46:56
+at async o2 (/home/runner/workspace/dist/index.cjs:754:15873)
+02-15 08:46:56
+at ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:180:23)
