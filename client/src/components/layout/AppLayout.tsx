@@ -48,6 +48,7 @@ import ContextBar from "@/components/layout/ContextBar";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import CommandPalette from "@/components/CommandPalette";
 import SmartSuggestions from "@/components/SmartSuggestions";
+import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -394,7 +395,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}>
         {/* Sidebar Header - Orion Style */}
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
-          <Link href="/app" className="flex items-center gap-2">
+          <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+          <Link href="/app" className="flex items-center gap-2 ml-2">
             <img 
               src="/brand/synozur-horizontal.png" 
               alt="Synozur" 
@@ -543,12 +545,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile Header - Orion Style */}
         <header className="h-14 lg:hidden flex items-center px-4 border-b border-border bg-sidebar">
           <button 
-            className="text-sidebar-foreground/70 hover:text-sidebar-foreground mr-4"
+            className="text-sidebar-foreground/70 hover:text-sidebar-foreground mr-3"
             onClick={() => setSidebarOpen(true)}
           >
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-2">
+          <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+          <div className="flex items-center gap-2 ml-2">
             <img 
               src="/brand/synozur-horizontal.png" 
               alt="Synozur" 

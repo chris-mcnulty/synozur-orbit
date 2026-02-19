@@ -1,19 +1,23 @@
 import React from "react";
 import { Link } from "wouter";
+import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <header className="h-20 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
-        <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-2 hover:opacity-90 transition-opacity">
-          <img 
-            src="/brand/synozur-horizontal.png" 
-            alt="Synozur" 
-            className="h-7 object-contain"
-          />
-          <span className="text-foreground/50">|</span>
-          <span>Orbit</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <SynozurAppSwitcher currentApp="orbit" variant="light" />
+          <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-2 hover:opacity-90 transition-opacity">
+            <img 
+              src="/brand/synozur-horizontal.png" 
+              alt="Synozur" 
+              className="h-7 object-contain"
+            />
+            <span className="text-foreground/50">|</span>
+            <span>Orbit</span>
+          </Link>
+        </div>
         
         <nav className="hidden md:flex items-center gap-8">
           <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Product</Link>

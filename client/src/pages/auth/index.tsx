@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { COMPANY_SIZES, JOB_ROLES, INDUSTRIES, COUNTRIES } from "@/lib/constants";
 import { Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 
 export default function AuthPage() {
   const [location, setLocation] = useLocation();
@@ -136,6 +137,9 @@ export default function AuthPage() {
     >
       <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-background/90 to-secondary/40" />
       
+      <div className="absolute top-4 left-4 z-20">
+        <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+      </div>
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
