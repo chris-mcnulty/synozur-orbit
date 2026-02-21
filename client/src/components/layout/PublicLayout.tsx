@@ -7,7 +7,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <header className="h-20 px-6 md:px-12 flex items-center justify-between border-b border-border sticky top-0 z-50 bg-background/80 backdrop-blur-md">
         <div className="flex items-center gap-3">
-          <SynozurAppSwitcher currentApp="orbit" variant="light" />
+          <SynozurAppSwitcher currentApp="orbit" />
           <Link href="/" className="font-bold text-2xl tracking-tight flex items-center gap-2 hover:opacity-90 transition-opacity">
             <img 
               src="/brand/synozur-horizontal.png" 

@@ -138,7 +138,7 @@ export default function AuthPage() {
       <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-background/90 to-secondary/40" />
       
       <div className="absolute top-4 left-4 z-20">
-        <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+        <SynozurAppSwitcher currentApp="orbit" forceDark />
       </div>
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />

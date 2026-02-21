@@ -395,7 +395,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}>
         {/* Sidebar Header - Orion Style */}
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
-          <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+          <SynozurAppSwitcher currentApp="orbit" forceDark />
           <Link href="/app" className="flex items-center gap-2 ml-2">
             <img 
               src="/brand/synozur-horizontal.png" 
@@ -550,7 +550,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={20} />
           </button>
-          <SynozurAppSwitcher currentApp="orbit" variant="dark" />
+          <SynozurAppSwitcher currentApp="orbit" forceDark />
           <div className="flex items-center gap-2 ml-2">
             <img 
               src="/brand/synozur-horizontal.png" 
