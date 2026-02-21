@@ -1,0 +1,36 @@
+The app switcher is a shared navigation component across all Synozur Suite apps. It displays a 3x3 grid icon button that opens a dropdown listing all five apps in the suite. Here are the full requirements:
+
+Apps to list (in this order):
+
+Vega — "Company Operating System" — "AI-augmented strategy, goals, execution, governance, and insight in one place." — https://vega.synozur.com
+Constellation — "Delivery & Financial Management" — "Time, cost, progress tracking with estimates, invoicing, and reporting." — https://scdp.synozur.com
+Nebula — "Innovation & Envisioning" — "Co-design strategy, surface insights, and turn ideas into shared direction." — https://nebula.synozur.com
+Orion — "Transformation & Maturity" — "AI-powered maturity assessments with actionable roadmaps for change." — https://orion.synozur.com
+Orbit — "Go-to-Market Intelligence" — "Competitive and market insights for positioning, prioritization, and action." — https://orbit.synozur.com
+Set currentApp to match this app (e.g., "vega" for Vega, "nebula" for Nebula, etc.). The current app should show a "Current" badge and not link anywhere.
+
+Brand colors — use ONLY these two:
+
+Primary: #810FFB
+Secondary: #E60CB3
+Alternate them across apps for icon backgrounds and tagline text. No other accent colors.
+Light/dark mode support:
+
+The dropdown and trigger button must adapt to the app's light/dark theme using Tailwind dark: variants.
+If the component is used on a page with a forced dark background (like a login/landing page), pass forceDark prop to ensure dark styling regardless of system theme.
+Trigger button: A 9-dot grid icon (3x3 squares), 36x36px, in the top-left of the header before the app logo.
+
+Dropdown behavior:
+
+Opens below the trigger button, 360px wide, with rounded corners and shadow.
+Each app shows: colored icon (simple SVG), name, tagline (in brand color), and description (muted).
+Non-current apps open in a new tab. Current app closes the dropdown.
+Closes on click outside or Escape key.
+Footer link: "Learn more at synozur.com" linking to https://www.synozur.com/applications
+Each app needs a unique simple SVG icon:
+
+Vega: 5-pointed star
+Constellation: 5 dots connected by lines
+Nebula: concentric circles with small dots
+Orion: diagonal ascending dots connected by lines
+Orbit: central dot with two crossing orbital ellipses
