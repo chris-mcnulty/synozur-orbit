@@ -277,6 +277,53 @@ export const projectProducts = pgTable("project_products", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  canonicalDomain: text("canonical_domain").notNull().unique(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  status: text("status").notNull().default("active"),
+  faviconUrl: text("favicon_url"),
+  screenshotUrl: text("screenshot_url"),
+  linkedInUrl: text("linkedin_url"),
+  instagramUrl: text("instagram_url"),
+  twitterUrl: text("twitter_url"),
+  blogUrl: text("blog_url"),
+  headquarters: text("headquarters"),
+  founded: text("founded"),
+  employeeCount: text("employee_count"),
+  revenue: text("revenue"),
+  fundingRaised: text("funding_raised"),
+  industry: text("industry"),
+  crawlData: jsonb("crawl_data"),
+  previousWebsiteContent: text("previous_website_content"),
+  linkedInContent: text("linkedin_content"),
+  instagramContent: text("instagram_content"),
+  twitterContent: text("twitter_content"),
+  linkedInEngagement: jsonb("linkedin_engagement"),
+  instagramEngagement: jsonb("instagram_engagement"),
+  twitterEngagement: jsonb("twitter_engagement"),
+  blogSnapshot: jsonb("blog_snapshot"),
+  lastFullCrawl: timestamp("last_full_crawl"),
+  lastWebsiteMonitor: timestamp("last_website_monitor"),
+  lastSocialCrawl: timestamp("last_social_crawl"),
+  lastCrawl: text("last_crawl"),
+  archivedAt: timestamp("archived_at"),
+  deletedAt: timestamp("deleted_at"),
+  activeReferenceCount: integer("active_reference_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
 export const competitors = pgTable("competitors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -304,6 +351,7 @@ export const competitors = pgTable("competitors", {
   excludeFromCrawl: boolean("exclude_from_crawl").notNull().default(false),
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   tenantDomain: text("tenant_domain"),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
@@ -751,6 +799,7 @@ export const companyProfiles = pgTable("company_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context - each market has its baseline
   companyName: text("company_name").notNull(),
   websiteUrl: text("website_url").notNull(),

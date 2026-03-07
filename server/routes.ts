@@ -6,12 +6,12 @@ import { join } from "path";
 import fileUpload, { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "./storage";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq, count } from "drizzle-orm";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
@@ -678,11 +678,45 @@ export async function registerRoutes(
 
   // ==================== COMPETITOR ROUTES ====================
 
+  function enrichWithOrgData(competitor: any, org: any): any {
+    if (!org) return competitor;
+    const pick = (local: any, orgVal: any) => {
+      if (local && orgVal) {
+        return new Date(orgVal) > new Date(local) ? orgVal : local;
+      }
+      return local || orgVal || null;
+    };
+    return {
+      ...competitor,
+      faviconUrl: competitor.faviconUrl || org.faviconUrl || null,
+      screenshotUrl: competitor.screenshotUrl || org.screenshotUrl || null,
+      lastCrawl: pick(competitor.lastCrawl, org.lastCrawl),
+      lastFullCrawl: pick(competitor.lastFullCrawl, org.lastFullCrawl),
+      lastWebsiteMonitor: pick(competitor.lastWebsiteMonitor, org.lastWebsiteMonitor),
+      lastSocialCrawl: pick(competitor.lastSocialCrawl, org.lastSocialCrawl),
+      linkedInUrl: competitor.linkedInUrl || org.linkedInUrl || null,
+      instagramUrl: competitor.instagramUrl || org.instagramUrl || null,
+      twitterUrl: competitor.twitterUrl || org.twitterUrl || null,
+    };
+  }
+
   app.get("/api/competitors", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
-      res.json(competitors);
+      const competitorsList = await storage.getCompetitorsByContext(toContextFilter(ctx));
+
+      const orgIds = [...new Set(competitorsList.map(c => c.organizationId).filter(Boolean))];
+      const orgMap = new Map<string, any>();
+      for (const orgId of orgIds) {
+        const org = await storage.getOrganization(orgId!);
+        if (org) orgMap.set(orgId!, org);
+      }
+
+      const enriched = competitorsList.map(c =>
+        c.organizationId ? enrichWithOrgData(c, orgMap.get(c.organizationId)) : c
+      );
+
+      res.json(enriched);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -705,7 +739,12 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      res.json(competitor);
+      let enriched = competitor;
+      if (competitor.organizationId) {
+        const org = await storage.getOrganization(competitor.organizationId);
+        enriched = enrichWithOrgData(competitor, org);
+      }
+      res.json(enriched);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -948,7 +987,28 @@ export async function registerRoutes(
         return res.status(400).json({ error: fromError(parsed.error).toString() });
       }
 
-      const competitor = await storage.createCompetitor(parsed.data);
+      const org = await storage.findOrCreateOrganization(normalizedUrl, competitorData.name, {
+        linkedInUrl: competitorData.linkedInUrl,
+        instagramUrl: competitorData.instagramUrl,
+        twitterUrl: competitorData.twitterUrl,
+        blogUrl: competitorData.blogUrl,
+        headquarters: competitorData.headquarters,
+        founded: competitorData.founded,
+        employeeCount: competitorData.employeeCount,
+        revenue: competitorData.revenue,
+        fundingRaised: competitorData.fundingRaised,
+        industry: competitorData.industry,
+      });
+
+      const competitor = await storage.createCompetitor({
+        ...parsed.data,
+        organizationId: org.id,
+        faviconUrl: parsed.data.faviconUrl || org.faviconUrl,
+        screenshotUrl: parsed.data.screenshotUrl || org.screenshotUrl,
+      });
+
+      await storage.incrementOrgRefCount(org.id);
+
       res.json(competitor);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -1009,13 +1069,18 @@ export async function registerRoutes(
         });
       }
 
-      // Capture visual assets (favicon and screenshot) in background
       captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
         if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
           await storage.updateCompetitor(competitor.id, {
             faviconUrl: visualAssets.faviconUrl,
             screenshotUrl: visualAssets.screenshotUrl,
           });
+          if (competitor.organizationId) {
+            await storage.updateOrganization(competitor.organizationId, {
+              faviconUrl: visualAssets.faviconUrl || undefined,
+              screenshotUrl: visualAssets.screenshotUrl || undefined,
+            }).catch(() => {});
+          }
         }
       }).catch(err => console.error("Visual capture failed:", err));
 
@@ -1119,6 +1184,20 @@ export async function registerRoutes(
       }
       
       await storage.updateCompetitorLastCrawl(req.params.id, lastCrawl);
+
+      if (competitor.organizationId) {
+        const orgUpdates: any = {
+          crawlData: socialUpdates.crawlData,
+          lastFullCrawl: socialUpdates.lastFullCrawl,
+          lastCrawl,
+        };
+        if (socialUpdates.linkedInUrl) orgUpdates.linkedInUrl = socialUpdates.linkedInUrl;
+        if (socialUpdates.instagramUrl) orgUpdates.instagramUrl = socialUpdates.instagramUrl;
+        if (socialUpdates.blogSnapshot) orgUpdates.blogSnapshot = socialUpdates.blogSnapshot;
+        await storage.updateOrganization(competitor.organizationId, orgUpdates).catch(err =>
+          console.error("[Org Update] Failed to sync crawl to org:", err.message)
+        );
+      }
       
       // Quick analysis: just refresh webpage data, no AI analysis
       if (analysisType === "quick") {
@@ -1724,6 +1803,20 @@ Return ONLY the JSON object, no other text.`;
             }
             
             await storage.updateCompanyProfile(profile.id, updateData);
+
+            if (profile.organizationId) {
+              await storage.updateOrganization(profile.organizationId, {
+                crawlData: updateData.crawlData,
+                previousWebsiteContent: updateData.previousWebsiteContent,
+                lastCrawl: updateData.lastCrawl,
+                lastFullCrawl: updateData.lastFullCrawl,
+                blogSnapshot: updateData.blogSnapshot,
+                linkedInUrl: updateData.linkedInUrl,
+                twitterUrl: updateData.twitterUrl,
+                instagramUrl: updateData.instagramUrl,
+              }).catch(err => console.error("[Org Update] Baseline crawl sync failed:", err.message));
+            }
+
             results.website = { 
               success: true, 
               pages: crawlResult.pages.length,
@@ -2135,6 +2228,9 @@ Return ONLY the JSON object, no other text.`;
         return res.status(403).json({ error: "Access denied" });
       }
 
+      if (competitor.organizationId) {
+        await storage.decrementOrgRefCount(competitor.organizationId);
+      }
       await storage.deleteCompetitor(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
@@ -3938,9 +4034,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
         }
       }
 
+      const org = await storage.findOrCreateOrganization(validatedWebsiteUrl, companyName, {
+        linkedInUrl: linkedInUrl || undefined,
+        instagramUrl: instagramUrl || undefined,
+        twitterUrl: twitterUrl || undefined,
+        blogUrl: validatedBlogUrl || undefined,
+        headquarters: headquarters || undefined,
+        founded: founded || undefined,
+        employeeCount: employeeCount || undefined,
+        industry: industry || undefined,
+        revenue: revenue || undefined,
+        fundingRaised: fundingRaised || undefined,
+      });
+
       const existingProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
 
       if (existingProfile) {
+        const oldOrgId = existingProfile.organizationId;
         const updated = await storage.updateCompanyProfile(existingProfile.id, {
           companyName,
           websiteUrl: validatedWebsiteUrl,
@@ -3950,20 +4060,27 @@ Return ONLY valid JSON, no markdown or explanations.`;
           twitterUrl: twitterUrl || null,
           blogUrl: validatedBlogUrl,
           description,
-          // Directory fields
           headquarters: headquarters || null,
           founded: founded || null,
           employeeCount: employeeCount || null,
           industry: industry || null,
           revenue: revenue || null,
           fundingRaised: fundingRaised || null,
+          organizationId: org.id,
         });
+        if (oldOrgId !== org.id) {
+          if (oldOrgId) {
+            await storage.decrementOrgRefCount(oldOrgId);
+          }
+          await storage.incrementOrgRefCount(org.id);
+        }
         res.json(updated);
       } else {
         const profile = await storage.createCompanyProfile({
           userId: ctx.userId,
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
+          organizationId: org.id,
           companyName,
           websiteUrl: validatedWebsiteUrl,
           logoUrl: logoUrl || null,
@@ -3972,7 +4089,6 @@ Return ONLY valid JSON, no markdown or explanations.`;
           twitterUrl: twitterUrl || null,
           blogUrl: validatedBlogUrl,
           description,
-          // Directory fields
           headquarters: headquarters || null,
           founded: founded || null,
           employeeCount: employeeCount || null,
@@ -3980,6 +4096,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           revenue: revenue || null,
           fundingRaised: fundingRaised || null,
         });
+        await storage.incrementOrgRefCount(org.id);
         res.json(profile);
       }
     } catch (error: any) {
@@ -4101,6 +4218,17 @@ Return ONLY valid JSON, no markdown or explanations.`;
       
       if (Object.keys(socialUpdates).length > 0) {
         await storage.updateCompanyProfile(profile.id, socialUpdates);
+
+        if (profile.organizationId) {
+          const orgUpdates: any = {};
+          if (socialUpdates.crawlData) orgUpdates.crawlData = socialUpdates.crawlData;
+          if (socialUpdates.lastFullCrawl) orgUpdates.lastFullCrawl = socialUpdates.lastFullCrawl;
+          if (socialUpdates.blogSnapshot) orgUpdates.blogSnapshot = socialUpdates.blogSnapshot;
+          if (socialUpdates.linkedInUrl) orgUpdates.linkedInUrl = socialUpdates.linkedInUrl;
+          if (socialUpdates.instagramUrl) orgUpdates.instagramUrl = socialUpdates.instagramUrl;
+          await storage.updateOrganization(profile.organizationId, orgUpdates)
+            .catch(err => console.error("[Org Update] Baseline analyze sync failed:", err.message));
+        }
       }
 
       // Get combined content from all crawled pages
@@ -4207,7 +4335,11 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(404).json({ error: "Company profile not found" });
       }
 
+      const orgId = profile.organizationId;
       await storage.deleteCompanyProfile(profile.id);
+      if (orgId) {
+        await storage.decrementOrgRefCount(orgId);
+      }
       res.json({ success: true });
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -13393,22 +13525,43 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
       const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
 
-      const competitorFreshness = competitorsList.map((c) => ({
-        id: c.id,
-        name: c.name,
-        lastCrawl: c.lastFullCrawl || c.lastCrawl || null,
-        lastWebsiteMonitor: c.lastWebsiteMonitor || null,
-        lastSocialMonitor: c.lastSocialCrawl || null,
-      }));
+      const orgIds = [...new Set([
+        ...competitorsList.map(c => c.organizationId),
+        companyProfile?.organizationId,
+      ].filter(Boolean))];
+      const orgMap = new Map<string, any>();
+      for (const orgId of orgIds) {
+        const org = await storage.getOrganization(orgId!);
+        if (org) orgMap.set(orgId!, org);
+      }
+
+      const pickFresher = (a: any, b: any) => {
+        if (a && b) return new Date(b) > new Date(a) ? b : a;
+        return a || b || null;
+      };
+
+      const competitorFreshness = competitorsList.map((c) => {
+        const org = c.organizationId ? orgMap.get(c.organizationId) : null;
+        return {
+          id: c.id,
+          name: c.name,
+          lastCrawl: pickFresher(c.lastFullCrawl || c.lastCrawl, org?.lastFullCrawl || org?.lastCrawl),
+          lastWebsiteMonitor: pickFresher(c.lastWebsiteMonitor, org?.lastWebsiteMonitor),
+          lastSocialMonitor: pickFresher(c.lastSocialCrawl, org?.lastSocialCrawl),
+        };
+      });
 
       const baselineFreshness = companyProfile
-        ? {
-            id: companyProfile.id,
-            name: companyProfile.companyName,
-            lastCrawl: companyProfile.lastFullCrawl || companyProfile.lastCrawl || null,
-            lastWebsiteMonitor: companyProfile.lastWebsiteMonitor || null,
-            lastSocialMonitor: companyProfile.lastSocialCrawl || null,
-          }
+        ? (() => {
+            const org = companyProfile.organizationId ? orgMap.get(companyProfile.organizationId) : null;
+            return {
+              id: companyProfile.id,
+              name: companyProfile.companyName,
+              lastCrawl: pickFresher(companyProfile.lastFullCrawl || companyProfile.lastCrawl, org?.lastFullCrawl || org?.lastCrawl),
+              lastWebsiteMonitor: pickFresher(companyProfile.lastWebsiteMonitor, org?.lastWebsiteMonitor),
+              lastSocialMonitor: pickFresher(companyProfile.lastSocialCrawl, org?.lastSocialCrawl),
+            };
+          })()
         : null;
 
       const allTimestamps: (string | Date | null)[] = [];
@@ -13539,9 +13692,43 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const ALLOWED_PERIODS = [7, 14, 30];
       const rawPeriod = req.body.periodDays ? parseInt(req.body.periodDays, 10) : 7;
       const periodDays = ALLOWED_PERIODS.includes(rawPeriod) ? rawPeriod : 7;
-      const { generateBriefing } = await import("./services/intelligence-briefing-service");
-      const briefing = await generateBriefing(ctx.tenantDomain, periodDays, ctx.marketId, toContextFilter(ctx));
-      res.json(briefing);
+
+      const now = new Date();
+      const periodStart = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
+      const placeholder = await storage.createIntelligenceBriefing({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        periodStart: periodStart,
+        periodEnd: now,
+        status: "generating",
+        briefingData: null,
+        signalCount: 0,
+        competitorCount: 0,
+      });
+
+      res.json(placeholder);
+
+      const capturedCtx = { ...ctx };
+      const capturedFilter = toContextFilter(ctx);
+      (async () => {
+        try {
+          const { generateBriefingData } = await import("./services/intelligence-briefing-service");
+          const result = await generateBriefingData(capturedCtx.tenantDomain, periodDays, capturedCtx.marketId, capturedFilter);
+          await storage.updateIntelligenceBriefing(placeholder.id, {
+            status: "published",
+            briefingData: result.briefingData,
+            signalCount: result.signalCount,
+            competitorCount: result.competitorCount,
+          });
+          console.log(`[Intelligence Briefing] Generation complete for ${capturedCtx.tenantDomain} (${placeholder.id})`);
+        } catch (error: any) {
+          console.error(`[Intelligence Briefing] Background generation failed for ${capturedCtx.tenantDomain}:`, error);
+          await storage.updateIntelligenceBriefing(placeholder.id, {
+            status: "failed",
+            briefingData: { error: error.message },
+          }).catch(() => {});
+        }
+      })();
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -13639,6 +13826,104 @@ Only use these timeframe values: ${periods.join(", ")}`;
     } catch (error: any) {
       console.error("[Briefing Share] Error:", error);
       res.status(500).json({ error: "Failed to share briefing" });
+    }
+  });
+
+  // ==================== GLOBAL ADMIN: ORGANIZATION MANAGEMENT ====================
+
+  app.get("/api/admin/organizations", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const status = (req.query.status as string) || "all";
+
+      let orgs;
+      if (status === "active") {
+        orgs = await storage.getActiveOrganizations();
+      } else if (status === "archived") {
+        orgs = await storage.getArchivedOrganizations();
+      } else {
+        orgs = await storage.getAllOrganizations();
+      }
+
+      res.json(orgs);
+    } catch (error: any) {
+      console.error("[Admin Organizations] Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/organizations/:id/reactivate", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { id } = req.params;
+      const org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      if (org.status !== "archived") {
+        return res.status(400).json({ error: "Organization is not archived" });
+      }
+
+      const competitorRefs = await db.select({ count: count() }).from(competitors).where(eq(competitors.organizationId, id));
+      const profileRefs = await db.select({ count: count() }).from(companyProfiles).where(eq(companyProfiles.organizationId, id));
+      const actualRefCount = (competitorRefs[0]?.count || 0) + (profileRefs[0]?.count || 0);
+
+      const updated = await storage.updateOrganization(id, {
+        status: "active",
+        archivedAt: null,
+        activeReferenceCount: actualRefCount,
+      } as any);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[Admin Organizations Reactivate] Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/admin/organizations/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      const { id } = req.params;
+      const org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      if (org.activeReferenceCount > 0) {
+        return res.status(400).json({ error: `Cannot delete organization with ${org.activeReferenceCount} active references. Remove all competitors and profiles referencing this organization first.` });
+      }
+
+      await storage.permanentlyDeleteOrganization(id);
+      res.json({ success: true, message: "Organization permanently deleted" });
+    } catch (error: any) {
+      console.error("[Admin Organizations Delete] Error:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 

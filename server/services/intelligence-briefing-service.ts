@@ -329,3 +329,176 @@ Rules:
 
   return briefing;
 }
+
+export async function generateBriefingData(
+  tenantDomain: string,
+  periodDays: number = 7,
+  marketId?: string,
+  ctx?: ContextFilter
+): Promise<{ briefingData: BriefingData; signalCount: number; competitorCount: number }> {
+  const now = new Date();
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - periodDays);
+
+  let activities: Activity[];
+  let competitors: Competitor[];
+  let baseline: CompanyProfile | undefined;
+
+  if (ctx) {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByContext(ctx),
+      storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
+    ]);
+  } else {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByTenantDomain(tenantDomain),
+      storage.getCompanyProfileByTenant(tenantDomain),
+    ]);
+  }
+
+  let newsArticles: NewsArticle[] = [];
+  try {
+    newsArticles = await fetchCompetitorNews(competitors, baseline || undefined, periodDays);
+    console.log(`[Intelligence Briefing] Fetched ${newsArticles.length} news articles for ${competitors.length} competitors`);
+  } catch (error: any) {
+    console.error("[Intelligence Briefing] News fetch failed, continuing without news:", error.message);
+  }
+
+  const uniqueCompetitorIds = new Set(
+    activities.filter(a => a.competitorId).map(a => a.competitorId)
+  );
+
+  const signalSummary = buildSignalSummary(activities);
+  const newsSummary = buildNewsSummary(newsArticles);
+  const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
+
+  const periodLabel = periodDays === 7 
+    ? "Weekly" 
+    : periodDays === 14 
+      ? "Bi-Weekly" 
+      : `${periodDays}-Day`;
+
+  const prompt = `You are a senior competitive intelligence analyst producing a ${periodLabel} Market Intelligence Briefing for ${baseline?.companyName || tenantDomain}.
+
+${competitorContext}
+
+## SIGNALS DETECTED (${activities.length} total over the past ${periodDays} days):
+${signalSummary}
+${newsSummary}
+
+${activities.length === 0 && newsArticles.length === 0 ? `
+Note: No signals or news were detected this period. This could mean competitors are stable, or monitoring coverage needs expansion. Provide a briefing that acknowledges the quiet period and suggests what to watch for based on the competitive landscape.
+` : ""}
+
+Produce a comprehensive intelligence briefing as JSON with this exact structure:
+{
+  "executiveSummary": "2-3 paragraphs: What happened this period, what it means strategically, and the overall market direction. Be specific — reference competitor names and concrete changes. End with the single most important takeaway.",
+  "keyThemes": [
+    {
+      "title": "Short theme name (e.g., 'Enterprise Pivot', 'Price Compression')",
+      "description": "2-3 sentences explaining this theme and why it matters",
+      "competitors": ["Names of competitors exhibiting this theme"],
+      "significance": "high|medium|low"
+    }
+  ],
+  "competitorMovements": [
+    {
+      "name": "Competitor Name",
+      "signals": ["List of specific changes observed"],
+      "interpretation": "What these moves signal about their strategy — be analytical, not just descriptive",
+      "threatLevel": "high|medium|low|none"
+    }
+  ],
+  "actionItems": [
+    {
+      "title": "Specific action to take",
+      "description": "Why this action matters and how to execute it",
+      "urgency": "immediate|this_week|this_month|watch",
+      "category": "messaging|product|marketing|pricing|strategy|content",
+      "relatedCompetitors": ["Which competitor movements triggered this"]
+    }
+  ],
+  "riskAlerts": [
+    {
+      "title": "Risk title",
+      "description": "What the risk is and potential impact",
+      "severity": "critical|warning|watch",
+      "source": "What signal or pattern triggered this alert"
+    }
+  ],
+  "signalDigest": {
+    "totalSignals": ${activities.length},
+    "byType": {},
+    "byImpact": {},
+    "highlights": ["Top 3-5 most noteworthy individual signals as brief descriptions"]
+  }
+}
+
+Rules:
+- Be strategic and analytical, not just descriptive. "So what?" matters more than "what."
+- Action items must be specific enough to act on — not vague advice like "monitor closely."
+- If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
+- Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- Return ONLY valid JSON, no markdown code fences.`;
+
+  let briefingData: BriefingData;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 8192,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find(block => block.type === "text");
+    let raw = textBlock?.text || "";
+
+    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+    const parsed = JSON.parse(raw);
+
+    const byType: Record<string, number> = {};
+    const byImpact: Record<string, number> = {};
+    for (const act of activities) {
+      byType[act.type] = (byType[act.type] || 0) + 1;
+      byImpact[act.impact || "Low"] = (byImpact[act.impact || "Low"] || 0) + 1;
+    }
+
+    const newsForStorage: NewsArticleBrief[] = newsArticles.map(a => ({
+      title: a.title,
+      description: a.description,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.publishedAt,
+      matchedEntity: a.matchedEntity,
+    }));
+
+    briefingData = {
+      executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",
+      keyThemes: Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [],
+      competitorMovements: Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [],
+      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+      riskAlerts: Array.isArray(parsed.riskAlerts) ? parsed.riskAlerts : [],
+      signalDigest: {
+        totalSignals: activities.length,
+        byType,
+        byImpact,
+        highlights: parsed.signalDigest?.highlights || [],
+      },
+      newsArticles: newsForStorage,
+      periodLabel,
+      generatedAt: now.toISOString(),
+    };
+  } catch (error: any) {
+    console.error("Error generating intelligence briefing data:", error);
+    throw error;
+  }
+
+  return {
+    briefingData,
+    signalCount: activities.length,
+    competitorCount: uniqueCompetitorIds.size,
+  };
+}

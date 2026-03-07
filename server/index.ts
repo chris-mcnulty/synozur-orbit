@@ -116,6 +116,9 @@ app.use((req, res, next) => {
   // Seed default service plans if none exist
   await storage.seedDefaultServicePlans();
   
+  // Backfill organizations for existing competitors/baselines
+  storage.backfillOrganizations().catch(err => console.error("[Startup] Organization backfill error:", err));
+  
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

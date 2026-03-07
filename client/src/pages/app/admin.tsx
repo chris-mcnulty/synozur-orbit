@@ -764,6 +764,16 @@ export default function AdminPage() {
           <p className="text-muted-foreground mt-1">
             Manage all tenants across the Orbit platform
           </p>
+          <div className="mt-3">
+            <a
+              href="/app/admin/organizations"
+              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+              data-testid="link-admin-organizations"
+            >
+              <Building2 className="h-4 w-4" />
+              Manage Organizations →
+            </a>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

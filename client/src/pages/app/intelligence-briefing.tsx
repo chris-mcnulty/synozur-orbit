@@ -255,6 +255,33 @@ export default function IntelligenceBriefingPage() {
     enabled: !!activeBriefingId,
   });
 
+  const [generatingBriefingId, setGeneratingBriefingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!generatingBriefingId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/intelligence-briefings/${generatingBriefingId}`, { credentials: "include" });
+        if (!res.ok) return;
+        const briefing = await res.json();
+        if (briefing.status === "published") {
+          clearInterval(interval);
+          setGeneratingBriefingId(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+          setSelectedBriefingId(briefing.id);
+          toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
+        } else if (briefing.status === "failed") {
+          clearInterval(interval);
+          setGeneratingBriefingId(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+          toast({ title: "Generation Failed", description: "The briefing could not be generated. Please try again.", variant: "destructive" });
+        }
+      } catch {
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [generatingBriefingId, queryClient, toast]);
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/intelligence-briefings/generate", {
@@ -272,7 +299,12 @@ export default function IntelligenceBriefingPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
       setSelectedBriefingId(data.id);
-      toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
+      if (data.status === "generating") {
+        setGeneratingBriefingId(data.id);
+        toast({ title: "Generating Briefing", description: "Your briefing is being generated. This may take a couple minutes." });
+      } else {
+        toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Generation Failed", description: err.message, variant: "destructive" });
@@ -596,15 +628,15 @@ export default function IntelligenceBriefingPage() {
                 </Select>
                 <Button
                   onClick={handleOpenGenerateDialog}
-                  disabled={generateMutation.isPending || isRefreshing}
+                  disabled={generateMutation.isPending || isRefreshing || !!generatingBriefingId}
                   data-testid="button-generate-briefing"
                 >
-                  {(generateMutation.isPending || isRefreshing) ? (
+                  {(generateMutation.isPending || isRefreshing || !!generatingBriefingId) ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <Sparkles className="w-4 h-4 mr-2" />
                   )}
-                  Generate
+                  {generatingBriefingId ? "Generating..." : "Generate"}
                 </Button>
               </div>
             )}
@@ -626,16 +658,28 @@ export default function IntelligenceBriefingPage() {
                 Generate your first intelligence briefing to get AI-synthesized insights from your competitive monitoring signals.
               </p>
               {isAdmin && (
-                <Button onClick={handleOpenGenerateDialog} disabled={generateMutation.isPending || isRefreshing} data-testid="button-generate-first-briefing">
-                  {(generateMutation.isPending || isRefreshing) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  Generate First Briefing
+                <Button onClick={handleOpenGenerateDialog} disabled={generateMutation.isPending || isRefreshing || !!generatingBriefingId} data-testid="button-generate-first-briefing">
+                  {(generateMutation.isPending || isRefreshing || !!generatingBriefingId) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  {generatingBriefingId ? "Generating..." : "Generate First Briefing"}
                 </Button>
               )}
             </CardContent>
           </Card>
         )}
 
-        {bd && briefing && (
+        {briefing && briefing.status === "generating" && (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+              <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Generating Intelligence Briefing</h3>
+              <p className="text-muted-foreground text-sm max-w-md">
+                Your briefing is being generated. This typically takes 1-2 minutes. You can navigate away — the briefing will be ready when you return.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {bd && briefing && briefing.status !== "generating" && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>

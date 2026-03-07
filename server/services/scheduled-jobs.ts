@@ -277,7 +277,17 @@ async function runWebsiteCrawlJob(): Promise<void> {
             await storage.updateCompetitor(competitor.id, updates);
             await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
 
-            // Capture visual assets if not already captured
+            if (competitor.organizationId) {
+              await storage.updateOrganization(competitor.organizationId, {
+                crawlData: updates.crawlData,
+                lastFullCrawl: updates.lastFullCrawl,
+                lastCrawl: new Date().toISOString(),
+                linkedInUrl: updates.linkedInUrl,
+                instagramUrl: updates.instagramUrl,
+                blogSnapshot: updates.blogSnapshot,
+              }).catch(err => console.error(`[Scheduled Job] Org sync failed for ${competitor.name}:`, err.message));
+            }
+
             if (!competitor.faviconUrl || !competitor.screenshotUrl) {
               captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
                 if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
@@ -285,6 +295,12 @@ async function runWebsiteCrawlJob(): Promise<void> {
                     faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
                     screenshotUrl: visualAssets.screenshotUrl || competitor.screenshotUrl,
                   });
+                  if (competitor.organizationId) {
+                    await storage.updateOrganization(competitor.organizationId, {
+                      faviconUrl: visualAssets.faviconUrl || undefined,
+                      screenshotUrl: visualAssets.screenshotUrl || undefined,
+                    }).catch(() => {});
+                  }
                 }
               }).catch(err => console.error(`Visual capture failed for ${competitor.name}:`, err));
             }
@@ -420,6 +436,19 @@ async function runWebsiteCrawlJob(): Promise<void> {
             updates.previousWebsiteContent = combinedContent.substring(0, 100000);
 
             await storage.updateCompanyProfile(profile.id, updates);
+
+            if (profile.organizationId) {
+              await storage.updateOrganization(profile.organizationId, {
+                crawlData: updates.crawlData,
+                lastFullCrawl: updates.lastFullCrawl,
+                lastCrawl: updates.lastCrawl,
+                previousWebsiteContent: updates.previousWebsiteContent,
+                linkedInUrl: updates.linkedInUrl,
+                instagramUrl: updates.instagramUrl,
+                twitterUrl: updates.twitterUrl,
+                blogSnapshot: updates.blogSnapshot,
+              }).catch(err => console.error(`[Scheduled Job] Org sync failed for baseline ${profile.companyName}:`, err.message));
+            }
 
             // Run AI analysis on the crawled content
             const websiteContent = getCombinedContent(crawlResult);

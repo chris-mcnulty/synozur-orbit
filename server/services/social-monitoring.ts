@@ -587,6 +587,18 @@ export async function monitorCompetitorSocialMedia(
   }
   
   await storage.updateCompetitor(competitorId, updates);
+
+  if (competitor.organizationId) {
+    const orgSocialUpdates: any = { lastSocialCrawl: now };
+    if (updates.linkedInContent) orgSocialUpdates.linkedInContent = updates.linkedInContent;
+    if (updates.linkedInEngagement) orgSocialUpdates.linkedInEngagement = updates.linkedInEngagement;
+    if (updates.instagramContent) orgSocialUpdates.instagramContent = updates.instagramContent;
+    if (updates.instagramEngagement) orgSocialUpdates.instagramEngagement = updates.instagramEngagement;
+    if (updates.twitterContent) orgSocialUpdates.twitterContent = updates.twitterContent;
+    if (updates.twitterEngagement) orgSocialUpdates.twitterEngagement = updates.twitterEngagement;
+    await storage.updateOrganization(competitor.organizationId, orgSocialUpdates)
+      .catch(err => console.error("[Org Update] Social sync failed:", err.message));
+  }
   
   return results;
 }
@@ -870,6 +882,16 @@ export async function monitorCompanyProfileSocialMedia(
   }
   
   await storage.updateCompanyProfile(companyProfileId, updates);
+
+  if (companyProfile.organizationId) {
+    const orgSocialUpdates: any = { lastSocialCrawl: now };
+    if (updates.linkedInEngagement) orgSocialUpdates.linkedInEngagement = updates.linkedInEngagement;
+    if (updates.linkedInContent) orgSocialUpdates.linkedInContent = updates.linkedInContent;
+    if (updates.instagramContent) orgSocialUpdates.instagramContent = updates.instagramContent;
+    if (updates.twitterContent) orgSocialUpdates.twitterContent = updates.twitterContent;
+    await storage.updateOrganization(companyProfile.organizationId, orgSocialUpdates)
+      .catch(err => console.error("[Org Update] Baseline social sync failed:", err.message));
+  }
   
   return results;
 }

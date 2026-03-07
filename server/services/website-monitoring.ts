@@ -234,7 +234,7 @@ export async function monitorCompetitorWebsite(
       }
     }
     
-    await storage.updateCompetitor(competitor.id, {
+    const monitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
       crawlData: {
@@ -254,7 +254,21 @@ export async function monitorCompetitorWebsite(
       } : undefined,
       linkedInUrl: competitor.linkedInUrl || crawlResult.socialLinks.linkedIn,
       instagramUrl: competitor.instagramUrl || crawlResult.socialLinks.instagram,
-    });
+    };
+
+    await storage.updateCompetitor(competitor.id, monitorUpdates);
+
+    if (competitor.organizationId) {
+      await storage.updateOrganization(competitor.organizationId, {
+        previousWebsiteContent: monitorUpdates.previousWebsiteContent,
+        lastWebsiteMonitor: now,
+        crawlData: monitorUpdates.crawlData,
+        lastFullCrawl: now,
+        blogSnapshot: monitorUpdates.blogSnapshot,
+        linkedInUrl: monitorUpdates.linkedInUrl,
+        instagramUrl: monitorUpdates.instagramUrl,
+      }).catch(err => console.error("[Org Update] Monitor sync failed:", err.message));
+    }
     
     return {
       competitorId: competitor.id,
@@ -362,7 +376,7 @@ export async function monitorCompanyProfileWebsite(
       }
     }
     
-    await storage.updateCompanyProfile(companyProfile.id, {
+    const profileMonitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
       crawlData: {
@@ -383,7 +397,21 @@ export async function monitorCompanyProfileWebsite(
       linkedInUrl: companyProfile.linkedInUrl || crawlResult.socialLinks.linkedIn,
       instagramUrl: companyProfile.instagramUrl || crawlResult.socialLinks.instagram,
       twitterUrl: companyProfile.twitterUrl || crawlResult.socialLinks.twitter,
-    });
+    };
+
+    await storage.updateCompanyProfile(companyProfile.id, profileMonitorUpdates);
+
+    if (companyProfile.organizationId) {
+      await storage.updateOrganization(companyProfile.organizationId, {
+        previousWebsiteContent: profileMonitorUpdates.previousWebsiteContent,
+        lastWebsiteMonitor: now,
+        crawlData: profileMonitorUpdates.crawlData,
+        lastFullCrawl: now,
+        blogSnapshot: profileMonitorUpdates.blogSnapshot,
+        linkedInUrl: profileMonitorUpdates.linkedInUrl,
+        instagramUrl: profileMonitorUpdates.instagramUrl,
+      }).catch(err => console.error("[Org Update] Baseline monitor sync failed:", err.message));
+    }
     
     return {
       companyProfileId: companyProfile.id,

@@ -110,6 +110,9 @@ import {
   intelligenceBriefings,
   type IntelligenceBriefing,
   type InsertIntelligenceBriefing,
+  organizations,
+  type Organization,
+  type InsertOrganization,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
@@ -422,6 +425,7 @@ export interface IStorage {
   getIntelligenceBriefing(id: string): Promise<IntelligenceBriefing | undefined>;
   getIntelligenceBriefingsByTenant(tenantDomain: string, limit?: number, marketId?: string): Promise<IntelligenceBriefing[]>;
   getLatestBriefingForTenant(tenantDomain: string, marketId?: string): Promise<IntelligenceBriefing | undefined>;
+  updateIntelligenceBriefing(id: string, updates: Partial<InsertIntelligenceBriefing>): Promise<IntelligenceBriefing>;
   deleteIntelligenceBriefing(id: string): Promise<void>;
 
   // Service Plan methods
@@ -433,6 +437,20 @@ export interface IStorage {
   createServicePlan(plan: InsertServicePlan): Promise<ServicePlan>;
   updateServicePlan(id: string, data: Partial<ServicePlan>): Promise<ServicePlan>;
   deleteServicePlan(id: string): Promise<void>;
+
+  // Organization methods
+  getOrganization(id: string): Promise<Organization | undefined>;
+  getOrganizationByDomain(canonicalDomain: string): Promise<Organization | undefined>;
+  createOrganization(data: InsertOrganization): Promise<Organization>;
+  updateOrganization(id: string, data: Partial<InsertOrganization>): Promise<Organization>;
+  findOrCreateOrganization(url: string, name?: string, extraData?: Partial<InsertOrganization>): Promise<Organization & { wasCreated: boolean }>;
+  incrementOrgRefCount(id: string): Promise<void>;
+  decrementOrgRefCount(id: string): Promise<void>;
+  getActiveOrganizations(): Promise<Organization[]>;
+  getArchivedOrganizations(): Promise<Organization[]>;
+  getAllOrganizations(): Promise<Organization[]>;
+  permanentlyDeleteOrganization(id: string): Promise<void>;
+  backfillOrganizations(): Promise<{ created: number; linked: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2663,6 +2681,14 @@ export class DatabaseStorage implements IStorage {
     return briefing || undefined;
   }
 
+  async updateIntelligenceBriefing(id: string, updates: Partial<InsertIntelligenceBriefing>): Promise<IntelligenceBriefing> {
+    const [updated] = await db.update(intelligenceBriefings)
+      .set(updates)
+      .where(eq(intelligenceBriefings.id, id))
+      .returning();
+    return updated;
+  }
+
   async deleteIntelligenceBriefing(id: string): Promise<void> {
     await db.delete(intelligenceBriefings).where(eq(intelligenceBriefings.id, id));
   }
@@ -2751,6 +2777,283 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error(`[Backfill] Error backfilling competitor tenantDomains:`, error);
     }
+  }
+
+  // Organization methods
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org || undefined;
+  }
+
+  async getOrganizationByDomain(canonicalDomain: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations)
+      .where(and(
+        eq(organizations.canonicalDomain, canonicalDomain),
+        sql`${organizations.status} != 'deleted'`
+      ));
+    return org || undefined;
+  }
+
+  async createOrganization(data: InsertOrganization): Promise<Organization> {
+    const [org] = await db.insert(organizations).values(data).returning();
+    return org;
+  }
+
+  async updateOrganization(id: string, data: Partial<InsertOrganization>): Promise<Organization> {
+    const [org] = await db.update(organizations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return org;
+  }
+
+  async findOrCreateOrganization(url: string, name?: string, extraData?: Partial<InsertOrganization>): Promise<Organization & { wasCreated: boolean }> {
+    const { normalizeToCanonicalDomain, normalizeUrl } = await import("./utils/url-normalization");
+    const domain = normalizeToCanonicalDomain(url);
+    const existing = await this.getOrganizationByDomain(domain);
+    if (existing) {
+      return { ...existing, wasCreated: false };
+    }
+    const org = await this.createOrganization({
+      canonicalDomain: domain,
+      name: name || domain,
+      url: normalizeUrl(url),
+      status: "active",
+      activeReferenceCount: 0,
+      ...extraData,
+    });
+    return { ...org, wasCreated: true };
+  }
+
+  async incrementOrgRefCount(id: string): Promise<void> {
+    await db.update(organizations)
+      .set({
+        activeReferenceCount: sql`${organizations.activeReferenceCount} + 1`,
+        status: "active",
+        archivedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, id));
+  }
+
+  async decrementOrgRefCount(id: string): Promise<void> {
+    await db.update(organizations)
+      .set({
+        activeReferenceCount: sql`GREATEST(${organizations.activeReferenceCount} - 1, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, id));
+
+    const [org] = await db.select({ refCount: organizations.activeReferenceCount })
+      .from(organizations)
+      .where(eq(organizations.id, id));
+    if (org && org.refCount <= 0) {
+      await db.update(organizations)
+        .set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+        .where(eq(organizations.id, id));
+    }
+  }
+
+  async getActiveOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations)
+      .where(eq(organizations.status, "active"))
+      .orderBy(organizations.name);
+  }
+
+  async getArchivedOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations)
+      .where(eq(organizations.status, "archived"))
+      .orderBy(desc(organizations.archivedAt));
+  }
+
+  async getAllOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations)
+      .where(sql`${organizations.status} != 'deleted'`)
+      .orderBy(organizations.name);
+  }
+
+  async permanentlyDeleteOrganization(id: string): Promise<void> {
+    await db.update(organizations)
+      .set({
+        status: "deleted",
+        canonicalDomain: sql`${organizations.canonicalDomain} || '__deleted_' || ${id}`,
+        deletedAt: new Date(),
+        crawlData: null,
+        previousWebsiteContent: null,
+        linkedInContent: null,
+        instagramContent: null,
+        twitterContent: null,
+        linkedInEngagement: null,
+        instagramEngagement: null,
+        twitterEngagement: null,
+        blogSnapshot: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, id));
+  }
+
+  async backfillOrganizations(): Promise<{ created: number; linked: number }> {
+    const { normalizeToCanonicalDomain, normalizeUrl } = await import("./utils/url-normalization");
+    let created = 0;
+    let linked = 0;
+
+    try {
+      const allCompetitors = await db.select().from(competitors)
+        .where(isNull(competitors.organizationId));
+      const allProfiles = await db.select().from(companyProfiles)
+        .where(isNull(companyProfiles.organizationId));
+
+      const domainMap = new Map<string, { 
+        name: string; url: string; freshest: any; 
+        competitorIds: string[]; profileIds: string[];
+        extraData: Partial<InsertOrganization>;
+      }>();
+
+      for (const comp of allCompetitors) {
+        const domain = normalizeToCanonicalDomain(comp.url);
+        const existing = domainMap.get(domain);
+        if (existing) {
+          existing.competitorIds.push(comp.id);
+          const compCrawlTime = comp.lastFullCrawl ? new Date(comp.lastFullCrawl).getTime() : 0;
+          const existingCrawlTime = existing.freshest?.lastFullCrawl ? new Date(existing.freshest.lastFullCrawl).getTime() : 0;
+          if (compCrawlTime > existingCrawlTime) {
+            existing.freshest = comp;
+            existing.extraData = this._extractOrgDataFromCompetitor(comp);
+          }
+        } else {
+          domainMap.set(domain, {
+            name: comp.name,
+            url: normalizeUrl(comp.url),
+            freshest: comp,
+            competitorIds: [comp.id],
+            profileIds: [],
+            extraData: this._extractOrgDataFromCompetitor(comp),
+          });
+        }
+      }
+
+      for (const profile of allProfiles) {
+        const domain = normalizeToCanonicalDomain(profile.websiteUrl);
+        const existing = domainMap.get(domain);
+        if (existing) {
+          existing.profileIds.push(profile.id);
+          const profileCrawlTime = profile.lastFullCrawl ? new Date(profile.lastFullCrawl).getTime() : 0;
+          const existingCrawlTime = existing.freshest?.lastFullCrawl ? new Date(existing.freshest.lastFullCrawl).getTime() : 0;
+          if (profileCrawlTime > existingCrawlTime) {
+            existing.freshest = profile;
+            existing.extraData = this._extractOrgDataFromProfile(profile);
+          }
+        } else {
+          domainMap.set(domain, {
+            name: profile.companyName,
+            url: normalizeUrl(profile.websiteUrl),
+            freshest: profile,
+            competitorIds: [],
+            profileIds: [profile.id],
+            extraData: this._extractOrgDataFromProfile(profile),
+          });
+        }
+      }
+
+      for (const [domain, data] of domainMap) {
+        const existingOrg = await this.getOrganizationByDomain(domain);
+        let orgId: string;
+
+        if (existingOrg) {
+          orgId = existingOrg.id;
+        } else {
+          const refCount = data.competitorIds.length + data.profileIds.length;
+          const org = await this.createOrganization({
+            canonicalDomain: domain,
+            name: data.name,
+            url: data.url,
+            status: refCount > 0 ? "active" : "archived",
+            activeReferenceCount: refCount,
+            ...data.extraData,
+          });
+          orgId = org.id;
+          created++;
+        }
+
+        for (const compId of data.competitorIds) {
+          await db.update(competitors)
+            .set({ organizationId: orgId })
+            .where(eq(competitors.id, compId));
+          linked++;
+        }
+
+        for (const profileId of data.profileIds) {
+          await db.update(companyProfiles)
+            .set({ organizationId: orgId })
+            .where(eq(companyProfiles.id, profileId));
+          linked++;
+        }
+      }
+
+      console.log(`[Backfill Organizations] Created ${created} organizations, linked ${linked} records`);
+    } catch (error) {
+      console.error(`[Backfill Organizations] Error:`, error);
+    }
+
+    return { created, linked };
+  }
+
+  private _extractOrgDataFromCompetitor(comp: Competitor): Partial<InsertOrganization> {
+    return {
+      faviconUrl: comp.faviconUrl,
+      screenshotUrl: comp.screenshotUrl,
+      linkedInUrl: comp.linkedInUrl,
+      instagramUrl: comp.instagramUrl,
+      twitterUrl: comp.twitterUrl,
+      blogUrl: comp.blogUrl,
+      headquarters: comp.headquarters,
+      founded: comp.founded,
+      employeeCount: comp.employeeCount,
+      revenue: comp.revenue,
+      fundingRaised: comp.fundingRaised,
+      industry: comp.industry,
+      crawlData: comp.crawlData,
+      previousWebsiteContent: comp.previousWebsiteContent,
+      linkedInContent: comp.linkedInContent,
+      instagramContent: comp.instagramContent,
+      twitterContent: comp.twitterContent,
+      linkedInEngagement: comp.linkedInEngagement,
+      instagramEngagement: comp.instagramEngagement,
+      twitterEngagement: comp.twitterEngagement,
+      blogSnapshot: comp.blogSnapshot,
+      lastFullCrawl: comp.lastFullCrawl,
+      lastWebsiteMonitor: comp.lastWebsiteMonitor,
+      lastSocialCrawl: comp.lastSocialCrawl,
+      lastCrawl: comp.lastCrawl,
+    };
+  }
+
+  private _extractOrgDataFromProfile(profile: CompanyProfile): Partial<InsertOrganization> {
+    return {
+      linkedInUrl: profile.linkedInUrl,
+      instagramUrl: profile.instagramUrl,
+      twitterUrl: profile.twitterUrl,
+      blogUrl: profile.blogUrl,
+      headquarters: profile.headquarters,
+      founded: profile.founded,
+      employeeCount: profile.employeeCount,
+      revenue: profile.revenue,
+      fundingRaised: profile.fundingRaised,
+      industry: profile.industry,
+      crawlData: profile.crawlData,
+      previousWebsiteContent: profile.previousWebsiteContent,
+      linkedInContent: profile.linkedInContent,
+      instagramContent: profile.instagramContent,
+      twitterContent: profile.twitterContent,
+      linkedInEngagement: profile.linkedInEngagement,
+      instagramEngagement: profile.instagramEngagement,
+      twitterEngagement: profile.twitterEngagement,
+      blogSnapshot: profile.blogSnapshot,
+      lastFullCrawl: profile.lastFullCrawl,
+      lastWebsiteMonitor: profile.lastWebsiteMonitor,
+      lastSocialCrawl: profile.lastSocialCrawl,
+      lastCrawl: profile.lastCrawl,
+    };
   }
 }
 

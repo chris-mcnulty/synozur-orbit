@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas.
-- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, and `intelligenceBriefings`.
+- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, and `organizations`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
@@ -62,6 +62,7 @@ Preferred communication style: Simple, everyday language.
 - **CSV Exports**: Export various lists (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) to CSV.
 - **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) with separate baselines, competitors, and projects.
 - **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants. The `competitors` table has a `tenantDomain` column for direct tenant scoping (avoiding userId-based lookup that breaks for cross-tenant Global Admin operations). A startup backfill (`backfillCompetitorTenantDomains`) populates this for legacy records.
+- **Canonical Organization Layer**: Centralizes publicly-derived company data (crawl results, social data, visual assets) in the `organizations` table, keyed by canonical domain. Competitors and company profiles reference organizations via `organizationId` FK. URL normalization via `server/utils/url-normalization.ts` (strips www/www2, lowercases). Ref-counted lifecycle: organizations auto-archive when all references are removed, auto-reactivate when new references are added. Crawl/monitor write paths dual-write to both the local record and the organization. Read paths (GET /api/competitors, source freshness) merge org data with local data, picking the freshest timestamps ("rising tide" effect across tenants). Global Admin management UI at `/app/admin/organizations` with Active/Archived tabs, reactivate, and permanent delete. Permanent delete mutates canonicalDomain to allow future domain reuse.
 
 ## External Dependencies
 
