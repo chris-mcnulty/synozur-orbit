@@ -304,6 +304,7 @@ export const competitors = pgTable("competitors", {
   excludeFromCrawl: boolean("exclude_from_crawl").notNull().default(false),
   status: text("status").notNull().default("Active"),
   userId: varchar("user_id").notNull().references(() => users.id),
+  tenantDomain: text("tenant_domain"),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context (nullable for migration)
   projectId: varchar("project_id").references(() => clientProjects.id, { onDelete: "set null" }), // Optional: for client project work
   analysisData: jsonb("analysis_data"), // AI analysis results

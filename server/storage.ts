@@ -546,11 +546,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCompetitorsByTenantDomain(tenantDomain: string): Promise<Competitor[]> {
+    const domainCompetitors = await db.select().from(competitors)
+      .where(eq(competitors.tenantDomain, tenantDomain))
+      .orderBy(desc(competitors.createdAt));
+    
+    if (domainCompetitors.length > 0) return domainCompetitors;
+    
+    // Fallback for legacy data: if no competitors have tenantDomain set,
+    // fall back to userId-based lookup
     const domainUsers = await this.getUsersByDomain(tenantDomain);
     const userIds = domainUsers.map(u => u.id);
     if (userIds.length === 0) return [];
     
-    const allCompetitors = await this.getAllCompetitors();
+    const allCompetitors = await db.select().from(competitors)
+      .where(isNull(competitors.tenantDomain))
+      .orderBy(desc(competitors.createdAt));
+    
     return allCompetitors.filter(c => userIds.includes(c.userId));
   }
 
@@ -1940,21 +1951,37 @@ export class DatabaseStorage implements IStorage {
 
   // Context-aware methods - filter by tenant domain AND market ID
   async getCompetitorsByContext(ctx: ContextFilter): Promise<Competitor[]> {
-    const domainUsers = await this.getUsersByDomain(ctx.tenantDomain);
-    const userIds = domainUsers.map(u => u.id);
-    if (userIds.length === 0) return [];
-    
-    // First get competitors specifically for this market
+    // Get competitors with explicit tenantDomain match
     const marketCompetitors = await db.select().from(competitors)
       .where(
         and(
+          eq(competitors.tenantDomain, ctx.tenantDomain),
           eq(competitors.marketId, ctx.marketId),
           isNull(competitors.projectId)
         )
       )
       .orderBy(desc(competitors.createdAt));
     
-    let result = marketCompetitors.filter(c => userIds.includes(c.userId));
+    // Also get legacy competitors with NULL tenantDomain for this market,
+    // but verify ownership via userId to prevent cross-tenant leakage
+    const nullDomainMarket = await db.select().from(competitors)
+      .where(
+        and(
+          isNull(competitors.tenantDomain),
+          eq(competitors.marketId, ctx.marketId),
+          isNull(competitors.projectId)
+        )
+      )
+      .orderBy(desc(competitors.createdAt));
+    
+    let legacyVerified: typeof nullDomainMarket = [];
+    if (nullDomainMarket.length > 0) {
+      const domainUsers = await this.getUsersByDomain(ctx.tenantDomain);
+      const userIds = new Set(domainUsers.map(u => u.id));
+      legacyVerified = nullDomainMarket.filter(c => userIds.has(c.userId));
+    }
+    
+    let result = [...marketCompetitors, ...legacyVerified];
     
     // For default market only, also include legacy competitors with NULL marketId
     const defaultMarket = await db.select().from(markets)
@@ -1964,17 +1991,39 @@ export class DatabaseStorage implements IStorage {
       ));
     
     if (defaultMarket.length > 0 && defaultMarket[0].id === ctx.marketId) {
-      const legacyCompetitors = await db.select().from(competitors)
+      const existingIds = new Set(result.map(c => c.id));
+      
+      const legacyNoMarket = await db.select().from(competitors)
         .where(
           and(
+            eq(competitors.tenantDomain, ctx.tenantDomain),
             isNull(competitors.marketId),
             isNull(competitors.projectId)
           )
         )
         .orderBy(desc(competitors.createdAt));
       
-      const legacyFiltered = legacyCompetitors.filter(c => userIds.includes(c.userId));
-      result = [...result, ...legacyFiltered];
+      // Also check NULL tenantDomain + NULL marketId with userId verification
+      const nullBoth = await db.select().from(competitors)
+        .where(
+          and(
+            isNull(competitors.tenantDomain),
+            isNull(competitors.marketId),
+            isNull(competitors.projectId)
+          )
+        )
+        .orderBy(desc(competitors.createdAt));
+      
+      let nullBothVerified: typeof nullBoth = [];
+      if (nullBoth.length > 0) {
+        const users = await this.getUsersByDomain(ctx.tenantDomain);
+        const userIdSet = new Set(users.map(u => u.id));
+        nullBothVerified = nullBoth.filter(c => userIdSet.has(c.userId));
+      }
+      
+      const combined = [...legacyNoMarket, ...nullBothVerified];
+      const uniqueLegacy = combined.filter(c => !existingIds.has(c.id));
+      result = [...result, ...uniqueLegacy];
     }
     
     return result;
@@ -2665,6 +2714,43 @@ export class DatabaseStorage implements IStorage {
   async seedDefaultServicePlans(): Promise<void> {
     const { seedDefaultPlans } = await import("./services/plan-policy");
     await seedDefaultPlans();
+  }
+
+  async backfillCompetitorTenantDomains(): Promise<void> {
+    try {
+      const nullDomainCompetitors = await db.select({ id: competitors.id, marketId: competitors.marketId, userId: competitors.userId })
+        .from(competitors)
+        .where(isNull(competitors.tenantDomain));
+      
+      if (nullDomainCompetitors.length === 0) return;
+      
+      console.log(`[Backfill] Found ${nullDomainCompetitors.length} competitors without tenantDomain, backfilling...`);
+      
+      for (const comp of nullDomainCompetitors) {
+        let domain: string | null = null;
+        
+        if (comp.marketId) {
+          const [market] = await db.select().from(markets).where(eq(markets.id, comp.marketId));
+          if (market) {
+            const [tenant] = await db.select().from(tenants).where(eq(tenants.id, market.tenantId));
+            if (tenant) domain = tenant.domain;
+          }
+        }
+        
+        if (!domain) {
+          const user = await this.getUser(comp.userId);
+          if (user) domain = user.email.split("@")[1];
+        }
+        
+        if (domain) {
+          await db.update(competitors).set({ tenantDomain: domain }).where(eq(competitors.id, comp.id));
+        }
+      }
+      
+      console.log(`[Backfill] Completed competitor tenantDomain backfill`);
+    } catch (error) {
+      console.error(`[Backfill] Error backfilling competitor tenantDomains:`, error);
+    }
   }
 }
 

@@ -61,7 +61,7 @@ Preferred communication style: Simple, everyday language.
 - **Report Generation**: Branded PDF reports scoped to baseline or specific products.
 - **CSV Exports**: Export various lists (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) to CSV.
 - **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) with separate baselines, competitors, and projects.
-- **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants.
+- **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants. The `competitors` table has a `tenantDomain` column for direct tenant scoping (avoiding userId-based lookup that breaks for cross-tenant Global Admin operations). A startup backfill (`backfillCompetitorTenantDomains`) populates this for legacy records.
 
 ## External Dependencies
 

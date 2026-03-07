@@ -115,6 +115,9 @@ app.use((req, res, next) => {
   
   // Seed default service plans if none exist
   await storage.seedDefaultServicePlans();
+  
+  // One-time backfill: populate tenant_domain on competitors from market->tenant relationship
+  await storage.backfillCompetitorTenantDomains();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

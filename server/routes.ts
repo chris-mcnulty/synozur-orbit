@@ -6597,6 +6597,7 @@ Respond in JSON format:
           url: competitorUrl,
           status: "pending",
           userId: ctx.userId,
+          tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
         });
         
