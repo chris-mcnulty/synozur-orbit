@@ -40,6 +40,7 @@ import {
   Globe,
   Activity,
   Users,
+  AlertCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -256,23 +257,35 @@ export default function IntelligenceBriefingPage() {
   });
 
   const [generatingBriefingId, setGeneratingBriefingId] = useState<string | null>(null);
+  const [generationStartTime, setGenerationStartTime] = useState<number | null>(null);
 
   useEffect(() => {
     if (!generatingBriefingId) return;
+    const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
     const interval = setInterval(async () => {
       try {
+        if (generationStartTime && Date.now() - generationStartTime > GENERATION_TIMEOUT_MS) {
+          clearInterval(interval);
+          setGeneratingBriefingId(null);
+          setGenerationStartTime(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+          toast({ title: "Generation Timed Out", description: "Briefing generation is taking longer than expected. Please check back or try again.", variant: "destructive" });
+          return;
+        }
         const res = await fetch(`/api/intelligence-briefings/${generatingBriefingId}`, { credentials: "include" });
         if (!res.ok) return;
         const briefing = await res.json();
         if (briefing.status === "published") {
           clearInterval(interval);
           setGeneratingBriefingId(null);
+          setGenerationStartTime(null);
           queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
           setSelectedBriefingId(briefing.id);
           toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
         } else if (briefing.status === "failed") {
           clearInterval(interval);
           setGeneratingBriefingId(null);
+          setGenerationStartTime(null);
           queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
           toast({ title: "Generation Failed", description: "The briefing could not be generated. Please try again.", variant: "destructive" });
         }
@@ -280,7 +293,7 @@ export default function IntelligenceBriefingPage() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [generatingBriefingId, queryClient, toast]);
+  }, [generatingBriefingId, generationStartTime, queryClient, toast]);
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -301,6 +314,7 @@ export default function IntelligenceBriefingPage() {
       setSelectedBriefingId(data.id);
       if (data.status === "generating") {
         setGeneratingBriefingId(data.id);
+        setGenerationStartTime(Date.now());
         toast({ title: "Generating Briefing", description: "Your briefing is being generated. This may take a couple minutes." });
       } else {
         toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
@@ -483,6 +497,8 @@ export default function IntelligenceBriefingPage() {
                   {briefings.map((b) => (
                     <SelectItem key={b.id} value={b.id}>
                       {formatDateRange(b.periodStart, b.periodEnd)} ({b.signalCount} signals)
+                      {b.status === "failed" && " — Failed"}
+                      {b.status === "generating" && " — Generating..."}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -679,7 +695,25 @@ export default function IntelligenceBriefingPage() {
           </Card>
         )}
 
-        {bd && briefing && briefing.status !== "generating" && (
+        {briefing && briefing.status === "failed" && (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+              <AlertCircle className="w-12 h-12 text-destructive mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Briefing Generation Failed</h3>
+              <p className="text-muted-foreground text-sm max-w-md mb-4">
+                {(briefing.briefingData as any)?.error || "This briefing could not be generated. Please try generating a new one."}
+              </p>
+              {isAdmin && (
+                <Button onClick={handleOpenGenerateDialog} data-testid="button-retry-generate">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate New Briefing
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {bd && briefing && briefing.status !== "generating" && briefing.status !== "failed" && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>

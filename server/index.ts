@@ -119,6 +119,9 @@ app.use((req, res, next) => {
   // Backfill organizations for existing competitors/baselines
   storage.backfillOrganizations().catch(err => console.error("[Startup] Organization backfill error:", err));
   
+  // Recover stuck "generating" briefings from previous server restarts
+  storage.recoverStuckBriefings().catch(err => console.error("[Startup] Briefing recovery error:", err));
+  
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

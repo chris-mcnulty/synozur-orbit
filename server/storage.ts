@@ -451,6 +451,7 @@ export interface IStorage {
   getAllOrganizations(): Promise<Organization[]>;
   permanentlyDeleteOrganization(id: string): Promise<void>;
   backfillOrganizations(): Promise<{ created: number; linked: number }>;
+  recoverStuckBriefings(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3054,6 +3055,25 @@ export class DatabaseStorage implements IStorage {
       lastSocialCrawl: profile.lastSocialCrawl,
       lastCrawl: profile.lastCrawl,
     };
+  }
+  async recoverStuckBriefings(): Promise<number> {
+    const stuck = await db.select()
+      .from(intelligenceBriefings)
+      .where(eq(intelligenceBriefings.status, "generating"));
+    
+    let recovered = 0;
+    for (const briefing of stuck) {
+      await db.update(intelligenceBriefings)
+        .set({ status: "failed", briefingData: { error: "Generation was interrupted by a server restart. Please generate a new briefing." } })
+        .where(eq(intelligenceBriefings.id, briefing.id));
+      recovered++;
+    }
+    
+    if (recovered > 0) {
+      console.log(`[Startup] Recovered ${recovered} stuck briefing(s) from 'generating' to 'failed'`);
+    }
+    
+    return recovered;
   }
 }
 
