@@ -33,8 +33,45 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function buildSearchQuery(name: string): string {
+function isAmbiguousName(name: string): boolean {
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1 && name.length <= 8) return true;
+  const commonWords = new Set([
+    "ninety", "slalom", "box", "zoom", "apple", "oracle", "quest", "point",
+    "snap", "hive", "bolt", "spark", "flux", "drift", "beam", "pulse",
+    "vibe", "mint", "wave", "nest", "loop", "path", "base", "core",
+  ]);
+  if (words.length === 1 && commonWords.has(name.toLowerCase())) return true;
+  return false;
+}
+
+function extractDomainHint(url: string): string {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    const parts = hostname.split(".");
+    return parts[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function buildSearchQuery(name: string, url?: string, industry?: string): string {
   const cleaned = name.replace(/['"]/g, "").trim();
+
+  if (isAmbiguousName(cleaned)) {
+    const qualifiers: string[] = [];
+    if (industry) {
+      qualifiers.push(industry);
+    } else {
+      qualifiers.push("company");
+    }
+
+    if (cleaned.includes(" ")) {
+      return `"${cleaned}" ${qualifiers.join(" ")}`;
+    }
+    return `${cleaned} ${qualifiers.join(" ")}`;
+  }
+
   if (cleaned.includes(" ")) {
     return `"${cleaned}"`;
   }
@@ -107,18 +144,19 @@ export async function fetchCompetitorNews(
   const allArticles: NewsArticle[] = [];
   const seenUrls = new Set<string>();
 
-  const entities: { name: string; type: "competitor" | "baseline" }[] = [];
+  const entities: { name: string; type: "competitor" | "baseline"; url?: string; industry?: string }[] = [];
 
   if (baseline?.companyName) {
-    entities.push({ name: baseline.companyName, type: "baseline" });
+    entities.push({ name: baseline.companyName, type: "baseline", url: baseline.websiteUrl, industry: (baseline as any).industry || undefined });
   }
 
   for (const comp of competitors) {
-    entities.push({ name: comp.name, type: "competitor" });
+    entities.push({ name: comp.name, type: "competitor", url: comp.url, industry: (comp as any).industry || undefined });
   }
 
   for (const entity of entities) {
-    const query = buildSearchQuery(entity.name);
+    const query = buildSearchQuery(entity.name, entity.url, entity.industry);
+    console.log(`[News Service] Searching for "${entity.name}" with query: ${query}`);
     const result = await searchNews(query, MAX_ARTICLES_PER_ENTITY, fromDateStr);
 
     for (const article of result.articles) {

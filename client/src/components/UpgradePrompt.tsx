@@ -53,20 +53,23 @@ interface PlanLimitBadgeProps {
   current: number;
   limit: number;
   label: string;
+  visibleCount?: number;
 }
 
-export function PlanLimitBadge({ current, limit, label }: PlanLimitBadgeProps) {
+export function PlanLimitBadge({ current, limit, label, visibleCount }: PlanLimitBadgeProps) {
   if (limit === -1) return null;
   const isAtLimit = current >= limit;
   const isNearLimit = current >= limit * 0.8;
+  const showCrossMarketHint = visibleCount !== undefined && visibleCount < current;
 
   return (
     <Badge
       variant={isAtLimit ? "destructive" : isNearLimit ? "secondary" : "outline"}
       className="text-xs"
+      title={showCrossMarketHint ? `${current} total across all markets (${visibleCount} in this market)` : undefined}
       data-testid={`limit-badge-${label.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      {current}/{limit} {label}
+      {current}/{limit} {label}{showCrossMarketHint ? " (all markets)" : ""}
     </Badge>
   );
 }

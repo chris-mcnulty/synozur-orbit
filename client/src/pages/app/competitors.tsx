@@ -587,7 +587,7 @@ export default function Competitors() {
           <p className="text-muted-foreground">Compare your company against the competition.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PlanLimitBadge current={competitorCount} limit={competitorLimit} label="Competitors" />
+          <PlanLimitBadge current={competitorCount} limit={competitorLimit} label="Competitors" visibleCount={competitors.length} />
           {companyProfile && (
             <Button 
               variant="outline" 

@@ -230,7 +230,7 @@ export async function checkCompetitorLimitAsync(plan: string, currentCount: numb
   if (currentCount >= limit) {
     return {
       allowed: false,
-      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
+      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"} across all markets (currently using ${currentCount}). Upgrade your plan to add more.`,
       upgradeRequired: true,
       requiredPlan: plan === "free" ? "Trial" : "Pro",
       currentUsage: currentCount,
@@ -249,7 +249,7 @@ export function checkCompetitorLimit(plan: string, currentCount: number): PlanGa
   if (currentCount >= limit) {
     return {
       allowed: false,
-      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"}. Upgrade your plan to add more.`,
+      reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"} across all markets (currently using ${currentCount}). Upgrade your plan to add more.`,
       upgradeRequired: true,
       requiredPlan: plan === "free" ? "Trial" : "Pro",
       currentUsage: currentCount,
