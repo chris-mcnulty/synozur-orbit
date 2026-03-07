@@ -805,7 +805,7 @@ export async function registerRoutes(
 
           // Plan-gating: Only Pro/Enterprise can use projects
           const tenant = await storage.getTenant(ctx.tenantId);
-          if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+          if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
             return res.status(403).json({ 
               error: "Client Projects require a Pro or Enterprise plan",
               upgradeRequired: true
@@ -941,7 +941,7 @@ export async function registerRoutes(
 
         // Plan-gating: Only Pro/Enterprise can use projects
         const tenant = await storage.getTenant(ctx.tenantId);
-        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
           return res.status(403).json({ 
             error: "Client Projects require a Pro or Enterprise plan",
             upgradeRequired: true
@@ -1044,7 +1044,7 @@ export async function registerRoutes(
       if (analysisType === "full_with_change") {
         const tenant = await storage.getTenant(ctx.tenantId);
         
-        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
           return res.status(403).json({ 
             error: "Full Analysis with Change Monitoring requires a Pro or Enterprise plan",
             upgradeRequired: true
@@ -6404,7 +6404,7 @@ Respond in JSON format:
       const tenant = await storage.getTenant(ctx.tenantId);
       
       // Plan-gating: only Pro and Enterprise tenants can use client projects
-      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise")) {
+      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ 
           error: "Client Projects require a Pro or Enterprise plan",
           upgradeRequired: true
