@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas.
-- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, and `aiUsage`.
+- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, and `intelligenceBriefings`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`.
@@ -52,6 +52,9 @@ Preferred communication style: Simple, everyday language.
 - **AI Analysis**: Competitive website analysis, AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling, social media link discovery, blog post detection, scheduled background jobs.
 - **Competitor Intelligence Dashboard**: Provides insights from AI-summarized website changes, social signals, blog activity, and a raw activity log.
+- **Intelligence Briefings**: AI-synthesized periodic market intelligence reports. Gathers all signals (website changes, social activity, blog posts) and news articles (via GNews API) over a configurable period (7/14/30 days) and produces structured briefings with executive summary, key themes, competitive movements, action items, risk alerts, and press coverage. Available in-app at `/app/intelligence` and integrated into the weekly digest email. Generated via `server/services/intelligence-briefing-service.ts`. News fetched via `server/services/news-service.ts`.
+- **News Monitoring**: GNews API integration (`GNEWS_API_KEY` env var) searches for news articles about tracked competitors and the baseline company. Results are included in intelligence briefings as both AI context and a browsable "News & Press Coverage" section. Rate-limited with 1.2s delay between entity searches.
+- **Enhanced Change Detection**: Website monitoring uses a 5% change threshold (lowered from 15%) with structured AI analysis that categorizes changes by type (messaging, pricing, product, team, content, design) and rates significance.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
 - **Client Projects**: Facilitate product-level competitive analysis against competitor products, supporting proxy analysis for consulting firms.
 - **Product Management MVP**: Feature catalog, quarterly roadmap view with effort sizing, AI-powered roadmap recommendations based on competitive intelligence.
@@ -92,3 +95,4 @@ Preferred communication style: Simple, everyday language.
 - `SESSION_SECRET`
 - AI provider keys
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
+- `GNEWS_API_KEY` (GNews API for news monitoring)

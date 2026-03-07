@@ -11,6 +11,7 @@ import {
   PASSWORD_RESET_EMAIL,
   TRIAL_REMINDER_EMAILS,
   WEEKLY_DIGEST_EMAIL,
+  INTELLIGENCE_BRIEFING_DIGEST_EMAIL,
   COMPETITOR_ALERT_EMAIL,
 } from '../config/email-copy';
 
@@ -657,23 +658,130 @@ interface ActivitySummary {
   summary?: string;
 }
 
+interface BriefingActionItem {
+  title: string;
+  description: string;
+  urgency: string;
+  category: string;
+  relatedCompetitors: string[];
+}
+
+interface BriefingRiskAlert {
+  title: string;
+  description: string;
+  severity: string;
+  source: string;
+}
+
+interface BriefingDigestData {
+  executiveSummary: string;
+  actionItems: BriefingActionItem[];
+  riskAlerts: BriefingRiskAlert[];
+  briefingId?: string;
+}
+
 interface WeeklyDigestParams {
   email: string;
   name: string;
   companyName: string;
   activities: ActivitySummary[];
   baseUrl: string;
+  briefing?: BriefingDigestData;
 }
 
 export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise<boolean> {
-  const { email, name, companyName, activities, baseUrl } = params;
+  const { email, name, companyName, activities, baseUrl, briefing } = params;
+  const settingsLink = `${baseUrl}/app/settings`;
+
+  if (briefing) {
+    const copy = INTELLIGENCE_BRIEFING_DIGEST_EMAIL;
+    const briefingLink = briefing.briefingId
+      ? `${baseUrl}/app/intelligence?id=${briefing.briefingId}`
+      : `${baseUrl}/app/intelligence`;
+
+    let executiveSummaryHtml = `
+      <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.executiveSummaryHeading}</p>
+      <div class="feature" style="margin-top: 12px;">
+        <p class="feature-desc" style="white-space: pre-line;">${briefing.executiveSummary}</p>
+      </div>
+    `;
+
+    let actionItemsHtml = '';
+    const topActions = briefing.actionItems.slice(0, 3);
+    if (topActions.length > 0) {
+      actionItemsHtml = `
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.actionItemsHeading}</p>
+        <div class="feature-list">
+          ${topActions.map(item => {
+            const urgencyLabel = copy.actionItemUrgencyLabels[item.urgency] || item.urgency;
+            return `
+              <div class="feature">
+                <div class="feature-title">${urgencyLabel} ${item.title}</div>
+                <p class="feature-desc">${item.description}</p>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    let riskAlertsHtml = '';
+    if (briefing.riskAlerts.length > 0) {
+      riskAlertsHtml = `
+        <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.riskAlertsHeading}</p>
+        <div class="feature-list">
+          ${briefing.riskAlerts.slice(0, 3).map(alert => {
+            const severityLabel = copy.riskSeverityLabels[alert.severity] || alert.severity;
+            return `
+              <div class="feature" style="border-color: ${alert.severity === 'critical' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(129, 15, 251, 0.15)'};">
+                <div class="feature-title">${severityLabel} ${alert.title}</div>
+                <p class="feature-desc">${alert.description}</p>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    const content = `
+      <h1>${copy.heading}</h1>
+      
+      <p>${copy.greeting(name)}</p>
+      
+      <p>${copy.intro}</p>
+      
+      ${executiveSummaryHtml}
+      
+      ${actionItemsHtml}
+      
+      ${riskAlertsHtml}
+      
+      <div class="button-container">
+        <a href="${briefingLink}" class="button">${copy.buttonText}</a>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <p class="muted" style="font-size: 12px;">${copy.footerMessage}</p>
+      <p class="muted" style="font-size: 12px;"><a href="${settingsLink}" class="link">${copy.unsubscribeText}</a></p>
+    `;
+
+    const actionItemsText = topActions.map(a => `- [${a.urgency}] ${a.title}: ${a.description}`).join('\n');
+    const text = copy.plainText(name, companyName, briefing.executiveSummary, actionItemsText, briefingLink, settingsLink);
+
+    return sendEmail({
+      to: email,
+      subject: copy.subject(companyName),
+      html: wrapEmailContent(content),
+      text
+    });
+  }
+
   const copy = WEEKLY_DIGEST_EMAIL;
   const loginLink = `${baseUrl}/app/activity`;
-  const settingsLink = `${baseUrl}/app/settings`;
   
   const hasChanges = activities.length > 0;
   
-  // Build activity list HTML
   let activitiesHtml = '';
   if (hasChanges) {
     activitiesHtml = `
@@ -719,7 +827,6 @@ export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise
     <p class="muted" style="font-size: 12px;"><a href="${settingsLink}" class="link">${copy.unsubscribeText}</a></p>
   `;
   
-  // Plain text summary
   const changesSummary = hasChanges 
     ? activities.slice(0, 10).map(a => `- ${a.competitorName}: ${a.description}`).join('\n')
     : copy.noChangesMessage;

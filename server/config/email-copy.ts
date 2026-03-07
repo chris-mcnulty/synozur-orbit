@@ -359,6 +359,38 @@ export const WEEKLY_DIGEST_EMAIL = {
 };
 
 // ============================================
+// INTELLIGENCE BRIEFING DIGEST EMAIL
+// ============================================
+export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
+  subject: (companyName: string) => `Intelligence Briefing - ${companyName} Weekly Update`,
+  heading: 'Your Intelligence Briefing',
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  intro: `Here's your AI-synthesized intelligence briefing for the past week:`,
+  executiveSummaryHeading: 'Executive Summary',
+  actionItemsHeading: 'Top Action Items',
+  actionItemUrgencyLabels: {
+    immediate: '🔴 Immediate',
+    this_week: '🟡 This Week',
+    this_month: '🔵 This Month',
+    watch: '⚪ Watch',
+  } as Record<string, string>,
+  viewFullBriefingText: 'View Full Briefing',
+  noChangesHeading: 'All Quiet This Week',
+  noChangesMessage: `No significant competitor changes were detected this week. We'll keep monitoring and alert you when something important happens.`,
+  riskAlertsHeading: 'Risk Alerts',
+  riskSeverityLabels: {
+    critical: '🚨 Critical',
+    warning: '⚠️ Warning',
+    watch: '👁️ Watch',
+  } as Record<string, string>,
+  buttonText: 'View Full Briefing',
+  unsubscribeText: 'Manage your notification preferences',
+  footerMessage: `You're receiving this email because you opted in to weekly competitive intelligence digests.`,
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, settingsLink: string) =>
+    `Hi ${name},\n\nIntelligence Briefing for ${companyName}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`,
+};
+
+// ============================================
 // COMPETITOR ALERT EMAIL (FUTURE)
 // ============================================
 export const COMPETITOR_ALERT_EMAIL = {

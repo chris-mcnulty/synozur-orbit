@@ -41,6 +41,7 @@ import MarketingPlannerPage from "@/pages/app/marketing-planner";
 import MarketingPlanDetail from "@/pages/app/marketing-plan-detail";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
+import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
 import Pricing from "@/pages/pricing";
 
 function ProductFeaturesRedirect() {
@@ -99,6 +100,7 @@ function Router() {
       <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       <Route path="/app/refresh-center" component={RefreshCenter} />
       <Route path="/app/action-items" component={ActionItems} />
+      <Route path="/app/intelligence" component={IntelligenceBriefingPage} />
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />

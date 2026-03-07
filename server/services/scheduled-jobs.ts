@@ -6,6 +6,7 @@ import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductW
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail } from "./email-service";
+import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -927,6 +928,29 @@ async function checkAndRunWeeklyDigest(): Promise<void> {
   }
 }
 
+const tenantBriefingCache: Map<string, { briefingId: string; briefingData: BriefingData } | null> = new Map();
+
+async function generateBriefingForTenant(tenantDomain: string): Promise<{ briefingId: string; briefingData: BriefingData } | null> {
+  if (tenantBriefingCache.has(tenantDomain)) {
+    return tenantBriefingCache.get(tenantDomain) || null;
+  }
+
+  try {
+    console.log(`[Scheduled Job] Generating intelligence briefing for tenant ${tenantDomain}...`);
+    const briefing = await generateBriefing(tenantDomain, 7);
+    const result = {
+      briefingId: briefing.id,
+      briefingData: briefing.briefingData as BriefingData,
+    };
+    tenantBriefingCache.set(tenantDomain, result);
+    return result;
+  } catch (error) {
+    console.error(`[Scheduled Job] Failed to generate briefing for ${tenantDomain}:`, error);
+    tenantBriefingCache.set(tenantDomain, null);
+    return null;
+  }
+}
+
 async function runWeeklyDigestJob(): Promise<void> {
   if (jobStatus.weeklyDigest.isRunning) {
     console.log("[Scheduled Job] Weekly digest already running, skipping...");
@@ -948,6 +972,8 @@ async function runWeeklyDigestJob(): Promise<void> {
     const usersWithDigest = await storage.getUsersWithDigestEnabled();
     console.log(`[Scheduled Job] Found ${usersWithDigest.length} users with digest enabled`);
     
+    tenantBriefingCache.clear();
+    
     let sentCount = 0;
     let errorCount = 0;
     
@@ -960,6 +986,8 @@ async function runWeeklyDigestJob(): Promise<void> {
         errorCount++;
       }
     }
+    
+    tenantBriefingCache.clear();
     
     console.log(`[Scheduled Job] Weekly digest job completed: ${sentCount} sent, ${errorCount} errors`);
     await storage.updateScheduledJobRun(jobRun.id, {
@@ -977,6 +1005,7 @@ async function runWeeklyDigestJob(): Promise<void> {
   } finally {
     jobStatus.weeklyDigest.isRunning = false;
     jobStatus.weeklyDigest.lastRun = new Date();
+    tenantBriefingCache.clear();
   }
 }
 
@@ -1003,6 +1032,15 @@ async function sendDigestForUser(user: { email: string; name: string }, baseUrl:
     description: act.description,
     summary: act.summary || undefined,
   }));
+
+  const tenantBriefing = await generateBriefingForTenant(domain);
+  
+  const briefingDigest = tenantBriefing ? {
+    executiveSummary: tenantBriefing.briefingData.executiveSummary,
+    actionItems: tenantBriefing.briefingData.actionItems || [],
+    riskAlerts: tenantBriefing.briefingData.riskAlerts || [],
+    briefingId: tenantBriefing.briefingId,
+  } : undefined;
   
   return await sendWeeklyDigestEmail({
     email: user.email,
@@ -1010,6 +1048,7 @@ async function sendDigestForUser(user: { email: string; name: string }, baseUrl:
     companyName: tenant.name,
     activities,
     baseUrl,
+    briefing: briefingDigest,
   });
 }
 

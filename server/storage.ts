@@ -107,6 +107,9 @@ import {
   servicePlans,
   type ServicePlan,
   type InsertServicePlan,
+  intelligenceBriefings,
+  type IntelligenceBriefing,
+  type InsertIntelligenceBriefing,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
@@ -179,6 +182,7 @@ export interface IStorage {
   getAllActivity(): Promise<Activity[]>;
   getActivityByTenant(tenantDomain: string): Promise<Activity[]>;
   getWeeklyActivityByTenant(tenantDomain: string, marketId?: string): Promise<Activity[]>;
+  getActivityByTenantForPeriod(tenantDomain: string, periodDays: number, marketId?: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   
   // Weekly Digest methods
@@ -411,6 +415,12 @@ export interface IStorage {
   deleteFeatureRecommendation(id: string): Promise<void>;
   addRecommendationToRoadmap(recId: string, roadmapData: InsertRoadmapItem): Promise<{ roadmapItem: RoadmapItem; recommendation: FeatureRecommendation }>;
   
+  // Intelligence Briefing methods
+  createIntelligenceBriefing(briefing: InsertIntelligenceBriefing): Promise<IntelligenceBriefing>;
+  getIntelligenceBriefing(id: string): Promise<IntelligenceBriefing | undefined>;
+  getIntelligenceBriefingsByTenant(tenantDomain: string, limit?: number): Promise<IntelligenceBriefing[]>;
+  getLatestBriefingForTenant(tenantDomain: string): Promise<IntelligenceBriefing | undefined>;
+
   // Service Plan methods
   getServicePlan(id: string): Promise<ServicePlan | undefined>;
   getServicePlanByName(name: string): Promise<ServicePlan | undefined>;
@@ -628,6 +638,24 @@ export class DatabaseStorage implements IStorage {
     const conditions = [
       eq(activity.tenantDomain, tenantDomain),
       gte(activity.createdAt, oneWeekAgo)
+    ];
+    
+    if (marketId) {
+      conditions.push(eq(activity.marketId, marketId));
+    }
+    
+    return await db.select().from(activity)
+      .where(and(...conditions))
+      .orderBy(desc(activity.createdAt));
+  }
+
+  async getActivityByTenantForPeriod(tenantDomain: string, periodDays: number, marketId?: string): Promise<Activity[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - periodDays);
+    
+    const conditions = [
+      eq(activity.tenantDomain, tenantDomain),
+      gte(activity.createdAt, since)
     ];
     
     if (marketId) {
@@ -2533,6 +2561,32 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(scheduledJobRuns)
       .where(eq(scheduledJobRuns.status, "running"))
       .orderBy(desc(scheduledJobRuns.startedAt));
+  }
+
+  // Intelligence Briefing methods
+  async createIntelligenceBriefing(briefing: InsertIntelligenceBriefing): Promise<IntelligenceBriefing> {
+    const [created] = await db.insert(intelligenceBriefings).values(briefing).returning();
+    return created;
+  }
+
+  async getIntelligenceBriefing(id: string): Promise<IntelligenceBriefing | undefined> {
+    const [briefing] = await db.select().from(intelligenceBriefings).where(eq(intelligenceBriefings.id, id));
+    return briefing || undefined;
+  }
+
+  async getIntelligenceBriefingsByTenant(tenantDomain: string, limit: number = 20): Promise<IntelligenceBriefing[]> {
+    return await db.select().from(intelligenceBriefings)
+      .where(eq(intelligenceBriefings.tenantDomain, tenantDomain))
+      .orderBy(desc(intelligenceBriefings.createdAt))
+      .limit(limit);
+  }
+
+  async getLatestBriefingForTenant(tenantDomain: string): Promise<IntelligenceBriefing | undefined> {
+    const [briefing] = await db.select().from(intelligenceBriefings)
+      .where(eq(intelligenceBriefings.tenantDomain, tenantDomain))
+      .orderBy(desc(intelligenceBriefings.createdAt))
+      .limit(1);
+    return briefing || undefined;
   }
 
   // Service Plan methods

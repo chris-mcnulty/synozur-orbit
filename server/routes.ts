@@ -13368,5 +13368,76 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  app.get("/api/intelligence-briefings/latest", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefing = await storage.getLatestBriefingForTenant(ctx.tenantDomain);
+      if (!briefing) {
+        return res.status(404).json({ error: "No briefings found" });
+      }
+      res.json(briefing);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/intelligence-briefings/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      res.json(briefing);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/intelligence-briefings", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+      const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
+      const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit);
+      res.json(briefings);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/intelligence-briefings/generate", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required to generate briefings" });
+      }
+      const ALLOWED_PERIODS = [7, 14, 30];
+      const rawPeriod = req.body.periodDays ? parseInt(req.body.periodDays, 10) : 7;
+      const periodDays = ALLOWED_PERIODS.includes(rawPeriod) ? rawPeriod : 7;
+      const { generateBriefing } = await import("./services/intelligence-briefing-service");
+      const briefing = await generateBriefing(ctx.tenantDomain, periodDays, ctx.marketId);
+      res.json(briefing);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Generate briefing error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

@@ -1144,6 +1144,28 @@ export const insertMarketingTaskSchema = createInsertSchema(marketingTasks).omit
 export type MarketingTask = typeof marketingTasks.$inferSelect;
 export type InsertMarketingTask = z.infer<typeof insertMarketingTaskSchema>;
 
+// Intelligence Briefings - AI-synthesized periodic intelligence reports
+export const intelligenceBriefings = pgTable("intelligence_briefings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  status: text("status").notNull().default("draft"), // draft, published
+  briefingData: jsonb("briefing_data"), // Full AI-synthesized briefing: narrative, signals, themes, action items
+  signalCount: integer("signal_count").notNull().default(0),
+  competitorCount: integer("competitor_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertIntelligenceBriefingSchema = createInsertSchema(intelligenceBriefings).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type IntelligenceBriefing = typeof intelligenceBriefings.$inferSelect;
+export type InsertIntelligenceBriefing = z.infer<typeof insertIntelligenceBriefingSchema>;
+
 // Scheduled Job Runs - Track background job execution history
 export const scheduledJobRuns = pgTable("scheduled_job_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

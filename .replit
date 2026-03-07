@@ -51,3 +51,4 @@ PRODUCTION_URL = "https://orbit.synozur.com"
 [userenv.shared]
 TEST_EMAIL = "test@synozur.com"
 TEST_PASSWORD = "TestPass123!"
+GNEWS_API_KEY = "e16dd44feb054d697453232587729ac7"

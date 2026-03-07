@@ -28,7 +28,8 @@ import {
   Gem,
   ChevronDown,
   RefreshCw,
-  Lock
+  Lock,
+  Brain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -349,6 +350,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
         { label: "Data Sources", icon: Database, href: "/app/data-sources" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
+        { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
       ]
     },
     {

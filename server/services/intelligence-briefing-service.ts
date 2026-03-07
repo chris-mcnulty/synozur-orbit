@@ -1,0 +1,318 @@
+import { storage } from "../storage";
+import Anthropic from "@anthropic-ai/sdk";
+import type { Activity, Competitor, CompanyProfile, IntelligenceBriefing } from "@shared/schema";
+import { fetchCompetitorNews, buildNewsSummary, type NewsArticle } from "./news-service";
+
+const anthropic = new Anthropic({
+  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+});
+
+export interface BriefingTheme {
+  title: string;
+  description: string;
+  competitors: string[];
+  significance: "high" | "medium" | "low";
+}
+
+export interface CompetitorMovement {
+  name: string;
+  signals: string[];
+  interpretation: string;
+  threatLevel: "high" | "medium" | "low" | "none";
+}
+
+export interface ActionItem {
+  title: string;
+  description: string;
+  urgency: "immediate" | "this_week" | "this_month" | "watch";
+  category: "messaging" | "product" | "marketing" | "pricing" | "strategy" | "content";
+  relatedCompetitors: string[];
+}
+
+export interface RiskAlert {
+  title: string;
+  description: string;
+  severity: "critical" | "warning" | "watch";
+  source: string;
+}
+
+export interface NewsArticleBrief {
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  matchedEntity: string;
+}
+
+export interface BriefingData {
+  executiveSummary: string;
+  keyThemes: BriefingTheme[];
+  competitorMovements: CompetitorMovement[];
+  actionItems: ActionItem[];
+  riskAlerts: RiskAlert[];
+  signalDigest: {
+    totalSignals: number;
+    byType: Record<string, number>;
+    byImpact: Record<string, number>;
+    highlights: string[];
+  };
+  newsArticles: NewsArticleBrief[];
+  periodLabel: string;
+  generatedAt: string;
+}
+
+function buildSignalSummary(activities: Activity[]): string {
+  if (activities.length === 0) return "No signals detected during this period.";
+
+  const byCompetitor: Record<string, Activity[]> = {};
+  for (const act of activities) {
+    const name = act.competitorName || "Unknown";
+    if (!byCompetitor[name]) byCompetitor[name] = [];
+    byCompetitor[name].push(act);
+  }
+
+  const lines: string[] = [];
+  for (const [name, acts] of Object.entries(byCompetitor)) {
+    lines.push(`\n### ${name} (${acts.length} signal${acts.length > 1 ? "s" : ""})`);
+    for (const act of acts) {
+      const details = act.details as any;
+      const changeAnalysis = details?.changeAnalysis;
+      
+      lines.push(`- **${act.type}** [Impact: ${act.impact}]: ${act.description}`);
+      if (act.summary) {
+        lines.push(`  Summary: ${act.summary}`);
+      }
+      if (changeAnalysis?.changes?.length > 0) {
+        for (const change of changeAnalysis.changes.slice(0, 3)) {
+          lines.push(`  - [${change.category}/${change.significance}] ${change.description}`);
+        }
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function buildCompetitorContext(competitors: Competitor[], baseline?: CompanyProfile): string {
+  const lines: string[] = [];
+
+  if (baseline) {
+    lines.push(`\n## YOUR COMPANY: ${baseline.companyName}`);
+    lines.push(`Website: ${baseline.websiteUrl}`);
+    if (baseline.industry) lines.push(`Industry: ${baseline.industry}`);
+  }
+
+  lines.push(`\n## TRACKED COMPETITORS (${competitors.length}):`);
+  for (const comp of competitors) {
+    lines.push(`- **${comp.name}** (${comp.url})`);
+    if (comp.industry) lines.push(`  Industry: ${comp.industry}`);
+    if (comp.employeeCount) lines.push(`  Size: ~${comp.employeeCount} employees`);
+  }
+
+  return lines.join("\n");
+}
+
+export async function generateBriefing(
+  tenantDomain: string,
+  periodDays: number = 7,
+  marketId?: string
+): Promise<IntelligenceBriefing> {
+  const now = new Date();
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - periodDays);
+
+  const [activities, competitors, baseline] = await Promise.all([
+    storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+    storage.getCompetitorsByTenantDomain(tenantDomain),
+    storage.getCompanyProfileByTenant(tenantDomain),
+  ]);
+
+  let newsArticles: NewsArticle[] = [];
+  try {
+    newsArticles = await fetchCompetitorNews(competitors, baseline || undefined, periodDays);
+    console.log(`[Intelligence Briefing] Fetched ${newsArticles.length} news articles for ${competitors.length} competitors`);
+  } catch (error: any) {
+    console.error("[Intelligence Briefing] News fetch failed, continuing without news:", error.message);
+  }
+
+  const uniqueCompetitorIds = new Set(
+    activities.filter(a => a.competitorId).map(a => a.competitorId)
+  );
+
+  const signalSummary = buildSignalSummary(activities);
+  const newsSummary = buildNewsSummary(newsArticles);
+  const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
+
+  const periodLabel = periodDays === 7 
+    ? "Weekly" 
+    : periodDays === 14 
+      ? "Bi-Weekly" 
+      : `${periodDays}-Day`;
+
+  const prompt = `You are a senior competitive intelligence analyst producing a ${periodLabel} Market Intelligence Briefing for ${baseline?.companyName || tenantDomain}.
+
+${competitorContext}
+
+## SIGNALS DETECTED (${activities.length} total over the past ${periodDays} days):
+${signalSummary}
+${newsSummary}
+
+${activities.length === 0 && newsArticles.length === 0 ? `
+Note: No signals or news were detected this period. This could mean competitors are stable, or monitoring coverage needs expansion. Provide a briefing that acknowledges the quiet period and suggests what to watch for based on the competitive landscape.
+` : ""}
+
+Produce a comprehensive intelligence briefing as JSON with this exact structure:
+{
+  "executiveSummary": "2-3 paragraphs: What happened this period, what it means strategically, and the overall market direction. Be specific — reference competitor names and concrete changes. End with the single most important takeaway.",
+  "keyThemes": [
+    {
+      "title": "Short theme name (e.g., 'Enterprise Pivot', 'Price Compression')",
+      "description": "2-3 sentences explaining this theme and why it matters",
+      "competitors": ["Names of competitors exhibiting this theme"],
+      "significance": "high|medium|low"
+    }
+  ],
+  "competitorMovements": [
+    {
+      "name": "Competitor Name",
+      "signals": ["List of specific changes observed"],
+      "interpretation": "What these moves signal about their strategy — be analytical, not just descriptive",
+      "threatLevel": "high|medium|low|none"
+    }
+  ],
+  "actionItems": [
+    {
+      "title": "Specific action to take",
+      "description": "Why this action matters and how to execute it",
+      "urgency": "immediate|this_week|this_month|watch",
+      "category": "messaging|product|marketing|pricing|strategy|content",
+      "relatedCompetitors": ["Which competitor movements triggered this"]
+    }
+  ],
+  "riskAlerts": [
+    {
+      "title": "Risk title",
+      "description": "What the risk is and potential impact",
+      "severity": "critical|warning|watch",
+      "source": "What signal or pattern triggered this alert"
+    }
+  ],
+  "signalDigest": {
+    "totalSignals": ${activities.length},
+    "byType": {},
+    "byImpact": {},
+    "highlights": ["Top 3-5 most noteworthy individual signals as brief descriptions"]
+  }
+}
+
+Rules:
+- Be strategic and analytical, not just descriptive. "So what?" matters more than "what."
+- Action items must be specific enough to act on — not vague advice like "monitor closely."
+- If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
+- Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- Return ONLY valid JSON, no markdown code fences.`;
+
+  let briefingData: BriefingData;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 8192,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find(block => block.type === "text");
+    let raw = textBlock?.text || "";
+
+    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+    const parsed = JSON.parse(raw);
+
+    const byType: Record<string, number> = {};
+    const byImpact: Record<string, number> = {};
+    for (const act of activities) {
+      byType[act.type] = (byType[act.type] || 0) + 1;
+      byImpact[act.impact || "Low"] = (byImpact[act.impact || "Low"] || 0) + 1;
+    }
+
+    const newsForStorage: NewsArticleBrief[] = newsArticles.map(a => ({
+      title: a.title,
+      description: a.description,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.publishedAt,
+      matchedEntity: a.matchedEntity,
+    }));
+
+    briefingData = {
+      executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",
+      keyThemes: Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [],
+      competitorMovements: Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [],
+      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+      riskAlerts: Array.isArray(parsed.riskAlerts) ? parsed.riskAlerts : [],
+      signalDigest: {
+        totalSignals: activities.length,
+        byType,
+        byImpact,
+        highlights: parsed.signalDigest?.highlights || [],
+      },
+      newsArticles: newsForStorage,
+      periodLabel,
+      generatedAt: now.toISOString(),
+    };
+  } catch (error: any) {
+    console.error("Error generating intelligence briefing:", error);
+
+    const byType: Record<string, number> = {};
+    const byImpact: Record<string, number> = {};
+    for (const act of activities) {
+      byType[act.type] = (byType[act.type] || 0) + 1;
+      byImpact[act.impact || "Low"] = (byImpact[act.impact || "Low"] || 0) + 1;
+    }
+
+    briefingData = {
+      executiveSummary: `Intelligence briefing generation encountered an error. ${activities.length} signals were collected over the past ${periodDays} days across ${uniqueCompetitorIds.size} competitors but could not be synthesized. Please try generating again.`,
+      keyThemes: [],
+      competitorMovements: [],
+      actionItems: [{
+        title: "Retry briefing generation",
+        description: "The AI analysis failed. Try generating a new briefing or review the raw activity log for recent signals.",
+        urgency: "this_week" as const,
+        category: "strategy" as const,
+        relatedCompetitors: [],
+      }],
+      riskAlerts: [],
+      signalDigest: {
+        totalSignals: activities.length,
+        byType,
+        byImpact,
+        highlights: [],
+      },
+      newsArticles: newsArticles.map(a => ({
+        title: a.title,
+        description: a.description,
+        url: a.url,
+        source: a.source,
+        publishedAt: a.publishedAt,
+        matchedEntity: a.matchedEntity,
+      })),
+      periodLabel,
+      generatedAt: now.toISOString(),
+    };
+  }
+
+  const briefing = await storage.createIntelligenceBriefing({
+    tenantDomain,
+    marketId: marketId || null,
+    periodStart,
+    periodEnd: now,
+    status: "published",
+    briefingData,
+    signalCount: activities.length,
+    competitorCount: uniqueCompetitorIds.size,
+  });
+
+  return briefing;
+}

@@ -7,18 +7,31 @@ const anthropic = new Anthropic({
   baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
 });
 
+interface StructuredChange {
+  category: "messaging" | "pricing" | "product" | "team" | "content" | "design";
+  description: string;
+  significance: "high" | "medium" | "low";
+}
+
+interface StructuredChangeAnalysis {
+  categories: string[];
+  changes: StructuredChange[];
+  narrative: string;
+}
+
 interface WebsiteMonitoringResult {
   competitorId: string;
   competitorName: string;
   hasChanges: boolean;
   changeScore: number;
   summary?: string;
+  changeAnalysis?: StructuredChangeAnalysis;
   status: "success" | "error" | "no_content";
   message?: string;
   pagesMonitored: number;
 }
 
-const MIN_CHANGE_THRESHOLD = 15;
+const MIN_CHANGE_THRESHOLD = 5;
 const REQUEST_DELAY_MS = 1500;
 
 function delay(ms: number): Promise<void> {
@@ -56,16 +69,16 @@ function calculateChangeScore(prev: string, next: string): number {
   return Math.round((1 - similarity) * 100);
 }
 
-async function summarizeWebsiteChanges(
+async function analyzeWebsiteChanges(
   competitorName: string,
   previousContent: string,
   newContent: string,
   changeScore: number
-): Promise<string> {
+): Promise<{ summary: string; analysis: StructuredChangeAnalysis | null }> {
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 400,
+      max_tokens: 1000,
       messages: [
         {
           role: "user",
@@ -74,30 +87,82 @@ async function summarizeWebsiteChanges(
 Change magnitude: ${changeScore}% different from previous crawl
 
 PREVIOUS CONTENT (excerpt):
-${previousContent.substring(0, 3000)}
+${previousContent.substring(0, 6000)}
 
 CURRENT CONTENT (excerpt):
-${newContent.substring(0, 3000)}
+${newContent.substring(0, 6000)}
 
-Provide a 2-3 sentence summary of the key changes detected. Focus on:
-- Messaging or positioning changes
-- New products, services, or features announced
-- Pricing or offering updates
-- Team or leadership changes
-- Campaign or marketing updates
+Respond with a JSON object (no markdown, no code fences) with the following structure:
+{
+  "noSignificantChanges": false,
+  "categories": ["messaging", "pricing", "product", "team", "content", "design"],
+  "changes": [
+    {
+      "category": "messaging|pricing|product|team|content|design",
+      "description": "Brief description of the specific change",
+      "significance": "high|medium|low"
+    }
+  ],
+  "narrative": "2-3 sentence summary of the key changes and their strategic implications"
+}
 
-If changes appear to be only dynamic content (dates, counters, copyright years) or minor formatting, respond with: "No significant messaging changes detected."
+Category definitions:
+- messaging: Changes to positioning, taglines, value propositions, or brand language
+- pricing: Changes to pricing tiers, plans, discounts, or pricing page content
+- product: New products, features, capabilities, or service offerings
+- team: Leadership changes, new hires, team page updates
+- content: Blog posts, case studies, whitepapers, or resource updates
+- design: Visual redesigns, layout changes, UX updates
 
-Summary:`
+Only include categories where actual changes were detected in the "categories" array.
+
+If changes appear to be only dynamic content (dates, counters, copyright years) or minor formatting, respond with:
+{"noSignificantChanges": true, "categories": [], "changes": [], "narrative": "No significant messaging changes detected."}
+
+JSON:`
         }
       ]
     });
     
     const textBlock = response.content.find(block => block.type === "text");
-    return textBlock?.text || "Unable to summarize changes.";
+    const rawText = textBlock?.text || "";
+    
+    try {
+      const parsed = JSON.parse(rawText.trim());
+      
+      if (parsed.noSignificantChanges) {
+        return {
+          summary: "No significant messaging changes detected.",
+          analysis: null,
+        };
+      }
+      
+      const analysis: StructuredChangeAnalysis = {
+        categories: parsed.categories || [],
+        changes: (parsed.changes || []).map((c: any) => ({
+          category: c.category,
+          description: c.description,
+          significance: c.significance,
+        })),
+        narrative: parsed.narrative || "",
+      };
+      
+      return {
+        summary: analysis.narrative,
+        analysis,
+      };
+    } catch {
+      return {
+        summary: rawText || "Changes detected but analysis unavailable.",
+        analysis: null,
+      };
+    }
   } catch (error) {
-    console.error("Error summarizing website changes:", error);
-    return "Changes detected but summary unavailable.";
+    console.error("Error analyzing website changes:", error);
+    return {
+      summary: "Changes detected but analysis unavailable.",
+      analysis: null,
+    };
   }
 }
 
@@ -137,9 +202,12 @@ export async function monitorCompetitorWebsite(
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
     
     let summary: string | undefined;
+    let changeAnalysis: StructuredChangeAnalysis | undefined;
     
     if (hasSignificantChanges) {
-      summary = await summarizeWebsiteChanges(competitor.name, previousContent, newContent, changeScore);
+      const result = await analyzeWebsiteChanges(competitor.name, previousContent, newContent, changeScore);
+      summary = result.summary;
+      changeAnalysis = result.analysis || undefined;
       
       const isRealChange = !summary.toLowerCase().includes("no significant");
       
@@ -155,6 +223,7 @@ export async function monitorCompetitorWebsite(
             changeScore,
             pagesMonitored: crawlResult.pages.length,
             crawledAt: crawlResult.crawledAt,
+            changeAnalysis: changeAnalysis || undefined,
           },
           date: now.toISOString().split("T")[0],
           impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
@@ -193,6 +262,7 @@ export async function monitorCompetitorWebsite(
       hasChanges: hasSignificantChanges && !summary?.toLowerCase().includes("no significant"),
       changeScore,
       summary: hasSignificantChanges ? summary : undefined,
+      changeAnalysis: hasSignificantChanges ? changeAnalysis : undefined,
       status: "success",
       pagesMonitored: crawlResult.pages.length,
     };
@@ -217,6 +287,7 @@ interface CompanyProfileMonitoringResult {
   hasChanges: boolean;
   changeScore: number;
   summary?: string;
+  changeAnalysis?: StructuredChangeAnalysis;
   status: "success" | "error" | "no_content";
   message?: string;
   pagesMonitored: number;
@@ -259,9 +330,12 @@ export async function monitorCompanyProfileWebsite(
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
     
     let summary: string | undefined;
+    let changeAnalysis: StructuredChangeAnalysis | undefined;
     
     if (hasSignificantChanges) {
-      summary = await summarizeWebsiteChanges(companyProfile.companyName, previousContent, newContent, changeScore);
+      const result = await analyzeWebsiteChanges(companyProfile.companyName, previousContent, newContent, changeScore);
+      summary = result.summary;
+      changeAnalysis = result.analysis || undefined;
       
       const isRealChange = !summary.toLowerCase().includes("no significant");
       
@@ -277,6 +351,7 @@ export async function monitorCompanyProfileWebsite(
             changeScore,
             pagesMonitored: crawlResult.pages.length,
             crawledAt: crawlResult.crawledAt,
+            changeAnalysis: changeAnalysis || undefined,
           },
           date: now.toISOString().split("T")[0],
           impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
@@ -316,6 +391,7 @@ export async function monitorCompanyProfileWebsite(
       hasChanges: hasSignificantChanges && !summary?.toLowerCase().includes("no significant"),
       changeScore,
       summary: hasSignificantChanges ? summary : undefined,
+      changeAnalysis: hasSignificantChanges ? changeAnalysis : undefined,
       status: "success",
       pagesMonitored: crawlResult.pages.length,
     };
@@ -382,6 +458,7 @@ interface ProductMonitoringResult {
   hasChanges: boolean;
   changeScore: number;
   summary?: string;
+  changeAnalysis?: StructuredChangeAnalysis;
   status: "success" | "error" | "no_content" | "no_url";
   message?: string;
   pagesMonitored: number;
@@ -436,9 +513,12 @@ export async function monitorProductWebsite(
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
 
     let summary: string | undefined;
+    let changeAnalysis: StructuredChangeAnalysis | undefined;
 
     if (hasSignificantChanges) {
-      summary = await summarizeWebsiteChanges(product.name, previousContent, newContent, changeScore);
+      const result = await analyzeWebsiteChanges(product.name, previousContent, newContent, changeScore);
+      summary = result.summary;
+      changeAnalysis = result.analysis || undefined;
 
       const isRealChange = !summary.toLowerCase().includes("no significant");
 
@@ -454,6 +534,7 @@ export async function monitorProductWebsite(
             changeScore,
             pagesMonitored: crawlResult.pages.length,
             crawledAt: crawlResult.crawledAt,
+            changeAnalysis: changeAnalysis || undefined,
           },
           date: now.toISOString().split("T")[0],
           impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
@@ -479,14 +560,17 @@ export async function monitorProductWebsite(
       },
     });
 
+    const isRealChange = hasSignificantChanges && !summary?.toLowerCase().includes("no significant");
+
     return {
       productId: product.id,
       productName: product.name,
-      hasChanges: hasSignificantChanges,
+      hasChanges: isRealChange,
       changeScore,
-      summary,
+      summary: hasSignificantChanges ? summary : undefined,
+      changeAnalysis: hasSignificantChanges ? changeAnalysis : undefined,
       status: "success",
-      message: hasSignificantChanges 
+      message: isRealChange
         ? `Detected ${changeScore}% content change` 
         : "No significant changes detected",
       pagesMonitored: crawlResult.pages.length,
