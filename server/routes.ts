@@ -11487,23 +11487,16 @@ Return only the description text, no quotes or formatting.`;
   // Get basic tenant info (plan, premium status) for any authenticated user
   app.get("/api/tenant/info", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const domain = user.email.split("@")[1];
-      const tenant = await storage.getTenantByDomain(domain);
+      const tenant = await storage.getTenant(ctx.tenantId);
       
       if (!tenant) {
         const defaultFeatures = getPlanFeatures("trial");
         return res.json({ plan: "trial", isPremium: false, features: defaultFeatures, usage: { competitorCount: 0, monthlyAnalysisCount: 0 } });
       }
 
+      const domain = tenant.domain;
       const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "unlimited";
       const features = await getPlanFeaturesAsync(tenant.plan);
       
@@ -11527,6 +11520,9 @@ Return only the description text, no quotes or formatting.`;
         },
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -11903,29 +11899,20 @@ Return only the description text, no quotes or formatting.`;
 
   // ==================== ACTIVE JOBS STATUS (ALL USERS) ====================
   
-  // Get active/running jobs for current user's tenant
+  // Get active/running jobs for current user's active tenant
   app.get("/api/jobs/active", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
 
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      // Get all running jobs
       const runningJobs = await storage.getRunningJobs();
       
-      const userTenantDomain = user.email.split("@")[1];
       const relevantJobs = runningJobs.filter(job => 
         !job.tenantDomain ||
-        job.tenantDomain === userTenantDomain ||
-        user.role === "Global Admin"
+        job.tenantDomain === ctx.tenantDomain ||
+        (user?.role === "Global Admin")
       );
 
-      // Format response with useful information
       const activeJobs = relevantJobs.map(job => ({
         id: job.id,
         type: job.jobType,
@@ -11939,29 +11926,28 @@ Return only the description text, no quotes or formatting.`;
         count: activeJobs.length 
       });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Error fetching active jobs:", error);
       res.status(500).json({ error: error.message });
     }
   });
 
-  // Get recent job history for current user's tenant
+  // Get recent job history for current user's active tenant
   app.get("/api/jobs/recent", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      const ctx = await getRequestContext(req);
 
       const limit = parseInt(req.query.limit as string) || 10;
       
-      const recentJobs = await storage.getScheduledJobRunsByTenant(user.email.split("@")[1], limit);
+      const recentJobs = await storage.getScheduledJobRunsByTenant(ctx.tenantDomain, limit);
       
       res.json(recentJobs);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       console.error("Error fetching recent jobs:", error);
       res.status(500).json({ error: error.message });
     }
@@ -13398,10 +13384,74 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  app.get("/api/intelligence-briefings/source-freshness", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const ctxFilter = toContextFilter(ctx);
+
+      const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
+      const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
+
+      const competitorFreshness = competitorsList.map((c) => ({
+        id: c.id,
+        name: c.name,
+        lastCrawl: c.lastFullCrawl || c.lastCrawl || null,
+        lastWebsiteMonitor: c.lastWebsiteMonitor || null,
+        lastSocialMonitor: c.lastSocialCrawl || null,
+      }));
+
+      const baselineFreshness = companyProfile
+        ? {
+            id: companyProfile.id,
+            name: companyProfile.companyName,
+            lastCrawl: companyProfile.lastFullCrawl || companyProfile.lastCrawl || null,
+            lastWebsiteMonitor: companyProfile.lastWebsiteMonitor || null,
+            lastSocialMonitor: companyProfile.lastSocialCrawl || null,
+          }
+        : null;
+
+      const allTimestamps: (string | Date | null)[] = [];
+      for (const c of competitorFreshness) {
+        allTimestamps.push(c.lastCrawl, c.lastWebsiteMonitor, c.lastSocialMonitor);
+      }
+      if (baselineFreshness) {
+        allTimestamps.push(baselineFreshness.lastCrawl, baselineFreshness.lastWebsiteMonitor, baselineFreshness.lastSocialMonitor);
+      }
+
+      let overallStaleness: "fresh" | "aging" | "stale" = "fresh";
+      const now = Date.now();
+      for (const ts of allTimestamps) {
+        if (!ts) {
+          overallStaleness = "stale";
+          break;
+        }
+        const diffMs = now - new Date(ts).getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays >= 7) {
+          overallStaleness = "stale";
+          break;
+        } else if (diffDays >= 1 && overallStaleness === "fresh") {
+          overallStaleness = "aging";
+        }
+      }
+
+      res.json({
+        competitors: competitorFreshness,
+        baseline: baselineFreshness,
+        overallStaleness,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/intelligence-briefings/latest", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const briefing = await storage.getLatestBriefingForTenant(ctx.tenantDomain);
+      const briefing = await storage.getLatestBriefingForTenant(ctx.tenantDomain, ctx.marketId);
       if (!briefing) {
         return res.status(404).json({ error: "No briefings found" });
       }
@@ -13433,12 +13483,43 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  app.get("/api/intelligence-briefings/:id/pdf", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefingId = req.params.id;
+
+      const briefing = await storage.getIntelligenceBriefing(briefingId);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { generateIntelligenceBriefingPdf } = await import("./services/pdf-generator");
+      const { pdfBuffer } = await generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId);
+
+      const filename = `Intelligence_Briefing_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
+      
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("PDF generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/intelligence-briefings", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
-      const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit);
+      const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit, ctx.marketId);
       res.json(briefings);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -13458,7 +13539,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const rawPeriod = req.body.periodDays ? parseInt(req.body.periodDays, 10) : 7;
       const periodDays = ALLOWED_PERIODS.includes(rawPeriod) ? rawPeriod : 7;
       const { generateBriefing } = await import("./services/intelligence-briefing-service");
-      const briefing = await generateBriefing(ctx.tenantDomain, periodDays, ctx.marketId);
+      const briefing = await generateBriefing(ctx.tenantDomain, periodDays, ctx.marketId, toContextFilter(ctx));
       res.json(briefing);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -13466,6 +13547,97 @@ Only use these timeframe values: ${periods.join(", ")}`;
       }
       console.error("Generate briefing error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/intelligence-briefings/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required to delete briefings" });
+      }
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteIntelligenceBriefing(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Share intelligence briefing via email
+  app.post("/api/intelligence-briefings/:id/share", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefingId = req.params.id;
+      const { emails } = req.body;
+
+      if (!Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ error: "At least one email address is required" });
+      }
+
+      const briefing = await storage.getIntelligenceBriefing(briefingId);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+
+      // Check context
+      if (!validateResourceContext(briefing, ctx)) {
+        return res.status(403).json({ error: "You do not have access to this briefing" });
+      }
+
+      const user = await storage.getUser(ctx.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const protocol = req.headers["x-forwarded-proto"] || "http";
+      const host = req.headers.host;
+      const baseUrl = `${protocol}://${host}`;
+
+      const { sendIntelligenceBriefingShareEmail } = await import("./services/email-service");
+
+      const briefingData = briefing.briefingData as any;
+      const digestData = {
+        executiveSummary: briefingData.executiveSummary,
+        actionItems: briefingData.actionItems || [],
+        riskAlerts: briefingData.riskAlerts || [],
+        briefingId: briefing.id,
+      };
+
+      const results = await Promise.all(
+        emails.map(async (email) => {
+          // Try to find if user exists to get their name, otherwise use "Team Member"
+          const recipientUser = await storage.getUserByEmail(email);
+          const recipientName = recipientUser?.name || "Team Member";
+          
+          return sendIntelligenceBriefingShareEmail(
+            email,
+            recipientName,
+            user.name,
+            user.company || ctx.tenantDomain,
+            digestData,
+            baseUrl
+          );
+        })
+      );
+
+      const successCount = results.filter(Boolean).length;
+      res.json({ 
+        success: true, 
+        message: `Successfully shared with ${successCount} out of ${emails.length} recipients` 
+      });
+    } catch (error: any) {
+      console.error("[Briefing Share] Error:", error);
+      res.status(500).json({ error: "Failed to share briefing" });
     }
   });
 

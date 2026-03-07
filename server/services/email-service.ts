@@ -689,6 +689,97 @@ interface WeeklyDigestParams {
   briefing?: BriefingDigestData;
 }
 
+export async function sendIntelligenceBriefingShareEmail(
+  email: string,
+  name: string,
+  sharedByName: string,
+  companyName: string,
+  briefing: BriefingDigestData,
+  baseUrl: string
+): Promise<boolean> {
+  const briefingLink = briefing.briefingId
+    ? `${baseUrl}/app/intelligence?id=${briefing.briefingId}`
+    : `${baseUrl}/app/intelligence`;
+  
+  const copy = INTELLIGENCE_BRIEFING_DIGEST_EMAIL;
+  
+  let executiveSummaryHtml = `
+    <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.executiveSummaryHeading}</p>
+    <div class="feature" style="margin-top: 12px;">
+      <p class="feature-desc" style="white-space: pre-line;">${briefing.executiveSummary}</p>
+    </div>
+  `;
+
+  let actionItemsHtml = '';
+  const topActions = briefing.actionItems.slice(0, 3);
+  if (topActions.length > 0) {
+    actionItemsHtml = `
+      <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.actionItemsHeading}</p>
+      <div class="feature-list">
+        ${topActions.map(item => {
+          const urgencyLabel = copy.actionItemUrgencyLabels[item.urgency] || item.urgency;
+          return `
+            <div class="feature">
+              <div class="feature-title">${urgencyLabel} ${item.title}</div>
+              <p class="feature-desc">${item.description}</p>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  let riskAlertsHtml = '';
+  if (briefing.riskAlerts.length > 0) {
+    riskAlertsHtml = `
+      <p style="color: #ffffff; font-weight: 500; margin-top: 28px;">${copy.riskAlertsHeading}</p>
+      <div class="feature-list">
+        ${briefing.riskAlerts.slice(0, 3).map(alert => {
+          const severityLabel = copy.riskSeverityLabels[alert.severity] || alert.severity;
+          return `
+            <div class="feature" style="border-color: ${alert.severity === 'critical' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(129, 15, 251, 0.15)'};">
+              <div class="feature-title">${severityLabel} ${alert.title}</div>
+              <p class="feature-desc">${alert.description}</p>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  const content = `
+    <h1>${copy.heading}</h1>
+    
+    <p>${copy.greeting(name)}</p>
+    
+    <p><span class="highlight">${sharedByName}</span> has shared an intelligence briefing for <span class="highlight">${companyName}</span> with you.</p>
+    
+    ${executiveSummaryHtml}
+    
+    ${actionItemsHtml}
+    
+    ${riskAlertsHtml}
+    
+    <div class="button-container">
+      <a href="${briefingLink}" class="button">${copy.buttonText}</a>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <p class="muted" style="font-size: 12px;">You're receiving this because a member of your team shared this briefing with you.</p>
+  `;
+
+  const actionItemsText = topActions.map(a => `- [${a.urgency}] ${a.title}: ${a.description}`).join('\n');
+  const text = copy.plainText(name, companyName, briefing.executiveSummary, actionItemsText, briefingLink, `${baseUrl}/app/settings`);
+
+  return sendEmail({
+    to: email,
+    subject: `Shared: ${copy.subject(companyName)}`,
+    html: wrapEmailContent(content),
+    text
+  });
+}
+
 export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise<boolean> {
   const { email, name, companyName, activities, baseUrl, briefing } = params;
   const settingsLink = `${baseUrl}/app/settings`;

@@ -1,6 +1,6 @@
 import puppeteer from "puppeteer";
 import { storage } from "../storage";
-import type { Competitor, CompanyProfile, Report, Battlecard } from "@shared/schema";
+import type { Competitor, CompanyProfile, Report, Battlecard, IntelligenceBriefing } from "@shared/schema";
 import { format } from "date-fns";
 import { calculateScores } from "./scoring-service";
 import * as fs from "fs";
@@ -77,6 +77,19 @@ interface RoadmapItemData {
   effort: string | null;
   status: string;
   aiRecommended: boolean;
+}
+
+interface IntelligenceBriefingPdfData {
+  companyName: string;
+  tenantDomain: string;
+  marketName?: string;
+  periodStart: Date;
+  periodEnd: Date;
+  generatedAt: Date;
+  briefingData: any; // BriefingData from shared/schema or intelligence-briefing-service
+  signalCount: number;
+  competitorCount: number;
+  author: string;
 }
 
 interface MarketingPlanSummary {
@@ -1688,6 +1701,400 @@ interface CompetitorReportData {
   marketName?: string;
   reportName: string;
   author: string;
+}
+
+function generateIntelligenceBriefingHtml(data: IntelligenceBriefingPdfData): string {
+  const synozurLogo = getSynozurLogoBase64();
+  const orbitLogo = getOrbitLogoBase64();
+  const fontFaces = getFontFacesCss();
+
+  const headerLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 12px;"><img src="${synozurLogo}" alt="Synozur" style="height: 24px; width: auto;"><span style="color: #94A3B8; font-size: 20px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+      : synozurLogo
+        ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${synozurLogo}" alt="Synozur" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
+        : `<div class="logo"><span>Orbit</span></div>`;
+
+  const coverLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;"><img src="${synozurLogo}" alt="Synozur" style="height: 48px; width: auto;"><span style="color: #94A3B8; font-size: 28px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="margin-bottom: 24px;"><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+      : synozurLogo
+        ? `<img src="${synozurLogo}" alt="Synozur" style="height: 40px; width: auto; margin-bottom: 24px;">`
+        : "";
+
+  const ORBIT_FOOTER = `
+    <div style="text-align: center; padding: 12px 0; border-top: 1px solid #E2E8F0; margin-top: 40px; font-size: 10px; color: #64748B;">
+      <div style="margin-bottom: 4px;">Orbit • orbit.synozur.com</div>
+      <div>Published by The Synozur Alliance LLC • www.synozur.com • © 2026 All Rights Reserved</div>
+      <div style="margin-top: 4px;">Confidential - ${escapeHtml(data.tenantDomain)} | Generated ${format(data.generatedAt, "MMMM d, yyyy")}</div>
+    </div>
+  `;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    ${fontFaces}
+    @page {
+      size: A4;
+      margin: 20mm 15mm 30mm 15mm;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #FFFFFF;
+      color: #1E293B;
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #334155 100%);
+      color: white;
+    }
+    .cover-title {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .cover-subtitle {
+      font-size: 20px;
+      color: #94A3B8;
+      margin-bottom: 40px;
+    }
+    .cover-meta {
+      font-size: 14px;
+      color: #CBD5E1;
+    }
+    .content-page {
+      padding: 20px 0;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      border-bottom: 2px solid #F1F5F9;
+      padding-bottom: 16px;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1E293B;
+    }
+    .section {
+      margin-bottom: 40px;
+      page-break-inside: avoid;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1E293B;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E2E8F0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 8px;
+      color: #1E293B;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-high { background: #FEE2E2; color: #991B1B; }
+    .badge-medium { background: #FEF3C7; color: #92400E; }
+    .badge-low { background: #DBEAFE; color: #1E40AF; }
+    .badge-critical { background: #991B1B; color: #FFFFFF; }
+    .badge-warning { background: #D97706; color: #FFFFFF; }
+    .badge-watch { background: #2563EB; color: #FFFFFF; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #6366F1;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: #64748B;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    ${coverLogo}
+    <div class="cover-title">Market Intelligence Briefing</div>
+    <div class="cover-subtitle">${escapeHtml(data.companyName)}</div>
+    <div class="cover-meta">
+      <div>Period: ${format(data.periodStart, "MMM d")} - ${format(data.periodEnd, "MMM d, yyyy")}</div>
+      ${data.marketName ? `<div>Market: ${escapeHtml(data.marketName)}</div>` : ""}
+      <div style="margin-top: 20px;">Generated by Orbit Intelligence Engine</div>
+    </div>
+  </div>
+
+  <div class="content-page" style="page-break-before: always;">
+    <div class="header">
+      ${headerLogo}
+      <div style="text-align: right;">
+        <div style="font-weight: 700; font-size: 12px; color: #64748B;">INTELLIGENCE BRIEFING</div>
+        <div style="font-size: 11px; color: #94A3B8;">${format(data.generatedAt, "MMMM d, yyyy")}</div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">${format(data.periodStart, "MMM d")} - ${format(data.periodEnd, "MMM d")}</div>
+        <div class="stat-label">Period</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${data.signalCount}</div>
+        <div class="stat-label">Signals</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${data.competitorCount}</div>
+        <div class="stat-label">Competitors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${data.briefingData.newsArticles?.length || 0}</div>
+        <div class="stat-label">News Articles</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Executive Summary</div>
+      <div style="font-size: 14px; color: #334155;">
+        ${markdownToHtml(data.briefingData.executiveSummary)}
+      </div>
+    </div>
+
+    ${data.briefingData.keyThemes?.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Key Themes</div>
+      <div class="grid">
+        ${data.briefingData.keyThemes.map((theme: any) => `
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <div class="card-title">${escapeHtml(theme.title)}</div>
+              <span class="badge badge-${theme.significance || "medium"}">${escapeHtml(theme.significance || "medium")}</span>
+            </div>
+            <div style="font-size: 13px; color: #475569; margin-bottom: 8px;">${escapeHtml(theme.description)}</div>
+            ${theme.competitors?.length > 0 ? `
+              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                ${theme.competitors.map((c: string) => `<span style="font-size: 10px; background: #E2E8F0; color: #475569; padding: 2px 6px; border-radius: 4px;">${escapeHtml(c)}</span>`).join("")}
+              </div>
+            ` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    ` : ""}
+
+    ${data.briefingData.riskAlerts?.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Risk Alerts</div>
+      ${data.briefingData.riskAlerts.map((risk: any) => `
+        <div class="card" style="border-left: 4px solid ${risk.severity === "critical" ? "#DC2626" : risk.severity === "warning" ? "#D97706" : "#2563EB"};">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+            <div class="card-title">${escapeHtml(risk.title)}</div>
+            <span class="badge badge-${risk.severity || "watch"}">${escapeHtml(risk.severity || "watch")}</span>
+          </div>
+          <div style="font-size: 13px; color: #475569;">${escapeHtml(risk.description)}</div>
+          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">Source: ${escapeHtml(risk.source)}</div>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
+
+    ${data.briefingData.competitorMovements?.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Competitive Movements</div>
+      ${data.briefingData.competitorMovements.map((mov: any) => `
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div class="card-title">${escapeHtml(mov.name)}</div>
+            <span class="badge" style="background: ${mov.threatLevel === "high" ? "#FEE2E2" : mov.threatLevel === "medium" ? "#FEF3C7" : "#DBEAFE"}; color: ${mov.threatLevel === "high" ? "#991B1B" : mov.threatLevel === "medium" ? "#92400E" : "#1E40AF"};">
+              ${escapeHtml(mov.threatLevel || "none")} threat
+            </span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            ${mov.signals?.map((sig: string) => `<div style="font-size: 12px; color: #64748B; margin-bottom: 2px;">• ${escapeHtml(sig)}</div>`).join("")}
+          </div>
+          <div style="font-size: 13px; color: #334155; border-top: 1px solid #E2E8F0; padding-top: 8px;">
+            <strong>Interpretation:</strong> ${escapeHtml(mov.interpretation)}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
+
+    ${data.briefingData.actionItems?.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Recommended Actions</div>
+      <div class="grid">
+        ${data.briefingData.actionItems.map((item: any) => `
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <div class="card-title">${escapeHtml(item.title)}</div>
+              <span class="badge" style="background: #F3F4F6; color: #374151;">${escapeHtml(item.category)}</span>
+            </div>
+            <div style="font-size: 13px; color: #475569; margin-bottom: 8px;">${escapeHtml(item.description)}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
+              <span style="font-size: 11px; font-weight: 600; color: ${item.urgency === "immediate" ? "#DC2626" : item.urgency === "this_week" ? "#D97706" : "#4B5563"};">
+                Urgency: ${escapeHtml(item.urgency?.replace("_", " ") || "watch")}
+              </span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    ` : ""}
+
+    ${data.briefingData.newsArticles?.length > 0 ? `
+    <div class="section">
+      <div class="section-title">News Coverage</div>
+      ${data.briefingData.newsArticles.slice(0, 8).map((article: any) => `
+        <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #F1F5F9;">
+          <div style="font-weight: 600; font-size: 14px; color: #1E293B;">${escapeHtml(article.title)}</div>
+          <div style="display: flex; gap: 8px; font-size: 11px; color: #64748B; margin: 2px 0;">
+            <span>${escapeHtml(article.source)}</span>
+            <span>•</span>
+            <span>${format(new Date(article.publishedAt), "MMM d, yyyy")}</span>
+            <span>•</span>
+            <span style="color: #6366F1; font-weight: 600;">${escapeHtml(article.matchedEntity)}</span>
+          </div>
+          <div style="font-size: 13px; color: #475569; line-clamp: 2;">${escapeHtml(article.description || "")}</div>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
+
+    ${ORBIT_FOOTER}
+  </div>
+</body>
+</html>
+  `;
+}
+
+export async function generateIntelligenceBriefingPdf(
+  briefingId: string,
+  tenantDomain: string,
+  userId: string
+): Promise<{ pdfBuffer: Buffer; briefing: IntelligenceBriefing }> {
+  const user = await storage.getUser(userId);
+  if (!user) throw new Error("User not found");
+
+  const briefing = await storage.getIntelligenceBriefing(briefingId);
+  if (!briefing) throw new Error("Briefing not found");
+
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant) throw new Error("Tenant not found");
+
+  let marketName: string | undefined;
+  if (briefing.marketId) {
+    const market = await storage.getMarket(briefing.marketId);
+    marketName = market?.name;
+  }
+
+  const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+
+  const data: IntelligenceBriefingPdfData = {
+    companyName: companyProfile?.companyName || tenant.name || tenantDomain,
+    tenantDomain,
+    marketName,
+    periodStart: new Date(briefing.periodStart),
+    periodEnd: new Date(briefing.periodEnd),
+    generatedAt: new Date(briefing.createdAt),
+    briefingData: briefing.briefingData,
+    signalCount: briefing.signalCount,
+    competitorCount: briefing.competitorCount,
+    author: user.name || user.email,
+  };
+
+  const html = generateIntelligenceBriefingHtml(data);
+  const startTime = Date.now();
+  const executablePath = await findChromiumPath();
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+    ],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 800, height: 600 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "15mm",
+        bottom: "15mm",
+        left: "12mm",
+        right: "12mm",
+      },
+    });
+
+    console.log(`[Briefing PDF] Generated in ${Date.now() - startTime}ms`);
+    return { pdfBuffer: Buffer.from(pdfBuffer), briefing };
+  } finally {
+    await browser.close();
+  }
 }
 
 function generateCompetitorReportHtml(data: CompetitorReportData): string {

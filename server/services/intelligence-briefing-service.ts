@@ -1,4 +1,4 @@
-import { storage } from "../storage";
+import { storage, type ContextFilter } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Activity, Competitor, CompanyProfile, IntelligenceBriefing } from "@shared/schema";
 import { fetchCompetitorNews, buildNewsSummary, type NewsArticle } from "./news-service";
@@ -117,17 +117,30 @@ function buildCompetitorContext(competitors: Competitor[], baseline?: CompanyPro
 export async function generateBriefing(
   tenantDomain: string,
   periodDays: number = 7,
-  marketId?: string
+  marketId?: string,
+  ctx?: ContextFilter
 ): Promise<IntelligenceBriefing> {
   const now = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - periodDays);
 
-  const [activities, competitors, baseline] = await Promise.all([
-    storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-    storage.getCompetitorsByTenantDomain(tenantDomain),
-    storage.getCompanyProfileByTenant(tenantDomain),
-  ]);
+  let activities: Activity[];
+  let competitors: Competitor[];
+  let baseline: CompanyProfile | undefined;
+
+  if (ctx) {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByContext(ctx),
+      storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
+    ]);
+  } else {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByTenantDomain(tenantDomain),
+      storage.getCompanyProfileByTenant(tenantDomain),
+    ]);
+  }
 
   let newsArticles: NewsArticle[] = [];
   try {

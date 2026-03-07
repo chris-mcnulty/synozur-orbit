@@ -420,8 +420,9 @@ export interface IStorage {
   // Intelligence Briefing methods
   createIntelligenceBriefing(briefing: InsertIntelligenceBriefing): Promise<IntelligenceBriefing>;
   getIntelligenceBriefing(id: string): Promise<IntelligenceBriefing | undefined>;
-  getIntelligenceBriefingsByTenant(tenantDomain: string, limit?: number): Promise<IntelligenceBriefing[]>;
-  getLatestBriefingForTenant(tenantDomain: string): Promise<IntelligenceBriefing | undefined>;
+  getIntelligenceBriefingsByTenant(tenantDomain: string, limit?: number, marketId?: string): Promise<IntelligenceBriefing[]>;
+  getLatestBriefingForTenant(tenantDomain: string, marketId?: string): Promise<IntelligenceBriefing | undefined>;
+  deleteIntelligenceBriefing(id: string): Promise<void>;
 
   // Service Plan methods
   getServicePlan(id: string): Promise<ServicePlan | undefined>;
@@ -2590,19 +2591,31 @@ export class DatabaseStorage implements IStorage {
     return briefing || undefined;
   }
 
-  async getIntelligenceBriefingsByTenant(tenantDomain: string, limit: number = 20): Promise<IntelligenceBriefing[]> {
+  async getIntelligenceBriefingsByTenant(tenantDomain: string, limit: number = 20, marketId?: string): Promise<IntelligenceBriefing[]> {
+    const conditions = [eq(intelligenceBriefings.tenantDomain, tenantDomain)];
+    if (marketId) {
+      conditions.push(eq(intelligenceBriefings.marketId, marketId));
+    }
     return await db.select().from(intelligenceBriefings)
-      .where(eq(intelligenceBriefings.tenantDomain, tenantDomain))
+      .where(and(...conditions))
       .orderBy(desc(intelligenceBriefings.createdAt))
       .limit(limit);
   }
 
-  async getLatestBriefingForTenant(tenantDomain: string): Promise<IntelligenceBriefing | undefined> {
+  async getLatestBriefingForTenant(tenantDomain: string, marketId?: string): Promise<IntelligenceBriefing | undefined> {
+    const conditions = [eq(intelligenceBriefings.tenantDomain, tenantDomain)];
+    if (marketId) {
+      conditions.push(eq(intelligenceBriefings.marketId, marketId));
+    }
     const [briefing] = await db.select().from(intelligenceBriefings)
-      .where(eq(intelligenceBriefings.tenantDomain, tenantDomain))
+      .where(and(...conditions))
       .orderBy(desc(intelligenceBriefings.createdAt))
       .limit(1);
     return briefing || undefined;
+  }
+
+  async deleteIntelligenceBriefing(id: string): Promise<void> {
+    await db.delete(intelligenceBriefings).where(eq(intelligenceBriefings.id, id));
   }
 
   // Service Plan methods
