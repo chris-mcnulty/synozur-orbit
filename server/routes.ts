@@ -2741,8 +2741,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const { generatePdfReport } = await import("./services/pdf-generator");
+      const { enqueuePdf } = await import("./services/job-queue");
       const reportName = name || `Competitive Analysis - ${new Date().toLocaleDateString()}`;
-      const { pdfBuffer, report } = await generatePdfReport(
+      const { pdfBuffer, report } = await enqueuePdf("report-pdf", () => generatePdfReport(
         ctx.tenantDomain,
         ctx.userId,
         reportName,
@@ -2750,7 +2751,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
         projectId,
         !!includeStrategicPlans,
         ctx.marketId || undefined
-      );
+      ));
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf"`);
@@ -2771,17 +2772,18 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const ctx = await getRequestContext(req);
 
       const { generatePdfReport } = await import("./services/pdf-generator");
+      const { enqueuePdf } = await import("./services/job-queue");
       const reportName = `Full Analysis Report - ${new Date().toLocaleDateString()}`;
       
-      const { pdfBuffer, report } = await generatePdfReport(
+      const { pdfBuffer, report } = await enqueuePdf("full-analysis-pdf", () => generatePdfReport(
         ctx.tenantDomain,
         ctx.userId,
         reportName,
         "baseline",
         undefined,
-        true, // includeStrategicPlans
+        true,
         ctx.marketId || undefined
-      );
+      ));
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
@@ -2812,12 +2814,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const { generateCompetitorPdfReport } = await import("./services/pdf-generator");
-      const { pdfBuffer, report } = await generateCompetitorPdfReport(
+      const { enqueuePdf } = await import("./services/job-queue");
+      const { pdfBuffer, report } = await enqueuePdf(`competitor-pdf:${id}`, () => generateCompetitorPdfReport(
         id,
         ctx.tenantDomain,
         ctx.userId,
         ctx.marketId || undefined
-      );
+      ));
 
       const filename = `Competitor_Report_${competitor.name.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().split('T')[0]}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
@@ -3238,7 +3241,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
       
       const { generateBattlecardPdf } = await import("./services/battlecard-export");
-      const pdfBuffer = await generateBattlecardPdf(
+      const { enqueuePdf } = await import("./services/job-queue");
+      const pdfBuffer = await enqueuePdf(`battlecard-pdf:${req.params.id}`, () => generateBattlecardPdf(
         battlecard,
         competitor?.name || "Competitor",
         companyProfile?.companyName || "Your Company",
@@ -3251,7 +3255,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           revenue: competitor.revenue,
           fundingRaised: competitor.fundingRaised,
         } : null
-      );
+      ));
       
       const filename = `Battlecard_${competitor?.name || "Competitor"}_${new Date().toISOString().split('T')[0]}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
@@ -3322,12 +3326,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
       
       const { generateProductBattlecardPdf } = await import("./services/battlecard-export");
-      const pdfBuffer = await generateProductBattlecardPdf(
+      const { enqueuePdf } = await import("./services/job-queue");
+      const pdfBuffer = await enqueuePdf(`product-battlecard-pdf:${req.params.id}`, () => generateProductBattlecardPdf(
         battlecard,
         competitorProduct?.name || "Competitor Product",
         baselineProduct?.name || "Your Product",
         tenant
-      );
+      ));
       
       const filename = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
@@ -13681,7 +13686,8 @@ Only use these timeframe values: ${periods.join(", ")}`;
       }
 
       const { generateIntelligenceBriefingPdf } = await import("./services/pdf-generator");
-      const { pdfBuffer } = await generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId);
+      const { enqueuePdf } = await import("./services/job-queue");
+      const { pdfBuffer } = await enqueuePdf(`briefing-pdf:${briefingId}`, () => generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId));
 
       const filename = `Intelligence_Briefing_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
       
@@ -13884,6 +13890,58 @@ Only use these timeframe values: ${periods.join(", ")}`;
     } catch (error: any) {
       console.error("[Briefing Share] Error:", error);
       res.status(500).json({ error: "Failed to share briefing" });
+    }
+  });
+
+  // ==================== ADMIN: JOB QUEUE STATUS ====================
+
+  app.get("/api/admin/queue-status", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+      const { getQueueStatus } = await import("./services/job-queue");
+      res.json(getQueueStatus());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/queue-pause", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+      const { pauseQueue } = await import("./services/job-queue");
+      pauseQueue();
+      res.json({ success: true, message: "Queue paused" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/queue-resume", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+      const { resumeQueue } = await import("./services/job-queue");
+      resumeQueue();
+      res.json({ success: true, message: "Queue resumed" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

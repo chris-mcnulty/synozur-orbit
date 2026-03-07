@@ -50,6 +50,7 @@ export default function RefreshCenter() {
   const [cancellingJobs, setCancellingJobs] = useState<Set<string>>(new Set());
 
   const isAdmin = user?.role === "Global Admin" || user?.role === "Domain Admin";
+  const isGlobalAdmin = user?.role === "Global Admin";
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -87,6 +88,17 @@ export default function RefreshCenter() {
       return res.json();
     },
     refetchInterval: 5000,
+  });
+
+  const { data: queueStatus } = useQuery({
+    queryKey: ["/api/admin/queue-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/queue-status", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 3000,
+    enabled: isGlobalAdmin,
   });
 
   const setActionLoading = (id: string, loading: boolean) => {
@@ -465,6 +477,61 @@ export default function RefreshCenter() {
             </CardContent>
           </Card>
         </div>
+
+        {isGlobalAdmin && queueStatus && (queueStatus.active > 0 || queueStatus.pending > 0) && (
+          <Card data-testid="queue-status-card">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Loader2 className={cn("w-4 h-4", queueStatus.active > 0 && "animate-spin")} />
+                  Job Queue
+                  {queueStatus.paused && <Badge variant="destructive" className="ml-2">Paused</Badge>}
+                </CardTitle>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    {queueStatus.active} active
+                  </span>
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Clock className="w-3 h-3" />
+                    {queueStatus.pending} queued
+                  </span>
+                </div>
+              </div>
+            </CardHeader>
+            {(queueStatus.activeJobs?.length > 0 || queueStatus.pendingJobs?.length > 0) && (
+              <CardContent className="pt-0">
+                <div className="space-y-1.5">
+                  {queueStatus.activeJobs?.map((job: any) => (
+                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 bg-blue-500/5 rounded" data-testid={`queue-job-active-${job.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                        <Badge variant="outline" className="text-xs">{job.type}</Badge>
+                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{job.runningSec}s</span>
+                    </div>
+                  ))}
+                  {queueStatus.pendingJobs?.slice(0, 5).map((job: any) => (
+                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 rounded" data-testid={`queue-job-pending-${job.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-muted-foreground" />
+                        <Badge variant="secondary" className="text-xs">{job.type}</Badge>
+                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">waiting {job.waitingSec}s</span>
+                    </div>
+                  ))}
+                  {queueStatus.pendingJobs?.length > 5 && (
+                    <div className="text-xs text-muted-foreground text-center py-1">
+                      +{queueStatus.pendingJobs.length - 5} more queued
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         <Tabs defaultValue="active" className="space-y-4">
           <TabsList>

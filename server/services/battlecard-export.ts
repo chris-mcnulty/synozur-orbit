@@ -1,7 +1,7 @@
-import puppeteer from "puppeteer";
 import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
+import { withPdfPage } from "./pdf-browser-pool";
 
 // Fetch external image URL and convert to base64 data URI
 async function fetchImageAsBase64(url: string): Promise<string | null> {
@@ -446,28 +446,6 @@ function generateBattlecardHtml(
   `;
 }
 
-async function findChromiumPath(): Promise<string | undefined> {
-  const possiblePaths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-  ].filter(Boolean) as string[];
-  
-  for (const execPath of possiblePaths) {
-    try {
-      if (fs.existsSync(execPath)) {
-        return execPath;
-      }
-    } catch {
-      continue;
-    }
-  }
-  
-  // Let Puppeteer try to find it
-  return undefined;
-}
 
 export async function generateBattlecardPdf(
   battlecard: Battlecard,
@@ -486,81 +464,24 @@ export async function generateBattlecardPdf(
   
   const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64, companyProfile);
   
-  let browser;
   const startTime = Date.now();
-  
-  try {
-    const executablePath = await findChromiumPath();
-    console.log(`[Battlecard PDF] Starting generation for ${competitorName}, chromium path: ${executablePath || 'auto-detect'}`);
-    
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-        "--no-zygote",
-        "--disable-extensions",
-        "--disable-background-networking",
-        "--disable-sync",
-        "--disable-translate",
-        "--hide-scrollbars",
-        "--mute-audio",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--js-flags=--max-old-space-size=256",
-        "--disable-software-rasterizer",
-      ],
-      timeout: 180000,
-      protocolTimeout: 180000,
-    });
-    
-    console.log(`[Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);
-    
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-    
-    // Set smaller viewport for faster rendering
+  console.log(`[Battlecard PDF] Starting generation for ${competitorName} via PDF pool`);
+
+  const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
-    
-    await page.setContent(html, { 
-      waitUntil: "domcontentloaded",
-      timeout: 15000
-    });
-    
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15000 });
     console.log(`[Battlecard PDF] Content loaded in ${Date.now() - startTime}ms`);
-    
-    // Shorter wait for fonts to load
     await new Promise(resolve => setTimeout(resolve, 200));
-    
-    const pdfBuffer = await page.pdf({
+    return await page.pdf({
       format: "Letter",
       printBackground: true,
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
       timeout: 30000,
     });
-    
-    console.log(`[Battlecard PDF] PDF generated in ${Date.now() - startTime}ms, size: ${Math.round(pdfBuffer.length / 1024)}KB`);
-    
-    return Buffer.from(pdfBuffer);
-  } catch (error) {
-    console.error(`[Battlecard PDF] Generation failed after ${Date.now() - startTime}ms:`, error);
-    throw error;
-  } finally {
-    if (browser) {
-      await browser.close().catch(e => console.error("[Battlecard PDF] Failed to close browser:", e));
-    }
-  }
+  });
+
+  console.log(`[Battlecard PDF] PDF generated in ${Date.now() - startTime}ms, size: ${Math.round(pdfBuffer.length / 1024)}KB`);
+  return Buffer.from(pdfBuffer);
 }
 
 export function generateBattlecardText(
@@ -975,78 +896,24 @@ export async function generateProductBattlecardPdf(
   
   const html = generateProductBattlecardHtml(battlecard, competitorName, baselineName, tenant, tenantLogoBase64);
   
-  let browser;
   const startTime = Date.now();
-  
-  try {
-    const executablePath = await findChromiumPath();
-    console.log(`[Product Battlecard PDF] Starting generation for ${competitorName}, chromium path: ${executablePath || 'auto-detect'}`);
-    
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-        "--no-zygote",
-        "--disable-extensions",
-        "--disable-background-networking",
-        "--disable-sync",
-        "--disable-translate",
-        "--hide-scrollbars",
-        "--mute-audio",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--js-flags=--max-old-space-size=256",
-        "--disable-software-rasterizer",
-      ],
-      timeout: 180000,
-      protocolTimeout: 180000,
-    });
-    
-    console.log(`[Product Battlecard PDF] Browser launched in ${Date.now() - startTime}ms`);
-    
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+  console.log(`[Product Battlecard PDF] Starting generation for ${competitorName} via PDF pool`);
+
+  const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
-    
-    await page.setContent(html, { 
-      waitUntil: "domcontentloaded",
-      timeout: 15000
-    });
-    
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15000 });
     console.log(`[Product Battlecard PDF] Content loaded in ${Date.now() - startTime}ms`);
-    
     await new Promise(resolve => setTimeout(resolve, 200));
-    
-    const pdfBuffer = await page.pdf({
+    return await page.pdf({
       format: "Letter",
       printBackground: true,
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
       timeout: 30000,
     });
-    
-    console.log(`[Product Battlecard PDF] PDF generated in ${Date.now() - startTime}ms, size: ${Math.round(pdfBuffer.length / 1024)}KB`);
-    
-    return Buffer.from(pdfBuffer);
-  } catch (error) {
-    console.error(`[Product Battlecard PDF] Generation failed after ${Date.now() - startTime}ms:`, error);
-    throw error;
-  } finally {
-    if (browser) {
-      await browser.close().catch(e => console.error("[Product Battlecard PDF] Failed to close browser:", e));
-    }
-  }
+  });
+
+  console.log(`[Product Battlecard PDF] PDF generated in ${Date.now() - startTime}ms, size: ${Math.round(pdfBuffer.length / 1024)}KB`);
+  return Buffer.from(pdfBuffer);
 }
 
 export function generateProductBattlecardText(

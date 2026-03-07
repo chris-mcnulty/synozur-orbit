@@ -7,6 +7,7 @@ import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail } from "./email-service";
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
+import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -215,9 +216,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Crawling ${competitor.name} (${competitor.url})...`);
+        console.log(`[Scheduled Job] Queuing crawl for ${competitor.name} (${competitor.url})...`);
 
-        const jobRunId = await trackJobRun(
+        enqueueCrawl(`crawl:${competitor.name}`, () => trackJobRun(
           "websiteCrawl",
           tenant.domain,
           competitor.id,
@@ -356,11 +357,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
               analysis: analysisResult,
             };
           }
-        );
-
-        if (jobRunId) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+        )).catch(err => console.error(`[Scheduled Job] Queued crawl failed for ${competitor.name}:`, err.message));
       }
 
       // Crawl baseline company profiles on the same frequency as competitors
@@ -383,9 +380,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Crawling baseline ${profile.companyName} (${profile.websiteUrl})...`);
+        console.log(`[Scheduled Job] Queuing baseline crawl for ${profile.companyName} (${profile.websiteUrl})...`);
 
-        await trackJobRun(
+        enqueueCrawl(`crawl:baseline:${profile.companyName}`, () => trackJobRun(
           "websiteCrawl",
           tenant.domain,
           profile.id,
@@ -495,9 +492,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
               analysis: analysisResult,
             };
           }
-        );
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        )).catch(err => console.error(`[Scheduled Job] Queued baseline crawl failed for ${profile.companyName}:`, err.message));
       }
     }
   } catch (error) {
@@ -506,7 +501,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
     jobStatus.websiteCrawl.isRunning = false;
     jobStatus.websiteCrawl.abortController = null;
     jobStatus.websiteCrawl.lastRun = new Date();
-    console.log("[Scheduled Job] Website crawl job completed");
+    console.log("[Scheduled Job] Website crawl sweep completed (jobs queued)");
   }
 }
 
@@ -563,9 +558,9 @@ async function runSocialMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring social for ${competitor.name} (${competitorFrequency})...`);
+        console.log(`[Scheduled Job] Queuing social monitor for ${competitor.name} (${competitorFrequency})...`);
 
-        await trackJobRun(
+        enqueueMonitor(`social:${competitor.name}`, () => trackJobRun(
           "socialMonitor",
           tenant.domain,
           competitor.id,
@@ -579,8 +574,7 @@ async function runSocialMonitorJob(): Promise<void> {
               instagram: !!competitor.instagramUrl,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued social monitor failed for ${competitor.name}:`, err.message));
       }
 
       // Monitor company profiles (baseline) for social changes
@@ -608,9 +602,9 @@ async function runSocialMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring baseline social for ${profile.companyName} (${profileFrequency})...`);
+        console.log(`[Scheduled Job] Queuing baseline social monitor for ${profile.companyName} (${profileFrequency})...`);
 
-        await trackJobRun(
+        enqueueMonitor(`social:baseline:${profile.companyName}`, () => trackJobRun(
           "socialMonitor",
           tenant.domain,
           profile.id,
@@ -630,8 +624,7 @@ async function runSocialMonitorJob(): Promise<void> {
               twitter: !!profile.twitterUrl,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued baseline social failed for ${profile.companyName}:`, err.message));
       }
 
       // Monitor products for social changes (product-level social tracking)
@@ -653,9 +646,9 @@ async function runSocialMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring product social for ${product.name} (${productFrequency})...`);
+        console.log(`[Scheduled Job] Queuing product social monitor for ${product.name} (${productFrequency})...`);
 
-        await trackJobRun(
+        enqueueMonitor(`social:product:${product.name}`, () => trackJobRun(
           "socialMonitor",
           tenant.domain,
           product.id,
@@ -675,8 +668,7 @@ async function runSocialMonitorJob(): Promise<void> {
               twitter: !!product.twitterUrl,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued product social failed for ${product.name}:`, err.message));
       }
     }
   } catch (error) {
@@ -740,9 +732,9 @@ async function runWebsiteMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring website changes for ${competitor.name}...`);
+        console.log(`[Scheduled Job] Queuing website monitor for ${competitor.name}...`);
 
-        await trackJobRun(
+        enqueueMonitor(`monitor:${competitor.name}`, () => trackJobRun(
           "websiteMonitor",
           tenant.domain,
           competitor.id,
@@ -759,8 +751,7 @@ async function runWebsiteMonitorJob(): Promise<void> {
               url: competitor.url,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued website monitor failed for ${competitor.name}:`, err.message));
       }
 
       // Monitor company profiles (baseline) for website changes
@@ -781,9 +772,9 @@ async function runWebsiteMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring baseline website changes for ${profile.companyName}...`);
+        console.log(`[Scheduled Job] Queuing baseline website monitor for ${profile.companyName}...`);
 
-        await trackJobRun(
+        enqueueMonitor(`monitor:baseline:${profile.companyName}`, () => trackJobRun(
           "websiteMonitor",
           tenant.domain,
           profile.id,
@@ -801,8 +792,7 @@ async function runWebsiteMonitorJob(): Promise<void> {
               url: profile.websiteUrl,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued baseline monitor failed for ${profile.companyName}:`, err.message));
       }
     }
   } catch (error) {
@@ -873,9 +863,9 @@ async function runProductMonitorJob(): Promise<void> {
           continue;
         }
 
-        console.log(`[Scheduled Job] Monitoring standalone product: ${product.name}...`);
+        console.log(`[Scheduled Job] Queuing product monitor for ${product.name}...`);
 
-        await trackJobRun(
+        enqueueMonitor(`monitor:product:${product.name}`, () => trackJobRun(
           "productMonitor",
           tenant.domain,
           product.id,
@@ -893,8 +883,7 @@ async function runProductMonitorJob(): Promise<void> {
               url: product.url,
             };
           }
-        );
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        )).catch(err => console.error(`[Scheduled Job] Queued product monitor failed for ${product.name}:`, err.message));
       }
     }
   } catch (error) {
@@ -1153,11 +1142,8 @@ export function startScheduledJobs(): void {
     });
   }, 15 * 60 * 1000);
   
-  // CRITICAL: Run jobs immediately on startup to catch up after app sleep
-  // This ensures overdue jobs run even if app was sleeping for days
   console.log("[Scheduled Jobs] Running initial job sweep for any overdue items...");
   
-  // Run immediately (staggered by 5 seconds to avoid overwhelming the system)
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting website crawl job sweep...");
     runWebsiteCrawlJob();
@@ -1166,27 +1152,27 @@ export function startScheduledJobs(): void {
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting social monitor job sweep...");
     runSocialMonitorJob();
-  }, 10 * 1000);
+  }, 30 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting website monitor job sweep...");
     runWebsiteMonitorJob();
-  }, 15 * 1000);
+  }, 60 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting product monitor job sweep...");
     runProductMonitorJob();
-  }, 20 * 1000);
+  }, 90 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting trial reminder job sweep...");
     runTrialReminderJob();
-  }, 25 * 1000);
+  }, 15 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Checking if weekly digest is overdue...");
     checkAndRunWeeklyDigest();
-  }, 30 * 1000);
+  }, 20 * 1000);
 
   console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");

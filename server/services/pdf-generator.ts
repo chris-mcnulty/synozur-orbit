@@ -1,32 +1,10 @@
-import puppeteer from "puppeteer";
 import { storage } from "../storage";
 import type { Competitor, CompanyProfile, Report, Battlecard, IntelligenceBriefing } from "@shared/schema";
 import { format } from "date-fns";
 import { calculateScores } from "./scoring-service";
 import * as fs from "fs";
 import * as path from "path";
-
-async function findChromiumPath(): Promise<string | undefined> {
-  const possiblePaths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/usr/bin/google-chrome",
-  ].filter(Boolean) as string[];
-  
-  for (const execPath of possiblePaths) {
-    try {
-      if (fs.existsSync(execPath)) {
-        return execPath;
-      }
-    } catch {
-      continue;
-    }
-  }
-  
-  return undefined;
-}
+import { withPdfPage } from "./pdf-browser-pool";
 
 interface CompetitorWithAnalysis extends Competitor {
   scores?: {
@@ -1594,68 +1572,24 @@ export async function generatePdfReport(
 
   const html = generateReportHtml(reportData);
   const startTime = Date.now();
+  console.log(`[Report PDF] Starting generation via PDF pool`);
 
-  const executablePath = await findChromiumPath();
-  console.log(`[Report PDF] Starting generation, chromium path: ${executablePath || 'auto-detect'}`);
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
-      "--disable-extensions",
-      "--disable-background-networking",
-      "--disable-sync",
-      "--disable-translate",
-      "--hide-scrollbars",
-      "--mute-audio",
-      "--disable-web-security",
-      "--disable-features=IsolateOrigins,site-per-process",
-      "--js-flags=--max-old-space-size=256",
-      "--disable-software-rasterizer",
-    ],
-    timeout: 180000,
-    protocolTimeout: 180000,
-  });
-
-  console.log(`[Report PDF] Browser launched in ${Date.now() - startTime}ms`);
-
-  try {
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+  const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
-    
     console.log(`[Report PDF] Content loaded in ${Date.now() - startTime}ms`);
-    
-    const pdfBuffer = await page.pdf({
+    return await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: {
-        top: "15mm",
-        bottom: "15mm",
-        left: "12mm",
-        right: "12mm",
-      },
+      margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
     });
+  });
 
+  {
     const pdfSizeKb = Math.round(pdfBuffer.length / 1024);
     const sizeLabel = pdfSizeKb > 1024 
       ? `${(pdfSizeKb / 1024).toFixed(1)} MB` 
       : `${pdfSizeKb} KB`;
-    
     console.log(`[Report PDF] PDF generated in ${Date.now() - startTime}ms, size: ${sizeLabel}`);
 
     const report = await storage.createReport({
@@ -1674,8 +1608,6 @@ export async function generatePdfReport(
     });
 
     return { pdfBuffer: Buffer.from(pdfBuffer), report };
-  } finally {
-    await browser.close();
   }
 }
 
@@ -2059,53 +1991,20 @@ export async function generateIntelligenceBriefingPdf(
 
   const html = generateIntelligenceBriefingHtml(data);
   const startTime = Date.now();
-  const executablePath = await findChromiumPath();
+  console.log(`[Briefing PDF] Starting generation via PDF pool`);
 
-  const launchTimeout = 30000;
-  let timedOut = false;
-  const browserPromise = puppeteer.launch({
-    headless: true,
-    executablePath,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
-    ],
-    protocolTimeout: 60000,
-  });
-
-  browserPromise.then(b => { if (timedOut) b.close().catch(() => {}); });
-
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => { timedOut = true; reject(new Error("PDF generation timed out — the server is under heavy load. Please try again in a few minutes.")); }, launchTimeout)
-  );
-
-  const browser = await Promise.race([browserPromise, timeoutPromise]);
-
-  try {
-    const page = await browser.newPage();
+  const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
-    
-    const pdfBuffer = await page.pdf({
+    return await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: {
-        top: "15mm",
-        bottom: "15mm",
-        left: "12mm",
-        right: "12mm",
-      },
+      margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
     });
+  });
 
-    console.log(`[Briefing PDF] Generated in ${Date.now() - startTime}ms`);
-    return { pdfBuffer: Buffer.from(pdfBuffer), briefing };
-  } finally {
-    await browser.close();
-  }
+  console.log(`[Briefing PDF] Generated in ${Date.now() - startTime}ms`);
+  return { pdfBuffer: Buffer.from(pdfBuffer), briefing };
 }
 
 function generateCompetitorReportHtml(data: CompetitorReportData): string {
@@ -2572,87 +2471,39 @@ export async function generateCompetitorPdfReport(
 
   const html = generateCompetitorReportHtml(reportData);
   const startTime = Date.now();
+  console.log(`[Competitor PDF] Starting generation for ${competitor.name} via PDF pool`);
 
-  const executablePath = await findChromiumPath();
-  console.log(`[Competitor PDF] Starting generation for ${competitor.name}, chromium path: ${executablePath || 'auto-detect'}`);
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
-      "--disable-extensions",
-      "--disable-background-networking",
-      "--disable-sync",
-      "--disable-translate",
-      "--hide-scrollbars",
-      "--mute-audio",
-      "--disable-web-security",
-      "--disable-features=IsolateOrigins,site-per-process",
-      "--js-flags=--max-old-space-size=256",
-      "--disable-software-rasterizer",
-    ],
-    timeout: 180000,
-    protocolTimeout: 180000,
-  });
-
-  console.log(`[Competitor PDF] Browser launched in ${Date.now() - startTime}ms`);
-
-  try {
-    const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+  const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
-    
     console.log(`[Competitor PDF] Content loaded in ${Date.now() - startTime}ms`);
-    
-    const pdfBuffer = await page.pdf({
+    return await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: {
-        top: "15mm",
-        bottom: "15mm",
-        left: "12mm",
-        right: "12mm",
-      },
+      margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
     });
+  });
 
-    const pdfSizeKb = Math.round(pdfBuffer.length / 1024);
-    const sizeLabel = pdfSizeKb > 1024 
-      ? `${(pdfSizeKb / 1024).toFixed(1)} MB` 
-      : `${pdfSizeKb} KB`;
-    
-    console.log(`[Competitor PDF] PDF generated in ${Date.now() - startTime}ms, size: ${sizeLabel}`);
+  const pdfSizeKb = Math.round(pdfBuffer.length / 1024);
+  const sizeLabel = pdfSizeKb > 1024 
+    ? `${(pdfSizeKb / 1024).toFixed(1)} MB` 
+    : `${pdfSizeKb} KB`;
+  console.log(`[Competitor PDF] PDF generated in ${Date.now() - startTime}ms, size: ${sizeLabel}`);
 
-    const report = await storage.createReport({
-      name: reportName,
-      date: format(new Date(), "yyyy-MM-dd"),
-      type: "Competitor Intelligence",
-      size: sizeLabel,
-      author: user.name || user.email,
-      status: "Generated",
-      scope: "baseline",
-      projectId: null,
-      tenantDomain,
-      createdBy: userId,
-      fileUrl: null,
-      marketId: marketId || null,
-    });
+  const report = await storage.createReport({
+    name: reportName,
+    date: format(new Date(), "yyyy-MM-dd"),
+    type: "Competitor Intelligence",
+    size: sizeLabel,
+    author: user.name || user.email,
+    status: "Generated",
+    scope: "baseline",
+    projectId: null,
+    tenantDomain,
+    createdBy: userId,
+    fileUrl: null,
+    marketId: marketId || null,
+  });
 
-    return { pdfBuffer: Buffer.from(pdfBuffer), report };
-  } finally {
-    await browser.close();
-  }
+  return { pdfBuffer: Buffer.from(pdfBuffer), report };
 }
