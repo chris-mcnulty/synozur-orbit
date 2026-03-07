@@ -29,7 +29,8 @@ import {
   ChevronDown,
   RefreshCw,
   Lock,
-  Brain
+  Brain,
+  Rocket
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,8 +57,8 @@ type NavIndicator = {
   count?: number;
 };
 
-// Default expanded sections - Setup and Insights are expanded by default
-const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights'];
+// Default expanded sections - Setup, Insights, and Help are expanded by default
+const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights', 'Help'];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -206,6 +207,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
+  const { data: battleCards = [] } = useQuery({
+    queryKey: ["/api/battlecards"],
+    queryFn: async () => {
+      const response = await fetch("/api/battlecards", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!user,
+  });
+
   const { data: tenantSettings } = useQuery<{ plan: string; multiMarketEnabled: boolean }>({
     queryKey: ["/api/tenant/settings"],
     queryFn: async () => {
@@ -293,9 +304,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (hasNewContent("/app/reports", reports)) {
       indicators["/app/reports"] = { type: "new" };
     }
+
+    const onboardingTotal = 5;
+    const onboardingDone = [
+      !!companyProfile?.websiteUrl,
+      competitors.length > 0,
+      !!analysis?.themes,
+      battleCards.length > 0,
+      reports.length > 0,
+    ].filter(Boolean).length;
+    const onboardingRemaining = onboardingTotal - onboardingDone;
+    if (onboardingRemaining > 0) {
+      indicators["/app/getting-started"] = { type: "count", count: onboardingRemaining };
+    }
     
     return indicators;
-  }, [companyProfile, competitors, analysis, recommendations, activityData, reports]);
+  }, [companyProfile, competitors, analysis, recommendations, activityData, reports, battleCards]);
   
   // Show profile completion dialog for SSO users missing demographics
   // This should show FIRST before company setup for new SSO users
@@ -374,6 +398,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {
       group: "Help",
       items: [
+        { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
         { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
         { label: "About", icon: Info, href: "/app/about" },
       ]
