@@ -169,7 +169,10 @@ export default function Competitors() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Failed to add competitor");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to add competitor");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -546,7 +549,10 @@ export default function Competitors() {
         body: JSON.stringify({ name: suggestion.name, url: suggestion.url }),
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Failed to add competitor");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to add competitor");
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
       setSuggestions(prev => prev.filter(s => s.url !== suggestion.url));
       toast({

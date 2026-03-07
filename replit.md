@@ -57,7 +57,7 @@ Preferred communication style: Simple, everyday language.
 - **Enhanced Change Detection**: Website monitoring uses a 5% change threshold (lowered from 15%) with structured AI analysis that categorizes changes by type (messaging, pricing, product, team, content, design) and rates significance.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
 - **Client Projects**: Facilitate product-level competitive analysis against competitor products, supporting proxy analysis for consulting firms.
-- **Product Management MVP**: Feature catalog, quarterly roadmap view with effort sizing, AI-powered roadmap recommendations based on competitive intelligence.
+- **Product Management MVP**: Feature catalog, quarterly roadmap view with effort sizing, AI-powered roadmap recommendations based on competitive intelligence. Roadmap recommendation generation is project-scoped: when a product belongs to a project, competitor data is sourced from that project's competitor products (not market-wide baseline competitors).
 - **Report Generation**: Branded PDF reports scoped to baseline or specific products.
 - **CSV Exports**: Export various lists (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) to CSV.
 - **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) with separate baselines, competitors, and projects.

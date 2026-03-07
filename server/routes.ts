@@ -11,7 +11,7 @@ import { objectStorageClient } from "./replit_integrations/object_storage/object
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
@@ -7617,20 +7617,49 @@ Provide analysis in this JSON format:
         category: f.category,
       }));
       
-      // Get competitor data from their stored analysis data
-      const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+      // Check if this product belongs to a project — if so, scope competitors to that project's products
+      const { projectId: requestProjectId } = req.body || {};
+      const productProjectLinks = await db.select().from(projectProductsTable)
+        .where(eq(projectProductsTable.productId, req.params.productId));
+      
       const competitorData: { name: string; analysis: string }[] = [];
       
-      for (const comp of competitors.slice(0, 5)) {
-        // Use the competitor's stored analysis data if available
-        if (comp.analysisData) {
-          const analysisText = typeof comp.analysisData === 'string' 
-            ? comp.analysisData 
-            : JSON.stringify(comp.analysisData);
-          competitorData.push({
-            name: comp.name,
-            analysis: analysisText,
-          });
+      // Use explicit projectId if provided, otherwise use first link
+      const resolvedProjectLink = requestProjectId
+        ? productProjectLinks.find(pp => pp.projectId === requestProjectId)
+        : productProjectLinks[0];
+      
+      if (resolvedProjectLink) {
+        const projectId = resolvedProjectLink.projectId;
+        const allProjectProducts = await storage.getProjectProducts(projectId);
+        const competitorProductEntries = allProjectProducts.filter(pp => pp.role === "competitor");
+        
+        for (const pp of competitorProductEntries.slice(0, 5)) {
+          const compProduct = pp.product;
+          if (compProduct?.analysisData) {
+            const analysisText = typeof compProduct.analysisData === 'string'
+              ? compProduct.analysisData
+              : JSON.stringify(compProduct.analysisData);
+            competitorData.push({
+              name: compProduct.name,
+              analysis: analysisText,
+            });
+          }
+        }
+        console.log(`[Roadmap Recs] Product "${product.name}" is in project ${projectId}, using ${competitorData.length} project-scoped competitor products`);
+      } else {
+        const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
+        
+        for (const comp of competitors.slice(0, 5)) {
+          if (comp.analysisData) {
+            const analysisText = typeof comp.analysisData === 'string' 
+              ? comp.analysisData 
+              : JSON.stringify(comp.analysisData);
+            competitorData.push({
+              name: comp.name,
+              analysis: analysisText,
+            });
+          }
         }
       }
       
