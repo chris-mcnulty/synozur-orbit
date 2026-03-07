@@ -17,6 +17,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import StalenessDot from "@/components/ui/StalenessDot";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
+import RecentUpdatesCard from "@/components/RecentUpdatesCard";
 
 export default function CompanyBaseline() {
   const { toast } = useToast();
@@ -1418,6 +1419,14 @@ export default function CompanyBaseline() {
                   )}
                 </CardContent>
               </Card>
+
+              {companyProfile && (
+                <RecentUpdatesCard
+                  entityType="company-profile"
+                  entityId={companyProfile.id}
+                  entityName={companyProfile.companyName}
+                />
+              )}
 
               <Card>
                 <CardHeader>

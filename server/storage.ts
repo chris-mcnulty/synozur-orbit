@@ -183,6 +183,8 @@ export interface IStorage {
   getActivityByTenant(tenantDomain: string): Promise<Activity[]>;
   getWeeklyActivityByTenant(tenantDomain: string, marketId?: string): Promise<Activity[]>;
   getActivityByTenantForPeriod(tenantDomain: string, periodDays: number, marketId?: string): Promise<Activity[]>;
+  getActivityByCompanyProfile(companyProfileId: string, limit?: number): Promise<Activity[]>;
+  getActivityByProduct(productId: string, limit?: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   
   // Weekly Digest methods
@@ -665,6 +667,20 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(activity)
       .where(and(...conditions))
       .orderBy(desc(activity.createdAt));
+  }
+
+  async getActivityByCompanyProfile(companyProfileId: string, limit: number = 10): Promise<Activity[]> {
+    return await db.select().from(activity)
+      .where(eq(activity.companyProfileId, companyProfileId))
+      .orderBy(desc(activity.createdAt))
+      .limit(limit);
+  }
+
+  async getActivityByProduct(productId: string, limit: number = 10): Promise<Activity[]> {
+    return await db.select().from(activity)
+      .where(eq(activity.productId, productId))
+      .orderBy(desc(activity.createdAt))
+      .limit(limit);
   }
 
   async getUsersWithDigestEnabled(): Promise<User[]> {

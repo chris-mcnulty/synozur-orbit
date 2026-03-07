@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
+import RecentUpdatesCard from "@/components/RecentUpdatesCard";
 
 interface Product {
   id: string;
@@ -2090,6 +2091,16 @@ export default function ProductDetail() {
                 </CardContent>
               </Card>
             </>
+          )}
+
+          {project.analysisType === "product" && baselineProduct && (
+            <div className="mt-6">
+              <RecentUpdatesCard
+                entityType="product"
+                entityId={baselineProduct.productId}
+                entityName={baselineProduct.product.name}
+              />
+            </div>
           )}
 
           {project.analysisType === "company" && (

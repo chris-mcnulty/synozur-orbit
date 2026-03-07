@@ -2412,6 +2412,36 @@ Return ONLY valid JSON, no markdown or explanation.`;
     }
   });
 
+  app.get("/api/activity/by-company-profile/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+      const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 10 : rawLimit), 50);
+      const activities = await storage.getActivityByCompanyProfile(req.params.id, limit);
+      res.json(activities);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/activity/by-product/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+      const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 10 : rawLimit), 50);
+      const activities = await storage.getActivityByProduct(req.params.id, limit);
+      res.json(activities);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== CONSOLIDATED ACTION ITEMS ====================
 
   app.get("/api/action-items", async (req, res) => {
