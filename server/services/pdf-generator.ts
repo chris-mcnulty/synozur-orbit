@@ -2061,7 +2061,9 @@ export async function generateIntelligenceBriefingPdf(
   const startTime = Date.now();
   const executablePath = await findChromiumPath();
 
-  const browser = await puppeteer.launch({
+  const launchTimeout = 30000;
+  let timedOut = false;
+  const browserPromise = puppeteer.launch({
     headless: true,
     executablePath,
     args: [
@@ -2072,7 +2074,16 @@ export async function generateIntelligenceBriefingPdf(
       "--single-process",
       "--no-zygote",
     ],
+    protocolTimeout: 60000,
   });
+
+  browserPromise.then(b => { if (timedOut) b.close().catch(() => {}); });
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => { timedOut = true; reject(new Error("PDF generation timed out — the server is under heavy load. Please try again in a few minutes.")); }, launchTimeout)
+  );
+
+  const browser = await Promise.race([browserPromise, timeoutPromise]);
 
   try {
     const page = await browser.newPage();

@@ -208,7 +208,14 @@ export default function IntelligenceBriefingPage() {
       const response = await fetch(`/api/intelligence-briefings/${activeBriefingId}/pdf`, {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Failed to download PDF");
+      if (!response.ok) {
+        let msg = "Failed to download PDF";
+        try {
+          const errData = await response.json();
+          if (errData.error) msg = errData.error;
+        } catch {}
+        throw new Error(msg);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");

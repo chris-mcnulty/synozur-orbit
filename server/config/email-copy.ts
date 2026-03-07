@@ -362,7 +362,7 @@ export const WEEKLY_DIGEST_EMAIL = {
 // INTELLIGENCE BRIEFING DIGEST EMAIL
 // ============================================
 export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
-  subject: (companyName: string) => `Intelligence Briefing - ${companyName} Weekly Update`,
+  subject: (companyName: string, periodLabel?: string) => periodLabel ? `Intelligence Briefing - ${companyName} (${periodLabel})` : `Intelligence Briefing - ${companyName}`,
   heading: 'Your Intelligence Briefing',
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
   intro: `Here's your AI-synthesized intelligence briefing for the past week:`,
@@ -386,8 +386,8 @@ export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
   buttonText: 'View Full Briefing',
   unsubscribeText: 'Manage your notification preferences',
   footerMessage: `You're receiving this email because you opted in to weekly competitive intelligence digests.`,
-  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, settingsLink: string) =>
-    `Hi ${name},\n\nIntelligence Briefing for ${companyName}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`,
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, settingsLink: string, periodLabel?: string) =>
+    `Hi ${name},\n\nIntelligence Briefing for ${companyName}${periodLabel ? ` (${periodLabel})` : ''}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`,
 };
 
 // ============================================

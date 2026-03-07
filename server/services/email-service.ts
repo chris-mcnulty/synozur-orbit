@@ -678,6 +678,8 @@ interface BriefingDigestData {
   actionItems: BriefingActionItem[];
   riskAlerts: BriefingRiskAlert[];
   briefingId?: string;
+  periodLabel?: string;
+  periodDays?: number;
 }
 
 interface WeeklyDigestParams {
@@ -752,7 +754,7 @@ export async function sendIntelligenceBriefingShareEmail(
     
     <p>${copy.greeting(name)}</p>
     
-    <p><span class="highlight">${sharedByName}</span> has shared an intelligence briefing for <span class="highlight">${companyName}</span> with you.</p>
+    <p><span class="highlight">${sharedByName}</span> has shared an intelligence briefing for <span class="highlight">${companyName}</span> with you.${briefing.periodLabel ? ` <span style="color: #94A3B8;">Covering ${briefing.periodLabel}.</span>` : ''}</p>
     
     ${executiveSummaryHtml}
     
@@ -770,11 +772,11 @@ export async function sendIntelligenceBriefingShareEmail(
   `;
 
   const actionItemsText = topActions.map(a => `- [${a.urgency}] ${a.title}: ${a.description}`).join('\n');
-  const text = copy.plainText(name, companyName, briefing.executiveSummary, actionItemsText, briefingLink, `${baseUrl}/app/settings`);
+  const text = copy.plainText(name, companyName, briefing.executiveSummary, actionItemsText, briefingLink, `${baseUrl}/app/settings`, briefing.periodLabel);
 
   return sendEmail({
     to: email,
-    subject: `Shared: ${copy.subject(companyName)}`,
+    subject: `Shared: ${copy.subject(companyName, briefing.periodLabel)}`,
     html: wrapEmailContent(content),
     text
   });

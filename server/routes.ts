@@ -13833,6 +13833,17 @@ Only use these timeframe values: ${periods.join(", ")}`;
         return res.status(404).json({ error: "User not found" });
       }
 
+      let contextName = user.company || ctx.tenantDomain;
+      if (briefing.marketId) {
+        const market = await storage.getMarket(briefing.marketId);
+        if (market?.name) contextName = market.name;
+      }
+
+      const periodStart = new Date(briefing.periodStart);
+      const periodEnd = new Date(briefing.periodEnd);
+      const periodDays = Math.round((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24));
+      const periodLabel = `${periodStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${periodEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
       const protocol = req.headers["x-forwarded-proto"] || "http";
       const host = req.headers.host;
       const baseUrl = `${protocol}://${host}`;
@@ -13845,11 +13856,12 @@ Only use these timeframe values: ${periods.join(", ")}`;
         actionItems: briefingData.actionItems || [],
         riskAlerts: briefingData.riskAlerts || [],
         briefingId: briefing.id,
+        periodLabel,
+        periodDays,
       };
 
       const results = await Promise.all(
         emails.map(async (email) => {
-          // Try to find if user exists to get their name, otherwise use "Team Member"
           const recipientUser = await storage.getUserByEmail(email);
           const recipientName = recipientUser?.name || "Team Member";
           
@@ -13857,7 +13869,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
             email,
             recipientName,
             user.name,
-            user.company || ctx.tenantDomain,
+            contextName,
             digestData,
             baseUrl
           );
