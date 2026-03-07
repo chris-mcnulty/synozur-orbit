@@ -13743,12 +13743,29 @@ Only use these timeframe values: ${periods.join(", ")}`;
         try {
           const { generateBriefingData } = await import("./services/intelligence-briefing-service");
           const result = await generateBriefingData(capturedCtx.tenantDomain, periodDays, capturedCtx.marketId, capturedFilter);
-          await storage.updateIntelligenceBriefing(placeholder.id, {
-            status: "published",
-            briefingData: result.briefingData,
-            signalCount: result.signalCount,
-            competitorCount: result.competitorCount,
-          });
+          
+          const saveWithRetry = async (retries = 3, delayMs = 2000) => {
+            for (let attempt = 1; attempt <= retries; attempt++) {
+              try {
+                await storage.updateIntelligenceBriefing(placeholder.id, {
+                  status: "published",
+                  briefingData: result.briefingData,
+                  signalCount: result.signalCount,
+                  competitorCount: result.competitorCount,
+                });
+                return;
+              } catch (dbError: any) {
+                console.error(`[Intelligence Briefing] DB save attempt ${attempt}/${retries} failed:`, dbError.message);
+                if (attempt < retries) {
+                  await new Promise(r => setTimeout(r, delayMs * attempt));
+                } else {
+                  throw dbError;
+                }
+              }
+            }
+          };
+          
+          await saveWithRetry();
           console.log(`[Intelligence Briefing] Generation complete for ${capturedCtx.tenantDomain} (${placeholder.id})`);
         } catch (error: any) {
           console.error(`[Intelligence Briefing] Background generation failed for ${capturedCtx.tenantDomain}:`, error);
