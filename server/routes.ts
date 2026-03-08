@@ -13689,7 +13689,17 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const { enqueuePdf } = await import("./services/job-queue");
       const { pdfBuffer } = await enqueuePdf(`briefing-pdf:${briefingId}`, () => generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId));
 
-      const filename = `Intelligence_Briefing_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
+      let contextName = "";
+      if (briefing.marketId) {
+        const market = await storage.getMarket(briefing.marketId);
+        if (market) contextName = market.name;
+      }
+      if (!contextName) {
+        const profile = await storage.getCompanyProfileByContext({ tenantDomain: ctx.tenantDomain, marketId: briefing.marketId || undefined });
+        if (profile) contextName = profile.companyName;
+      }
+      const safeName = contextName ? `_${contextName.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+      const filename = `Intelligence_Briefing${safeName}_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
       
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
