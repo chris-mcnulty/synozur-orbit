@@ -1974,10 +1974,13 @@ export async function generateIntelligenceBriefingPdf(
     marketName = market?.name;
   }
 
-  const companyProfile = await storage.getCompanyProfileByTenant(tenantDomain);
+  const companyProfile = await storage.getCompanyProfileByContext({
+    tenantDomain,
+    marketId: briefing.marketId || undefined,
+  });
 
   const data: IntelligenceBriefingPdfData = {
-    companyName: companyProfile?.companyName || tenant.name || tenantDomain,
+    companyName: marketName || companyProfile?.companyName || tenant.name || tenantDomain,
     tenantDomain,
     marketName,
     periodStart: new Date(briefing.periodStart),
