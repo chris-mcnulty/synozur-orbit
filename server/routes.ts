@@ -2018,6 +2018,7 @@ Return ONLY the JSON object, no other text.`;
 
       const tenantDomain = ctx.tenantDomain;
       const analysisType = req.body?.analysisType || "full";
+      const selectedCompetitorIds: string[] | undefined = req.body?.selectedCompetitorIds;
 
       // Check premium for full_with_change mode
       const tenant = await storage.getTenantByDomain(tenantDomain);
@@ -2068,9 +2069,18 @@ Return ONLY the JSON object, no other text.`;
         ourPositioning += `\n\nAdditional context from positioning documents:\n${groundingContext.slice(0, 5000)}`;
       }
 
+      // Filter out competitors excluded from crawl, then apply user selection if provided
+      let eligibleCompetitors = userCompetitors.filter(c => !c.excludeFromCrawl);
+      if (selectedCompetitorIds && Array.isArray(selectedCompetitorIds) && selectedCompetitorIds.length > 0) {
+        eligibleCompetitors = eligibleCompetitors.filter(c => selectedCompetitorIds.includes(c.id));
+      }
+      if (eligibleCompetitors.length === 0) {
+        return res.status(400).json({ error: "No eligible competitors to analyze. All competitors are excluded from crawl or deselected." });
+      }
+
       // Analyze each competitor based on analysis type
-      const analyses = [];
-      for (const competitor of userCompetitors.slice(0, 5)) {
+      const analyses: (CompetitorAnalysis & { competitor: string })[] = [];
+      for (const competitor of eligibleCompetitors) {
         try {
           // Quick mode: Use cached analysis only
           if (analysisType === "quick") {
@@ -2183,33 +2193,164 @@ Return ONLY the JSON object, no other text.`;
       }
 
       // Get our company's positioning from analysis data if available
-      const ourAnalysisData = companyProfile?.analysisData as any;
+      const ourAnalysisData = companyProfile?.analysisData as Partial<CompetitorAnalysis> | null;
       const ourSummary = ourAnalysisData?.summary || companyProfile?.description || "Our positioning";
       const ourKeyMessages = ourAnalysisData?.keyMessages || [];
+
+      // Build N-competitor themes: derive theme relevance from each competitor's analysis
+      // Themes are extracted from each competitor's value propositions
+      // Level is determined by keyword overlap and analysis depth for each competitor
+      const allThemes: string[] = [];
+      for (const a of analyses) {
+        if (a.valueProposition) allThemes.push(a.valueProposition);
+      }
+      const uniqueThemes = Array.from(new Set(allThemes)).filter(Boolean);
+
+      const themesForSave = uniqueThemes.map(theme => {
+        const scores: Record<string, { level: string; details: string }> = {};
+
+        // Score baseline ("Us") against this theme
+        const ourVP = ourAnalysisData?.valueProposition || "";
+        const ourKW = (ourAnalysisData?.keywords || []).join(" ").toLowerCase();
+        const themeLower = theme.toLowerCase();
+        const ourRelevance = ourVP.toLowerCase().includes(themeLower.substring(0, 20))
+          || ourKW.includes(themeLower.substring(0, 15));
+        scores["Us"] = {
+          level: ourRelevance ? "High" : (ourVP ? "Medium" : "Low"),
+          details: ourVP || ourSummary,
+        };
+
+        // Score each competitor based on whether this theme matches their value proposition
+        for (const comp of analyses) {
+          const compVP = (comp.valueProposition || "").toLowerCase();
+          const compKW = (comp.keywords || []).join(" ").toLowerCase();
+          const isDirectMatch = compVP === themeLower || comp.valueProposition === theme;
+          const hasOverlap = compVP.includes(themeLower.substring(0, 20))
+            || compKW.includes(themeLower.substring(0, 15));
+          scores[comp.competitor] = {
+            level: isDirectMatch ? "High" : (hasOverlap ? "Medium" : "Low"),
+            details: comp.valueProposition || comp.summary || "",
+          };
+        }
+        return { theme, scores };
+      });
+
+      // Build N-competitor messaging: each analysis contributes messaging entries per competitor
+      const messagingForSave = analyses.map((a) => {
+        const entries: Record<string, string> = {};
+        entries["Us"] = ourKeyMessages.length > 0 ? ourKeyMessages.join("; ") : ourSummary;
+        for (const comp of analyses) {
+          entries[comp.competitor] = comp.keyMessages?.length > 0
+            ? comp.keyMessages.join("; ")
+            : comp.summary || "";
+        }
+        return {
+          category: a.targetAudience || "Market Positioning",
+          entries,
+        };
+      });
 
       // Save context-scoped analysis (includes marketId)
       const savedAnalysis = await storage.createAnalysis({
         userId: user.id,
         tenantDomain,
         marketId: ctx.marketId,
-        themes: analyses.map(a => ({
-          theme: a.valueProposition,
-          us: companyProfile ? "Based on profile" : "Medium",
-          competitorA: "High",
-          competitorB: "Medium",
-        })),
-        messaging: analyses.slice(0, 3).map((a, i) => ({
-          category: a.targetAudience || "Market Positioning",
-          us: ourKeyMessages[i] || ourSummary,
-          competitorA: a.keyMessages[0] || "",
-          competitorB: a.keyMessages[1] || "",
-        })),
+        themes: themesForSave,
+        messaging: messagingForSave,
         gaps: gaps,
       });
 
       res.json({ success: true, analysis: savedAnalysis, recommendations, analyzedCount: analyses.length });
     } catch (error: any) {
       console.error("Analysis generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/analysis/source-freshness", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const ctxFilter = toContextFilter(ctx);
+
+      const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
+      const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
+
+      const eligibleCompetitors = competitorsList.filter(c => !c.excludeFromCrawl);
+
+      const allOrgIds = [
+        ...eligibleCompetitors.map(c => c.organizationId),
+        companyProfile?.organizationId,
+      ].filter(Boolean) as string[];
+      const orgIds = Array.from(new Set(allOrgIds));
+      const orgMap = new Map<string, any>();
+      for (const orgId of orgIds) {
+        const org = await storage.getOrganization(orgId);
+        if (org) orgMap.set(orgId, org);
+      }
+
+      const pickFresher = (a: any, b: any) => {
+        if (a && b) return new Date(b) > new Date(a) ? b : a;
+        return a || b || null;
+      };
+
+      const competitorFreshness = eligibleCompetitors.map((c) => {
+        const org = c.organizationId ? orgMap.get(c.organizationId) : null;
+        return {
+          id: c.id,
+          name: c.name,
+          lastCrawl: pickFresher(c.lastFullCrawl || c.lastCrawl, org?.lastFullCrawl || org?.lastCrawl),
+          lastWebsiteMonitor: pickFresher(c.lastWebsiteMonitor, org?.lastWebsiteMonitor),
+          lastSocialMonitor: pickFresher(c.lastSocialCrawl, org?.lastSocialCrawl),
+        };
+      });
+
+      const baselineFreshness = companyProfile
+        ? (() => {
+            const org = companyProfile.organizationId ? orgMap.get(companyProfile.organizationId) : null;
+            return {
+              id: companyProfile.id,
+              name: companyProfile.companyName,
+              lastCrawl: pickFresher(companyProfile.lastFullCrawl || companyProfile.lastCrawl, org?.lastFullCrawl || org?.lastCrawl),
+              lastWebsiteMonitor: pickFresher(companyProfile.lastWebsiteMonitor, org?.lastWebsiteMonitor),
+              lastSocialMonitor: pickFresher(companyProfile.lastSocialCrawl, org?.lastSocialCrawl),
+            };
+          })()
+        : null;
+
+      const allTimestamps: (string | Date | null)[] = [];
+      for (const c of competitorFreshness) {
+        allTimestamps.push(c.lastCrawl, c.lastWebsiteMonitor, c.lastSocialMonitor);
+      }
+      if (baselineFreshness) {
+        allTimestamps.push(baselineFreshness.lastCrawl, baselineFreshness.lastWebsiteMonitor, baselineFreshness.lastSocialMonitor);
+      }
+
+      let overallStaleness: "fresh" | "aging" | "stale" = "fresh";
+      const now = Date.now();
+      for (const ts of allTimestamps) {
+        if (!ts) {
+          overallStaleness = "stale";
+          break;
+        }
+        const diffMs = now - new Date(ts).getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays >= 7) {
+          overallStaleness = "stale";
+          break;
+        } else if (diffDays >= 1 && overallStaleness === "fresh") {
+          overallStaleness = "aging";
+        }
+      }
+
+      res.json({
+        competitors: competitorFreshness,
+        baseline: baselineFreshness,
+        overallStaleness,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });

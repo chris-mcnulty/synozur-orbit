@@ -7,14 +7,83 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History, Lock } from "lucide-react";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History, Lock, Activity, Eye, Users, CheckCircle2 } from "lucide-react";
 import { PlanLimitBadge, FeatureGate } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
+import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+interface SourceFreshnessItem {
+  id: string;
+  name: string;
+  lastCrawl: string | null;
+  lastWebsiteMonitor: string | null;
+  lastSocialMonitor: string | null;
+}
+
+interface SourceFreshnessData {
+  competitors: SourceFreshnessItem[];
+  baseline: SourceFreshnessItem | null;
+  overallStaleness: StalenessLevel;
+}
+
+function StalenessDot({ level }: { level: StalenessLevel }) {
+  const info = getStalenessInfo(level);
+  return <span className={`inline-block w-2 h-2 rounded-full ${info.dotColor}`} />;
+}
+
+function getThemeCompetitorNames(themes: any[]): string[] {
+  if (!themes || themes.length === 0) return [];
+  const first = themes[0];
+  if (first.scores && typeof first.scores === "object") {
+    return Object.keys(first.scores);
+  }
+  return [];
+}
+
+function getThemeLevel(theme: any, competitorName: string): string {
+  if (theme.scores && theme.scores[competitorName]) {
+    return theme.scores[competitorName].level || "";
+  }
+  if (competitorName === "Us") return theme.us || "";
+  if (competitorName === "competitorA") return theme.competitorA || "";
+  if (competitorName === "competitorB") return theme.competitorB || "";
+  return "";
+}
+
+function getMessagingCompetitorNames(messaging: any[]): string[] {
+  if (!messaging || messaging.length === 0) return [];
+  const first = messaging[0];
+  if (first.entries && typeof first.entries === "object") {
+    return Object.keys(first.entries);
+  }
+  return [];
+}
+
+function getMessagingEntry(item: any, competitorName: string): string {
+  if (item.entries && item.entries[competitorName]) {
+    return item.entries[competitorName];
+  }
+  if (competitorName === "Us") return item.us || "";
+  if (competitorName === "competitorA") return item.competitorA || "";
+  if (competitorName === "competitorB") return item.competitorB || "";
+  return "";
+}
+
+function isLegacyThemeFormat(themes: any[]): boolean {
+  if (!themes || themes.length === 0) return false;
+  return !themes[0].scores;
+}
+
+function isLegacyMessagingFormat(messaging: any[]): boolean {
+  if (!messaging || messaging.length === 0) return false;
+  return !messaging[0].entries;
+}
 
 type AnalysisMode = "quick" | "full" | "full_with_change";
 type LongFormRecommendation = {
@@ -43,6 +112,11 @@ export default function Analysis() {
   const [isEditingMessaging, setIsEditingMessaging] = useState(false);
   const [messagingEditContent, setMessagingEditContent] = useState("");
   const [versionHistoryType, setVersionHistoryType] = useState<"gtm" | "messaging" | null>(null);
+  const [isFreshnessDialogOpen, setIsFreshnessDialogOpen] = useState(false);
+  const [pendingAnalysisMode, setPendingAnalysisMode] = useState<AnalysisMode>("full");
+  const [refreshSelections, setRefreshSelections] = useState<Record<string, boolean>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [competitorSelections, setCompetitorSelections] = useState<Record<string, boolean>>({});
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analysis"],
@@ -76,6 +150,18 @@ export default function Analysis() {
   const analysisCount = tenant?.usage?.monthlyAnalysisCount ?? 0;
   const gtmAllowed = tenant?.features?.gtmPlan !== false;
   const messagingAllowed = tenant?.features?.messagingFramework !== false;
+
+  const { data: freshness, refetch: refetchFreshness } = useQuery<SourceFreshnessData>({
+    queryKey: ["/api/analysis/source-freshness"],
+    queryFn: async () => {
+      const res = await fetch("/api/analysis/source-freshness", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load source freshness");
+      return res.json();
+    },
+    staleTime: 60000,
+    enabled: false,
+  });
+
 
   const { data: companyProfile } = useQuery({
     queryKey: ["/api/company-profile"],
@@ -205,11 +291,21 @@ export default function Analysis() {
   const generateAnalysisMutation = useMutation({
     mutationFn: async (mode: AnalysisMode) => {
       setIsGenerating(true);
+      const hasExplicitSelections = Object.keys(competitorSelections).length > 0;
+      const selectedIds = hasExplicitSelections
+        ? Object.entries(competitorSelections).filter(([, v]) => v).map(([id]) => id)
+        : [];
+      if (hasExplicitSelections && selectedIds.length === 0) {
+        throw new Error("No competitors selected. Please select at least one competitor to analyze.");
+      }
       const response = await fetch("/api/analysis/generate", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ analysisType: mode }),
+        body: JSON.stringify({
+          analysisType: mode,
+          ...(hasExplicitSelections ? { selectedCompetitorIds: selectedIds } : {}),
+        }),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -230,12 +326,83 @@ export default function Analysis() {
     },
   });
 
-  const runAnalysis = (mode: AnalysisMode) => {
+  const computeStaleKeys = (data: SourceFreshnessData): string[] => {
+    const keys: string[] = [];
+    const checkItem = (item: SourceFreshnessItem, prefix: string) => {
+      if (calculateStaleness(item.lastCrawl) !== "fresh") keys.push(`${prefix}:${item.id}:crawl`);
+      if (calculateStaleness(item.lastWebsiteMonitor) !== "fresh") keys.push(`${prefix}:${item.id}:monitor`);
+      if (calculateStaleness(item.lastSocialMonitor) !== "fresh") keys.push(`${prefix}:${item.id}:social`);
+    };
+    if (data.baseline) checkItem(data.baseline, "baseline");
+    data.competitors.forEach(c => checkItem(c, "competitor"));
+    return keys;
+  };
+
+  const openFreshnessDialog = async (mode: AnalysisMode) => {
     if (mode === "full_with_change" && !isPremium) {
       toast.error("Change detection requires a Pro or Enterprise plan");
       return;
     }
-    generateAnalysisMutation.mutate(mode);
+    setPendingAnalysisMode(mode);
+    const result = await refetchFreshness();
+    const freshData = result.data;
+    const defaultSelections: Record<string, boolean> = {};
+    if (freshData) {
+      computeStaleKeys(freshData).forEach(k => { defaultSelections[k] = false; });
+    }
+    setRefreshSelections(defaultSelections);
+    const defaultCompetitorSelections: Record<string, boolean> = {};
+    competitors.forEach((c: { id: string | number }) => { defaultCompetitorSelections[String(c.id)] = true; });
+    setCompetitorSelections(defaultCompetitorSelections);
+    setIsFreshnessDialogOpen(true);
+  };
+
+  const handleRefreshAndGenerate = async (refreshFirst: boolean) => {
+    if (refreshFirst) {
+      const selectedKeys = Object.entries(refreshSelections).filter(([, v]) => v).map(([k]) => k);
+      if (selectedKeys.length > 0) {
+        setIsRefreshing(true);
+        try {
+          for (const key of selectedKeys) {
+            const [type, id, source] = key.split(":");
+            let url = "";
+            if (type === "baseline") {
+              if (source === "crawl" || source === "monitor") {
+                url = `/api/company-profile/${id}/refresh`;
+              } else if (source === "social") {
+                url = `/api/company-profile/${id}/refresh-social`;
+              }
+            } else {
+              if (source === "crawl") {
+                url = `/api/competitors/${id}/crawl`;
+              } else if (source === "monitor") {
+                url = `/api/competitors/${id}/monitor-website`;
+              } else if (source === "social") {
+                url = `/api/competitors/${id}/monitor-social`;
+              }
+            }
+            if (url) {
+              const res = await fetch(url, { method: "POST", credentials: "include" });
+              if (!res.ok) {
+                console.warn(`Refresh failed for ${key}: ${res.status}`);
+              }
+            }
+          }
+          toast.success(`${selectedKeys.length} source refresh(es) started. Generating analysis with latest data...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch {
+          toast.error("Some refreshes failed. Proceeding with generation anyway.");
+        } finally {
+          setIsRefreshing(false);
+        }
+      }
+    }
+    setIsFreshnessDialogOpen(false);
+    generateAnalysisMutation.mutate(pendingAnalysisMode);
+  };
+
+  const runAnalysis = (mode: AnalysisMode) => {
+    openFreshnessDialog(mode);
   };
 
   const fullRegenerationMutation = useMutation({
@@ -536,41 +703,74 @@ export default function Analysis() {
               </CardHeader>
               <CardContent>
                 {analysis.themes?.length > 0 ? (
-                  <div className="relative w-full overflow-auto">
-                    <table className="w-full text-sm text-left">
+                  <div className="relative w-full overflow-x-auto">
+                    <table className="w-full text-sm text-left min-w-[600px]">
                       <thead className="text-muted-foreground font-medium border-b border-border/50">
                         <tr>
-                          <th className="py-4 px-4 font-semibold w-1/4">Theme</th>
-                          <th className="py-4 px-4 font-semibold w-1/4">Us</th>
-                          {competitors.slice(0, 2).map((c: any, i: number) => (
-                            <th key={c.id} className="py-4 px-4 font-semibold w-1/4 text-muted-foreground">{c.name}</th>
-                          ))}
+                          <th className="py-4 px-4 font-semibold sticky left-0 bg-card z-10 min-w-[150px]">Theme</th>
+                          {isLegacyThemeFormat(analysis.themes) ? (
+                            <>
+                              <th className="py-4 px-4 font-semibold">Us</th>
+                              <th className="py-4 px-4 font-semibold text-muted-foreground">{competitors[0]?.name || "Competitor A"}</th>
+                              <th className="py-4 px-4 font-semibold text-muted-foreground">{competitors[1]?.name || "Competitor B"}</th>
+                            </>
+                          ) : (
+                            getThemeCompetitorNames(analysis.themes).map((name: string) => (
+                              <th key={name} className={`py-4 px-4 font-semibold ${name === "Us" ? "" : "text-muted-foreground"}`}>{name}</th>
+                            ))
+                          )}
                         </tr>
                       </thead>
                       <tbody>
-                        {analysis.themes.map((theme: any, i: number) => (
-                          <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
-                            <td className="py-4 px-4 font-medium text-foreground">{theme.theme}</td>
-                            <td className="py-4 px-4">
-                              <Badge 
-                                variant={theme.us === 'High' ? "default" : theme.us === 'Medium' ? "secondary" : "outline"}
-                                className="w-20 justify-center"
-                              >
-                                {theme.us}
-                              </Badge>
-                            </td>
-                            <td className="py-4 px-4">
-                                <span className={theme.competitorA === 'High' ? "font-medium text-foreground" : "text-muted-foreground"}>
-                                    {theme.competitorA}
-                                </span>
-                            </td>
-                            <td className="py-4 px-4">
-                                <span className={theme.competitorB === 'High' ? "font-medium text-foreground" : "text-muted-foreground"}>
-                                    {theme.competitorB}
-                                </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {analysis.themes.map((theme: any, i: number) => {
+                          return (
+                            <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
+                              <td className="py-4 px-4 font-medium text-foreground sticky left-0 bg-card z-10">{theme.theme}</td>
+                              {isLegacyThemeFormat(analysis.themes) ? (
+                                <>
+                                  <td className="py-4 px-4">
+                                    <Badge 
+                                      variant={theme.us === 'High' ? "default" : theme.us === 'Medium' ? "secondary" : "outline"}
+                                      className="w-20 justify-center"
+                                    >
+                                      {theme.us}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <span className={theme.competitorA === 'High' ? "font-medium text-foreground" : "text-muted-foreground"}>
+                                      {theme.competitorA}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 px-4">
+                                    <span className={theme.competitorB === 'High' ? "font-medium text-foreground" : "text-muted-foreground"}>
+                                      {theme.competitorB}
+                                    </span>
+                                  </td>
+                                </>
+                              ) : (
+                                getThemeCompetitorNames(analysis.themes).map((name: string) => {
+                                  const level = getThemeLevel(theme, name);
+                                  return (
+                                    <td key={name} className="py-4 px-4">
+                                      {name === "Us" ? (
+                                        <Badge 
+                                          variant={level === 'High' ? "default" : level === 'Medium' ? "secondary" : "outline"}
+                                          className="w-20 justify-center"
+                                        >
+                                          {level}
+                                        </Badge>
+                                      ) : (
+                                        <span className={level === 'High' ? "font-medium text-foreground" : "text-muted-foreground"}>
+                                          {level}
+                                        </span>
+                                      )}
+                                    </td>
+                                  );
+                                })
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -590,25 +790,46 @@ export default function Analysis() {
                   <CardContent>
                       {analysis.messaging?.length > 0 ? (
                         <div className="space-y-8">
-                            {analysis.messaging.map((item: any, i: number) => (
+                            {analysis.messaging.map((item: any, i: number) => {
+                                const isLegacy = isLegacyMessagingFormat(analysis.messaging);
+                                const msgNames = isLegacy
+                                  ? ["Us", competitors[0]?.name || "Competitor A", competitors[1]?.name || "Competitor B"]
+                                  : getMessagingCompetitorNames(analysis.messaging);
+                                return (
                                 <div key={i} className="space-y-3">
                                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{item.category}</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                                            <div className="text-xs font-semibold text-primary mb-1">Us</div>
-                                            <div className="font-medium text-lg">"{item.us}"</div>
-                                        </div>
-                                        <div className="p-4 rounded-lg bg-muted/50 border border-border">
-                                            <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
-                                            <div className="text-base">"{item.competitorA}"</div>
-                                        </div>
-                                        <div className="p-4 rounded-lg bg-muted/50 border border-border">
-                                            <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
-                                            <div className="text-base">"{item.competitorB}"</div>
-                                        </div>
+                                    <div className={`grid grid-cols-1 gap-4 ${msgNames.length === 2 ? "md:grid-cols-2" : msgNames.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"}`}>
+                                        {isLegacy ? (
+                                          <>
+                                            <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                                              <div className="text-xs font-semibold text-primary mb-1">Us</div>
+                                              <div className="font-medium text-lg">"{item.us}"</div>
+                                            </div>
+                                            <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
+                                              <div className="text-base">"{item.competitorA}"</div>
+                                            </div>
+                                            <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
+                                              <div className="text-base">"{item.competitorB}"</div>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          msgNames.map((name: string) => {
+                                            const msg = getMessagingEntry(item, name);
+                                            const isUs = name === "Us";
+                                            return (
+                                              <div key={name} className={`p-4 rounded-lg ${isUs ? "bg-primary/10 border border-primary/20" : "bg-muted/50 border border-border"}`}>
+                                                <div className={`text-xs font-semibold mb-1 ${isUs ? "text-primary" : "text-muted-foreground"}`}>{name}</div>
+                                                <div className={isUs ? "font-medium text-lg" : "text-base"}>"{msg}"</div>
+                                              </div>
+                                            );
+                                          })
+                                        )}
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                       ) : (
                         <p className="text-center text-muted-foreground py-8">No messaging data available.</p>
@@ -1167,29 +1388,53 @@ export default function Analysis() {
                 </CardHeader>
                 <CardContent>
                   {analysis.themes?.length > 0 ? (
-                    <div className="relative w-full overflow-auto">
-                      <table className="w-full text-sm text-left">
+                    <div className="relative w-full overflow-x-auto">
+                      <table className="w-full text-sm text-left min-w-[600px]">
                         <thead className="text-muted-foreground font-medium border-b border-border/50">
                           <tr>
-                            <th className="py-3 px-4 font-semibold">Theme</th>
-                            <th className="py-3 px-4 font-semibold">Us</th>
-                            {competitors.slice(0, 2).map((c: any) => (
-                              <th key={c.id} className="py-3 px-4 font-semibold text-muted-foreground">{c.name}</th>
-                            ))}
+                            <th className="py-3 px-4 font-semibold sticky left-0 bg-card z-10">Theme</th>
+                            {isLegacyThemeFormat(analysis.themes) ? (
+                              <>
+                                <th className="py-3 px-4 font-semibold">Us</th>
+                                <th className="py-3 px-4 font-semibold text-muted-foreground">{competitors[0]?.name || "Competitor A"}</th>
+                                <th className="py-3 px-4 font-semibold text-muted-foreground">{competitors[1]?.name || "Competitor B"}</th>
+                              </>
+                            ) : (
+                              getThemeCompetitorNames(analysis.themes).map((name: string) => (
+                                <th key={name} className={`py-3 px-4 font-semibold ${name === "Us" ? "" : "text-muted-foreground"}`}>{name}</th>
+                              ))
+                            )}
                           </tr>
                         </thead>
                         <tbody>
                           {analysis.themes.slice(0, 5).map((theme: any, i: number) => (
-                            <tr key={i} className="border-b border-border/50 last:border-0">
-                              <td className="py-3 px-4 font-medium">{theme.theme}</td>
-                              <td className="py-3 px-4">
-                                <Badge variant={theme.us === 'High' ? "default" : theme.us === 'Medium' ? "secondary" : "outline"}>
-                                  {theme.us}
-                                </Badge>
-                              </td>
-                              <td className="py-3 px-4">{theme.competitorA}</td>
-                              <td className="py-3 px-4">{theme.competitorB}</td>
-                            </tr>
+                              <tr key={i} className="border-b border-border/50 last:border-0">
+                                <td className="py-3 px-4 font-medium sticky left-0 bg-card z-10">{theme.theme}</td>
+                                {isLegacyThemeFormat(analysis.themes) ? (
+                                  <>
+                                    <td className="py-3 px-4">
+                                      <Badge variant={theme.us === 'High' ? "default" : theme.us === 'Medium' ? "secondary" : "outline"}>
+                                        {theme.us}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-3 px-4">{theme.competitorA}</td>
+                                    <td className="py-3 px-4">{theme.competitorB}</td>
+                                  </>
+                                ) : (
+                                  getThemeCompetitorNames(analysis.themes).map((name: string) => {
+                                    const level = getThemeLevel(theme, name);
+                                    return (
+                                      <td key={name} className="py-3 px-4">
+                                        {name === "Us" ? (
+                                          <Badge variant={level === 'High' ? "default" : level === 'Medium' ? "secondary" : "outline"}>
+                                            {level}
+                                          </Badge>
+                                        ) : level}
+                                      </td>
+                                    );
+                                  })
+                                )}
+                              </tr>
                           ))}
                         </tbody>
                       </table>
@@ -1209,25 +1454,46 @@ export default function Analysis() {
                 <CardContent>
                   {analysis.messaging?.length > 0 ? (
                     <div className="space-y-6">
-                      {analysis.messaging.slice(0, 3).map((item: any, i: number) => (
-                        <div key={i} className="space-y-2">
-                          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{item.category}</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                              <div className="text-xs font-semibold text-primary mb-1">Us</div>
-                              <div className="text-sm">"{item.us}"</div>
-                            </div>
-                            <div className="p-3 rounded-lg bg-muted/50 border border-border">
-                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
-                              <div className="text-sm">"{item.competitorA}"</div>
-                            </div>
-                            <div className="p-3 rounded-lg bg-muted/50 border border-border">
-                              <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
-                              <div className="text-sm">"{item.competitorB}"</div>
+                      {analysis.messaging.slice(0, 3).map((item: any, i: number) => {
+                        const isLegacy = isLegacyMessagingFormat(analysis.messaging);
+                        const msgNames = isLegacy
+                          ? ["Us", competitors[0]?.name || "Competitor A", competitors[1]?.name || "Competitor B"]
+                          : getMessagingCompetitorNames(analysis.messaging);
+                        return (
+                          <div key={i} className="space-y-2">
+                            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{item.category}</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {isLegacy ? (
+                                <>
+                                  <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                                    <div className="text-xs font-semibold text-primary mb-1">Us</div>
+                                    <div className="text-sm">"{item.us}"</div>
+                                  </div>
+                                  <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                                    <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[0]?.name || "Competitor A"}</div>
+                                    <div className="text-sm">"{item.competitorA}"</div>
+                                  </div>
+                                  <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                                    <div className="text-xs font-semibold text-muted-foreground mb-1">{competitors[1]?.name || "Competitor B"}</div>
+                                    <div className="text-sm">"{item.competitorB}"</div>
+                                  </div>
+                                </>
+                              ) : (
+                                msgNames.map((name: string) => {
+                                  const msg = getMessagingEntry(item, name);
+                                  const isUs = name === "Us";
+                                  return (
+                                    <div key={name} className={`p-3 rounded-lg ${isUs ? "bg-primary/10 border border-primary/20" : "bg-muted/50 border border-border"}`}>
+                                      <div className={`text-xs font-semibold mb-1 ${isUs ? "text-primary" : "text-muted-foreground"}`}>{name}</div>
+                                      <div className="text-sm">"{msg}"</div>
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-muted-foreground py-4">No messaging data available.</p>
@@ -1432,6 +1698,177 @@ export default function Analysis() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isFreshnessDialogOpen} onOpenChange={setIsFreshnessDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-analysis-freshness">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" />
+              Data Source Freshness
+            </DialogTitle>
+            <DialogDescription>
+              Review data freshness and select competitors before running {pendingAnalysisMode === "quick" ? "quick" : pendingAnalysisMode === "full_with_change" ? "full + change detection" : "full"} analysis.
+            </DialogDescription>
+          </DialogHeader>
+          {freshness ? (
+            <div className="space-y-4 py-2">
+              {freshness.competitors.length === 0 && !freshness.baseline ? (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border">
+                  <AlertTriangle className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">No data sources configured for this market yet.</span>
+                </div>
+              ) : freshness.overallStaleness === "fresh" ? (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  <span className="text-sm text-green-500 font-medium">All sources are fresh — ready to generate.</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm text-amber-500 font-medium">
+                    Some sources are {freshness.overallStaleness}. Select any to refresh before generating.
+                  </span>
+                </div>
+              )}
+
+              {freshness.baseline && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Baseline</div>
+                  <AnalysisSourceFreshnessRow
+                    item={freshness.baseline}
+                    prefix="baseline"
+                    selections={refreshSelections}
+                    onToggle={(key) => setRefreshSelections(prev => ({ ...prev, [key]: !prev[key] }))}
+                  />
+                </div>
+              )}
+
+              {freshness.competitors.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Competitors ({freshness.competitors.length})
+                  </div>
+                  <div className="space-y-1">
+                    {freshness.competitors.map(c => (
+                      <div key={c.id} className="space-y-1">
+                        <div className="flex items-center gap-2 px-3 pt-2">
+                          <Checkbox
+                            checked={competitorSelections[c.id] !== false}
+                            onCheckedChange={(checked) => setCompetitorSelections(prev => ({ ...prev, [c.id]: !!checked }))}
+                            className="h-4 w-4"
+                            data-testid={`checkbox-competitor-select-${c.id}`}
+                          />
+                          <span className="text-sm font-medium">Include in analysis</span>
+                        </div>
+                        <AnalysisSourceFreshnessRow
+                          item={c}
+                          prefix="competitor"
+                          selections={refreshSelections}
+                          onToggle={(key) => setRefreshSelections(prev => ({ ...prev, [key]: !prev[key] }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            {freshness?.overallStaleness !== "fresh" && Object.values(refreshSelections).some(v => v) ? (
+              <Button
+                onClick={() => handleRefreshAndGenerate(true)}
+                disabled={isRefreshing || isGenerating}
+                data-testid="button-refresh-and-generate-analysis"
+              >
+                {isRefreshing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Refresh & Generate
+              </Button>
+            ) : null}
+            <Button
+              variant={freshness?.overallStaleness === "fresh" ? "default" : "outline"}
+              onClick={() => handleRefreshAndGenerate(false)}
+              disabled={isRefreshing || isGenerating}
+              data-testid="button-generate-analysis-anyway"
+            >
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              {freshness?.overallStaleness === "fresh" ? "Generate Analysis" : "Generate Anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
+  );
+}
+
+function AnalysisSourceFreshnessRow({
+  item,
+  prefix,
+  selections,
+  onToggle,
+}: {
+  item: SourceFreshnessItem;
+  prefix: string;
+  selections: Record<string, boolean>;
+  onToggle: (key: string) => void;
+}) {
+  const sources = [
+    { key: `${prefix}:${item.id}:crawl`, label: "Website Crawl", icon: <Globe className="w-3.5 h-3.5" />, ts: item.lastCrawl },
+    { key: `${prefix}:${item.id}:monitor`, label: "Change Monitor", icon: <Eye className="w-3.5 h-3.5" />, ts: item.lastWebsiteMonitor },
+    { key: `${prefix}:${item.id}:social`, label: "Social", icon: <Users className="w-3.5 h-3.5" />, ts: item.lastSocialMonitor },
+  ];
+
+  const worstLevel = sources.reduce<StalenessLevel>((worst, s) => {
+    const level = calculateStaleness(s.ts);
+    const order: StalenessLevel[] = ["fresh", "aging", "stale", "never"];
+    return order.indexOf(level) > order.indexOf(worst) ? level : worst;
+  }, "fresh");
+
+  return (
+    <div className="rounded-lg border p-3 space-y-2" data-testid={`analysis-source-freshness-${item.id}`}>
+      <div className="flex items-center gap-2">
+        <StalenessDot level={worstLevel} />
+        <span className="text-sm font-medium truncate">{item.name}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {sources.map(s => {
+          const level = calculateStaleness(s.ts);
+          const info = getStalenessInfo(level);
+          const isStale = level !== "fresh";
+          return (
+            <div key={s.key} className="flex items-center gap-1.5">
+              {isStale ? (
+                <Checkbox
+                  checked={!!selections[s.key]}
+                  onCheckedChange={() => onToggle(s.key)}
+                  className="h-3.5 w-3.5"
+                  data-testid={`checkbox-analysis-${s.key}`}
+                />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  {s.icon}
+                  <span className="truncate">{s.label}</span>
+                </div>
+                <div className={`text-xs ${info.color}`}>{getTimeAgo(s.ts)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
