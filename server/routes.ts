@@ -2250,7 +2250,6 @@ Return ONLY the JSON object, no other text.`;
         };
       });
 
-      // Save context-scoped analysis (includes marketId)
       const savedAnalysis = await storage.createAnalysis({
         userId: user.id,
         tenantDomain,

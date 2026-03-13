@@ -299,11 +299,47 @@ function generateReportHtml(data: ReportData): string {
   const competitorNames = data.competitors.map(c => c.name);
   const themeCards = (data.analysis?.themes || []).map((theme: any) => {
     const themeName = theme.theme || theme.name || theme.title || "";
-    const themeDesc = theme.description || theme.details || theme.observation || "";
+    if (!themeName) return "";
+
+    // N-competitor format: { theme, scores: Record<name, { level, details }> }
+    const isNCompetitorFormat = theme.scores && typeof theme.scores === "object" && !theme.us && !theme.competitorA;
+    // Legacy format: { theme, us, competitorA, competitorB }
+    const isLegacyFormat = theme.us !== undefined && theme.competitorA !== undefined;
+
+    if (isNCompetitorFormat) {
+      const scoreEntries = Object.entries(theme.scores as Record<string, { level: string; details: string }>);
+      const levelColor = (level: string) => level === "High" ? "#059669" : level === "Medium" ? "#D97706" : "#6B7280";
+      const levelBg = (level: string) => level === "High" ? "#F0FDF4" : level === "Medium" ? "#FFFBEB" : "#F8FAFC";
+      const scoreBadges = scoreEntries.map(([name, info]) => `
+        <div style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: ${levelBg(info.level)}; border: 1px solid ${levelColor(info.level)}30; border-radius: 4px; margin: 2px 4px 2px 0;">
+          <span style="font-weight: 600; font-size: 11px; color: #1E293B;">${escapeHtml(name)}</span>
+          <span style="font-size: 10px; color: ${levelColor(info.level)}; font-weight: 600;">${escapeHtml(info.level)}</span>
+        </div>
+      `).join("");
+      const firstDetail = scoreEntries.find(([, info]) => info.details)?.[1]?.details || "";
+      return `
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+        <div style="font-weight: 600; color: #1E293B; margin-bottom: 8px;">${escapeHtml(themeName)}</div>
+        <div style="display: flex; flex-wrap: wrap; margin-bottom: 6px;">${scoreBadges}</div>
+        ${firstDetail ? `<div style="color: #475569; font-size: 13px;">${escapeHtml(firstDetail.slice(0, 300))}</div>` : ''}
+      </div>
+      `;
+    }
+
+    // Legacy or per-competitor format rendering
     const competitorRef = theme.competitorName || theme.competitor || "";
     const source = theme.source || "";
-    if (!themeName && !themeDesc) return "";
-    const displayDesc = themeDesc && themeDesc !== "Based on profile" ? themeDesc : "";
+    let themeDesc = "";
+    if (isLegacyFormat) {
+      const placeholders = ["Based on profile", "High", "Medium", "Low"];
+      if (theme.us && !placeholders.includes(theme.us)) {
+        themeDesc = theme.us;
+      }
+    } else {
+      themeDesc = theme.description || theme.details || theme.observation || "";
+      if (themeDesc === "Based on profile") themeDesc = "";
+    }
+
     const isBaselineTheme = source === "baseline";
     let sourceLabel = "";
     if (competitorRef) {
@@ -323,27 +359,65 @@ function generateReportHtml(data: ReportData): string {
         <div style="font-weight: 600; color: #1E293B; flex: 1;">${escapeHtml(themeName)}</div>
         <span style="background: ${sourceBadgeBg}; color: ${sourceBadgeColor}; border: 1px solid ${sourceBadgeBorder}; padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; margin-left: 8px;">${escapeHtml(sourceLabel)}</span>
       </div>
-      ${displayDesc ? `<div style="color: #475569; font-size: 13px;">${escapeHtml(displayDesc)}</div>` : ''}
+      ${themeDesc ? `<div style="color: #475569; font-size: 13px;">${escapeHtml(themeDesc)}</div>` : ''}
     </div>
   `;
   }).filter(Boolean).join("");
 
   const messagingCardsArray: string[] = [];
+  const msgColors = ["#3B82F6", "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6"];
+  const msgBgs = ["#EFF6FF", "#FEF3C7", "#F5F3FF", "#FDF2F8", "#F0FDFA"];
+  const msgTextColors = ["#1D4ED8", "#92400E", "#6D28D9", "#BE185D", "#0F766E"];
+
   for (const msg of (data.analysis?.messaging || []) as any[]) {
-    const competitorName = msg.competitorName || msg.competitor || "";
-    const ourMsg = msg.us || msg.ourMessage || msg.ourPosition || "";
     const ourLabel = data.companyName || "Our Company";
 
-    const isLegacyFormat = !competitorName && msg.competitorA && typeof msg.competitorA === "string" 
-      && msg.competitorA !== "High" && msg.competitorA !== "Medium" && msg.competitorA !== "Low";
+    // N-competitor format: { category, entries: Record<name, string> }
+    const isNCompetitorFormat = msg.entries && typeof msg.entries === "object" && !msg.competitorA;
+    // Legacy format: { category, us, competitorA, competitorB }
+    const isLegacyFormat = msg.competitorA !== undefined;
+
+    if (isNCompetitorFormat) {
+      const entries = msg.entries as Record<string, string>;
+      const entryList = Object.entries(entries).filter(([, v]) => v);
+      if (entryList.length === 0) continue;
+      const category = msg.category || "Market Positioning";
+      const columnCards = entryList.map(([name, value], idx) => {
+        const isUs = name === "Us";
+        const colorIdx = isUs ? -1 : (idx % msgColors.length);
+        const bg = isUs ? "#F0FDF4" : msgBgs[colorIdx] || "#F8FAFC";
+        const border = isUs ? "#10B981" : msgColors[colorIdx] || "#6B7280";
+        const labelColor = isUs ? "#059669" : msgTextColors[colorIdx] || "#1D4ED8";
+        const displayName = isUs ? ourLabel : name;
+        return `
+          <div style="flex: 1; min-width: 140px; padding: 10px; background: ${bg}; border-radius: 6px; border-left: 3px solid ${border};">
+            <div style="font-weight: 600; color: ${labelColor}; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(displayName)}</div>
+            <div style="color: #1E293B; font-size: 13px;">${escapeHtml(value)}</div>
+          </div>`;
+      }).join("");
+      messagingCardsArray.push(`
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+        <div style="font-weight: 600; color: #1E293B; margin-bottom: 12px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
+          ${escapeHtml(category)}
+        </div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">${columnCards}</div>
+      </div>`);
+      continue;
+    }
+
+    const competitorName = msg.competitorName || msg.competitor || "";
+    const ourMsg = msg.us || msg.ourMessage || msg.ourPosition || "";
+    const placeholderValues = ["High", "Medium", "Low"];
     
     if (isLegacyFormat) {
       const compAMsg = msg.competitorA || "";
       const compBMsg = msg.competitorB || "";
       const compAName = competitorNames[0] || "Competitor A";
       const compBName = competitorNames[1] || "Competitor B";
+      const hasValidCompAMsg = compAMsg && !placeholderValues.includes(compAMsg);
+      const hasValidCompBMsg = compBMsg && !placeholderValues.includes(compBMsg);
       
-      if (ourMsg || compAMsg || compBMsg) {
+      if (ourMsg || hasValidCompAMsg || hasValidCompBMsg) {
         messagingCardsArray.push(`
         <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
           <div style="font-weight: 600; color: #1E293B; margin-bottom: 12px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
@@ -354,12 +428,12 @@ function generateReportHtml(data: ReportData): string {
               <div style="font-weight: 600; color: #059669; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(ourLabel)}</div>
               <div style="color: #1E293B; font-size: 13px;">${ourMsg ? escapeHtml(ourMsg) : '<span style="color: #9CA3AF;">No positioning data</span>'}</div>
             </div>
-            ${compAMsg ? `
+            ${hasValidCompAMsg ? `
             <div style="flex: 1; padding: 10px; background: #EFF6FF; border-radius: 6px; border-left: 3px solid #3B82F6;">
               <div style="font-weight: 600; color: #1D4ED8; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(compAName)}</div>
               <div style="color: #1E293B; font-size: 13px;">${escapeHtml(compAMsg)}</div>
             </div>` : ""}
-            ${compBMsg && compBMsg !== "High" && compBMsg !== "Medium" && compBMsg !== "Low" ? `
+            ${hasValidCompBMsg ? `
             <div style="flex: 1; padding: 10px; background: #FEF3C7; border-radius: 6px; border-left: 3px solid #F59E0B;">
               <div style="font-weight: 600; color: #92400E; font-size: 11px; text-transform: uppercase; margin-bottom: 6px;">${escapeHtml(compBName)}</div>
               <div style="color: #1E293B; font-size: 13px;">${escapeHtml(compBMsg)}</div>
@@ -370,7 +444,7 @@ function generateReportHtml(data: ReportData): string {
     } else {
       const compMsg = msg.competitorMessage || msg.keyMessage || msg.message || msg.them || msg.competitorPosition || "";
       if (!ourMsg && !compMsg) continue;
-      const displayCompetitor = competitorName || "Competitor";
+      const displayCompetitor = competitorName || competitorNames[0] || "Competitor";
       messagingCardsArray.push(`
       <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
         <div style="font-weight: 600; color: #1E293B; margin-bottom: 12px; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
@@ -1478,12 +1552,27 @@ export async function generatePdfReport(
   let gtmPlan: string | null = null;
   let messagingFramework: string | null = null;
 
-  if (includeStrategicPlans && companyProfile) {
-    const longFormRecs = await storage.getLongFormRecommendationsByCompanyProfile(companyProfile.id);
-    const gtmRec = longFormRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
-    const msgRec = longFormRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
-    gtmPlan = gtmRec?.content || null;
-    messagingFramework = msgRec?.content || null;
+  if (includeStrategicPlans) {
+    // Check project-level long-form recommendations first (for project-scoped reports)
+    if (scope === "project" && projectId) {
+      const projectRecs = await storage.getLongFormRecommendationsByProject(projectId);
+      const gtmRec = projectRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
+      const msgRec = projectRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
+      gtmPlan = gtmRec?.content || null;
+      messagingFramework = msgRec?.content || null;
+    }
+    // Fall back to company profile-level recommendations for any missing artifacts
+    if ((!gtmPlan || !messagingFramework) && companyProfile) {
+      const longFormRecs = await storage.getLongFormRecommendationsByCompanyProfile(companyProfile.id);
+      if (!gtmPlan) {
+        const gtmRec = longFormRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
+        gtmPlan = gtmRec?.content || null;
+      }
+      if (!messagingFramework) {
+        const msgRec = longFormRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
+        messagingFramework = msgRec?.content || null;
+      }
+    }
   }
 
   // Build recent activity from competitor data
