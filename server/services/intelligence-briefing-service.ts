@@ -63,6 +63,24 @@ export interface BriefingData {
   generatedAt: string;
 }
 
+function stripBaselineFromBriefing(parsed: any, baselineName?: string): { movements: any[]; themes: any[] } {
+  let movements = Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [];
+  let themes = Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [];
+  if (baselineName) {
+    const baselineLower = baselineName.toLowerCase();
+    movements = movements.filter(
+      (m: any) => m.name?.toLowerCase() !== baselineLower
+    );
+    themes = themes.map((t: any) => ({
+      ...t,
+      competitors: Array.isArray(t.competitors)
+        ? t.competitors.filter((c: string) => c.toLowerCase() !== baselineLower)
+        : t.competitors,
+    }));
+  }
+  return { movements, themes };
+}
+
 function buildSignalSummary(activities: Activity[]): string {
   if (activities.length === 0) return "No signals detected during this period.";
 
@@ -225,6 +243,7 @@ Rules:
 - Action items must be specific enough to act on — not vague advice like "monitor closely."
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
 - Return ONLY valid JSON, no markdown code fences.`;
 
   let briefingData: BriefingData;
@@ -259,10 +278,11 @@ Rules:
       matchedEntity: a.matchedEntity,
     }));
 
+    const { movements, themes } = stripBaselineFromBriefing(parsed, baseline?.companyName);
     briefingData = {
       executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",
-      keyThemes: Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [],
-      competitorMovements: Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [],
+      keyThemes: themes,
+      competitorMovements: movements,
       actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
       riskAlerts: Array.isArray(parsed.riskAlerts) ? parsed.riskAlerts : [],
       signalDigest: {
@@ -441,6 +461,7 @@ Rules:
 - Action items must be specific enough to act on — not vague advice like "monitor closely."
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
 - Return ONLY valid JSON, no markdown code fences.`;
 
   let briefingData: BriefingData;
