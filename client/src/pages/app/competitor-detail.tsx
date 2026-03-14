@@ -763,7 +763,6 @@ export default function CompetitorDetail() {
           mode="entity"
           entityName={competitor.name}
           entityType="competitor"
-          entityId={id}
           websiteLastUpdated={competitor.lastCrawledAt || competitor.lastCrawl || null}
           socialLastUpdated={competitor.socialLastFetchedAt || null}
           autoRefreshAllowed={false}

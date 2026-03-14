@@ -402,7 +402,7 @@ export default function DataSourcesPage() {
 
   const refreshAllSocial = async () => {
     const withLinkedIn = competitors.filter((c: any) => c.linkedInUrl);
-    const ids = new Set(withLinkedIn.map((c: any) => c.id));
+    const ids = new Set<string>(withLinkedIn.map((c: any) => c.id));
     setRefreshingSocial(ids);
     try {
       for (const c of withLinkedIn) {
