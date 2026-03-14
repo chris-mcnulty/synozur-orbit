@@ -8,11 +8,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Rocket, Building2, Users, Sparkles, Swords, FileText,
-  CheckCircle2, ChevronRight, ArrowRight, Eye
+  CheckCircle2, ChevronRight, ArrowRight, Eye, RefreshCw
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { calculateStaleness } from "@/lib/staleness";
 
 const CHECKLIST_DISMISSED_KEY = "orbit_onboarding_dismissed";
 
@@ -69,6 +70,17 @@ export default function GettingStartedPage() {
   const baselineComplete = companyProfile && companyProfile.websiteUrl;
   const hasAnalysis = analysis && analysis.themes;
 
+  // Check if all data sources are fresh (no stale sources)
+  const allDataFresh = (() => {
+    const timestamps = [
+      companyProfile?.lastCrawledAt,
+      ...competitors.map((c: any) => c.lastCrawledAt),
+      ...competitors.map((c: any) => c.socialLastFetchedAt),
+    ].filter(Boolean);
+    if (timestamps.length === 0) return false;
+    return timestamps.every((ts: string) => calculateStaleness(ts) !== "stale");
+  })();
+
   const steps = [
     {
       id: "company",
@@ -119,6 +131,16 @@ export default function GettingStartedPage() {
       href: "/app/reports",
       icon: FileText,
       cta: "Generate Report",
+    },
+    {
+      id: "freshness",
+      step: 6,
+      label: "Keep your data fresh",
+      description: "Orbit works best when data is refreshed regularly. Check Data Sources to see freshness and refresh stale data anytime. Pro and Enterprise plans include automatic scheduled refreshes.",
+      complete: allDataFresh,
+      href: "/app/data-sources",
+      icon: RefreshCw,
+      cta: "Check Freshness",
     },
   ];
 

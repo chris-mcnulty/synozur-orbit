@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileCode,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import AppLayout from "@/components/layout/AppLayout";
 import { useToast } from "@/hooks/use-toast";
 import StalenessDot from "@/components/ui/StalenessDot";
+import DataFreshnessBar from "@/components/DataFreshnessBar";
 
 interface SocialMetrics {
   platform: string;
@@ -115,13 +117,16 @@ const getPageTypeLabel = (pageType: string) => {
   return labels[pageType] || pageType;
 };
 
-function WebsiteEntry({ name, url, lastCrawled, crawlData, badge, isBaseline }: {
+function WebsiteEntry({ name, url, lastCrawled, crawlData, badge, isBaseline, entityId, onRefresh, isRefreshing }: {
   name: string;
   url: string;
   lastCrawled?: string;
   crawlData?: any;
   badge: string;
   isBaseline?: boolean;
+  entityId?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const pages = crawlData?.pagesCrawled || crawlData?.pages || [];
@@ -147,9 +152,27 @@ function WebsiteEntry({ name, url, lastCrawled, crawlData, badge, isBaseline }: 
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <StalenessDot lastUpdated={lastCrawled} size="sm" />
             <Badge variant="outline" className={isBaseline ? "bg-primary/10 text-primary border-primary/30" : ""}>
               {badge}
             </Badge>
+            {onRefresh && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1 h-7 text-xs px-2"
+                onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                disabled={isRefreshing}
+                data-testid={`refresh-entry-${entityId || name.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                {isRefreshing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Refresh
+              </Button>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-between mt-3">
@@ -220,7 +243,26 @@ function WebsiteEntry({ name, url, lastCrawled, crawlData, badge, isBaseline }: 
       )}
       {!lastCrawled && pages.length === 0 && (
         <div className="border-t border-border/50 px-4 py-3">
-          <p className="text-xs text-muted-foreground">Not yet crawled. Run a refresh from the Refresh Center to start monitoring pages.</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Not yet crawled.</p>
+            {onRefresh && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-7 text-xs"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                data-testid={`crawl-now-${entityId || name.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                {isRefreshing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Crawl Now
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -291,6 +333,115 @@ export default function DataSourcesPage() {
       toast({ title: "Error scanning news", description: error.message, variant: "destructive" });
     },
   });
+
+  const { data: tenantInfo } = useQuery<{ plan: string; features?: any }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const res = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!res.ok) return { plan: "trial" };
+      return res.json();
+    },
+  });
+
+  const autoRefreshAllowed = tenantInfo?.features?.websiteMonitoring !== false && tenantInfo?.features?.socialMonitoring !== false;
+
+  const [refreshingWebsites, setRefreshingWebsites] = useState<Set<string>>(new Set());
+  const [refreshingSocial, setRefreshingSocial] = useState<Set<string>>(new Set());
+
+  const refreshWebsite = async (entityId: string, isBaseline: boolean) => {
+    setRefreshingWebsites(prev => new Set(prev).add(entityId));
+    try {
+      const url = isBaseline
+        ? `/api/company-profile/${entityId}/crawl`
+        : `/api/competitors/${entityId}/crawl`;
+      await fetch(url, { method: "POST", credentials: "include" });
+      toast({ title: "Crawl started", description: "Website crawl has been queued" });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+    } catch {
+      toast({ title: "Error", description: "Failed to start crawl", variant: "destructive" });
+    } finally {
+      setRefreshingWebsites(prev => { const n = new Set(prev); n.delete(entityId); return n; });
+    }
+  };
+
+  const refreshAllWebsites = async () => {
+    const ids = new Set<string>();
+    if (companyProfile?.id) ids.add(`baseline-${companyProfile.id}`);
+    competitors.forEach((c: any) => ids.add(c.id));
+    setRefreshingWebsites(ids);
+    try {
+      if (companyProfile?.id) {
+        await fetch(`/api/company-profile/${companyProfile.id}/crawl`, { method: "POST", credentials: "include" });
+      }
+      for (const c of competitors) {
+        await fetch(`/api/competitors/${c.id}/crawl`, { method: "POST", credentials: "include" });
+      }
+      toast({ title: "Website crawls started", description: `Queued ${(companyProfile ? 1 : 0) + competitors.length} websites` });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+    } catch {
+      toast({ title: "Error", description: "Failed to start website crawls", variant: "destructive" });
+    } finally {
+      setRefreshingWebsites(new Set());
+    }
+  };
+
+  const refreshSocial = async (entityId: string) => {
+    setRefreshingSocial(prev => new Set(prev).add(entityId));
+    try {
+      await fetch(`/api/competitors/${entityId}/refresh-social`, { method: "POST", credentials: "include" });
+      toast({ title: "Social refresh started", description: "Social profile update queued" });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+    } catch {
+      toast({ title: "Error", description: "Failed to refresh social data", variant: "destructive" });
+    } finally {
+      setRefreshingSocial(prev => { const n = new Set(prev); n.delete(entityId); return n; });
+    }
+  };
+
+  const refreshAllSocial = async () => {
+    const withLinkedIn = competitors.filter((c: any) => c.linkedInUrl);
+    const ids = new Set(withLinkedIn.map((c: any) => c.id));
+    setRefreshingSocial(ids);
+    try {
+      for (const c of withLinkedIn) {
+        await fetch(`/api/competitors/${c.id}/refresh-social`, { method: "POST", credentials: "include" });
+      }
+      toast({ title: "Social refresh started", description: `Queued ${withLinkedIn.length} social profiles` });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+    } catch {
+      toast({ title: "Error", description: "Failed to refresh social data", variant: "destructive" });
+    } finally {
+      setRefreshingSocial(new Set());
+    }
+  };
+
+  const handleFreshnessBarRefresh = async (sources: string[]) => {
+    const promises: Promise<void>[] = [];
+    if (sources.includes("website")) promises.push(refreshAllWebsites());
+    if (sources.includes("social")) promises.push(refreshAllSocial());
+    if (sources.includes("news")) promises.push(refreshNewsMutation.mutateAsync().then(() => {}));
+    await Promise.all(promises);
+  };
+
+  // Calculate oldest timestamps for global freshness bar
+  const oldestWebsite = (() => {
+    const dates = [
+      companyProfile?.lastCrawledAt,
+      ...competitors.map((c: any) => c.lastCrawledAt),
+    ].filter(Boolean);
+    if (dates.length === 0) return null;
+    return dates.sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())[0];
+  })();
+
+  const oldestSocial = (() => {
+    const dates = competitors.map((c: any) => c.socialLastFetchedAt).filter(Boolean);
+    if (dates.length === 0) return null;
+    return dates.sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())[0];
+  })();
+
+  const oldestNews = newsData?.results?.[0]?.fetchedAt || null;
 
   const buildSocialMetrics = (): SocialMetrics[] => {
     const metrics: SocialMetrics[] = [];
@@ -364,30 +515,54 @@ export default function DataSourcesPage() {
           </div>
         </div>
 
+        <DataFreshnessBar
+          mode="global"
+          websiteLastUpdated={oldestWebsite}
+          socialLastUpdated={oldestSocial}
+          newsLastUpdated={oldestNews}
+          autoRefreshAllowed={autoRefreshAllowed}
+          tenantPlan={tenantInfo?.plan}
+          onRefresh={handleFreshnessBarRefresh}
+        />
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <Globe className="w-5 h-5 text-blue-500" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/10">
+                    <Globe className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{summary.websitesTracked}</p>
+                    <p className="text-sm text-muted-foreground">Websites Tracked</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{summary.websitesTracked}</p>
-                  <p className="text-sm text-muted-foreground">Websites Tracked</p>
-                </div>
+                <StalenessDot
+                  lastUpdated={oldestWebsite}
+                  label="Website data freshness"
+                  size="md"
+                />
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-500/10">
-                  <Users className="w-5 h-5 text-purple-500" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-500/10">
+                    <Users className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{summary.socialProfiles}</p>
+                    <p className="text-sm text-muted-foreground">Social Profiles</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{summary.socialProfiles}</p>
-                  <p className="text-sm text-muted-foreground">Social Profiles</p>
-                </div>
+                <StalenessDot
+                  lastUpdated={oldestSocial}
+                  label="Social data freshness"
+                  size="md"
+                />
               </div>
             </CardContent>
           </Card>
@@ -573,6 +748,18 @@ export default function DataSourcesPage() {
                   <CardTitle>Social Media Profiles</CardTitle>
                   <CardDescription>Track competitor presence across social platforms</CardDescription>
                 </div>
+                {competitors.filter((c: any) => c.linkedInUrl).length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={refreshAllSocial}
+                    disabled={refreshingSocial.size > 0}
+                    data-testid="refresh-all-social-button"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${refreshingSocial.size > 0 ? "animate-spin" : ""}`} />
+                    Refresh All Social
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {loadingCompetitors ? (
@@ -734,9 +921,23 @@ export default function DataSourcesPage() {
 
           <TabsContent value="websites" className="mt-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Website Tracking</CardTitle>
-                <CardDescription>Monitored websites and their crawled pages</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Website Tracking</CardTitle>
+                  <CardDescription>Monitored websites and their crawled pages</CardDescription>
+                </div>
+                {(competitors.length > 0 || companyProfile) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={refreshAllWebsites}
+                    disabled={refreshingWebsites.size > 0}
+                    data-testid="refresh-all-websites-button"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${refreshingWebsites.size > 0 ? "animate-spin" : ""}`} />
+                    Refresh All Websites
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -748,6 +949,9 @@ export default function DataSourcesPage() {
                       crawlData={companyProfile.crawlData}
                       badge="Baseline"
                       isBaseline
+                      entityId={companyProfile.id}
+                      onRefresh={() => refreshWebsite(companyProfile.id, true)}
+                      isRefreshing={refreshingWebsites.has(`baseline-${companyProfile.id}`)}
                     />
                   )}
 
@@ -759,6 +963,9 @@ export default function DataSourcesPage() {
                       lastCrawled={competitor.lastCrawled || competitor.lastFullCrawl}
                       crawlData={competitor.crawlData}
                       badge="Competitor"
+                      entityId={competitor.id}
+                      onRefresh={() => refreshWebsite(competitor.id, false)}
+                      isRefreshing={refreshingWebsites.has(competitor.id)}
                     />
                   ))}
 

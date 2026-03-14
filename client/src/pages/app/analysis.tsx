@@ -17,25 +17,9 @@ import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import SharedSourceFreshnessRow, { type SourceFreshnessItem, type SourceFreshnessData } from "@/components/SourceFreshnessRow";
 
-interface SourceFreshnessItem {
-  id: string;
-  name: string;
-  lastCrawl: string | null;
-  lastWebsiteMonitor: string | null;
-  lastSocialMonitor: string | null;
-}
-
-interface SourceFreshnessData {
-  competitors: SourceFreshnessItem[];
-  baseline: SourceFreshnessItem | null;
-  overallStaleness: StalenessLevel;
-}
-
-function StalenessDot({ level }: { level: StalenessLevel }) {
-  const info = getStalenessInfo(level);
-  return <span className={`inline-block w-2 h-2 rounded-full ${info.dotColor}`} />;
-}
+// StalenessDot is now handled by shared SourceFreshnessRow component
 
 function getThemeCompetitorNames(themes: any[]): string[] {
   if (!themes || themes.length === 0) return [];
@@ -1734,11 +1718,18 @@ export default function Analysis() {
               {freshness.baseline && (
                 <div>
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Baseline</div>
-                  <AnalysisSourceFreshnessRow
+                  <SharedSourceFreshnessRow
                     item={freshness.baseline}
                     prefix="baseline"
                     selections={refreshSelections}
                     onToggle={(key) => setRefreshSelections(prev => ({ ...prev, [key]: !prev[key] }))}
+                    onRefresh={async (sourceType, itemId) => {
+                      const url = sourceType === "social"
+                        ? `/api/company-profile/${itemId}/refresh-social`
+                        : `/api/company-profile/${itemId}/crawl`;
+                      await fetch(url, { method: "POST", credentials: "include" });
+                    }}
+                    testIdPrefix="analysis-source-freshness"
                   />
                 </div>
               )}
@@ -1760,11 +1751,18 @@ export default function Analysis() {
                           />
                           <span className="text-sm font-medium">Include in analysis</span>
                         </div>
-                        <AnalysisSourceFreshnessRow
+                        <SharedSourceFreshnessRow
                           item={c}
                           prefix="competitor"
                           selections={refreshSelections}
                           onToggle={(key) => setRefreshSelections(prev => ({ ...prev, [key]: !prev[key] }))}
+                          onRefresh={async (sourceType, itemId) => {
+                            const url = sourceType === "social"
+                              ? `/api/competitors/${itemId}/refresh-social`
+                              : `/api/competitors/${itemId}/crawl`;
+                            await fetch(url, { method: "POST", credentials: "include" });
+                          }}
+                          testIdPrefix="analysis-source-freshness"
                         />
                       </div>
                     ))}
@@ -1812,63 +1810,4 @@ export default function Analysis() {
   );
 }
 
-function AnalysisSourceFreshnessRow({
-  item,
-  prefix,
-  selections,
-  onToggle,
-}: {
-  item: SourceFreshnessItem;
-  prefix: string;
-  selections: Record<string, boolean>;
-  onToggle: (key: string) => void;
-}) {
-  const sources = [
-    { key: `${prefix}:${item.id}:crawl`, label: "Website Crawl", icon: <Globe className="w-3.5 h-3.5" />, ts: item.lastCrawl },
-    { key: `${prefix}:${item.id}:monitor`, label: "Change Monitor", icon: <Eye className="w-3.5 h-3.5" />, ts: item.lastWebsiteMonitor },
-    { key: `${prefix}:${item.id}:social`, label: "Social", icon: <Users className="w-3.5 h-3.5" />, ts: item.lastSocialMonitor },
-  ];
-
-  const worstLevel = sources.reduce<StalenessLevel>((worst, s) => {
-    const level = calculateStaleness(s.ts);
-    const order: StalenessLevel[] = ["fresh", "aging", "stale", "never"];
-    return order.indexOf(level) > order.indexOf(worst) ? level : worst;
-  }, "fresh");
-
-  return (
-    <div className="rounded-lg border p-3 space-y-2" data-testid={`analysis-source-freshness-${item.id}`}>
-      <div className="flex items-center gap-2">
-        <StalenessDot level={worstLevel} />
-        <span className="text-sm font-medium truncate">{item.name}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {sources.map(s => {
-          const level = calculateStaleness(s.ts);
-          const info = getStalenessInfo(level);
-          const isStale = level !== "fresh";
-          return (
-            <div key={s.key} className="flex items-center gap-1.5">
-              {isStale ? (
-                <Checkbox
-                  checked={!!selections[s.key]}
-                  onCheckedChange={() => onToggle(s.key)}
-                  className="h-3.5 w-3.5"
-                  data-testid={`checkbox-analysis-${s.key}`}
-                />
-              ) : (
-                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-              )}
-              <div className="min-w-0">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {s.icon}
-                  <span className="truncate">{s.label}</span>
-                </div>
-                <div className={`text-xs ${info.color}`}>{getTimeAgo(s.ts)}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// AnalysisSourceFreshnessRow is now imported from @/components/SourceFreshnessRow
