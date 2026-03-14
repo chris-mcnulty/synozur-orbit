@@ -52,3 +52,7 @@ PRODUCTION_URL = "https://orbit.synozur.com"
 TEST_EMAIL = "test@synozur.com"
 TEST_PASSWORD = "TestPass123!"
 GNEWS_API_KEY = "e16dd44feb054d697453232587729ac7"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
