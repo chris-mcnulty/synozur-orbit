@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import DataFreshnessBar from "@/components/DataFreshnessBar";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
@@ -757,6 +758,26 @@ export default function CompetitorDetail() {
             </CardContent>
           </Card>
         </div>
+
+        <DataFreshnessBar
+          mode="entity"
+          entityName={competitor.name}
+          entityType="competitor"
+          websiteLastUpdated={competitor.lastCrawledAt || competitor.lastCrawl || null}
+          socialLastUpdated={competitor.socialLastFetchedAt || null}
+          autoRefreshAllowed={false}
+          onRefresh={async (sources) => {
+            if (sources.includes("website")) {
+              await fetch(`/api/competitors/${id}/crawl`, { method: "POST", credentials: "include" });
+              toast({ title: "Website crawl started", description: `${competitor.name} is being refreshed` });
+            }
+            if (sources.includes("social")) {
+              await fetch(`/api/competitors/${id}/refresh-social`, { method: "POST", credentials: "include" });
+              toast({ title: "Social refresh started", description: `${competitor.name} social data is being updated` });
+            }
+            queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+          }}
+        />
 
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg">

@@ -51,6 +51,7 @@ import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import CommandPalette from "@/components/CommandPalette";
 import SmartSuggestions from "@/components/SmartSuggestions";
 import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
+import { calculateStaleness } from "@/lib/staleness";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -303,6 +304,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     if (hasNewContent("/app/reports", reports)) {
       indicators["/app/reports"] = { type: "new" };
+    }
+
+    // Data Sources staleness indicator
+    const staleDatasources = [
+      companyProfile?.lastCrawledAt,
+      ...competitors.map((c: any) => c.lastCrawledAt),
+      ...competitors.map((c: any) => c.socialLastFetchedAt),
+    ].filter((ts) => ts && calculateStaleness(ts) === "stale").length;
+    if (staleDatasources > 0) {
+      indicators["/app/data-sources"] = { type: "count", count: staleDatasources };
     }
 
     const onboardingTotal = 5;

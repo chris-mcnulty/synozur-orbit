@@ -38,6 +38,8 @@ interface RefreshStrategyDialogProps {
     news?: { lastUpdated: string | null };
   };
   onConfirm: (selectedSources: string[], timing: "now" | "tonight" | "schedule") => Promise<void>;
+  autoRefreshAllowed?: boolean;
+  tenantPlan?: string;
 }
 
 export default function RefreshStrategyDialog({
@@ -47,6 +49,8 @@ export default function RefreshStrategyDialog({
   entityType,
   sources,
   onConfirm,
+  autoRefreshAllowed = false,
+  tenantPlan,
 }: RefreshStrategyDialogProps) {
   const [refreshTiming, setRefreshTiming] = useState<"now" | "tonight" | "schedule">("now");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -251,11 +255,24 @@ export default function RefreshStrategyDialog({
                 </Label>
               </div>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="tonight" id="tonight" disabled />
-                <Label htmlFor="tonight" className="flex items-center gap-2 cursor-not-allowed opacity-50">
+                <RadioGroupItem value="tonight" id="tonight" />
+                <Label htmlFor="tonight" className="flex items-center gap-2 cursor-pointer">
                   <Clock className="w-4 h-4" />
                   Schedule for tonight (2am)
-                  <Badge variant="outline" className="text-xs">Coming Soon</Badge>
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="schedule" id="schedule" disabled={!autoRefreshAllowed} />
+                <Label htmlFor="schedule" className={`flex items-center gap-2 ${!autoRefreshAllowed ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                  <Clock className="w-4 h-4" />
+                  Set up weekly auto-refresh
+                  {!autoRefreshAllowed && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Info className="w-3 h-3" />
+                      Requires {tenantPlan === "free" || tenantPlan === "trial" ? "Pro" : "Enterprise"}+
+                      <a href="mailto:contactus@synozur.com" className="text-primary hover:underline ml-1">Upgrade</a>
+                    </span>
+                  )}
                 </Label>
               </div>
             </RadioGroup>

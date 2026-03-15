@@ -100,9 +100,17 @@ export default function SmartSuggestions() {
   useEffect(() => {
     const suggestions: StaleSuggestion[] = [];
 
+    // Only show toasts for critically stale data (14+ days)
+    // Normal staleness (7-14 days) is now handled by the nav badge on Data Sources
+    const isCriticallyStale = (lastUpdated: string | null) => {
+      if (!lastUpdated) return false;
+      const diffMs = Date.now() - new Date(lastUpdated).getTime();
+      return diffMs > 14 * 24 * 60 * 60 * 1000;
+    };
+
     if (companyProfile?.lastCrawledAt) {
       const staleness = getFullStalenessInfo(companyProfile.lastCrawledAt);
-      if (staleness.level === "stale") {
+      if (isCriticallyStale(companyProfile.lastCrawledAt)) {
         suggestions.push({
           id: `baseline-${companyProfile.id}`,
           type: "baseline",
@@ -116,7 +124,7 @@ export default function SmartSuggestions() {
 
     competitors.forEach((competitor: any) => {
       const websiteStaleness = getFullStalenessInfo(competitor.lastCrawledAt);
-      if (websiteStaleness.level === "stale") {
+      if (isCriticallyStale(competitor.lastCrawledAt)) {
         suggestions.push({
           id: `competitor-website-${competitor.id}`,
           type: "competitor",
@@ -128,7 +136,7 @@ export default function SmartSuggestions() {
       }
 
       const socialStaleness = getFullStalenessInfo(competitor.socialLastFetchedAt);
-      if (socialStaleness.level === "stale" && competitor.linkedInUrl) {
+      if (isCriticallyStale(competitor.socialLastFetchedAt) && competitor.linkedInUrl) {
         suggestions.push({
           id: `competitor-social-${competitor.id}`,
           type: "social",
@@ -211,11 +219,11 @@ export default function SmartSuggestions() {
                 variant="default"
                 className="gap-1"
                 onClick={() => {
-                  window.location.href = "/app/refresh-center";
+                  window.location.href = "/app/data-sources";
                 }}
               >
                 <RefreshCw className="w-3 h-3" />
-                Open Refresh Center
+                View Data Sources
               </Button>
               <Button
                 size="sm"

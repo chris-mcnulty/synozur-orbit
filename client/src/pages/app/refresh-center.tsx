@@ -166,24 +166,60 @@ export default function RefreshCenter() {
     }
   };
 
+  const refreshNews = async () => {
+    setActionLoading("news", true);
+    try {
+      await fetch("/api/data-sources/news/refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      toast({ title: "News scan started", description: "Scanning for recent news mentions" });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs/recent"] });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to start news scan", variant: "destructive" });
+    } finally {
+      setActionLoading("news", false);
+    }
+  };
+
   const refreshAllData = async () => {
     setActionLoading("all", true);
     try {
+      // Baseline website crawl
       if (companyProfile) {
         await fetch(`/api/company-profile/${companyProfile.id}/crawl`, {
           method: "POST",
           credentials: "include",
         });
       }
+      // Competitor website crawls
       for (const competitor of competitors) {
         await fetch(`/api/competitors/${competitor.id}/crawl`, {
           method: "POST",
           credentials: "include",
         });
       }
-      toast({ 
-        title: "Full refresh started", 
-        description: `Queued baseline + ${competitors.length} competitors for refresh` 
+      // Social media refresh for all competitors with LinkedIn
+      for (const competitor of competitors) {
+        if (competitor.linkedInUrl) {
+          await fetch(`/api/competitors/${competitor.id}/refresh-social`, {
+            method: "POST",
+            credentials: "include",
+          });
+        }
+      }
+      // News scan
+      try {
+        await fetch("/api/data-sources/news/refresh", {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch {}
+      const socialCount = competitors.filter((c: any) => c.linkedInUrl).length;
+      toast({
+        title: "Full refresh started",
+        description: `Queued baseline + ${competitors.length} websites + ${socialCount} social profiles + news scan`
       });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs/active"] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs/recent"] });
@@ -369,7 +405,7 @@ export default function RefreshCenter() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card 
             className={cn(
               "cursor-pointer transition-all hover:border-primary/50",
@@ -450,6 +486,32 @@ export default function RefreshCenter() {
               <h3 className="font-semibold mt-4">Refresh Social</h3>
               <p className="text-sm text-muted-foreground mt-1">
                 LinkedIn profiles
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card
+            className={cn(
+              "cursor-pointer transition-all hover:border-primary/50",
+              loadingActions.has("news") && "opacity-75"
+            )}
+            onClick={() => !loadingActions.has("news") && refreshNews()}
+            data-testid="quick-action-news"
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
+                <div className="p-2 bg-amber-500/10 rounded-lg">
+                  <Newspaper className="w-6 h-6 text-amber-500" />
+                </div>
+                <div className="flex items-center gap-2">
+                  {loadingActions.has("news") ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  ) : null}
+                </div>
+              </div>
+              <h3 className="font-semibold mt-4">Scan News</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                News &amp; press mentions
               </p>
             </CardContent>
           </Card>
