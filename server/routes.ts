@@ -8821,7 +8821,7 @@ Make this actionable and specific to the competitive landscape.`;
 
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: "user", content: prompt }],
       });
 
@@ -8952,7 +8952,7 @@ Make each recommendation specific, actionable, and tied to competitive insights.
 
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: "user", content: prompt }],
       });
 
@@ -9086,7 +9086,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
 
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: "user", content: prompt }],
       });
 
