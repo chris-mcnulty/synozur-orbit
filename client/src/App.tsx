@@ -39,6 +39,10 @@ import DataSourcesPage from "@/pages/app/data-sources";
 import CompanyBaseline from "@/pages/app/company-baseline";
 import MarketingPlannerPage from "@/pages/app/marketing-planner";
 import MarketingPlanDetail from "@/pages/app/marketing-plan-detail";
+import GtmPlanPage from "@/pages/app/marketing/gtm-plan";
+import MessagingFrameworkPage from "@/pages/app/marketing/messaging-framework";
+import SocialPostsPage from "@/pages/app/marketing/social-posts";
+import EmailNewslettersPage from "@/pages/app/marketing/email-newsletters";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
@@ -99,6 +103,10 @@ function Router() {
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />
       <Route path="/app/usage" component={UsagePage} />
+      <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
+      <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
+      <Route path="/app/marketing/social-posts" component={SocialPostsPage} />
+      <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
       <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
       <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       <Route path="/app/refresh-center" component={RefreshCenter} />

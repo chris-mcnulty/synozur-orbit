@@ -4,7 +4,7 @@ export interface FeatureDefinition {
   key: string;
   label: string;
   description: string;
-  category: "intelligence" | "monitoring" | "planning" | "platform";
+  category: "intelligence" | "monitoring" | "planning" | "marketing" | "platform";
 }
 
 export const FEATURE_REGISTRY: FeatureDefinition[] = [
@@ -21,12 +21,15 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "multiMarket", label: "Multi-Market Support", description: "Manage multiple client contexts in one tenant", category: "platform" },
   { key: "ssoIntegration", label: "SSO Integration", description: "Microsoft Entra ID / Google SSO login", category: "platform" },
   { key: "customBranding", label: "Custom Branding", description: "Custom logos, colors, and branded reports", category: "platform" },
+  { key: "socialPosts", label: "Social Post Generator", description: "AI-generated social media posts from competitive intelligence", category: "marketing" },
+  { key: "emailNewsletters", label: "Email Newsletter Generator", description: "AI-powered email newsletters from market intelligence", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
   { key: "intelligence", label: "Competitive Intelligence" },
   { key: "monitoring", label: "Monitoring" },
   { key: "planning", label: "Planning & Management" },
+  { key: "marketing", label: "Marketing" },
   { key: "platform", label: "Platform" },
 ] as const;
 
@@ -56,6 +59,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     websiteMonitoring: false,
     ssoIntegration: false,
     customBranding: false,
+    socialPosts: false,
+    emailNewsletters: false,
   },
   trial: {
     battlecards: true,
@@ -71,6 +76,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     websiteMonitoring: false,
     ssoIntegration: false,
     customBranding: false,
+    socialPosts: false,
+    emailNewsletters: false,
   },
   pro: {
     battlecards: true,
@@ -86,6 +93,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     websiteMonitoring: true,
     ssoIntegration: true,
     customBranding: false,
+    socialPosts: false,
+    emailNewsletters: false,
   },
   enterprise: {
     battlecards: true,
@@ -101,6 +110,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     websiteMonitoring: true,
     ssoIntegration: true,
     customBranding: true,
+    socialPosts: true,
+    emailNewsletters: true,
   },
   unlimited: {
     battlecards: true,
@@ -116,6 +127,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     websiteMonitoring: true,
     ssoIntegration: true,
     customBranding: true,
+    socialPosts: true,
+    emailNewsletters: true,
   },
 };
 

@@ -30,7 +30,11 @@ import {
   RefreshCw,
   Lock,
   Brain,
-  Rocket
+  Rocket,
+  Megaphone,
+  MessageCircle,
+  Share2,
+  Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -228,7 +232,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     enabled: !!user,
   });
 
-  const isEnterprise = tenantSettings?.plan === "enterprise";
+  const isEnterprise = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
 
   const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any }>({
     queryKey: ["/api/tenant/info"],
@@ -389,11 +393,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       ]
     },
     {
+      group: "Marketing",
+      items: [
+        { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
+        { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
+        ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
+        { label: "Social Posts", icon: Share2, href: "/app/marketing/social-posts", comingSoon: true },
+        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", comingSoon: true },
+      ]
+    },
+    {
       group: "Outputs",
       items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
-        ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
       ]
     },
     {
@@ -522,7 +535,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                               )}
                             </div>
                             <span className="flex-1">{item.label}</span>
-                            {isLocked && (
+                            {(item as any).comingSoon && (
+                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
+                                Soon
+                              </Badge>
+                            )}
+                            {isLocked && !(item as any).comingSoon && (
                               <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
                             )}
                             {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (

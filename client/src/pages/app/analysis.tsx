@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,12 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, Pencil, X, Save, History, Lock, Activity, Eye, Users, CheckCircle2 } from "lucide-react";
-import { PlanLimitBadge, FeatureGate } from "@/components/UpgradePrompt";
+import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, X, Lock, Activity, Eye, Users, CheckCircle2 } from "lucide-react";
+import { PlanLimitBadge } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
@@ -70,32 +70,14 @@ function isLegacyMessagingFormat(messaging: any[]): boolean {
 }
 
 type AnalysisMode = "quick" | "full" | "full_with_change";
-type LongFormRecommendation = {
-  id: string;
-  type: string;
-  content: string | null;
-  status: string;
-  lastGeneratedAt: string | null;
-  updatedAt?: string | null;
-  savedPrompts?: { customGuidance?: string; lastManualEdit?: string; versionHistory?: Array<{ content: string; savedAt: string; savedBy: string }> };
-};
 
 export default function Analysis() {
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
-  const [gtmGuidance, setGtmGuidance] = useState("");
-  const [messagingGuidance, setMessagingGuidance] = useState("");
-  const [gtmPromptsOpen, setGtmPromptsOpen] = useState(false);
-  const [messagingPromptsOpen, setMessagingPromptsOpen] = useState(false);
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
   const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
   const [gapCategoryFilter, setGapCategoryFilter] = useState<string>("all");
-  const [isEditingGtm, setIsEditingGtm] = useState(false);
-  const [gtmEditContent, setGtmEditContent] = useState("");
-  const [isEditingMessaging, setIsEditingMessaging] = useState(false);
-  const [messagingEditContent, setMessagingEditContent] = useState("");
-  const [versionHistoryType, setVersionHistoryType] = useState<"gtm" | "messaging" | null>(null);
   const [isFreshnessDialogOpen, setIsFreshnessDialogOpen] = useState(false);
   const [pendingAnalysisMode, setPendingAnalysisMode] = useState<AnalysisMode>("full");
   const [refreshSelections, setRefreshSelections] = useState<Record<string, boolean>>({});
@@ -120,6 +102,15 @@ export default function Analysis() {
     },
   });
 
+  const { data: companyProfile } = useQuery({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const response = await fetch("/api/company-profile", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
   const { data: tenant } = useQuery({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
@@ -132,8 +123,6 @@ export default function Analysis() {
   const isPremium = tenant?.isPremium || tenant?.plan === "pro" || tenant?.plan === "enterprise";
   const analysisLimit = tenant?.limits?.analysisLimit ?? tenant?.features?.analysisLimit ?? -1;
   const analysisCount = tenant?.usage?.monthlyAnalysisCount ?? 0;
-  const gtmAllowed = tenant?.features?.gtmPlan !== false;
-  const messagingAllowed = tenant?.features?.messagingFramework !== false;
 
   const { data: freshness, refetch: refetchFreshness } = useQuery<SourceFreshnessData>({
     queryKey: ["/api/analysis/source-freshness"],
@@ -147,128 +136,12 @@ export default function Analysis() {
   });
 
 
-  const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
-    queryFn: async () => {
-      const response = await fetch("/api/company-profile", { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-  });
-
-  const { data: gtmPlan, isLoading: gtmLoading } = useQuery<LongFormRecommendation>({
-    queryKey: ["/api/baseline/recommendations/gtm_plan"],
-    queryFn: async () => {
-      const response = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-    enabled: !!companyProfile,
-  });
-
-  const { data: messagingFramework, isLoading: messagingLoading } = useQuery<LongFormRecommendation>({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
-    queryFn: async () => {
-      const response = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-    enabled: !!companyProfile,
-  });
-
   const { data: recommendations = [] } = useQuery<any[]>({
     queryKey: ["/api/recommendations"],
     queryFn: async () => {
       const response = await fetch("/api/recommendations", { credentials: "include" });
       if (!response.ok) return [];
       return response.json();
-    },
-  });
-
-  React.useEffect(() => {
-    if (gtmPlan?.savedPrompts?.customGuidance) {
-      setGtmGuidance(gtmPlan.savedPrompts.customGuidance);
-    }
-  }, [gtmPlan]);
-
-  React.useEffect(() => {
-    if (messagingFramework?.savedPrompts?.customGuidance) {
-      setMessagingGuidance(messagingFramework.savedPrompts.customGuidance);
-    }
-  }, [messagingFramework]);
-
-  const generateGtmPlan = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/baseline/recommendations/gtm_plan/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customGuidance: gtmGuidance }),
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to generate GTM plan");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/gtm_plan"] });
-      toast.success("GTM Plan generated successfully!");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const generateMessagingFramework = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/baseline/recommendations/messaging_framework/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customGuidance: messagingGuidance }),
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to generate messaging framework");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/recommendations/messaging_framework"] });
-      toast.success("Messaging framework generated successfully!");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const saveContentMutation = useMutation({
-    mutationFn: async ({ id, content }: { id: string; content: string }) => {
-      const response = await fetch(`/api/baseline/recommendations/${id}/content`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to save content");
-      }
-      return response.json();
-    },
-    onSuccess: (_data, variables) => {
-      const type = variables.id === gtmPlan?.id ? "gtm_plan" : "messaging_framework";
-      queryClient.invalidateQueries({ queryKey: [`/api/baseline/recommendations/${type}`] });
-      if (type === "gtm_plan") {
-        setIsEditingGtm(false);
-      } else {
-        setIsEditingMessaging(false);
-      }
-      toast.success("Content saved successfully!");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
     },
   });
 
@@ -663,16 +536,6 @@ export default function Analysis() {
             <TabsTrigger value="themes" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Key Themes</TabsTrigger>
             <TabsTrigger value="messaging" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Messaging Matrix</TabsTrigger>
             <TabsTrigger value="gaps" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Gap Analysis</TabsTrigger>
-            <TabsTrigger value="gtm_plan" className="data-[state=active]:bg-background data-[state=active]:shadow-sm flex items-center gap-1">
-              <Rocket className="h-3.5 w-3.5" />
-              GTM Plan
-              {gtmPlan?.status === "generated" && <Check className="h-3 w-3 ml-1" />}
-            </TabsTrigger>
-            <TabsTrigger value="messaging_rewrite" className="data-[state=active]:bg-background data-[state=active]:shadow-sm flex items-center gap-1">
-              <MessageCircle className="h-3.5 w-3.5" />
-              Messaging Rewrite
-              {messagingFramework?.status === "generated" && <Check className="h-3 w-3 ml-1" />}
-            </TabsTrigger>
             <TabsTrigger value="full_report" className="data-[state=active]:bg-background data-[state=active]:shadow-sm flex items-center gap-1">
               <FileStack className="h-3.5 w-3.5" />
               Full Report
@@ -925,418 +788,6 @@ export default function Analysis() {
               )}
           </TabsContent>
 
-          {/* GTM Plan Tab */}
-          <TabsContent value="gtm_plan">
-            <FeatureGate feature="GTM Plan" requiredPlan="Trial" isAllowed={gtmAllowed} description="Generate AI-powered Go-To-Market plans based on your competitive analysis. Upgrade to Trial or higher to access this feature.">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Rocket className="h-5 w-5 text-primary" />
-                      Go-To-Market Plan
-                    </CardTitle>
-                    <CardDescription>
-                      AI-generated strategic plan based on your baseline analysis
-                    </CardDescription>
-                  </div>
-                  {gtmPlan?.lastGeneratedAt && (
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4 mr-1" />
-                      Last updated: {new Date(gtmPlan.lastGeneratedAt).toLocaleDateString()}
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {!companyProfile ? (
-                  <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                    <Rocket className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Company Profile Required</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Set up your company profile first to generate a GTM plan.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <Collapsible open={gtmPromptsOpen} onOpenChange={setGtmPromptsOpen}>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          onClick={() => generateGtmPlan.mutate()} 
-                          disabled={generateGtmPlan.isPending}
-                          data-testid="button-generate-gtm"
-                        >
-                          {generateGtmPlan.isPending ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Generating...
-                            </>
-                          ) : gtmPlan?.status === "generated" ? (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Regenerate GTM Plan
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              Generate GTM Plan
-                            </>
-                          )}
-                        </Button>
-                        <CollapsibleTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-muted-foreground">
-                            <ChevronRight className={`h-4 w-4 transition-transform ${gtmPromptsOpen ? "rotate-90" : ""}`} />
-                            Custom Guidance (Optional)
-                          </Button>
-                        </CollapsibleTrigger>
-                      </div>
-                      <CollapsibleContent className="mt-4">
-                        <div className="border rounded-lg p-4 bg-muted/30">
-                          <Textarea
-                            placeholder="Add any specific requirements, constraints, target audience, distribution channels, budget considerations, or timeline..."
-                            value={gtmGuidance}
-                            onChange={(e) => setGtmGuidance(e.target.value)}
-                            rows={3}
-                            data-testid="input-gtm-guidance"
-                          />
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-
-                    {gtmLoading ? (
-                      <div className="flex justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : gtmPlan?.status === "generated" && gtmPlan.content ? (
-                      <div className="space-y-4">
-                        <div className="flex gap-2 justify-end">
-                          {!isEditingGtm ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setGtmEditContent(gtmPlan.content || "");
-                                setIsEditingGtm(true);
-                              }}
-                              data-testid="button-edit-gtm"
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setIsEditingGtm(false)}
-                                data-testid="button-cancel-edit-gtm"
-                              >
-                                <X className="mr-2 h-4 w-4" />
-                                Cancel
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => saveContentMutation.mutate({ id: gtmPlan.id, content: gtmEditContent })}
-                                disabled={saveContentMutation.isPending}
-                                data-testid="button-save-gtm"
-                              >
-                                {saveContentMutation.isPending ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Save className="mr-2 h-4 w-4" />
-                                )}
-                                Save
-                              </Button>
-                            </>
-                          )}
-                          {(gtmPlan.savedPrompts?.versionHistory?.length ?? 0) > 0 && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setVersionHistoryType("gtm")}
-                              data-testid="button-gtm-version-history"
-                            >
-                              <History className="mr-2 h-4 w-4" />
-                              History ({gtmPlan.savedPrompts?.versionHistory?.length})
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const blob = new Blob([gtmPlan.content || ""], { type: "text/markdown" });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `gtm_plan_${new Date().toISOString().split('T')[0]}.md`;
-                              a.click();
-                              URL.revokeObjectURL(url);
-                            }}
-                            data-testid="button-download-gtm-md"
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Download Markdown
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(`/api/recommendations/${gtmPlan.id}/download/docx`, "_blank")}
-                            data-testid="button-download-gtm-docx"
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Download Word
-                          </Button>
-                        </div>
-                        {isEditingGtm ? (
-                          <Textarea
-                            value={gtmEditContent}
-                            onChange={(e) => setGtmEditContent(e.target.value)}
-                            className="min-h-[500px] font-mono text-sm"
-                            data-testid="input-gtm-edit"
-                          />
-                        ) : (
-                          <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                            <div dangerouslySetInnerHTML={{ 
-                              __html: gtmPlan.content
-                                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                                .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                                .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                                .replace(/^- (.*$)/gim, '<li>$1</li>')
-                                .replace(/\n\n/gim, '</p><p>')
-                                .replace(/\n/gim, '<br/>')
-                            }} />
-                          </div>
-                        )}
-                        {gtmPlan.savedPrompts?.lastManualEdit && (
-                          <p className="text-xs text-muted-foreground text-right">
-                            Last manually edited: {new Date(gtmPlan.savedPrompts.lastManualEdit).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <Rocket className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                        <h3 className="text-lg font-medium mb-2">No GTM Plan Generated Yet</h3>
-                        <p className="text-muted-foreground">
-                          Click the button above to generate a Go-To-Market plan based on your competitive analysis.
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            </FeatureGate>
-          </TabsContent>
-
-          {/* Messaging Rewrite Tab */}
-          <TabsContent value="messaging_rewrite">
-            <FeatureGate feature="Messaging Framework" requiredPlan="Trial" isAllowed={messagingAllowed} description="Generate AI-powered messaging frameworks based on competitive gaps. Upgrade to Trial or higher to access this feature.">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <MessageCircle className="h-5 w-5 text-primary" />
-                      Messaging & Positioning Rewrite
-                    </CardTitle>
-                    <CardDescription>
-                      AI-generated messaging framework based on competitive gaps
-                    </CardDescription>
-                  </div>
-                  {messagingFramework?.lastGeneratedAt && (
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4 mr-1" />
-                      Last updated: {new Date(messagingFramework.lastGeneratedAt).toLocaleDateString()}
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {!companyProfile ? (
-                  <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                    <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Company Profile Required</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Set up your company profile first to generate messaging recommendations.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <Collapsible open={messagingPromptsOpen} onOpenChange={setMessagingPromptsOpen}>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          onClick={() => generateMessagingFramework.mutate()} 
-                          disabled={generateMessagingFramework.isPending}
-                          data-testid="button-generate-messaging"
-                        >
-                          {generateMessagingFramework.isPending ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Generating...
-                            </>
-                          ) : messagingFramework?.status === "generated" ? (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Regenerate Framework
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              Generate Messaging Framework
-                            </>
-                          )}
-                        </Button>
-                        <CollapsibleTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-muted-foreground">
-                            <ChevronRight className={`h-4 w-4 transition-transform ${messagingPromptsOpen ? "rotate-90" : ""}`} />
-                            Custom Guidance (Optional)
-                          </Button>
-                        </CollapsibleTrigger>
-                      </div>
-                      <CollapsibleContent className="mt-4">
-                        <div className="border rounded-lg p-4 bg-muted/30">
-                          <Textarea
-                            placeholder="Add any specific requirements, target audience, tone of voice, key messages to emphasize, or brand guidelines..."
-                            value={messagingGuidance}
-                            onChange={(e) => setMessagingGuidance(e.target.value)}
-                            rows={3}
-                            data-testid="input-messaging-guidance"
-                          />
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-
-                    {messagingLoading ? (
-                      <div className="flex justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : messagingFramework?.status === "generated" && messagingFramework.content ? (
-                      <div className="space-y-4">
-                        <div className="flex gap-2 justify-end">
-                          {!isEditingMessaging ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setMessagingEditContent(messagingFramework.content || "");
-                                setIsEditingMessaging(true);
-                              }}
-                              data-testid="button-edit-messaging"
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setIsEditingMessaging(false)}
-                                data-testid="button-cancel-edit-messaging"
-                              >
-                                <X className="mr-2 h-4 w-4" />
-                                Cancel
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => saveContentMutation.mutate({ id: messagingFramework.id, content: messagingEditContent })}
-                                disabled={saveContentMutation.isPending}
-                                data-testid="button-save-messaging"
-                              >
-                                {saveContentMutation.isPending ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Save className="mr-2 h-4 w-4" />
-                                )}
-                                Save
-                              </Button>
-                            </>
-                          )}
-                          {(messagingFramework.savedPrompts?.versionHistory?.length ?? 0) > 0 && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setVersionHistoryType("messaging")}
-                              data-testid="button-messaging-version-history"
-                            >
-                              <History className="mr-2 h-4 w-4" />
-                              History ({messagingFramework.savedPrompts?.versionHistory?.length})
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const blob = new Blob([messagingFramework.content || ""], { type: "text/markdown" });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `messaging_framework_${new Date().toISOString().split('T')[0]}.md`;
-                              a.click();
-                              URL.revokeObjectURL(url);
-                            }}
-                            data-testid="button-download-msg-md"
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Download Markdown
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(`/api/recommendations/${messagingFramework.id}/download/docx`, "_blank")}
-                            data-testid="button-download-msg-docx"
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Download Word
-                          </Button>
-                        </div>
-                        {isEditingMessaging ? (
-                          <Textarea
-                            value={messagingEditContent}
-                            onChange={(e) => setMessagingEditContent(e.target.value)}
-                            className="min-h-[500px] font-mono text-sm"
-                            data-testid="input-messaging-edit"
-                          />
-                        ) : (
-                          <div className="prose prose-sm dark:prose-invert max-w-none border rounded-lg p-6 bg-card">
-                            <div dangerouslySetInnerHTML={{ 
-                              __html: messagingFramework.content
-                                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                                .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                                .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                                .replace(/^- (.*$)/gim, '<li>$1</li>')
-                                .replace(/\n\n/gim, '</p><p>')
-                                .replace(/\n/gim, '<br/>')
-                            }} />
-                          </div>
-                        )}
-                        {messagingFramework.savedPrompts?.lastManualEdit && (
-                          <p className="text-xs text-muted-foreground text-right">
-                            Last manually edited: {new Date(messagingFramework.savedPrompts.lastManualEdit).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                        <h3 className="text-lg font-medium mb-2">No Messaging Framework Generated Yet</h3>
-                        <p className="text-muted-foreground">
-                          Click the button above to generate messaging recommendations based on competitive gaps.
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            </FeatureGate>
-          </TabsContent>
-
           {/* Full Report Tab */}
           <TabsContent value="full_report">
             <div className="space-y-8">
@@ -1560,129 +1011,38 @@ export default function Analysis() {
                 </CardContent>
               </Card>
 
-              {/* GTM Plan Section */}
-              {gtmPlan?.status === "generated" && gtmPlan.content && (
-                <Card className="border-border">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Rocket className="h-5 w-5 text-primary" />
-                      Go-To-Market Plan
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div dangerouslySetInnerHTML={{ 
-                        __html: gtmPlan.content
-                          .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                          .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                          .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                          .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                          .replace(/^- (.*$)/gim, '<li>$1</li>')
-                          .replace(/\n\n/gim, '</p><p>')
-                          .replace(/\n/gim, '<br/>')
-                      }} />
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Messaging Framework Section */}
-              {messagingFramework?.status === "generated" && messagingFramework.content && (
-                <Card className="border-border">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <MessageCircle className="h-5 w-5 text-primary" />
-                      Messaging Framework
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <div dangerouslySetInnerHTML={{ 
-                        __html: messagingFramework.content
-                          .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                          .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                          .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                          .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                          .replace(/^- (.*$)/gim, '<li>$1</li>')
-                          .replace(/\n\n/gim, '</p><p>')
-                          .replace(/\n/gim, '<br/>')
-                      }} />
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Empty state for GTM/Messaging */}
-              {(!gtmPlan?.status || gtmPlan?.status !== "generated") && (!messagingFramework?.status || messagingFramework?.status !== "generated") && (
-                <Card className="p-6 text-center border-dashed border-2">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="flex gap-2">
-                      <Rocket className="h-8 w-8 text-muted-foreground" />
-                      <MessageCircle className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium mb-1">Strategic Plans Not Generated</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Generate GTM Plan and Messaging Framework from their respective tabs to include them in the full report.
-                      </p>
-                    </div>
+              <Card className="p-6 border-dashed border-2">
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-2">
+                    <Rocket className="h-6 w-6 text-primary" />
+                    <MessageCircle className="h-6 w-6 text-primary" />
                   </div>
-                </Card>
-              )}
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-1">Marketing Assets</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Generate GTM Plans and Messaging Frameworks from the dedicated Marketing section.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link href="/app/marketing/gtm-plan">
+                      <Button variant="outline" size="sm" data-testid="link-gtm-plan">
+                        <Rocket className="mr-2 h-4 w-4" />
+                        GTM Plan
+                      </Button>
+                    </Link>
+                    <Link href="/app/marketing/messaging-framework">
+                      <Button variant="outline" size="sm" data-testid="link-messaging-framework">
+                        <MessageCircle className="mr-2 h-4 w-4" />
+                        Messaging
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </Card>
             </div>
           </TabsContent>
         </Tabs>
       )}
-      <Dialog open={!!versionHistoryType} onOpenChange={(open) => !open && setVersionHistoryType(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
-              {versionHistoryType === "gtm" ? "GTM Plan" : "Messaging Framework"} Version History
-            </DialogTitle>
-            <DialogDescription>
-              Previous versions are saved automatically when you edit content. Up to 10 versions are retained.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {(versionHistoryType === "gtm" ? gtmPlan?.savedPrompts?.versionHistory : messagingFramework?.savedPrompts?.versionHistory)?.map((version: any, index: number, arr: any[]) => (
-              <div key={index} className="border rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <Badge variant="outline">Version {arr.length - index}</Badge>
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(version.savedAt).toLocaleString()}
-                  </span>
-                </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded p-3 max-h-[200px] overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-xs">{version.content?.substring(0, 500)}{version.content?.length > 500 ? "..." : ""}</pre>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (versionHistoryType === "gtm") {
-                      setGtmEditContent(version.content);
-                      setIsEditingGtm(true);
-                    } else {
-                      setMessagingEditContent(version.content);
-                      setIsEditingMessaging(true);
-                    }
-                    setVersionHistoryType(null);
-                    toast.info("Version loaded into editor. Click Save to apply.");
-                  }}
-                  data-testid={`button-restore-version-${index}`}
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Restore This Version
-                </Button>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isFreshnessDialogOpen} onOpenChange={setIsFreshnessDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-analysis-freshness">
           <DialogHeader>
