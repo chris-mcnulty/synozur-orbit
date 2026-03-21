@@ -369,8 +369,8 @@ export class SharePointFileStorage {
         const fields = (item.listItem?.fields || {}) as Record<string, unknown>;
         if (filter?.documentType && fields.OrbitDocumentType !== filter.documentType) return false;
         if (filter?.scope && fields.OrbitScope !== filter.scope) return false;
-        if (filter?.tenantDomain && fields.OrbitTenantDomain && fields.OrbitTenantDomain !== filter.tenantDomain) return false;
-        if (filter?.competitorId && fields.OrbitCompetitorId && fields.OrbitCompetitorId !== filter.competitorId) return false;
+        if (filter?.tenantDomain && fields.OrbitTenantDomain !== filter.tenantDomain) return false;
+        if (filter?.competitorId && fields.OrbitCompetitorId !== filter.competitorId) return false;
         return true;
       })
       .map((item) => this.driveItemToStoredFile(item))
