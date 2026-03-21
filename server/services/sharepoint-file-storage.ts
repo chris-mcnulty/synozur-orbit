@@ -229,10 +229,20 @@ export class SharePointFileStorage {
     const client = this.resolveGraphClient(azureTenantId);
     const folderPath = this.getFolderPath(metadata.documentType, metadata.scope);
     const safeName = client.sanitizeFileName(originalName);
-    const fileName = fileId
-      ? `${fileId}_${safeName}`.slice(0, 200)
-      : `${Date.now()}_${safeName}`.slice(0, 200);
+    const MAX_FILE_NAME_LENGTH = 200;
 
+    let fileName = fileId ? `${fileId}_${safeName}` : `${Date.now()}_${safeName}`;
+    if (fileName.length > MAX_FILE_NAME_LENGTH) {
+      const lastDot = fileName.lastIndexOf(".");
+      if (lastDot > -1 && lastDot < fileName.length - 1) {
+        const extension = fileName.slice(lastDot);
+        const maxBaseLength = Math.max(1, MAX_FILE_NAME_LENGTH - extension.length);
+        const base = fileName.slice(0, maxBaseLength);
+        fileName = base + extension;
+      } else {
+        fileName = fileName.slice(0, MAX_FILE_NAME_LENGTH);
+      }
+    }
     console.log("[OrbitSPEStorage] Uploading:", { fileName, size: buffer.length, folderPath, contentType });
 
     const columnValues: Record<string, string | null> = {
