@@ -1,3 +1,21 @@
+# Synozur Orbit — Documentation Index
+
+## Platform Setup Guides
+
+### SharePoint Embedded (SPE) Storage
+**File:** `spe-setup-guide.md`
+
+**For:** Synozur Global Admins setting up document storage for customer tenants
+
+**Contains:**
+- Part A: One-time platform setup in Azure (app registration, permissions, container type)
+- Part B: Per-tenant container provisioning via Orbit admin API
+- Environment variable reference
+- Full setup checklist
+- Troubleshooting reference
+
+---
+
 # UX Optimization Proposal Documentation
 
 ## Overview

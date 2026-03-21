@@ -168,6 +168,7 @@ export interface IStorage {
   getAllTenants(): Promise<Tenant[]>;
   createTenant(tenant: InsertTenant): Promise<Tenant>;
   updateTenant(id: string, data: Partial<Tenant>): Promise<Tenant>;
+  updateTenantSpeConfig(id: string, data: { speContainerIdDev?: string | null; speContainerIdProd?: string | null; speStorageEnabled?: boolean; speMigrationStatus?: string | null; speMigrationStartedAt?: Date | null }): Promise<Tenant>;
   getTenantsWithUserCounts(): Promise<Array<Tenant & { actualUserCount: number }>>;
   
   // Competitor methods
@@ -220,6 +221,7 @@ export interface IStorage {
   getGroundingDocumentsByCompetitor(competitorId: string): Promise<GroundingDocument[]>;
   createGroundingDocument(document: InsertGroundingDocument): Promise<GroundingDocument>;
   updateGroundingDocumentText(id: string, extractedText: string): Promise<void>;
+  updateGroundingDocumentSpeFileId(id: string, speFileId: string, speContainerId: string): Promise<void>;
   deleteGroundingDocument(id: string): Promise<void>;
   
   // Global Grounding Document methods (application-wide AI context)
@@ -530,6 +532,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateTenant(id: string, data: Partial<Tenant>): Promise<Tenant> {
+    const [tenant] = await db
+      .update(tenants)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tenants.id, id))
+      .returning();
+    return tenant;
+  }
+
+  async updateTenantSpeConfig(
+    id: string,
+    data: {
+      speContainerIdDev?: string | null;
+      speContainerIdProd?: string | null;
+      speStorageEnabled?: boolean;
+      speMigrationStatus?: string | null;
+      speMigrationStartedAt?: Date | null;
+    }
+  ): Promise<Tenant> {
     const [tenant] = await db
       .update(tenants)
       .set({ ...data, updatedAt: new Date() })
@@ -863,6 +883,13 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(groundingDocuments)
       .set({ extractedText, updatedAt: new Date() })
+      .where(eq(groundingDocuments.id, id));
+  }
+
+  async updateGroundingDocumentSpeFileId(id: string, speFileId: string, speContainerId: string): Promise<void> {
+    await db
+      .update(groundingDocuments)
+      .set({ speFileId, speContainerId, updatedAt: new Date() })
       .where(eq(groundingDocuments.id, id));
   }
 
