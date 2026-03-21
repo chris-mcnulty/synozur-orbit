@@ -1216,6 +1216,26 @@ As a Domain Admin, you're responsible for:
 - Manage allowed domains
 - Review blocklist effectiveness
 
+### SharePoint Embedded (SPE) Document Storage
+
+**For Synozur Global Admins Only**
+
+SPE stores customer grounding documents inside the customer's own Microsoft 365 environment rather than Orbit's default storage. Each customer tenant that enables SPE gets its own isolated container — there is no commingled storage.
+
+**Two-phase setup:**
+
+1. **Platform setup (one time, Synozur internal):** Register Orbit's container type in the Azure app registration and add `FileStorageContainer.Selected` + `FileStorageContainerType.Selected` API permissions with admin consent. This generates `ORBIT_SPE_CONTAINER_TYPE_ID`.
+
+2. **Per-tenant setup (once per customer):** Use the Orbit admin API to register the container type in the customer's tenant and create their container inside their SharePoint. The returned container ID is saved to the tenant record alongside `spe_storage_enabled = true`.
+
+**Admin API endpoints:**
+- `POST /api/admin/spe/register-container-type` — register Orbit's container type in a customer tenant
+- `POST /api/admin/spe/container` — create a new container inside a customer tenant
+- `GET /api/admin/spe/status` — verify a tenant's container is configured and active
+- `GET /api/admin/spe/stats` — storage statistics for a tenant's container
+
+**Full setup instructions:** See `docs/spe-setup-guide.md`
+
 ### AI Usage Tracker (Global Admin Only)
 
 **For Synozur Staff Only:**
