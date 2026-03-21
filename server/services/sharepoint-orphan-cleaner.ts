@@ -20,7 +20,7 @@
 
 import { db } from "../db.js";
 import { groundingDocuments, globalGroundingDocuments } from "@shared/schema";
-import { isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { sharepointFileStorage } from "./sharepoint-file-storage.js";
 import type { StoredOrbitFile } from "./sharepoint-file-storage.js";
 
@@ -87,11 +87,15 @@ export class OrphanedFileManager {
     const startedAt = Date.now();
     console.log("[OrphanManager] Starting orphan scan", tenantId ? `(tenant: ${tenantId})` : "(all tenants)");
 
-    // 1. Get all files currently in the SPE container
+    // 1. Resolve the container for this scan so DB lookups are scoped to it
+    const { containerId } = await sharepointFileStorage.getContainerForTenant(tenantId);
+
+    // 2. Get all files currently in the SPE container
     const speFiles = await sharepointFileStorage.listFiles(undefined, tenantId);
 
-    // 2. Collect all known speFileIds from the database
-    const knownIds = await this.loadKnownSpeFileIds();
+    // 3. Collect known speFileIds scoped to this container (prevents false
+    //    "known" matches caused by speFileId collisions across containers)
+    const knownIds = await this.loadKnownSpeFileIds(containerId);
 
     const now = new Date();
     const safeAgeMs = SAFE_AGE_HOURS * 60 * 60 * 1000;
@@ -258,27 +262,41 @@ export class OrphanedFileManager {
   // -------------------------------------------------------------------------
 
   /**
-   * Build a Set of all speFileIds currently tracked in the database.
+   * Build a Set of all speFileIds currently tracked in the database,
+   * scoped to the given SPE container.  Querying per-container prevents
+   * false "known" matches when the same drive-item ID appears in multiple
+   * tenant containers (IDs are only unique within a single container/drive).
+   *
    * Queries both grounding_documents and global_grounding_documents tables.
    */
-  private async loadKnownSpeFileIds(): Promise<Set<string>> {
+  private async loadKnownSpeFileIds(containerId: string): Promise<Set<string>> {
     const ids = new Set<string>();
 
-    // Tenant grounding documents
+    // Tenant grounding documents — scoped to this container
     const tenantDocs = await db
       .select({ speFileId: groundingDocuments.speFileId })
       .from(groundingDocuments)
-      .where(isNotNull(groundingDocuments.speFileId));
+      .where(
+        and(
+          isNotNull(groundingDocuments.speFileId),
+          eq(groundingDocuments.speContainerId, containerId)
+        )
+      );
 
     for (const row of tenantDocs) {
       if (row.speFileId) ids.add(row.speFileId);
     }
 
-    // Global grounding documents
+    // Global grounding documents — scoped to this container
     const globalDocs = await db
       .select({ speFileId: globalGroundingDocuments.speFileId })
       .from(globalGroundingDocuments)
-      .where(isNotNull(globalGroundingDocuments.speFileId));
+      .where(
+        and(
+          isNotNull(globalGroundingDocuments.speFileId),
+          eq(globalGroundingDocuments.speContainerId, containerId)
+        )
+      );
 
     for (const row of globalDocs) {
       if (row.speFileId) ids.add(row.speFileId);
