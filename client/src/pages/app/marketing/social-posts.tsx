@@ -6,7 +6,7 @@ import { Share2, CheckCircle, Sparkles, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
 export default function SocialPostsPage() {
-  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any }>({
+  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/info", { credentials: "include" });
@@ -15,7 +15,7 @@ export default function SocialPostsPage() {
     },
   });
 
-  const isEnterprise = tenantInfo?.plan === "enterprise" || tenantInfo?.plan === "unlimited";
+  const isAllowed = tenantInfo?.features?.socialPosts === true;
 
   return (
     <AppLayout>
@@ -36,10 +36,10 @@ export default function SocialPostsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!isEnterprise ? (
+              {!isAllowed ? (
                 <>
                   <p className="text-muted-foreground">
-                    This feature will be available on the Enterprise plan. Upgrade to unlock when ready:
+                    This feature is available on the Enterprise plan. Upgrade to unlock when ready:
                   </p>
                   <ul className="text-sm text-left space-y-2 text-muted-foreground">
                     <li className="flex items-center gap-2">

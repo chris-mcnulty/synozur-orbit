@@ -62,6 +62,14 @@ type NavIndicator = {
   count?: number;
 };
 
+interface NavItem {
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  href: string;
+  enterprise?: boolean;
+  comingSoon?: boolean;
+}
+
 // Default expanded sections - Setup, Insights, and Help are expanded by default
 const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights', 'Help'];
 
@@ -253,6 +261,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (f.pdfReports === false) locked.add("/app/reports");
     if (f.marketingPlanner === false) locked.add("/app/marketing-planner");
     if (f.socialMonitoring === false) locked.add("/app/activity");
+    if (f.socialPosts === false) locked.add("/app/marketing/social-posts");
+    if (f.emailNewsletters === false) locked.add("/app/marketing/email-newsletters");
     return locked;
   }, [tenantInfo]);
 
@@ -365,7 +375,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const navigation = [
+  const navigation: { group: string; items: NavItem[] }[] = [
     {
       group: "Home",
       items: [
@@ -535,12 +545,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                               )}
                             </div>
                             <span className="flex-1">{item.label}</span>
-                            {(item as any).comingSoon && (
+                            {item.comingSoon && (
                               <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
                                 Soon
                               </Badge>
                             )}
-                            {isLocked && !(item as any).comingSoon && (
+                            {isLocked && !item.comingSoon && (
                               <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
                             )}
                             {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
