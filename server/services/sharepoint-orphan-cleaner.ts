@@ -320,24 +320,34 @@ export class OrphanedFileManager {
    * Build a Set of all speFileIds currently tracked in the database.
    * Queries both grounding_documents and global_grounding_documents tables.
    */
-  private async loadKnownSpeFileIds(): Promise<Set<string>> {
+  private async loadKnownSpeFileIds(containerId: string): Promise<Set<string>> {
     const ids = new Set<string>();
 
-    // Tenant grounding documents
+    // Tenant grounding documents — scoped to this container
     const tenantDocs = await db
       .select({ speFileId: groundingDocuments.speFileId })
       .from(groundingDocuments)
-      .where(isNotNull(groundingDocuments.speFileId));
+      .where(
+        and(
+          isNotNull(groundingDocuments.speFileId),
+          eq(groundingDocuments.speContainerId, containerId)
+        )
+      );
 
     for (const row of tenantDocs) {
       if (row.speFileId) ids.add(row.speFileId);
     }
 
-    // Global grounding documents
+    // Global grounding documents — scoped to this container
     const globalDocs = await db
       .select({ speFileId: globalGroundingDocuments.speFileId })
       .from(globalGroundingDocuments)
-      .where(isNotNull(globalGroundingDocuments.speFileId));
+      .where(
+        and(
+          isNotNull(globalGroundingDocuments.speFileId),
+          eq(globalGroundingDocuments.speContainerId, containerId)
+        )
+      );
 
     for (const row of globalDocs) {
       if (row.speFileId) ids.add(row.speFileId);
