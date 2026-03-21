@@ -14481,6 +14481,10 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/admin/spe/file/:speFileId/content", async (req, res) => {
     try {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Global Admin or Domain Admin access required" });
+      }
       const ctx = await getRequestContext(req);
       const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
 
