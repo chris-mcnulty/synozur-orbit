@@ -472,6 +472,14 @@ export class GraphClient {
       pages++;
     }
 
+    if (nextUrl) {
+      // We hit the pagination cap (50 pages) but the API still returned a nextLink,
+      // which means the result set is incomplete.
+      // Log a warning so operators can detect that the listing was truncated.
+      console.warn(
+        `SharePointGraphClient.listFiles: pagination cap (50 pages) reached for container '${containerId}' and path '${folderPath}'. Results may be incomplete.`
+      );
+    }
     return items;
   }
 
