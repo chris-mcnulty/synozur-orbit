@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
-import { cn } from "@/lib/utils";
+import { cn, cleanSignalSummary } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
@@ -1172,7 +1172,7 @@ export default function Dashboard() {
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2">
-                          {item.summary || item.description}
+                          {cleanSignalSummary(item.summary, item.description)}
                         </p>
                         {item.type === "blog_update" && item.details?.newPosts?.[0]?.title && (
                           <div className="mt-1">

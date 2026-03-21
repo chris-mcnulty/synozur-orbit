@@ -125,10 +125,11 @@ JSON:`
     });
     
     const textBlock = response.content.find(block => block.type === "text");
-    const rawText = textBlock?.text || "";
+    let rawText = textBlock?.text || "";
+    rawText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
     
     try {
-      const parsed = JSON.parse(rawText.trim());
+      const parsed = JSON.parse(rawText);
       
       if (parsed.noSignificantChanges) {
         return {
@@ -152,8 +153,16 @@ JSON:`
         analysis,
       };
     } catch {
+      let fallbackSummary = "Changes detected but analysis unavailable.";
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const extracted = JSON.parse(jsonMatch[0]);
+          if (extracted.narrative) fallbackSummary = extracted.narrative;
+        }
+      } catch {}
       return {
-        summary: rawText || "Changes detected but analysis unavailable.",
+        summary: fallbackSummary,
         analysis: null,
       };
     }

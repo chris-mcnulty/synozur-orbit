@@ -47,3 +47,16 @@ export function formatRelativeTime(dateInput: string | Date | null | undefined):
   
   return formatDate(date);
 }
+
+export function cleanSignalSummary(text: string | null | undefined, fallback?: string): string {
+  if (!text) return fallback || "Changes detected";
+  if (!text.startsWith("{") && !text.startsWith("```") && !text.startsWith('"')) return text;
+  try {
+    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+    const jsonStr = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
+    const parsed = JSON.parse(jsonStr);
+    return parsed.narrative || parsed.description || fallback || "Changes detected";
+  } catch {
+    return fallback || "Changes detected";
+  }
+}

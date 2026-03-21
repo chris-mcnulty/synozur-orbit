@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { cleanSignalSummary } from "@/lib/utils";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -344,7 +345,7 @@ export default function Activity() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm leading-relaxed">{change.summary}</p>
+                    <p className="text-sm leading-relaxed">{cleanSignalSummary(change.summary, change.description)}</p>
                     {change.details?.changeScore && (
                       <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
@@ -752,7 +753,7 @@ export default function Activity() {
                       </CardHeader>
                       <CardContent>
                         {item.summary ? (
-                          <p className="text-sm text-muted-foreground">{item.summary}</p>
+                          <p className="text-sm text-muted-foreground">{cleanSignalSummary(item.summary, item.description)}</p>
                         ) : (
                           <p className="text-sm text-muted-foreground">
                             {item.type === 'change' ? "Detected text content change on homepage." : 
