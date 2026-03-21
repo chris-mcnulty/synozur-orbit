@@ -2897,6 +2897,24 @@ Return ONLY valid JSON, no markdown or explanation.`;
       res.setHeader("Content-Disposition", `attachment; filename="${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf"`);
       res.setHeader("X-Report-Id", report.id);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      if (tenant?.speStorageEnabled) {
+        const speReportType = includeStrategicPlans ? "full_analysis" : scope === "project" ? "project_report" : "competitive_analysis";
+        const speFileName = `${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+        import("./services/sharepoint-file-storage.js").then(({ sharepointFileStorage }) =>
+          sharepointFileStorage.storeFile(pdfBuffer, speFileName, "application/pdf", {
+            documentType: "report",
+            scope: "tenant",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || undefined,
+            createdByUserId: ctx.userId,
+            fileType: "pdf",
+            originalFileName: speFileName,
+            reportType: speReportType,
+          }, ctx.userId, report.id, tenant.id)
+        ).catch((err) => console.error("[SPE] Failed to store report PDF:", err));
+      }
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -2929,6 +2947,24 @@ Return ONLY valid JSON, no markdown or explanation.`;
       res.setHeader("Content-Disposition", `attachment; filename="Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
       res.setHeader("X-Report-Id", report.id);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      const speFileName = `Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      Promise.resolve().then(async () => {
+        const t = await storage.getTenantByDomain(ctx.tenantDomain);
+        if (!t?.speStorageEnabled) return;
+        const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+        return sharepointFileStorage.storeFile(pdfBuffer, speFileName, "application/pdf", {
+          documentType: "report",
+          scope: "tenant",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId || undefined,
+          createdByUserId: ctx.userId,
+          fileType: "pdf",
+          originalFileName: speFileName,
+          reportType: "full_analysis",
+        }, ctx.userId, report.id, t.id);
+      }).catch((err) => console.error("[SPE] Failed to store full analysis PDF:", err));
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -2967,6 +3003,24 @@ Return ONLY valid JSON, no markdown or explanation.`;
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.setHeader("X-Report-Id", report.id);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      Promise.resolve().then(async () => {
+        const t = await storage.getTenantByDomain(ctx.tenantDomain);
+        if (!t?.speStorageEnabled) return;
+        const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+        return sharepointFileStorage.storeFile(pdfBuffer, filename, "application/pdf", {
+          documentType: "report",
+          scope: "competitor",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId || undefined,
+          competitorId: id,
+          createdByUserId: ctx.userId,
+          fileType: "pdf",
+          originalFileName: filename,
+          reportType: "competitor_intelligence",
+        }, ctx.userId, report.id, t.id);
+      }).catch((err) => console.error("[SPE] Failed to store competitor PDF:", err));
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -3401,6 +3455,23 @@ Return ONLY valid JSON, no markdown or explanations.`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"`);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      if (tenant?.speStorageEnabled) {
+        import("./services/sharepoint-file-storage.js").then(({ sharepointFileStorage }) =>
+          sharepointFileStorage.storeFile(pdfBuffer, filename, "application/pdf", {
+            documentType: "report",
+            scope: "competitor",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || undefined,
+            competitorId: battlecard.competitorId,
+            createdByUserId: ctx.userId,
+            fileType: "pdf",
+            originalFileName: filename,
+            reportType: "battlecard",
+          }, ctx.userId, battlecard.id, tenant.id)
+        ).catch((err) => console.error("[SPE] Failed to store battlecard PDF:", err));
+      }
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -3478,6 +3549,22 @@ Return ONLY valid JSON, no markdown or explanations.`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"`);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      if (tenant?.speStorageEnabled) {
+        import("./services/sharepoint-file-storage.js").then(({ sharepointFileStorage }) =>
+          sharepointFileStorage.storeFile(pdfBuffer, filename, "application/pdf", {
+            documentType: "report",
+            scope: "competitor",
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || undefined,
+            createdByUserId: ctx.userId,
+            fileType: "pdf",
+            originalFileName: filename,
+            reportType: "product_battlecard",
+          }, ctx.userId, battlecard.id, tenant.id)
+        ).catch((err) => console.error("[SPE] Failed to store product battlecard PDF:", err));
+      }
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -13844,6 +13931,23 @@ Only use these timeframe values: ${periods.join(", ")}`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      Promise.resolve().then(async () => {
+        const t = await storage.getTenantByDomain(ctx.tenantDomain);
+        if (!t?.speStorageEnabled) return;
+        const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+        return sharepointFileStorage.storeFile(pdfBuffer, filename, "application/pdf", {
+          documentType: "report",
+          scope: "tenant",
+          tenantDomain: ctx.tenantDomain,
+          marketId: briefing.marketId || undefined,
+          createdByUserId: ctx.userId,
+          fileType: "pdf",
+          originalFileName: filename,
+          reportType: "intelligence_briefing",
+        }, ctx.userId, briefingId, t.id);
+      }).catch((err) => console.error("[SPE] Failed to store briefing PDF:", err));
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

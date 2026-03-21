@@ -38,6 +38,15 @@ export type OrbitDocumentScope =
   | "competitor"
   | "global";
 
+export type OrbitReportType =
+  | "competitive_analysis"
+  | "full_analysis"
+  | "project_report"
+  | "competitor_intelligence"
+  | "battlecard"
+  | "product_battlecard"
+  | "intelligence_briefing";
+
 export interface OrbitFileMetadata {
   documentType: OrbitDocumentType;
   scope: OrbitDocumentScope;
@@ -47,6 +56,7 @@ export interface OrbitFileMetadata {
   createdByUserId: string;
   fileType: string;              // pdf, docx, txt, png, etc.
   originalFileName: string;
+  reportType?: OrbitReportType;  // populated for documentType: "report"
 }
 
 export interface StoredOrbitFile {
@@ -234,6 +244,7 @@ export class SharePointFileStorage {
       OrbitCreatedByUserId: metadata.createdByUserId,
       OrbitFileType: metadata.fileType,
       OrbitOriginalFileName: metadata.originalFileName,
+      OrbitReportType: metadata.reportType || null,
     };
 
     try {
@@ -465,6 +476,7 @@ export class SharePointFileStorage {
       createdByUserId: (fields.OrbitCreatedByUserId as string) || "unknown",
       fileType: (fields.OrbitFileType as string) || "unknown",
       originalFileName: (fields.OrbitOriginalFileName as string) || item.name,
+      reportType: (fields.OrbitReportType as OrbitReportType) || undefined,
     };
 
     return {
