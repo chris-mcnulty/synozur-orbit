@@ -14193,5 +14193,209 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  // ==================== SHAREPOINT EMBEDDED (SPE) ADMIN ROUTES ====================
+  // All SPE routes require Global Admin or Domain Admin role.
+  // These routes manage containers and orphaned file cleanup.
+
+  // GET /api/admin/spe/status — check SPE container accessibility for the current tenant
+  app.get("/api/admin/spe/status", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { containerId } = await sharepointFileStorage.getContainerForTenant(tenantRow?.id);
+
+      if (!containerId) {
+        return res.json({ configured: false, message: "No SPE container configured. Set ORBIT_SPE_CONTAINER_ID_DEV / ORBIT_SPE_CONTAINER_ID_PROD." });
+      }
+
+      const { containerCreator } = await import("./services/sharepoint-container-creator.js");
+      const info = await containerCreator.getContainerInfo(containerId);
+      res.json({ configured: true, containerId: containerId.substring(0, 20) + "…", ...info });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/spe/container — create a new SPE container for a tenant
+  app.post("/api/admin/spe/container", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+
+      const { containerName, description, azureTenantId } = req.body as {
+        containerName?: string;
+        description?: string;
+        azureTenantId?: string;
+      };
+
+      if (!containerName) return res.status(400).json({ error: "containerName is required" });
+
+      const { containerCreator } = await import("./services/sharepoint-container-creator.js");
+      const result = await containerCreator.createContainer(containerName, description, azureTenantId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/spe/register-container-type — register Orbit's SPE container type in a tenant
+  app.post("/api/admin/spe/register-container-type", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+
+      const { azureTenantId } = req.body as { azureTenantId?: string };
+      if (!azureTenantId) return res.status(400).json({ error: "azureTenantId is required" });
+
+      const { containerCreator } = await import("./services/sharepoint-container-creator.js");
+      const result = await containerCreator.registerContainerTypeForTenant(azureTenantId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/admin/spe/stats — storage statistics for the current tenant's SPE container
+  app.get("/api/admin/spe/stats", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+      const stats = await sharepointFileStorage.getStorageStats(tenantRow?.id);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/admin/spe/orphans — scan for orphaned files (dry-run report)
+  app.get("/api/admin/spe/orphans", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { orphanedFileManager } = await import("./services/sharepoint-orphan-cleaner.js");
+      const report = await orphanedFileManager.getOrphanReport(tenantRow?.id);
+      res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/spe/orphans/scan — detailed orphan scan with full file listing
+  app.post("/api/admin/spe/orphans/scan", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { orphanedFileManager } = await import("./services/sharepoint-orphan-cleaner.js");
+      const result = await orphanedFileManager.scanForOrphans(tenantRow?.id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/spe/orphans/cleanup — delete orphaned files
+  // Body: { dryRun?: boolean, maxDelete?: number }
+  // dryRun defaults to TRUE for safety — pass dryRun: false to actually delete
+  app.post("/api/admin/spe/orphans/cleanup", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required for orphan deletion" });
+      }
+
+      const { dryRun = true, maxDelete = 100 } = req.body as { dryRun?: boolean; maxDelete?: number };
+
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { orphanedFileManager } = await import("./services/sharepoint-orphan-cleaner.js");
+      const result = await orphanedFileManager.runOrphanCleanup({ dryRun, tenantId: tenantRow?.id, maxDelete });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/spe/orphans/delete — delete a specific list of known orphan IDs
+  // Body: { speFileIds: string[] }
+  app.post("/api/admin/spe/orphans/delete", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+
+      const { speFileIds } = req.body as { speFileIds?: string[] };
+      if (!Array.isArray(speFileIds) || speFileIds.length === 0) {
+        return res.status(400).json({ error: "speFileIds array is required" });
+      }
+
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+      const { orphanedFileManager } = await import("./services/sharepoint-orphan-cleaner.js");
+      const result = await orphanedFileManager.deleteOrphans(speFileIds, tenantRow?.id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/admin/spe/file/:speFileId/content — serve a file stored in SPE
+  app.get("/api/admin/spe/file/:speFileId/content", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const ctx = await getRequestContext(req);
+      const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+
+      const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
+      const result = await sharepointFileStorage.getFileContent(req.params.speFileId, tenantRow?.id);
+
+      if (!result) return res.status(404).json({ error: "File not found in SPE container" });
+
+      res.set({
+        "Content-Type": result.metadata.contentType,
+        "Content-Length": String(result.buffer.length),
+        "Content-Disposition": `inline; filename="${result.metadata.originalName}"`,
+        "Cache-Control": "private, max-age=3600",
+      });
+      res.send(result.buffer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }

@@ -89,6 +89,12 @@ export const tenants = pgTable("tenants", {
   // Multi-market settings (Enterprise tier feature)
   multiMarketEnabled: boolean("multi_market_enabled").default(false), // Whether tenant can create multiple markets
   marketLimit: integer("market_limit"), // Maximum number of markets allowed (NULL = unlimited)
+  // SharePoint Embedded (SPE) file storage — tenant-level container configuration
+  speContainerIdDev: text("spe_container_id_dev"), // SPE container ID for development environment
+  speContainerIdProd: text("spe_container_id_prod"), // SPE container ID for production environment
+  speStorageEnabled: boolean("spe_storage_enabled").default(false), // Whether SPE storage is active for this tenant
+  speMigrationStatus: text("spe_migration_status"), // pending | in_progress | completed | failed
+  speMigrationStartedAt: timestamp("spe_migration_started_at"), // When SPE migration began
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -737,6 +743,9 @@ export const groundingDocuments = pgTable("grounding_documents", {
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(), // Email domain for tenant scoping
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  // SharePoint Embedded — drive-item ID when stored in SPE (null = stored in GCS)
+  speFileId: text("spe_file_id"),
+  speContainerId: text("spe_container_id"), // SPE container the file lives in
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -773,6 +782,9 @@ export const globalGroundingDocuments = pgTable("global_grounding_documents", {
   wordCount: integer("word_count").notNull().default(0),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
   isActive: boolean("is_active").notNull().default(true), // Can disable without deleting
+  // SharePoint Embedded — drive-item ID when stored in SPE (null = not in SPE)
+  speFileId: text("spe_file_id"),
+  speContainerId: text("spe_container_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
