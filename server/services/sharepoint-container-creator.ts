@@ -37,14 +37,18 @@ export class ContainerCreator {
    * This must be registered in the Azure App Registration for Synozur Orbit.
    * It is intentionally DIFFERENT from Constellation's container type.
    *
-   * Set ORBIT_SPE_CONTAINER_TYPE_ID in your environment.  The fallback
-   * placeholder will fail at runtime until a real ID is provided.
-   */
+   * Set ORBIT_SPE_CONTAINER_TYPE_ID in your environment. This value is
+   * required; an explicit error is thrown if it is missing so that
+   * misconfiguration is detected early.
   private get containerTypeId(): string {
-    return (
-      process.env.ORBIT_SPE_CONTAINER_TYPE_ID ||
-      "00000000-0000-0000-0000-000000000000" // placeholder — must be replaced
-    );
+    const value = process.env.ORBIT_SPE_CONTAINER_TYPE_ID;
+    if (!value) {
+      throw new Error(
+        "ORBIT_SPE_CONTAINER_TYPE_ID environment variable is not set. " +
+          "Configure the SharePoint Embedded container type ID before using ContainerCreator."
+      );
+    }
+    return value;
   }
 
   private readonly graphBaseUrl = "https://graph.microsoft.com/v1.0";
