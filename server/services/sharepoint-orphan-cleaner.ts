@@ -19,8 +19,8 @@
  */
 
 import { db } from "../db.js";
-import { groundingDocuments, globalGroundingDocuments } from "@shared/schema";
-import { isNotNull } from "drizzle-orm";
+import { groundingDocuments, globalGroundingDocuments, tenants } from "@shared/schema";
+import { eq, isNotNull } from "drizzle-orm";
 import { sharepointFileStorage } from "./sharepoint-file-storage.js";
 import type { StoredOrbitFile } from "./sharepoint-file-storage.js";
 
@@ -38,6 +38,8 @@ export interface OrphanedFile {
   /** Inferred document type from SPE column metadata */
   documentType: string;
   tenantDomain?: string;
+  /** Orbit tenant UUID the file belongs to; populated during multi-tenant scans */
+  orbitTenantId?: string;
 }
 
 export interface OrphanScanResult {
@@ -78,28 +80,53 @@ export class OrphanedFileManager {
   // -------------------------------------------------------------------------
 
   /**
-   * Scan the SPE container and return a list of files that have no matching
+   * Scan the SPE container(s) and return a list of files that have no matching
    * database record.
+   *
+   * When `tenantId` is supplied the scan is scoped to that tenant's container.
+   * When omitted the scan iterates every SPE-enabled tenant's container so
+   * that no tenant is missed in a multi-tenant deployment.
    *
    * @param tenantId  Optional Orbit tenant UUID to scope the scan
    */
   async scanForOrphans(tenantId?: string): Promise<OrphanScanResult> {
     const startedAt = Date.now();
-    console.log("[OrphanManager] Starting orphan scan", tenantId ? `(tenant: ${tenantId})` : "(all tenants)");
 
-    // 1. Get all files currently in the SPE container
-    const speFiles = await sharepointFileStorage.listFiles(undefined, tenantId);
-
-    // 2. Collect all known speFileIds from the database
+    // 1. Collect all known speFileIds from the database (once, upfront)
     const knownIds = await this.loadKnownSpeFileIds();
-
     const now = new Date();
     const safeAgeMs = SAFE_AGE_HOURS * 60 * 60 * 1000;
+
+    // 2. Gather SPE files — either from a single tenant or all SPE-enabled tenants
+    let taggedFiles: Array<{ file: StoredOrbitFile; orbitTenantId?: string }>;
+
+    if (tenantId) {
+      console.log(`[OrphanManager] Starting orphan scan (tenant: ${tenantId})`);
+      const files = await sharepointFileStorage.listFiles(undefined, tenantId);
+      taggedFiles = files.map((f) => ({ file: f, orbitTenantId: tenantId }));
+    } else {
+      const tenantIds = await this.getSpeEnabledTenantIds();
+      if (tenantIds.length === 0) {
+        // No per-tenant containers — fall back to the global default container
+        console.log("[OrphanManager] No SPE-enabled tenants found; scanning global container");
+        const files = await sharepointFileStorage.listFiles(undefined, undefined);
+        taggedFiles = files.map((f) => ({ file: f }));
+      } else {
+        console.log(`[OrphanManager] Starting orphan scan across ${tenantIds.length} SPE-enabled tenant(s)`);
+        const perTenant = await Promise.all(
+          tenantIds.map(async (tid) => {
+            const files = await sharepointFileStorage.listFiles(undefined, tid);
+            return files.map((f) => ({ file: f, orbitTenantId: tid }));
+          })
+        );
+        taggedFiles = perTenant.flat();
+      }
+    }
 
     const orphans: OrphanedFile[] = [];
     let exemptCount = 0;
 
-    for (const file of speFiles) {
+    for (const { file, orbitTenantId } of taggedFiles) {
       if (knownIds.has(file.id)) continue;
 
       // Exempt recently uploaded files (race condition buffer)
@@ -117,12 +144,13 @@ export class OrphanedFileManager {
         uploadedAt: file.uploadedAt,
         documentType: file.metadata.documentType,
         tenantDomain: file.metadata.tenantDomain,
+        orbitTenantId,
       });
     }
 
     const result: OrphanScanResult = {
       scannedAt: now,
-      totalFilesInSpe: speFiles.length,
+      totalFilesInSpe: taggedFiles.length,
       totalFilesInDb: knownIds.size,
       orphanCount: orphans.length,
       orphans,
@@ -131,7 +159,7 @@ export class OrphanedFileManager {
     };
 
     console.log(
-      `[OrphanManager] Scan complete: ${speFiles.length} SPE files, ` +
+      `[OrphanManager] Scan complete: ${taggedFiles.length} SPE files, ` +
       `${knownIds.size} DB records, ${orphans.length} orphans found ` +
       `(${exemptCount} exempt), took ${result.durationMs}ms`
     );
@@ -208,8 +236,7 @@ export class OrphanedFileManager {
     }
 
     const toDelete = scan.orphans
-      .slice(0, maxDelete)
-      .map((o) => o.speFileId);
+      .slice(0, maxDelete);
 
     if (scan.orphanCount > maxDelete) {
       console.warn(
@@ -217,12 +244,33 @@ export class OrphanedFileManager {
       );
     }
 
-    const deleteResult = await this.deleteOrphans(toDelete, tenantId);
+    // Group by orbitTenantId so each deletion is routed to the correct container.
+    // Orphans with no orbitTenantId (global container) are keyed on undefined,
+    // which causes deleteOrphans() to resolve via getContainerForTenant(undefined)
+    // — the correct fallback to the global default container.
+    const byTenant = new Map<string | undefined, string[]>();
+    for (const orphan of toDelete) {
+      const tid = orphan.orbitTenantId ?? tenantId;
+      if (!byTenant.has(tid)) byTenant.set(tid, []);
+      byTenant.get(tid)!.push(orphan.speFileId);
+    }
+
+    const deletedFileIds: string[] = [];
+    const failedFileIds: string[] = [];
+
+    for (const [tid, ids] of byTenant) {
+      const result = await this.deleteOrphans(ids, tid);
+      deletedFileIds.push(...result.deletedFileIds);
+      failedFileIds.push(...result.failedFileIds);
+    }
 
     return {
       ...scan,
       dryRun: false,
-      ...deleteResult,
+      deletedCount: deletedFileIds.length,
+      failedCount: failedFileIds.length,
+      deletedFileIds,
+      failedFileIds,
     };
   }
 
@@ -256,6 +304,17 @@ export class OrphanedFileManager {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Return the Orbit tenant UUIDs of every tenant that has SPE storage enabled.
+   */
+  private async getSpeEnabledTenantIds(): Promise<string[]> {
+    const rows = await db
+      .select({ id: tenants.id })
+      .from(tenants)
+      .where(eq(tenants.speStorageEnabled, true));
+    return rows.map((r) => r.id);
+  }
 
   /**
    * Build a Set of all speFileIds currently tracked in the database.
