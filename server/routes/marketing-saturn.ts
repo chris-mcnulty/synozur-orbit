@@ -610,6 +610,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { assetId, overrideTitle, overrideContent, sortOrder } = req.body;
     if (!assetId) return res.status(400).json({ error: "assetId is required" });
+    const [asset] = await db.select().from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, assetId),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ));
+    if (!asset) return res.status(404).json({ error: "Asset not found" });
     const [row] = await db.insert(campaignAssets).values({
       id: randomUUID(),
       campaignId: campaign.id,
