@@ -623,11 +623,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.patch("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { overrideTitle, overrideContent, sortOrder } = req.body;
     const [row] = await db.update(campaignAssets)
       .set({ overrideTitle, overrideContent, sortOrder })
       .where(and(
-        eq(campaignAssets.campaignId, req.params.campaignId),
+        eq(campaignAssets.campaignId, campaign.id),
         eq(campaignAssets.assetId, req.params.assetId),
       ))
       .returning();
@@ -637,9 +641,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.delete("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     await db.delete(campaignAssets)
       .where(and(
-        eq(campaignAssets.campaignId, req.params.campaignId),
+        eq(campaignAssets.campaignId, campaign.id),
         eq(campaignAssets.assetId, req.params.assetId),
       ));
     res.status(204).send();
