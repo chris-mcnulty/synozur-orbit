@@ -989,7 +989,7 @@ Return a JSON object with:
       generatedRows.push({
         id: randomUUID(),
         campaignId,
-        socialAccountId: account.id === "placeholder" ? account.id : account.id,
+        socialAccountId: account.id === "placeholder" ? null : account.id,
         tenantDomain,
         platform: account.platform,
         content: parsed.content ?? result.content,
