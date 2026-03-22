@@ -141,6 +141,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssetCategories.id, req.params.id),
         eq(contentAssetCategories.tenantDomain, ctx.tenantDomain),
+        eq(contentAssetCategories.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -154,6 +155,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssetCategories.id, req.params.id),
         eq(contentAssetCategories.tenantDomain, ctx.tenantDomain),
+        eq(contentAssetCategories.marketId, ctx.marketId),
       ));
     res.status(204).send();
   });
