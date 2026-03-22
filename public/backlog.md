@@ -298,6 +298,26 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
 **Effort**: High (Phase 1 complete, remaining phases in progress)
 
+#### Marketing Landing Page
+**Status**: Backlogged
+Create a dedicated marketing landing/hub page that serves as the central entry point for all marketing features in Orbit:
+- [ ] Landing page at `/app/marketing` with overview of marketing capabilities
+- [ ] Quick-access links to GTM Plan, Messaging Framework, Marketing Planner, Social Posts, Email Newsletters
+- [ ] Summary cards showing status of marketing artifacts (e.g., GTM Plan generated, X marketing plans active)
+- [ ] Quick-action button to generate a Marketing Report (see Marketing Report Option below)
+**Effort**: Medium
+
+#### Marketing Report Option
+**Status**: Backlogged
+Add a "Marketing Report" preset to the report generation flow. This is the main full analysis report but pre-configured to include only marketing-relevant sections: GTM Plan, Messaging Framework, Marketing Planner tasks, and marketing-related recommendations. Gives marketing teams a focused, branded PDF they can share without the full competitive analysis detail.
+- [ ] Add "Marketing Report" as a report type/preset option on the Reports page (alongside Quick and Capstone)
+- [ ] When selected, automatically scope to baseline and include only marketing sections (GTM Plan, Messaging Framework, Marketing Plans, recommendations)
+- [ ] Uses same branded PDF generation pipeline (PDF Browser Pool, company branding)
+- [ ] Show "Marketing" badge on report history cards for marketing-type reports
+- [ ] Optionally accessible as a quick-action from the Marketing Landing Page (if built)
+**Files**: `server/routes.ts`, `server/services/pdf-generator.ts`, `client/src/pages/app/reports.tsx`
+**Effort**: Medium
+
 #### Product Competitive Position Summaries ✅
 **Status**: Implemented
 When products are attached to a baseline company, generate and display 2-3 sentence competitive position summaries:
