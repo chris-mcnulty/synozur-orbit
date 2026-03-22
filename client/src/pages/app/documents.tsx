@@ -40,6 +40,7 @@ export default function Documents() {
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("tenant");
   const [competitorId, setCompetitorId] = useState<string | null>(null);
+  const [useCase, setUseCase] = useState("intelligence");
   const [uploadedFile, setUploadedFile] = useState<{ name: string; url: string; size: number; type: string } | null>(null);
   const pendingUploadPathRef = useRef<string | null>(null);
 
@@ -73,6 +74,7 @@ export default function Documents() {
       fileUrl: string;
       fileSize: number;
       scope: string;
+      useCase?: string;
       competitorId?: string | null;
     }) => {
       const response = await fetch("/api/documents", {
@@ -124,6 +126,7 @@ export default function Documents() {
     setName("");
     setDescription("");
     setScope("tenant");
+    setUseCase("intelligence");
     setCompetitorId(null);
     setUploadedFile(null);
     pendingUploadPathRef.current = null;
@@ -147,6 +150,7 @@ export default function Documents() {
       fileUrl: uploadedFile.url,
       fileSize: uploadedFile.size,
       scope,
+      useCase,
       competitorId: scope === "competitor" ? competitorId : null,
     });
   };
@@ -311,6 +315,24 @@ export default function Documents() {
                       <SelectItem value="competitor">Specific Competitor</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>AI Use Case</Label>
+                  <Select value={useCase} onValueChange={setUseCase}>
+                    <SelectTrigger data-testid="select-use-case">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="intelligence">Competitive Intelligence</SelectItem>
+                      <SelectItem value="marketing">Marketing (social posts &amp; email)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {useCase === "marketing"
+                      ? "This document will ground AI-generated social posts and emails."
+                      : "This document will ground AI competitor analysis and recommendations."}
+                  </p>
                 </div>
 
                 {scope === "competitor" && (

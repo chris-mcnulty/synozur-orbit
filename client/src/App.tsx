@@ -43,6 +43,11 @@ import GtmPlanPage from "@/pages/app/marketing/gtm-plan";
 import MessagingFrameworkPage from "@/pages/app/marketing/messaging-framework";
 import SocialPostsPage from "@/pages/app/marketing/social-posts";
 import EmailNewslettersPage from "@/pages/app/marketing/email-newsletters";
+import ContentLibraryPage from "@/pages/app/marketing/content-library";
+import BrandLibraryPage from "@/pages/app/marketing/brand-library";
+import CampaignsPage from "@/pages/app/marketing/campaigns";
+import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
+import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
@@ -109,6 +114,11 @@ function Router() {
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts" component={SocialPostsPage} />
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
+      <Route path="/app/marketing/content-library" component={ContentLibraryPage} />
+      <Route path="/app/marketing/brand-library" component={BrandLibraryPage} />
+      <Route path="/app/marketing/campaigns" component={CampaignsPage} />
+      <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
+      <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
       <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
       <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       <Route path="/app/refresh-center" component={RefreshCenter} />

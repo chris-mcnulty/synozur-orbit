@@ -739,6 +739,7 @@ export const groundingDocuments = pgTable("grounding_documents", {
   fileSize: integer("file_size").notNull(), // Size in bytes
   extractedText: text("extracted_text"), // Extracted text content for AI context
   scope: text("scope").notNull().default("tenant"), // tenant-wide or competitor-specific
+  useCase: text("use_case").notNull().default("intelligence"), // intelligence | marketing
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(), // Email domain for tenant scoping
@@ -1383,4 +1384,328 @@ export const insertScheduledJobRunSchema = createInsertSchema(scheduledJobRuns).
 });
 
 export type ScheduledJobRun = typeof scheduledJobRuns.$inferSelect;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Saturn Marketing Integration
+// Content library, brand library, campaigns, social accounts, post/email
+// generation — all Enterprise-gated, tenant + market scoped.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Content Asset Categories — labels for organizing content assets
+export const contentAssetCategories = pgTable("content_asset_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertContentAssetCategorySchema = createInsertSchema(contentAssetCategories).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type ContentAssetCategory = typeof contentAssetCategories.$inferSelect;
+export type InsertContentAssetCategory = z.infer<typeof insertContentAssetCategorySchema>;
+
+// Marketing Product Tags — tag assets and campaigns by product/service
+export const marketingProductTags = pgTable("marketing_product_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMarketingProductTagSchema = createInsertSchema(marketingProductTags).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type MarketingProductTag = typeof marketingProductTags.$inferSelect;
+export type InsertMarketingProductTag = z.infer<typeof insertMarketingProductTagSchema>;
+
+// Content Assets — marketing content items (copy, articles, slides, etc.)
+export const contentAssets = pgTable("content_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  url: text("url"), // Source URL (captured via extension or manually entered)
+  content: text("content"), // Extracted / pasted content body
+  fileUrl: text("file_url"), // Object storage path if uploaded
+  fileType: text("file_type"), // pdf, docx, png, jpg, etc.
+  fileSize: integer("file_size"),
+  categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("active"), // active, archived
+  capturedViaExtension: boolean("captured_via_extension").notNull().default(false),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const contentAssetsRelations = relations(contentAssets, ({ one, many }) => ({
+  category: one(contentAssetCategories, {
+    fields: [contentAssets.categoryId],
+    references: [contentAssetCategories.id],
+  }),
+  createdByUser: one(users, {
+    fields: [contentAssets.createdBy],
+    references: [users.id],
+  }),
+  productTagLinks: many(contentAssetProductTags),
+  campaignAssets: many(campaignAssets),
+}));
+
+export const insertContentAssetSchema = createInsertSchema(contentAssets).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type ContentAsset = typeof contentAssets.$inferSelect;
+export type InsertContentAsset = z.infer<typeof insertContentAssetSchema>;
+
+// Content Asset ↔ Product Tag join
+export const contentAssetProductTags = pgTable("content_asset_product_tags", {
+  assetId: varchar("asset_id").notNull().references(() => contentAssets.id, { onDelete: "cascade" }),
+  tagId: varchar("tag_id").notNull().references(() => marketingProductTags.id, { onDelete: "cascade" }),
+});
+
+// Brand Asset Categories
+export const brandAssetCategories = pgTable("brand_asset_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBrandAssetCategorySchema = createInsertSchema(brandAssetCategories).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type BrandAssetCategory = typeof brandAssetCategories.$inferSelect;
+export type InsertBrandAssetCategory = z.infer<typeof insertBrandAssetCategorySchema>;
+
+// Brand Assets — approved logos, images, templates, brand-locked visuals
+export const brandAssets = pgTable("brand_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  url: text("url"), // Source URL
+  fileUrl: text("file_url"), // Object storage path
+  fileType: text("file_type"), // png, jpg, svg, pdf, etc.
+  fileSize: integer("file_size"),
+  categoryId: varchar("category_id").references(() => brandAssetCategories.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("active"), // active, archived
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const brandAssetsRelations = relations(brandAssets, ({ one, many }) => ({
+  category: one(brandAssetCategories, {
+    fields: [brandAssets.categoryId],
+    references: [brandAssetCategories.id],
+  }),
+  createdByUser: one(users, {
+    fields: [brandAssets.createdBy],
+    references: [users.id],
+  }),
+  productTagLinks: many(brandAssetProductTags),
+}));
+
+export const insertBrandAssetSchema = createInsertSchema(brandAssets).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type BrandAsset = typeof brandAssets.$inferSelect;
+export type InsertBrandAsset = z.infer<typeof insertBrandAssetSchema>;
+
+// Brand Asset ↔ Product Tag join
+export const brandAssetProductTags = pgTable("brand_asset_product_tags", {
+  assetId: varchar("asset_id").notNull().references(() => brandAssets.id, { onDelete: "cascade" }),
+  tagId: varchar("tag_id").notNull().references(() => marketingProductTags.id, { onDelete: "cascade" }),
+});
+
+// Social Accounts — connected social media accounts for publishing
+export const socialAccounts = pgTable("social_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook
+  accountName: text("account_name").notNull(), // Display name / handle
+  accountId: text("account_id"), // Platform-specific ID
+  profileUrl: text("profile_url"),
+  notes: text("notes"),
+  status: text("status").notNull().default("active"), // active, inactive
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type SocialAccount = typeof socialAccounts.$inferSelect;
+export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
+
+// Campaigns — group assets + social accounts for coordinated content creation
+export const campaigns = pgTable("campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("draft"), // draft, active, completed, archived
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [campaigns.createdBy],
+    references: [users.id],
+  }),
+  campaignAssets: many(campaignAssets),
+  campaignSocialAccounts: many(campaignSocialAccounts),
+  generatedPosts: many(generatedPosts),
+  generatedEmails: many(generatedEmails),
+}));
+
+export const insertCampaignSchema = createInsertSchema(campaigns).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+
+// Campaign ↔ Content Asset join (with optional overrides)
+export const campaignAssets = pgTable("campaign_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  assetId: varchar("asset_id").notNull().references(() => contentAssets.id, { onDelete: "cascade" }),
+  overrideTitle: text("override_title"), // Optional per-campaign title override
+  overrideContent: text("override_content"), // Optional per-campaign content override
+  sortOrder: integer("sort_order").notNull().default(0),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const campaignAssetsRelations = relations(campaignAssets, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [campaignAssets.campaignId],
+    references: [campaigns.id],
+  }),
+  asset: one(contentAssets, {
+    fields: [campaignAssets.assetId],
+    references: [contentAssets.id],
+  }),
+}));
+
+export const insertCampaignAssetSchema = createInsertSchema(campaignAssets).omit({
+  id: true, addedAt: true,
+});
+export type CampaignAsset = typeof campaignAssets.$inferSelect;
+export type InsertCampaignAsset = z.infer<typeof insertCampaignAssetSchema>;
+
+// Campaign ↔ Social Account join
+export const campaignSocialAccounts = pgTable("campaign_social_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  socialAccountId: varchar("social_account_id").notNull().references(() => socialAccounts.id, { onDelete: "cascade" }),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const campaignSocialAccountsRelations = relations(campaignSocialAccounts, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [campaignSocialAccounts.campaignId],
+    references: [campaigns.id],
+  }),
+  socialAccount: one(socialAccounts, {
+    fields: [campaignSocialAccounts.socialAccountId],
+    references: [socialAccounts.id],
+  }),
+}));
+
+export const insertCampaignSocialAccountSchema = createInsertSchema(campaignSocialAccounts).omit({
+  id: true, addedAt: true,
+});
+export type CampaignSocialAccount = typeof campaignSocialAccounts.$inferSelect;
+export type InsertCampaignSocialAccount = z.infer<typeof insertCampaignSocialAccountSchema>;
+
+// Generated Posts — AI-generated social posts per campaign × social account
+export const generatedPosts = pgTable("generated_posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  socialAccountId: varchar("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook
+  content: text("content").notNull(), // Generated post copy
+  hashtags: jsonb("hashtags").$type<string[]>().default([]),
+  imagePrompt: text("image_prompt"), // Suggested image generation prompt
+  status: text("status").notNull().default("draft"), // draft, approved, exported, deleted
+  editedContent: text("edited_content"), // User-edited version of the post
+  generationJobId: varchar("generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const generatedPostsRelations = relations(generatedPosts, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [generatedPosts.campaignId],
+    references: [campaigns.id],
+  }),
+  socialAccount: one(socialAccounts, {
+    fields: [generatedPosts.socialAccountId],
+    references: [socialAccounts.id],
+  }),
+}));
+
+export const insertGeneratedPostSchema = createInsertSchema(generatedPosts).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type GeneratedPost = typeof generatedPosts.$inferSelect;
+export type InsertGeneratedPost = z.infer<typeof insertGeneratedPostSchema>;
+
+// Generated Emails — AI-generated promotional emails per campaign
+export const generatedEmails = pgTable("generated_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  subject: text("subject").notNull(),
+  previewText: text("preview_text"),
+  htmlBody: text("html_body").notNull(), // Full HTML email body
+  textBody: text("text_body"), // Plain text fallback
+  status: text("status").notNull().default("draft"), // draft, approved, sent
+  sentAt: timestamp("sent_at"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const generatedEmailsRelations = relations(generatedEmails, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [generatedEmails.campaignId],
+    references: [campaigns.id],
+  }),
+  market: one(markets, {
+    fields: [generatedEmails.marketId],
+    references: [markets.id],
+  }),
+  createdByUser: one(users, {
+    fields: [generatedEmails.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertGeneratedEmailSchema = createInsertSchema(generatedEmails).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type GeneratedEmail = typeof generatedEmails.$inferSelect;
+export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;

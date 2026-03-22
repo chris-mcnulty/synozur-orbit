@@ -20,6 +20,7 @@ import OpenAI from "openai";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
+import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
@@ -264,6 +265,9 @@ export async function registerRoutes(
   
   // Register Entra SSO routes
   registerEntraRoutes(app);
+
+  // Register Saturn Marketing routes (content library, brand library, campaigns, social accounts, post/email generation, extension)
+  registerSaturnMarketingRoutes(app);
   
   // ==================== PUBLIC CONTENT ROUTES ====================
   

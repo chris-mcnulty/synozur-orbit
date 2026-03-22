@@ -23,6 +23,11 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "customBranding", label: "Custom Branding", description: "Custom logos, colors, and branded reports", category: "platform" },
   { key: "socialPosts", label: "Social Post Generator", description: "AI-generated social media posts from competitive intelligence", category: "marketing" },
   { key: "emailNewsletters", label: "Email Newsletter Generator", description: "AI-powered email newsletters from market intelligence", category: "marketing" },
+  { key: "contentLibrary", label: "Content Library", description: "Manage marketing content assets, categories, and product tags", category: "marketing" },
+  { key: "brandLibrary", label: "Brand Library", description: "Manage brand-approved visual assets and templates", category: "marketing" },
+  { key: "campaigns", label: "Campaigns", description: "Campaign management with asset and social account coordination", category: "marketing" },
+  { key: "socialAccounts", label: "Social Accounts", description: "Connect and manage social media accounts for publishing", category: "marketing" },
+  { key: "saturnCapture", label: "Saturn Capture Extension", description: "Browser extension for capturing web content into the content library", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -61,6 +66,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     customBranding: false,
     socialPosts: false,
     emailNewsletters: false,
+    contentLibrary: false,
+    brandLibrary: false,
+    campaigns: false,
+    socialAccounts: false,
+    saturnCapture: false,
   },
   trial: {
     battlecards: true,
@@ -78,6 +88,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     customBranding: false,
     socialPosts: false,
     emailNewsletters: false,
+    contentLibrary: false,
+    brandLibrary: false,
+    campaigns: false,
+    socialAccounts: false,
+    saturnCapture: false,
   },
   pro: {
     battlecards: true,
@@ -95,6 +110,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     customBranding: false,
     socialPosts: false,
     emailNewsletters: false,
+    contentLibrary: false,
+    brandLibrary: false,
+    campaigns: false,
+    socialAccounts: false,
+    saturnCapture: false,
   },
   enterprise: {
     battlecards: true,
@@ -112,6 +132,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     customBranding: true,
     socialPosts: true,
     emailNewsletters: true,
+    contentLibrary: true,
+    brandLibrary: true,
+    campaigns: true,
+    socialAccounts: true,
+    saturnCapture: true,
   },
   unlimited: {
     battlecards: true,
@@ -129,6 +154,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     customBranding: true,
     socialPosts: true,
     emailNewsletters: true,
+    contentLibrary: true,
+    brandLibrary: true,
+    campaigns: true,
+    socialAccounts: true,
+    saturnCapture: true,
   },
 };
 
