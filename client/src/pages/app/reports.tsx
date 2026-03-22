@@ -43,10 +43,22 @@ const defaultSections: ReportSections = {
   messagingFramework: true,
 };
 
+const marketingSections: ReportSections = {
+  executiveSummary: true,
+  companyBaseline: false,
+  competitorProfiles: false,
+  gapAnalysis: false,
+  recommendations: false,
+  battleCards: false,
+  activityLog: false,
+  gtmPlan: true,
+  messagingFramework: true,
+};
+
 export default function Reports() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [reportType, setReportType] = useState<"quick" | "capstone">("quick");
+  const [reportType, setReportType] = useState<"quick" | "capstone" | "marketing">("quick");
   const [scope, setScope] = useState<"baseline" | "project">("baseline");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [reportName, setReportName] = useState("");
@@ -139,12 +151,13 @@ export default function Reports() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          name: reportName || undefined,
+          name: reportName || (reportType === "marketing" ? "Marketing Report" : undefined),
           scope,
           projectId: scope === "project" ? selectedProjectId : undefined,
-          sections: reportType === "capstone" ? sections : undefined,
+          sections: reportType === "capstone" ? sections : reportType === "marketing" ? marketingSections : undefined,
           includeStrategicPlans: reportType === "capstone" 
             ? (sections.gtmPlan || sections.messagingFramework) || undefined
+            : reportType === "marketing" ? true
             : includeStrategicPlans || undefined,
         }),
       });
@@ -155,9 +168,12 @@ export default function Reports() {
       }
 
       const blob = await response.blob();
+      const defaultName = reportType === "marketing" 
+        ? `Marketing_Report_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`
+        : `Competitive_Analysis_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`;
       const fileName = reportName 
         ? `${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`
-        : `Competitive_Analysis_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`;
+        : defaultName;
       
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -271,7 +287,7 @@ export default function Reports() {
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div
               className={cn(
                 "p-4 rounded-lg border-2 cursor-pointer transition-all",
@@ -299,6 +315,36 @@ export default function Reports() {
               </div>
               <p className="text-sm text-muted-foreground">
                 Fast, comprehensive report with all standard sections included.
+              </p>
+            </div>
+
+            <div
+              className={cn(
+                "p-4 rounded-lg border-2 cursor-pointer transition-all",
+                reportType === "marketing" 
+                  ? "border-primary bg-primary/5" 
+                  : "border-border hover:border-primary/50"
+              )}
+              onClick={() => setReportType("marketing")}
+              data-testid="option-marketing-report"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  reportType === "marketing" ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Megaphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Marketing Report</h3>
+                  <p className="text-xs text-muted-foreground">GTM & Messaging</p>
+                </div>
+                {reportType === "marketing" && (
+                  <CheckCircle2 className="w-5 h-5 text-primary ml-auto" />
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Executive summary with your GTM plan and messaging framework.
               </p>
             </div>
 
@@ -447,6 +493,24 @@ export default function Reports() {
             />
           </div>
 
+          {reportType === "marketing" && (
+            <div className="p-4 rounded-lg bg-muted/30 border">
+              <Label className="text-sm font-medium mb-2 block">Included Sections</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Executive Summary", icon: Sparkles },
+                  { label: "GTM Plan", icon: Megaphone },
+                  { label: "Messaging Framework", icon: MessageSquareText },
+                ].map(({ label, icon: Icon }) => (
+                  <div key={label} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-primary/10 text-primary text-sm">
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {scope === "baseline" && reportType === "quick" && (
             <div
               className={cn(
@@ -474,6 +538,7 @@ export default function Reports() {
           <Button 
             onClick={handleGenerateAndDownload} 
             disabled={isGenerating || (scope === "project" && !selectedProjectId) || (reportType === "capstone" && Object.values(sections).every(v => !v))}
+
             className="w-full sm:w-auto"
             size="lg"
             data-testid="button-generate-report"

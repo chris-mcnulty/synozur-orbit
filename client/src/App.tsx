@@ -43,6 +43,7 @@ import GtmPlanPage from "@/pages/app/marketing/gtm-plan";
 import MessagingFrameworkPage from "@/pages/app/marketing/messaging-framework";
 import SocialPostsPage from "@/pages/app/marketing/social-posts";
 import EmailNewslettersPage from "@/pages/app/marketing/email-newsletters";
+import MarketingLandingPage from "@/pages/app/marketing/index";
 import ContentLibraryPage from "@/pages/app/marketing/content-library";
 import BrandLibraryPage from "@/pages/app/marketing/brand-library";
 import CampaignsPage from "@/pages/app/marketing/campaigns";
@@ -112,6 +113,7 @@ function Router() {
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />
       <Route path="/app/usage" component={UsagePage} />
+      <Route path="/app/marketing" component={MarketingLandingPage} />
       <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts" component={SocialPostsPage} />

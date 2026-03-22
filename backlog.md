@@ -205,6 +205,16 @@ Generate competitive battlecards for sales enablement:
 - [x] Company Profile fields (headquarters, founded, revenue, funding) with UI editing
 - [x] Company Snapshot section in PDF exports
 
+### Marketing Section Landing Page (Backlog)
+**Status**: Not implemented
+**Description**: Central landing page at `/app/marketing` that ties together all marketing sub-features (GTM Plan, Messaging Framework, Marketing Planner, Social Posts, Email Newsletters). Shows at-a-glance content status cards with quick-action buttons for generating missing content.
+- [ ] Create page component at `client/src/pages/app/marketing/index.tsx`
+- [ ] Summary cards for each marketing sub-feature with generated/not-generated status
+- [ ] Quick-action buttons for generating missing content
+- [ ] Register route in `App.tsx` and add as Marketing nav group entry point
+- [ ] Style with Aurora theme, page-header-gradient-bar, consistent with app patterns
+**Effort**: Low-Medium
+
 ### Real-Time Competitor Alerts (Q1)
 - [ ] Real-time notifications for competitor changes
 - [ ] Social media monitoring (LinkedIn)

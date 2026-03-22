@@ -414,6 +414,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {
       group: "Marketing",
       items: [
+        { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
