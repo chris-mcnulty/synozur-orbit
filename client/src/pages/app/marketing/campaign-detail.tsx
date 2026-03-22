@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -262,9 +263,11 @@ export default function CampaignDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
   });
 
+  const [csvFormat, setCsvFormat] = useState<string>("socialpilot");
+
   const exportCsvMutation = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`/api/campaigns/${id}/export-csv`, {
+      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}`, {
         method: "POST",
         credentials: "include",
       });
@@ -273,7 +276,7 @@ export default function CampaignDetailPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `campaign-posts.csv`;
+      a.download = `campaign-posts-${csvFormat}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     },
@@ -404,9 +407,22 @@ export default function CampaignDetailPage() {
                 {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
               </Button>
               {posts.filter(p => p.status === "approved").length > 0 && (
-                <Button variant="outline" className="gap-2" onClick={() => exportCsvMutation.mutate()} disabled={exportCsvMutation.isPending} data-testid="button-export-csv">
-                  <Download className="w-4 h-4" />Export CSV (SocialPilot)
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={csvFormat} onValueChange={setCsvFormat}>
+                    <SelectTrigger className="w-36" data-testid="select-csv-format">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="socialpilot">SocialPilot</SelectItem>
+                      <SelectItem value="hootsuite">Hootsuite</SelectItem>
+                      <SelectItem value="buffer">Buffer</SelectItem>
+                      <SelectItem value="later">Later</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" className="gap-2" onClick={() => exportCsvMutation.mutate()} disabled={exportCsvMutation.isPending} data-testid="button-export-csv-posts">
+                    <Download className="w-4 h-4" />Export CSV
+                  </Button>
+                </div>
               )}
               {jobStatus?.status === "completed" && posts.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] })} data-testid="button-refresh-posts">

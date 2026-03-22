@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
-  ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone
+  ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
+  Download, Upload, LayoutGrid, List
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +26,8 @@ import {
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 
 interface ContentAsset {
   id: string;
@@ -35,6 +38,7 @@ interface ContentAsset {
   aiSummary?: string;
   leadImageUrl?: string;
   extractionStatus?: string;
+  fileType?: string;
   categoryId?: string;
   productIds?: string[];
   tags?: { seasons?: string[]; locations?: string[]; topics?: string[] };
@@ -81,9 +85,13 @@ export default function ContentLibraryPage() {
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [statusTab, setStatusTab] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [detailAsset, setDetailAsset] = useState<ContentAsset | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -266,8 +274,24 @@ export default function ContentLibraryPage() {
       a.title.toLowerCase().includes(search.toLowerCase()) ||
       a.description?.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === "all" || a.categoryId === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const matchesSource = sourceFilter === "all" ||
+      (sourceFilter === "captured" && a.capturedViaExtension) ||
+      (sourceFilter === "manual" && !a.capturedViaExtension);
+    const matchesStatus = statusTab === "all" ||
+      (statusTab === "active" && a.status === "active") ||
+      (statusTab === "archived" && a.status === "archived");
+    return matchesSearch && matchesCategory && matchesSource && matchesStatus;
   });
+
+  const groupedByCategory = () => {
+    const groups: Record<string, ContentAsset[]> = {};
+    for (const asset of filtered) {
+      const catName = categoryName(asset.categoryId) || "Uncategorized";
+      if (!groups[catName]) groups[catName] = [];
+      groups[catName].push(asset);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  };
 
   const categoryName = (id?: string) => categories.find(c => c.id === id)?.name;
   const productName = (id: string) => marketProducts.find(p => p.id === id)?.name;
@@ -292,6 +316,140 @@ export default function ContentLibraryPage() {
         : [...f.productIds, productId],
     }));
   };
+
+  const handleExportCSV = () => {
+    const rows = filtered.map(a => ({
+      title: a.title,
+      description: a.description || "",
+      url: a.url || "",
+      category: categoryName(a.categoryId) || "",
+      status: a.status,
+      fileType: a.fileType || "",
+      createdDate: new Date(a.createdAt).toLocaleDateString(),
+    }));
+    exportContentAssetsToCSV(rows, "content-library");
+    toast({ title: "CSV exported", description: `${rows.length} assets exported.` });
+  };
+
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (rows.length === 0) {
+      toast({ title: "Import failed", description: "No valid rows found in CSV.", variant: "destructive" });
+      return;
+    }
+
+    let imported = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const title = row["Title"] || "";
+      if (!title.trim()) { failed++; continue; }
+      const catName = row["Category"] || "";
+      const matchedCategory = categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+      try {
+        const r = await fetch("/api/content-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            title,
+            description: row["Description"] || "",
+            url: row["URL"] || "",
+            categoryId: matchedCategory?.id || "",
+            fileType: (row["File Type"] || "").toLowerCase() || undefined,
+            status: (row["Status"] || "active").toLowerCase() === "archived" ? "archived" : "active",
+            extractionStatus: "manual",
+          }),
+        });
+        if (r.ok) imported++; else failed++;
+      } catch { failed++; }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+    toast({
+      title: "Import complete",
+      description: `${imported} assets imported${failed > 0 ? `, ${failed} failed` : ""}.`,
+    });
+    if (importFileRef.current) importFileRef.current.value = "";
+  };
+
+  const renderAssetCard = (asset: ContentAsset) => (
+    <Card
+      key={asset.id}
+      className="group cursor-pointer hover:border-primary/40 transition-colors"
+      onClick={() => setDetailAsset(asset)}
+      data-testid={`card-content-asset-${asset.id}`}
+    >
+      {asset.leadImageUrl && (
+        <div className="aspect-video overflow-hidden rounded-t-lg bg-muted">
+          <img
+            src={asset.leadImageUrl}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={e => (e.currentTarget.style.display = "none")}
+          />
+        </div>
+      )}
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-base leading-tight">{asset.title}</CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
+            onClick={e => { e.stopPropagation(); archiveMutation.mutate(asset.id); }}
+            data-testid={`button-archive-${asset.id}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {asset.capturedViaExtension && <Badge variant="secondary" className="text-xs">Captured</Badge>}
+          {asset.extractionStatus === "extracted" && <Badge variant="secondary" className="text-xs"><Sparkles className="w-2.5 h-2.5 mr-0.5" />AI Extracted</Badge>}
+          {categoryName(asset.categoryId) && <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId)}</Badge>}
+          {asset.status === "archived" && <Badge variant="secondary" className="text-xs">Archived</Badge>}
+          {asset.productIds?.map(pid => (
+            <Badge key={pid} variant="outline" className="text-xs text-primary">{productName(pid) || pid}</Badge>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        {asset.description && <p className="text-sm text-muted-foreground line-clamp-2">{asset.description}</p>}
+        {asset.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2 italic">{asset.aiSummary}</p>}
+        <div className="flex items-center gap-2">
+          {asset.url && (
+            <a
+              href={asset.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-primary hover:underline flex-1 min-w-0"
+              onClick={e => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3 h-3 shrink-0" />
+              <span className="truncate">{asset.url}</span>
+            </a>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
+            data-testid={`button-create-campaign-${asset.id}`}
+          >
+            <Megaphone className="w-3 h-3" /> Campaign
+          </Button>
+        </div>
+        {asset.tags && (
+          <div className="flex flex-wrap gap-1">
+            {asset.tags.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+            {asset.tags.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   if (!isAllowed) {
     return (
@@ -330,6 +488,20 @@ export default function ContentLibraryPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleImportCSV}
+                data-testid="input-import-csv-content"
+              />
+              <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-content">
+                <Upload className="w-4 h-4 mr-1" /> Import CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filtered.length === 0} data-testid="button-export-csv-content">
+                <Download className="w-4 h-4 mr-1" /> Export CSV
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-categories">
                 <Settings className="w-4 h-4 mr-1" /> Categories
               </Button>
@@ -627,6 +799,36 @@ export default function ContentLibraryPage() {
           </div>
         </div>
 
+        <Tabs value={statusTab} onValueChange={setStatusTab}>
+          <div className="flex items-center justify-between gap-3">
+            <TabsList data-testid="tabs-content-status">
+              <TabsTrigger value="all" data-testid="tab-content-all">All</TabsTrigger>
+              <TabsTrigger value="active" data-testid="tab-content-active">Active</TabsTrigger>
+              <TabsTrigger value="archived" data-testid="tab-content-archived">Archived</TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={viewMode === "flat" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setViewMode("flat")}
+                data-testid="button-view-flat-content"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode === "grouped" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setViewMode("grouped")}
+                data-testid="button-view-grouped-content"
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </Tabs>
+
         <div className="flex gap-3 items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -642,6 +844,16 @@ export default function ContentLibraryPage() {
               {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-40" data-testid="select-filter-source">
+              <SelectValue placeholder="All sources" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="captured">Captured</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {isLoading ? (
@@ -654,82 +866,23 @@ export default function ContentLibraryPage() {
                 : "No assets match your search or filter."}
             </CardContent>
           </Card>
+        ) : viewMode === "grouped" ? (
+          <div className="space-y-6">
+            {groupedByCategory().map(([catName, catAssets]) => (
+              <div key={catName} data-testid={`group-content-${catName.toLowerCase().replace(/\s+/g, "-")}`}>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                  <Tag className="w-3.5 h-3.5" /> {catName}
+                  <Badge variant="secondary" className="text-xs">{catAssets.length}</Badge>
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {catAssets.map(renderAssetCard)}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map(asset => (
-              <Card
-                key={asset.id}
-                className="group cursor-pointer hover:border-primary/40 transition-colors"
-                onClick={() => setDetailAsset(asset)}
-                data-testid={`card-content-asset-${asset.id}`}
-              >
-                {asset.leadImageUrl && (
-                  <div className="aspect-video overflow-hidden rounded-t-lg bg-muted">
-                    <img
-                      src={asset.leadImageUrl}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      onError={e => (e.currentTarget.style.display = "none")}
-                    />
-                  </div>
-                )}
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-base leading-tight">{asset.title}</CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
-                      onClick={e => { e.stopPropagation(); archiveMutation.mutate(asset.id); }}
-                      data-testid={`button-archive-${asset.id}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {asset.capturedViaExtension && <Badge variant="secondary" className="text-xs">Captured</Badge>}
-                    {asset.extractionStatus === "extracted" && <Badge variant="secondary" className="text-xs"><Sparkles className="w-2.5 h-2.5 mr-0.5" />AI Extracted</Badge>}
-                    {categoryName(asset.categoryId) && <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId)}</Badge>}
-                    {asset.productIds?.map(pid => (
-                      <Badge key={pid} variant="outline" className="text-xs text-primary">{productName(pid) || pid}</Badge>
-                    ))}
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 space-y-2">
-                  {asset.description && <p className="text-sm text-muted-foreground line-clamp-2">{asset.description}</p>}
-                  {asset.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2 italic">{asset.aiSummary}</p>}
-                  <div className="flex items-center gap-2">
-                    {asset.url && (
-                      <a
-                        href={asset.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-primary hover:underline flex-1 min-w-0"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <ExternalLink className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{asset.url}</span>
-                      </a>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
-                      onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
-                      data-testid={`button-create-campaign-${asset.id}`}
-                    >
-                      <Megaphone className="w-3 h-3" /> Campaign
-                    </Button>
-                  </div>
-                  {asset.tags && (
-                    <div className="flex flex-wrap gap-1">
-                      {asset.tags.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
-                      {asset.tags.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+            {filtered.map(renderAssetCard)}
           </div>
         )}
 

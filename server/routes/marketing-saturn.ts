@@ -227,12 +227,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
+    const conditions = [
+      eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      eq(contentAssets.marketId, ctx.marketId),
+    ];
+    const status = req.query.status as string | undefined;
+    if (status && (status === "active" || status === "archived")) {
+      conditions.push(eq(contentAssets.status, status));
+    }
     const rows = await db.select().from(contentAssets)
-      .where(and(
-        eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
-        eq(contentAssets.status, "active"),
-      ))
+      .where(and(...conditions))
       .orderBy(desc(contentAssets.createdAt));
     res.json(rows);
   });
@@ -511,12 +515,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/brand-assets", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
+    const conditions = [
+      eq(brandAssets.tenantDomain, ctx.tenantDomain),
+      eq(brandAssets.marketId, ctx.marketId),
+    ];
+    const status = req.query.status as string | undefined;
+    if (status && (status === "active" || status === "archived")) {
+      conditions.push(eq(brandAssets.status, status));
+    }
     const rows = await db.select().from(brandAssets)
-      .where(and(
-        eq(brandAssets.tenantDomain, ctx.tenantDomain),
-        eq(brandAssets.marketId, ctx.marketId),
-        eq(brandAssets.status, "active"),
-      ))
+      .where(and(...conditions))
       .orderBy(desc(brandAssets.createdAt));
     res.json(rows);
   });
@@ -1023,7 +1031,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
     res.json({ status: job?.status ?? "unknown", jobId: campaign.postGenerationJobId });
   });
 
-  // SocialPilot CSV export
   app.post("/api/campaigns/:id/export-csv", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     const ctx = await getRequestContext(req);
@@ -1037,14 +1044,46 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(generatedPosts.status, "approved"),
       ));
 
-    const lines = ["message,scheduled_time,account"];
-    for (const post of posts) {
-      const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-      lines.push(`"${content}",,${post.platform}`);
+    const format = (req.query.format as string || "socialpilot").toLowerCase();
+    let lines: string[];
+
+    switch (format) {
+      case "hootsuite": {
+        lines = ["Message,Date,Time,Social Profile"];
+        for (const post of posts) {
+          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
+          lines.push(`"${content}",,,${post.platform}`);
+        }
+        break;
+      }
+      case "buffer": {
+        lines = ["Text,Scheduled At,Profile"];
+        for (const post of posts) {
+          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
+          lines.push(`"${content}",,${post.platform}`);
+        }
+        break;
+      }
+      case "later": {
+        lines = ["Caption,Scheduled Date,Platform"];
+        for (const post of posts) {
+          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
+          lines.push(`"${content}",,${post.platform}`);
+        }
+        break;
+      }
+      default: {
+        lines = ["message,scheduled_time,account"];
+        for (const post of posts) {
+          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
+          lines.push(`"${content}",,${post.platform}`);
+        }
+        break;
+      }
     }
 
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-posts.csv"`);
+    res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-posts-${format}.csv"`);
     res.send(lines.join("\n"));
   });
 
