@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   contentAssets,
@@ -963,19 +963,29 @@ async function generatePostsAsync(
       .orderBy(campaignAssets.sortOrder);
 
     const assetIds = camAssets.map(ca => ca.assetId);
-    const assetRows = assetIds.length
-      ? await db.select().from(contentAssets).where(eq(contentAssets.tenantDomain, tenantDomain))
+    const selectedAssets = assetIds.length
+      ? await db.select().from(contentAssets).where(
+          and(
+            eq(contentAssets.tenantDomain, tenantDomain),
+            eq(contentAssets.marketId, marketId),
+            inArray(contentAssets.id, assetIds),
+          ),
+        )
       : [];
-    const selectedAssets = assetRows.filter((a: any) => assetIds.includes(a.id));
 
     // Load linked social accounts
     const camSocial = await db.select().from(campaignSocialAccounts)
       .where(eq(campaignSocialAccounts.campaignId, campaignId));
     const socialIds = camSocial.map(cs => cs.socialAccountId);
-    const socialRows = socialIds.length
-      ? await db.select().from(socialAccounts).where(eq(socialAccounts.tenantDomain, tenantDomain))
+    const linkedAccounts = socialIds.length
+      ? await db.select().from(socialAccounts).where(
+          and(
+            eq(socialAccounts.tenantDomain, tenantDomain),
+            eq(socialAccounts.marketId, marketId),
+            inArray(socialAccounts.id, socialIds),
+          ),
+        )
       : [];
-    const linkedAccounts = socialRows.filter((s: any) => socialIds.includes(s.id));
 
     // Load marketing grounding docs for AI context
     const groundingDocs = await db.select().from(groundingDocuments)
