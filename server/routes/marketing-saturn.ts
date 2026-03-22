@@ -826,13 +826,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const { campaignId, assetIds, instructions } = req.body;
 
-    // Load selected assets
-    const assetRows = assetIds?.length
+    // Load selected assets - scoped by tenant, market, and explicit asset IDs
+    const selectedAssets = assetIds?.length
       ? await db.select().from(contentAssets).where(
-          and(eq(contentAssets.tenantDomain, ctx.tenantDomain))
+          and(
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+            inArray(contentAssets.id, assetIds),
+          )
         )
       : [];
-    const selectedAssets = assetRows.filter((a: any) => (assetIds ?? []).includes(a.id));
 
     // Load marketing grounding docs
     const groundingDocs = await db.select().from(groundingDocuments)
