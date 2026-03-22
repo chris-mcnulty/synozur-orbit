@@ -530,7 +530,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             className={cn(
                               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
                               isActive 
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient" 
                                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                               isLocked && !isActive && "opacity-50"
                             )}

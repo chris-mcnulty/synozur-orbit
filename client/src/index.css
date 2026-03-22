@@ -128,103 +128,126 @@
   --color-sidebar-border: hsl(var(--sidebar-border));
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 
-  /* Spec requires Avenir Next LT Pro first, then fallback */
   --font-sans: 'Avenir Next LT Pro', 'Inter', sans-serif;
   --font-display: 'Avenir Next LT Pro', 'Inter', sans-serif;
-  
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --spacing: 0.25rem;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Aurora Theme — sourced from Constellation (synozur-scdp)
+   Master theme for the Synozur suite. Purple-tinted surfaces, Synozur brand
+   primary (#810FFB) / secondary (#E60CB3), 1.3rem radius, full shadow scale.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Default Dark Mode Theme for Orbit - Neutral grays with purple/pink accents */
-  --background: 0 0% 4%;
-  --foreground: 0 0% 98%;
-  
-  --card: 0 0% 6%;
-  --card-foreground: 0 0% 98%;
-  
-  --popover: 0 0% 5%;
-  --popover-foreground: 0 0% 98%;
-  
-  /* Primary Orbit Purple: #810FFB */
-  --primary: 269 98% 52%;
-  --primary-foreground: 0 0% 98%;
-  
-  /* Secondary Orbit Pink: #E60CB3 */
-  --secondary: 314 90% 47%;
-  --secondary-foreground: 0 0% 98%;
-  
-  --muted: 0 0% 14%;
-  --muted-foreground: 0 0% 60%;
-  
-  --accent: 0 0% 14%;
-  --accent-foreground: 0 0% 98%;
-  
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  
-  --border: 0 0% 16%;
-  --input: 0 0% 16%;
-  --ring: 269 98% 52%;
-  
-  --radius: 0.5rem;
-  
-  --chart-1: 269 98% 52%; /* Purple */
-  --chart-2: 314 90% 47%; /* Pink */
-  --chart-3: 199 89% 48%; /* Blue */
-  --chart-4: 43 74% 66%; /* Yellow */
-  --chart-5: 27 87% 67%; /* Orange */
-
-  --sidebar: 0 0% 7%;
-  --sidebar-foreground: 0 0% 95%;
-  --sidebar-primary: 269 98% 52%;
+  --background: 268 30% 97%;
+  --foreground: 268 25% 8%;
+  --card: 268 25% 95.5%;
+  --card-foreground: 268 25% 8%;
+  --popover: 268 30% 97%;
+  --popover-foreground: 268 25% 8%;
+  --primary: 268.98 96.72% 52.16%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 314.04 90.08% 47.45%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 268 15% 89%;
+  --muted-foreground: 268 8% 38%;
+  --accent: 268 50% 92%;
+  --accent-foreground: 268 80% 25%;
+  --destructive: 356.3 90.56% 54.31%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 268 18% 86%;
+  --input: 268 18% 94%;
+  --ring: 268.98 96.72% 52.16%;
+  --chart-1: 268.98 96.72% 52.16%;
+  --chart-2: 314.04 90.08% 47.45%;
+  --chart-3: 269.16 80.45% 26.08%;
+  --chart-4: 147.14 78.5% 41.96%;
+  --chart-5: 341.49 75.2% 50.98%;
+  --sidebar: 268 25% 95%;
+  --sidebar-foreground: 268 25% 8%;
+  --sidebar-primary: 268.98 96.72% 52.16%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 12%;
-  --sidebar-accent-foreground: 0 0% 95%;
-  --sidebar-border: 0 0% 15%;
-  --sidebar-ring: 269 98% 52%;
+  --sidebar-accent: 268 50% 91%;
+  --sidebar-accent-foreground: 268.98 96.72% 45%;
+  --sidebar-border: 268 18% 86%;
+  --sidebar-ring: 268.98 96.72% 52.16%;
+  --radius: 1.3rem;
+  --shadow-2xs: 0px 1px 3px 0px hsl(268 50% 30% / 0.06);
+  --shadow-xs: 0px 2px 4px 0px hsl(268 50% 30% / 0.08);
+  --shadow-sm: 0px 2px 6px 0px hsl(268 50% 30% / 0.08), 0px 1px 2px -1px hsl(268 50% 30% / 0.05);
+  --shadow: 0px 4px 8px 0px hsl(268 50% 30% / 0.10), 0px 1px 2px -1px hsl(268 50% 30% / 0.05);
+  --shadow-md: 0px 4px 12px 0px hsl(268 50% 30% / 0.12), 0px 2px 4px -1px hsl(268 50% 30% / 0.06);
+  --shadow-lg: 0px 8px 20px 0px hsl(268 50% 30% / 0.14), 0px 4px 6px -1px hsl(268 50% 30% / 0.06);
+  --shadow-xl: 0px 12px 28px 0px hsl(268 50% 30% / 0.15), 0px 8px 10px -1px hsl(268 50% 30% / 0.08);
+  --shadow-2xl: 0px 20px 40px 0px hsl(268 50% 30% / 0.18);
 }
 
-/* We are forcing dark mode as default, but if we need a light mode override later: */
-.light {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  
-  --primary: 269 98% 52%;
-  --primary-foreground: 0 0% 98%;
-  
-  --secondary: 314 90% 47%;
-  --secondary-foreground: 0 0% 98%;
-  
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 269 98% 52%;
-  
-  --sidebar: 0 0% 98%;
-  --sidebar-foreground: 240 5.3% 26.1%;
-  --sidebar-primary: 240 5.9% 10%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 240 4.8% 95.9%;
-  --sidebar-accent-foreground: 240 5.9% 10%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-ring: 269 98% 52%;
+.dark {
+  --background: 268 20% 7%;
+  --foreground: 268 8% 88%;
+  --card: 268 20% 10%;
+  --card-foreground: 268 8% 85%;
+  --popover: 268 20% 7%;
+  --popover-foreground: 268 8% 88%;
+  --primary: 268.98 92% 64%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 314.04 85% 61%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 268 15% 15%;
+  --muted-foreground: 268 6% 53%;
+  --accent: 268 35% 16%;
+  --accent-foreground: 268.98 92% 70%;
+  --destructive: 356.3 85% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 268 18% 17%;
+  --input: 268 18% 13%;
+  --ring: 268.98 92% 64%;
+  --chart-1: 268.98 92% 64%;
+  --chart-2: 314.04 85% 61%;
+  --chart-3: 269.16 75% 72%;
+  --chart-4: 147.14 68% 54%;
+  --chart-5: 341.49 72% 63%;
+  --sidebar: 268 25% 6%;
+  --sidebar-foreground: 268 8% 80%;
+  --sidebar-primary: 268.98 92% 64%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 268 35% 14%;
+  --sidebar-accent-foreground: 268.98 92% 72%;
+  --sidebar-border: 268 18% 14%;
+  --sidebar-ring: 268.98 92% 64%;
+  --radius: 1.3rem;
+  --shadow: 0px 4px 8px 0px hsl(268 30% 2% / 0.45), 0px 1px 2px -1px hsl(268 30% 2% / 0.22);
+  --shadow-sm: 0px 2px 4px 0px hsl(268 30% 2% / 0.32), 0px 1px 2px -1px hsl(268 30% 2% / 0.15);
+  --shadow-md: 0px 4px 12px 0px hsl(268 30% 2% / 0.50), 0px 2px 4px -1px hsl(268 30% 2% / 0.24);
+  --shadow-lg: 0px 8px 20px 0px hsl(268 30% 2% / 0.60), 0px 4px 6px -1px hsl(268 30% 2% / 0.28);
+  --shadow-xl: 0px 12px 30px 0px hsl(268 30% 2% / 0.65), 0px 8px 10px -1px hsl(268 30% 2% / 0.30);
+  --shadow-2xl: 0px 20px 40px 0px hsl(268 30% 2% / 0.70);
+  --shadow-xs: 0px 1px 2px 0px hsl(268 30% 2% / 0.20);
+  --shadow-2xs: 0px 1px 2px 0px hsl(268 30% 2% / 0.14);
+}
+
+.sidebar-item-active-gradient {
+  position: relative;
+}
+.sidebar-item-active-gradient::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, hsl(var(--primary)), hsl(var(--secondary)));
+  border-radius: 0 2px 2px 0;
+}
+
+.page-header-gradient-bar {
+  border-top: 2px solid transparent;
+  border-image: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--secondary))) 1;
 }
 
 @layer base {

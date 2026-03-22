@@ -21,6 +21,8 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack React Query (server state), React Context (authentication)
 - **UI Components**: shadcn/ui (Radix UI primitives)
 - **Styling**: Tailwind CSS v4 with CSS variables
+- **Theme**: Aurora theme from Constellation (`synozur-scdp` repo, `client/src/themes/aurora.css`). Purple-tinted surfaces (hue 268), Synozur brand primary (#810FFB) / secondary (#E60CB3), 1.3rem radius, full shadow scale. Includes `.sidebar-item-active-gradient` (3px gradient left border on active nav) and `.page-header-gradient-bar` (gradient top border on page headers) utility classes.
+- **Theme Source**: Constellation repo (`github.com/chris-mcnulty/synozur-scdp`) is the master source for shared UX themes across the Synozur suite. Other available themes: baseline, navigators-chart, night-sky.
 - **Font**: Avenir Next LT Pro
 - **Structure**: Page-based with distinct public and authenticated layouts.
 
