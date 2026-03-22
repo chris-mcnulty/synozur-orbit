@@ -691,10 +691,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { editedContent, status } = req.body;
     const [row] = await db.update(generatedPosts)
       .set({ editedContent, status, updatedAt: new Date() })
-      .where(eq(generatedPosts.id, req.params.postId))
+      .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
     res.json(row);
