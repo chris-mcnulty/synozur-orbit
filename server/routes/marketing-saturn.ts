@@ -260,7 +260,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags } = req.body;
+    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "title is required" });
     const [row] = await db.insert(contentAssets).values({
       id: randomUUID(),
@@ -273,9 +273,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
       aiSummary: aiSummary || null,
       leadImageUrl: leadImageUrl || null,
       extractionStatus: extractionStatus || "none",
-      categoryId,
+      categoryId: categoryId || null,
       productIds: productIds?.length ? productIds : null,
       tags: tags || null,
+      status: status === "archived" ? "archived" : "active",
       createdBy: ctx.userId,
     } as InsertContentAsset).returning();
     if (productTagIds?.length) {

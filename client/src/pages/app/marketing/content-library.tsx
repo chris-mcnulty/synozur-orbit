@@ -412,11 +412,51 @@ export default function ContentLibraryPage() {
 
     let imported = 0;
     let failed = 0;
+    const neededCategories = new Set<string>();
+    for (const row of rows) {
+      const catName = (row["Category"] || "").trim();
+      if (catName && !categories.find(c => c.name.toLowerCase() === catName.toLowerCase())) {
+        neededCategories.add(catName);
+      }
+    }
+
+    const createdCategoryMap: Record<string, string> = {};
+    for (const catName of neededCategories) {
+      try {
+        const r = await fetch("/api/content-categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name: catName }),
+        });
+        if (r.ok) {
+          const cat = await r.json();
+          createdCategoryMap[catName.toLowerCase()] = cat.id;
+        }
+      } catch {}
+    }
+
+    if (neededCategories.size > 0) {
+      await queryClient.invalidateQueries({ queryKey: ["/api/content-categories"] });
+    }
+
     for (const row of rows) {
       const title = row["Title"] || "";
       if (!title.trim()) { failed++; continue; }
-      const catName = row["Category"] || "";
+      const catName = (row["Category"] || "").trim();
       const matchedCategory = categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+      const categoryId = matchedCategory?.id || createdCategoryMap[catName.toLowerCase()] || null;
+
+      const activeRaw = row["ACTIVE"] || row["Active"] || "";
+      let status = "active";
+      if (row["Status"]) {
+        status = row["Status"].toLowerCase() === "archived" ? "archived" : "active";
+      } else if (activeRaw) {
+        status = activeRaw.toUpperCase() === "FALSE" ? "archived" : "active";
+      }
+
+      const imageUrl = row["Image URL"] || row["Image Url"] || "";
+
       try {
         const r = await fetch("/api/content-assets", {
           method: "POST",
@@ -425,11 +465,12 @@ export default function ContentLibraryPage() {
           body: JSON.stringify({
             title,
             description: row["Description"] || "",
-            url: row["URL"] || "",
-            categoryId: matchedCategory?.id || "",
+            url: row["URL"] || row["Url"] || "",
+            categoryId,
             fileType: (row["File Type"] || "").toLowerCase() || undefined,
-            status: (row["Status"] || "active").toLowerCase() === "archived" ? "archived" : "active",
-            extractionStatus: "manual",
+            status,
+            leadImageUrl: imageUrl || undefined,
+            extractionStatus: row["Captured"] || imageUrl ? "captured" : "manual",
           }),
         });
         if (r.ok) imported++; else failed++;
@@ -437,9 +478,11 @@ export default function ContentLibraryPage() {
     }
 
     queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/content-categories"] });
+    const catNote = neededCategories.size > 0 ? ` ${neededCategories.size} new categories created.` : "";
     toast({
       title: "Import complete",
-      description: `${imported} assets imported${failed > 0 ? `, ${failed} failed` : ""}.`,
+      description: `${imported} assets imported${failed > 0 ? `, ${failed} failed` : ""}.${catNote}`,
     });
     if (importFileRef.current) importFileRef.current.value = "";
   };
