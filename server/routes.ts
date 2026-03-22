@@ -14650,24 +14650,53 @@ Only use these timeframe values: ${periods.join(", ")}`;
   });
 
   // POST /api/admin/spe/container — create a new SPE container for a tenant
+  // Domain Admins can create a container for their own tenant; Global Admins can specify a tenantId
   app.post("/api/admin/spe/container", async (req, res) => {
     try {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
       const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Global Admin access required" });
+      if (!user || !["Global Admin", "Domain Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
       }
 
-      const { containerName, description, azureTenantId } = req.body as {
+      const { containerName, description, azureTenantId, tenantId } = req.body as {
         containerName?: string;
         description?: string;
         azureTenantId?: string;
+        tenantId?: string;
       };
 
       if (!containerName) return res.status(400).json({ error: "containerName is required" });
 
+      const ctx = await getRequestContext(req);
+      const callerTenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!callerTenant) return res.status(404).json({ error: "Tenant not found" });
+
+      const targetTenantId = user.role === "Global Admin" && tenantId ? tenantId : callerTenant.id;
+      if (user.role === "Domain Admin" && tenantId && tenantId !== callerTenant.id) {
+        return res.status(403).json({ error: "Domain Admins can only create containers for their own tenant" });
+      }
+
+      const targetTenant = tenantId && tenantId !== callerTenant.id
+        ? await storage.getTenant(targetTenantId)
+        : callerTenant;
+      if (!targetTenant) return res.status(404).json({ error: "Target tenant not found" });
+
+      const resolvedAzureTenantId = azureTenantId || targetTenant.entraTenantId || undefined;
+
       const { containerCreator } = await import("./services/sharepoint-container-creator.js");
-      const result = await containerCreator.createContainer(containerName, description, azureTenantId);
+      const result = await containerCreator.createContainer(containerName, description, resolvedAzureTenantId);
+
+      if (result.success && result.containerId) {
+        const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
+        await storage.updateTenantSpeConfig(targetTenantId, {
+          ...(isProduction
+            ? { speContainerIdProd: result.containerId }
+            : { speContainerIdDev: result.containerId }),
+          speStorageEnabled: true,
+        });
+      }
+
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -14689,6 +14718,38 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const { containerCreator } = await import("./services/sharepoint-container-creator.js");
       const result = await containerCreator.registerContainerTypeForTenant(azureTenantId);
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/admin/spe/tenants — list all tenants' SPE container status (Global Admin only)
+  app.get("/api/admin/spe/tenants", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Global Admin access required" });
+      }
+
+      const allTenants = await storage.getAllTenants();
+      const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";
+      const tenantSpeList = allTenants.map((t: any) => ({
+        id: t.id,
+        domain: t.domain,
+        name: t.name,
+        plan: t.plan,
+        status: t.status,
+        speStorageEnabled: t.speStorageEnabled || false,
+        hasContainer: isProduction
+          ? !!(t.speContainerIdProd)
+          : !!(t.speContainerIdDev),
+        containerId: isProduction
+          ? (t.speContainerIdProd ? t.speContainerIdProd.substring(0, 20) + "..." : null)
+          : (t.speContainerIdDev ? t.speContainerIdDev.substring(0, 20) + "..." : null),
+        entraTenantId: t.entraTenantId || null,
+      }));
+      res.json(tenantSpeList);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

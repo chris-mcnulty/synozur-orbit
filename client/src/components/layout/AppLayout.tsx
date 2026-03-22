@@ -39,6 +39,7 @@ import {
   Image,
   LayoutList,
   AtSign,
+  HardDrive
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -438,6 +439,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "User Management", icon: Users, href: "/app/users" },
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },
+        ...((user?.role === "Global Admin" || user?.role === "Domain Admin") ? [
+          { label: "Document Storage", icon: HardDrive, href: "/app/admin/spe-storage" },
+        ] : []),
         ...(user?.role === "Global Admin" ? [
           { label: "Admin Dashboard", icon: Crown, href: "/app/admin" },
           { label: "AI Settings", icon: Brain, href: "/app/admin/ai-settings" },
