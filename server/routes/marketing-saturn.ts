@@ -34,6 +34,9 @@ import {
   generatedEmails,
   scheduledJobRuns,
   groundingDocuments,
+  products,
+  DEFAULT_CONTENT_CATEGORIES,
+  DEFAULT_BRAND_ASSET_CATEGORIES,
   type InsertContentAsset,
   type InsertContentAssetCategory,
   type InsertBrandAsset,
@@ -50,6 +53,7 @@ import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
+import { extractContentFromUrl } from "../services/content-extraction";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -252,7 +256,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, productTagIds } = req.body;
+    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "title is required" });
     const [row] = await db.insert(contentAssets).values({
       id: randomUUID(),
@@ -262,7 +266,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
       description,
       url,
       content,
+      aiSummary: aiSummary || null,
+      leadImageUrl: leadImageUrl || null,
+      extractionStatus: extractionStatus || "none",
       categoryId,
+      productIds: productIds?.length ? productIds : null,
+      tags: tags || null,
       createdBy: ctx.userId,
     } as InsertContentAsset).returning();
     if (productTagIds?.length) {
@@ -276,12 +285,25 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, status, productTagIds } = req.body;
+    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags } = req.body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (url !== undefined) updates.url = url;
+    if (content !== undefined) updates.content = content;
+    if (categoryId !== undefined) updates.categoryId = categoryId;
+    if (status !== undefined) updates.status = status;
+    if (aiSummary !== undefined) updates.aiSummary = aiSummary;
+    if (leadImageUrl !== undefined) updates.leadImageUrl = leadImageUrl;
+    if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
+    if (tags !== undefined) updates.tags = tags;
+
     const [row] = await db.update(contentAssets)
-      .set({ title, description, url, content, categoryId, status, updatedAt: new Date() })
+      .set(updates)
       .where(and(
         eq(contentAssets.id, req.params.id),
         eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -304,8 +326,126 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssets.id, req.params.id),
         eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
       ));
     res.status(204).send();
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // URL EXTRACTION — fetch, parse, summarize via AI
+  // ══════════════════════════════════════════════════════════
+
+  app.post("/api/content-assets/extract", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const { url } = req.body;
+    if (!url?.trim()) return res.status(400).json({ error: "url is required" });
+
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({ error: "Invalid URL" });
+    }
+
+    try {
+      const result = await extractContentFromUrl(url.trim());
+      res.json(result);
+    } catch (err: any) {
+      console.error("[Saturn] Content extraction error:", err.message);
+      res.status(422).json({ error: `Could not extract content: ${err.message}` });
+    }
+  });
+
+  // Save lead image as brand asset
+  app.post("/api/content-assets/:id/save-lead-image", async (req, res) => {
+    if (!await guardFeature(req, res, "brandLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const [asset] = await db.select().from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, req.params.id),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ));
+    if (!asset) return res.status(404).json({ error: "Content asset not found" });
+    if (!asset.leadImageUrl) return res.status(400).json({ error: "No lead image available" });
+
+    const { name, categoryId } = req.body;
+    const [brandAsset] = await db.insert(brandAssets).values({
+      id: randomUUID(),
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      name: name?.trim() || `Image from ${asset.title}`,
+      description: `Lead image extracted from ${asset.url || asset.title}`,
+      url: asset.leadImageUrl,
+      fileType: "image",
+      categoryId: categoryId || null,
+      sourceContentAssetId: asset.id,
+      createdBy: ctx.userId,
+    } as InsertBrandAsset).returning();
+
+    res.status(201).json(brandAsset);
+  });
+
+  // Seed default categories for a tenant/market if none exist
+  app.post("/api/content-categories/seed-defaults", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const existing = await db.select().from(contentAssetCategories)
+      .where(and(
+        eq(contentAssetCategories.tenantDomain, ctx.tenantDomain),
+        eq(contentAssetCategories.marketId, ctx.marketId),
+      ));
+    if (existing.length > 0) return res.json({ seeded: false, count: existing.length });
+
+    const rows = DEFAULT_CONTENT_CATEGORIES.map(name => ({
+      id: randomUUID(),
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      name,
+      createdBy: ctx.userId,
+    }));
+    await db.insert(contentAssetCategories).values(rows as InsertContentAssetCategory[]);
+    res.json({ seeded: true, count: rows.length });
+  });
+
+  app.post("/api/brand-asset-categories/seed-defaults", async (req, res) => {
+    if (!await guardFeature(req, res, "brandLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const existing = await db.select().from(brandAssetCategories)
+      .where(and(
+        eq(brandAssetCategories.tenantDomain, ctx.tenantDomain),
+        eq(brandAssetCategories.marketId, ctx.marketId),
+      ));
+    if (existing.length > 0) return res.json({ seeded: false, count: existing.length });
+
+    const rows = DEFAULT_BRAND_ASSET_CATEGORIES.map(name => ({
+      id: randomUUID(),
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      name,
+      createdBy: ctx.userId,
+    }));
+    await db.insert(brandAssetCategories).values(rows as InsertBrandAssetCategory[]);
+    res.json({ seeded: true, count: rows.length });
+  });
+
+  // Get products for the current market (for product tagging)
+  app.get("/api/marketing/products", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const rows = await db.select({
+      id: products.id,
+      name: products.name,
+      isBaseline: products.isBaseline,
+    }).from(products)
+      .where(and(
+        eq(products.tenantDomain, ctx.tenantDomain),
+        eq(products.marketId, ctx.marketId),
+      ))
+      .orderBy(products.name);
+    res.json(rows);
   });
 
   // ══════════════════════════════════════════════════════════
@@ -399,7 +539,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/brand-assets", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, url, categoryId, productTagIds } = req.body;
+    const { name, description, url, categoryId, productTagIds, productIds, tags, fileType } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "name is required" });
     const [row] = await db.insert(brandAssets).values({
       id: randomUUID(),
@@ -409,6 +549,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
       description,
       url,
       categoryId,
+      fileType: fileType || null,
+      productIds: productIds?.length ? productIds : null,
+      tags: tags || null,
       createdBy: ctx.userId,
     } as InsertBrandAsset).returning();
     if (productTagIds?.length) {
@@ -422,9 +565,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/brand-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, url, categoryId, status, productTagIds } = req.body;
+    const { name, description, url, categoryId, status, productTagIds, productIds, tags } = req.body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (url !== undefined) updates.url = url;
+    if (categoryId !== undefined) updates.categoryId = categoryId;
+    if (status !== undefined) updates.status = status;
+    if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
+    if (tags !== undefined) updates.tags = tags;
+
     const [row] = await db.update(brandAssets)
-      .set({ name, description, url, categoryId, status, updatedAt: new Date() })
+      .set(updates)
       .where(and(
         eq(brandAssets.id, req.params.id),
         eq(brandAssets.tenantDomain, ctx.tenantDomain),

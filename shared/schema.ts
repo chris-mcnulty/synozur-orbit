@@ -1432,13 +1432,18 @@ export const contentAssets = pgTable("content_assets", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
-  url: text("url"), // Source URL (captured via extension or manually entered)
-  content: text("content"), // Extracted / pasted content body
-  fileUrl: text("file_url"), // Object storage path if uploaded
-  fileType: text("file_type"), // pdf, docx, png, jpg, etc.
+  url: text("url"),
+  content: text("content"),
+  aiSummary: text("ai_summary"),
+  leadImageUrl: text("lead_image_url"),
+  extractionStatus: text("extraction_status").default("none"),
+  fileUrl: text("file_url"),
+  fileType: text("file_type"),
   fileSize: integer("file_size"),
   categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
-  status: text("status").notNull().default("active"), // active, archived
+  productIds: text("product_ids").array(),
+  tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
+  status: text("status").notNull().default("active"),
   capturedViaExtension: boolean("captured_via_extension").notNull().default(false),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1494,12 +1499,15 @@ export const brandAssets = pgTable("brand_assets", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
-  url: text("url"), // Source URL
-  fileUrl: text("file_url"), // Object storage path
-  fileType: text("file_type"), // png, jpg, svg, pdf, etc.
+  url: text("url"),
+  fileUrl: text("file_url"),
+  fileType: text("file_type"),
   fileSize: integer("file_size"),
   categoryId: varchar("category_id").references(() => brandAssetCategories.id, { onDelete: "set null" }),
-  status: text("status").notNull().default("active"), // active, archived
+  productIds: text("product_ids").array(),
+  tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
+  sourceContentAssetId: varchar("source_content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("active"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1709,3 +1717,25 @@ export const insertGeneratedEmailSchema = createInsertSchema(generatedEmails).om
 export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
+
+export const DEFAULT_CONTENT_CATEGORIES = [
+  "Blog Post", "White Paper", "Case Study", "eBook", "Infographic",
+  "Webinar", "Video", "Podcast", "Press Release", "Newsletter",
+  "Product Brief", "Datasheet", "Landing Page", "Social Media Post",
+];
+
+export const DEFAULT_BRAND_ASSET_CATEGORIES = [
+  "Logo", "Icon", "Hero Image", "Banner", "Social Media Graphic",
+  "Product Screenshot", "Headshot", "Illustration", "Template", "Brand Kit",
+];
+
+export const CONTENT_SEASON_OPTIONS = [
+  "Spring", "Summer", "Fall", "Winter", "Q1", "Q2", "Q3", "Q4",
+  "Holiday", "Back to School", "Year End",
+];
+
+export const CONTENT_TOPIC_OPTIONS = [
+  "Modern Workplace", "Digital Transformation", "Cloud", "Security",
+  "AI & Machine Learning", "Collaboration", "Productivity", "Remote Work",
+  "Sustainability", "Innovation", "Leadership", "Customer Success",
+];
