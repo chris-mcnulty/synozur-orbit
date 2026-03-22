@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Plus, Trash2, Lock, Linkedin, Twitter } from "lucide-react";
+import { AtSign, Plus, Trash2, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
