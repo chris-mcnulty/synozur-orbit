@@ -655,6 +655,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { socialAccountId } = req.body;
     if (!socialAccountId) return res.status(400).json({ error: "socialAccountId is required" });
+    const socialAccountConditions = [
+      eq(socialAccounts.id, socialAccountId),
+      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+    ];
+    if (ctx.marketId) {
+      socialAccountConditions.push(eq(socialAccounts.marketId, ctx.marketId));
+    }
+    const [socialAccount] = await db.select().from(socialAccounts).where(and(...socialAccountConditions));
+    if (!socialAccount) return res.status(404).json({ error: "Social account not found" });
     const [row] = await db.insert(campaignSocialAccounts).values({
       id: randomUUID(),
       campaignId: campaign.id,
