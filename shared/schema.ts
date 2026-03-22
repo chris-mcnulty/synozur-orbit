@@ -1569,6 +1569,9 @@ export const campaigns = pgTable("campaigns", {
   status: text("status").notNull().default("draft"), // draft, active, completed, archived
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
+  numberOfDays: integer("number_of_days"),
+  includeSaturday: boolean("include_saturday").notNull().default(false),
+  includeSunday: boolean("include_sunday").notNull().default(false),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1655,6 +1658,9 @@ export const generatedPosts = pgTable("generated_posts", {
   content: text("content").notNull(), // Generated post copy
   hashtags: jsonb("hashtags").$type<string[]>().default([]),
   imagePrompt: text("image_prompt"), // Suggested image generation prompt
+  overrideImageUrl: text("override_image_url"),
+  overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
+  variantGroup: text("variant_group"),
   status: text("status").notNull().default("draft"), // draft, approved, exported, deleted
   editedContent: text("edited_content"), // User-edited version of the post
   generationJobId: varchar("generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),

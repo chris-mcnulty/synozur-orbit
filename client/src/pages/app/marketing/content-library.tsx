@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
-  ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X
+  ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription,
@@ -76,6 +77,7 @@ const TOPIC_OPTIONS = [
 export default function ContentLibraryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -696,18 +698,29 @@ export default function ContentLibraryPage() {
                 <CardContent className="pt-0 space-y-2">
                   {asset.description && <p className="text-sm text-muted-foreground line-clamp-2">{asset.description}</p>}
                   {asset.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2 italic">{asset.aiSummary}</p>}
-                  {asset.url && (
-                    <a
-                      href={asset.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                      onClick={e => e.stopPropagation()}
+                  <div className="flex items-center gap-2">
+                    {asset.url && (
+                      <a
+                        href={asset.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-primary hover:underline flex-1 min-w-0"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{asset.url}</span>
+                      </a>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+                      onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
+                      data-testid={`button-create-campaign-${asset.id}`}
                     >
-                      <ExternalLink className="w-3 h-3" />
-                      <span className="truncate">{asset.url}</span>
-                    </a>
-                  )}
+                      <Megaphone className="w-3 h-3" /> Campaign
+                    </Button>
+                  </div>
                   {asset.tags && (
                     <div className="flex flex-wrap gap-1">
                       {asset.tags.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
@@ -790,6 +803,18 @@ export default function ContentLibraryPage() {
                   {detailAsset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
                   {detailAsset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
                 </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    setDetailAsset(null);
+                    navigate(`/app/marketing/campaigns?preselect=${detailAsset.id}`);
+                  }}
+                  data-testid="button-create-campaign-from-detail"
+                >
+                  <Megaphone className="w-4 h-4" /> Create Campaign with This Asset
+                </Button>
               </>
             )}
           </DialogContent>

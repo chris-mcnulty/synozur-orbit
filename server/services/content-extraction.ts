@@ -178,6 +178,7 @@ export async function extractContentFromUrl(url: string): Promise<ExtractionResu
       }
     }
 
+
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
@@ -220,6 +221,18 @@ async function generateContentSummary(
   const contentPreview = content.length > 8000 ? content.substring(0, 8000) + "..." : content;
 
   const prompt = `You are a marketing content analyst. Analyze the following web page content and produce a concise, actionable summary that will be useful for creating social media posts and marketing emails.
+
+IMPORTANT: Before analyzing, you MUST strip and ignore all non-editorial material that may have been captured from the source web page. This includes but is not limited to:
+- Copyright notices and legal disclaimers
+- Cookie consent banners and privacy notices
+- Navigation menus, breadcrumbs, and site headers/footers
+- Newsletter signup forms and CTAs from the website itself
+- Boilerplate "About Us" or company info sections
+- Social sharing buttons text
+- Comment sections
+- Any text that is clearly not part of the actual article/page editorial content
+
+Only use the actual article substance and editorial content for your analysis.
 
 ## Source
 Title: ${title}

@@ -711,32 +711,90 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/campaigns", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, startDate, endDate } = req.body;
+    const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "name is required" });
-    const [row] = await db.insert(campaigns).values({
-      id: randomUUID(),
-      tenantDomain: ctx.tenantDomain,
-      marketId: ctx.marketId,
-      name: name.trim(),
-      description,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      createdBy: ctx.userId,
-    } as InsertCampaign).returning();
+
+    const validAssetIds: string[] = [];
+    if (Array.isArray(assetIds) && assetIds.length > 0) {
+      const found = await db.select({ id: contentAssets.id }).from(contentAssets)
+        .where(and(
+          inArray(contentAssets.id, assetIds),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+        ));
+      validAssetIds.push(...found.map(f => f.id));
+    }
+
+    const validSocialIds: string[] = [];
+    if (Array.isArray(socialAccountIds) && socialAccountIds.length > 0) {
+      const socialConditions = [
+        inArray(socialAccounts.id, socialAccountIds),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ];
+      if (ctx.marketId) socialConditions.push(eq(socialAccounts.marketId, ctx.marketId));
+      const found = await db.select({ id: socialAccounts.id }).from(socialAccounts)
+        .where(and(...socialConditions));
+      validSocialIds.push(...found.map(f => f.id));
+    }
+
+    const campaignId = randomUUID();
+
+    await db.transaction(async (tx) => {
+      await tx.insert(campaigns).values({
+        id: campaignId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name: name.trim(),
+        description,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        numberOfDays: numberOfDays ?? undefined,
+        includeSaturday: includeSaturday ?? false,
+        includeSunday: includeSunday ?? false,
+        createdBy: ctx.userId,
+      } as InsertCampaign);
+
+      if (validAssetIds.length > 0) {
+        await tx.insert(campaignAssets).values(
+          validAssetIds.map((assetId, idx) => ({
+            id: randomUUID(),
+            campaignId,
+            assetId,
+            sortOrder: idx,
+          } as InsertCampaignAsset))
+        );
+      }
+
+      if (validSocialIds.length > 0) {
+        await tx.insert(campaignSocialAccounts).values(
+          validSocialIds.map((socialAccountId) => ({
+            id: randomUUID(),
+            campaignId,
+            socialAccountId,
+          } as InsertCampaignSocialAccount))
+        );
+      }
+    });
+
+    const [row] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
     res.status(201).json(row);
   });
 
   app.patch("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate } = req.body;
+    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday } = req.body;
+    const updateData: any = { updatedAt: new Date() };
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (status !== undefined) updateData.status = status;
+    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+    if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
+    if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
+    if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
     const [row] = await db.update(campaigns)
-      .set({
-        name, description, status,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(and(
         eq(campaigns.id, req.params.id),
         eq(campaigns.tenantDomain, ctx.tenantDomain),
@@ -766,24 +824,35 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { assetId, overrideTitle, overrideContent, sortOrder } = req.body;
-    if (!assetId) return res.status(400).json({ error: "assetId is required" });
-    const [asset] = await db.select().from(contentAssets)
-      .where(and(
-        eq(contentAssets.id, assetId),
-        eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
-      ));
-    if (!asset) return res.status(404).json({ error: "Asset not found" });
-    const [row] = await db.insert(campaignAssets).values({
-      id: randomUUID(),
-      campaignId: campaign.id,
-      assetId,
-      overrideTitle,
-      overrideContent,
-      sortOrder: sortOrder ?? 0,
-    } as InsertCampaignAsset).returning();
-    res.status(201).json(row);
+    const { assetId, assetIds, overrideTitle, overrideContent, sortOrder } = req.body;
+
+    const idsToAdd: string[] = Array.isArray(assetIds) ? assetIds : assetId ? [assetId] : [];
+    if (idsToAdd.length === 0) return res.status(400).json({ error: "assetId or assetIds is required" });
+
+    const rows: any[] = [];
+    for (let i = 0; i < idsToAdd.length; i++) {
+      const aid = idsToAdd[i];
+      const [asset] = await db.select().from(contentAssets)
+        .where(and(
+          eq(contentAssets.id, aid),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+        ));
+      if (!asset) continue;
+      const existing = await db.select().from(campaignAssets)
+        .where(and(eq(campaignAssets.campaignId, campaign.id), eq(campaignAssets.assetId, aid)));
+      if (existing.length > 0) continue;
+      const [row] = await db.insert(campaignAssets).values({
+        id: randomUUID(),
+        campaignId: campaign.id,
+        assetId: aid,
+        overrideTitle: idsToAdd.length === 1 ? overrideTitle : undefined,
+        overrideContent: idsToAdd.length === 1 ? overrideContent : undefined,
+        sortOrder: sortOrder ?? i,
+      } as InsertCampaignAsset).returning();
+      rows.push(row);
+    }
+    res.status(201).json(rows.length === 1 ? rows[0] : rows);
   });
 
   app.patch("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
@@ -881,9 +950,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { editedContent, status } = req.body;
+    const { editedContent, status, overrideImageUrl, overrideBrandAssetId } = req.body;
+    const updateFields: any = { updatedAt: new Date() };
+    if (editedContent !== undefined) updateFields.editedContent = editedContent;
+    if (status !== undefined) updateFields.status = status;
+    if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
+    if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
     const [row] = await db.update(generatedPosts)
-      .set({ editedContent, status, updatedAt: new Date() })
+      .set(updateFields)
       .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -1200,40 +1274,65 @@ async function generatePostsAsync(
 
     const generatedRows: InsertGeneratedPost[] = [];
 
+    const VARIANTS_PER_ACCOUNT = 3;
+
     for (const account of platformTargets) {
       const platformGuide = getPlatformGuide(account.platform);
-      const prompt = `You are an expert B2B social media copywriter. Generate a single ${account.platform} post for the account "${account.accountName}" based on the following content.
+      const variantGroupId = randomUUID();
+      const prompt = `You are an expert B2B social media copywriter. Generate ${VARIANTS_PER_ACCOUNT} variant ${account.platform} posts for the account "${account.accountName}" based on the following content.
+
+IMPORTANT: Before using the content below, you MUST strip and ignore all non-editorial material that may have been captured from the source web page. This includes but is not limited to:
+- Copyright notices and legal disclaimers
+- Cookie consent banners and privacy notices
+- Navigation menus, breadcrumbs, and site headers/footers
+- Newsletter signup forms and CTAs from the website itself
+- Boilerplate "About Us" or company info sections
+- Social sharing buttons text
+- Comment sections
+- Any text that is clearly not part of the actual article/page editorial content
+
+Only use the actual article substance, key messages, and editorial content for writing the posts.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
 
 ## Platform Guidelines\n${platformGuide}
 
-Return a JSON object with:
+Each variant should take a different angle, tone, or hook while staying on-brand and on-message.
+
+Return a JSON array of ${VARIANTS_PER_ACCOUNT} objects, each with:
 - content: string (the post body)
 - hashtags: string[] (3-5 relevant hashtags without the # symbol)
 - imagePrompt: string (a suggested image description for this post)`;
 
       const result = await completeForFeature("marketing_tasks", prompt);
 
-      let parsed: any = {};
+      let variants: any[] = [];
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
-        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        const jsonMatch = result.text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          variants = JSON.parse(jsonMatch[0]);
+        } else {
+          const objMatch = result.text.match(/\{[\s\S]*\}/);
+          variants = objMatch ? [JSON.parse(objMatch[0])] : [{ content: result.text, hashtags: [], imagePrompt: "" }];
+        }
       } catch {
-        parsed = { content: result.text, hashtags: [], imagePrompt: "" };
+        variants = [{ content: result.text, hashtags: [], imagePrompt: "" }];
       }
 
-      generatedRows.push({
-        id: randomUUID(),
-        campaignId,
-        socialAccountId: account.id === "placeholder" ? null : account.id,
-        tenantDomain,
-        platform: account.platform,
-        content: parsed.content ?? result.text,
-        hashtags: parsed.hashtags ?? [],
-        imagePrompt: parsed.imagePrompt ?? "",
-        generationJobId: jobId,
-      } as InsertGeneratedPost);
+      for (const parsed of variants) {
+        generatedRows.push({
+          id: randomUUID(),
+          campaignId,
+          socialAccountId: account.id === "placeholder" ? null : account.id,
+          tenantDomain,
+          platform: account.platform,
+          content: parsed.content ?? result.text,
+          hashtags: parsed.hashtags ?? [],
+          imagePrompt: parsed.imagePrompt ?? "",
+          variantGroup: variantGroupId,
+          generationJobId: jobId,
+        } as InsertGeneratedPost);
+      }
     }
 
     if (generatedRows.length) {

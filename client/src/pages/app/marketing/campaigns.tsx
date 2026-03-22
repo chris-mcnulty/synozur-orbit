@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { format } from "date-fns";
+import { Switch } from "@/components/ui/switch";
+import { format, addDays } from "date-fns";
 
 interface Campaign {
   id: string;
@@ -26,7 +28,23 @@ interface Campaign {
   status: string;
   startDate?: string;
   endDate?: string;
+  numberOfDays?: number;
+  includeSaturday?: boolean;
+  includeSunday?: boolean;
   createdAt: string;
+}
+
+interface ContentAsset {
+  id: string;
+  title: string;
+  description?: string;
+  leadImageUrl?: string;
+}
+
+interface SocialAccount {
+  id: string;
+  platform: string;
+  accountName: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,11 +54,51 @@ const STATUS_COLORS: Record<string, string> = {
   archived: "destructive",
 };
 
+const STEPS = ["Details", "Assets", "Accounts", "Schedule"];
+
+function calculateEndDate(startDate: string, numberOfDays: number, includeSat: boolean, includeSun: boolean): Date {
+  const start = new Date(startDate);
+  let daysAdded = 0;
+  let current = new Date(start);
+  while (daysAdded < numberOfDays) {
+    current = addDays(current, 1);
+    const dow = current.getDay();
+    if (dow === 0 && !includeSun) continue;
+    if (dow === 6 && !includeSat) continue;
+    daysAdded++;
+  }
+  return current;
+}
+
 export default function CampaignsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "" });
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const preselectedAssetId = params.get("preselect");
+
+  const [addOpen, setAddOpen] = useState(!!preselectedAssetId);
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [] as string[],
+    selectedSocialIds: [] as string[],
+    startDate: format(new Date(), "yyyy-MM-dd"),
+    numberOfDays: 7,
+    includeSaturday: false,
+    includeSunday: false,
+  });
+
+  const resetForm = () => {
+    setForm({
+      name: "", description: "",
+      selectedAssetIds: [], selectedSocialIds: [],
+      startDate: format(new Date(), "yyyy-MM-dd"),
+      numberOfDays: 7, includeSaturday: false, includeSunday: false,
+    });
+    setStep(0);
+  };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -61,13 +119,47 @@ export default function CampaignsPage() {
     enabled: isAllowed,
   });
 
+  const { data: allAssets = [] } = useQuery<ContentAsset[]>({
+    queryKey: ["/api/content-assets"],
+    queryFn: async () => {
+      const r = await fetch("/api/content-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/social-accounts"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const computedEndDate = useMemo(() => {
+    if (!form.startDate || !form.numberOfDays) return null;
+    return calculateEndDate(form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday);
+  }, [form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday]);
+
   const createMutation = useMutation({
-    mutationFn: async (data: typeof form) => {
+    mutationFn: async () => {
+      const endDate = computedEndDate ? computedEndDate.toISOString() : undefined;
       const r = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          name: form.name,
+          description: form.description,
+          startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
+          endDate,
+          numberOfDays: form.numberOfDays,
+          includeSaturday: form.includeSaturday,
+          includeSunday: form.includeSunday,
+          assetIds: form.selectedAssetIds,
+          socialAccountIds: form.selectedSocialIds,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -75,11 +167,29 @@ export default function CampaignsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       setAddOpen(false);
-      setForm({ name: "", description: "" });
+      resetForm();
       toast({ title: "Campaign created" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const toggleAsset = (id: string) => {
+    setForm(f => ({
+      ...f,
+      selectedAssetIds: f.selectedAssetIds.includes(id)
+        ? f.selectedAssetIds.filter(a => a !== id)
+        : [...f.selectedAssetIds, id],
+    }));
+  };
+
+  const toggleSocial = (id: string) => {
+    setForm(f => ({
+      ...f,
+      selectedSocialIds: f.selectedSocialIds.includes(id)
+        ? f.selectedSocialIds.filter(a => a !== id)
+        : [...f.selectedSocialIds, id],
+    }));
+  };
 
   if (!isAllowed) {
     return (
@@ -109,36 +219,217 @@ export default function CampaignsPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-campaigns-title">
               <LayoutList className="w-6 h-6" /> Campaigns
             </h1>
             <p className="text-muted-foreground text-sm mt-1">Coordinate assets and social accounts. Generate AI-powered posts and emails per campaign.</p>
           </div>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
-              <Button><Plus className="w-4 h-4 mr-2" />New Campaign</Button>
+              <Button data-testid="button-new-campaign"><Plus className="w-4 h-4 mr-2" />New Campaign</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>New Campaign</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label>Campaign Name *</Label>
-                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Q2 2026 Product Launch" />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Campaign goals and context..." rows={3} />
-                </div>
-                <Button
-                  className="w-full"
-                  disabled={!form.name.trim() || createMutation.isPending}
-                  onClick={() => createMutation.mutate(form)}
-                >
-                  {createMutation.isPending ? "Creating..." : "Create Campaign"}
-                </Button>
+
+              <div className="flex items-center gap-1 mb-4">
+                {STEPS.map((s, i) => (
+                  <div key={s} className="flex items-center gap-1">
+                    <button
+                      onClick={() => setStep(i)}
+                      className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                        i === step ? "bg-primary text-primary-foreground" :
+                        i < step ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                      }`}
+                      data-testid={`step-${s.toLowerCase()}`}
+                    >
+                      {i < step ? <Check className="w-3 h-3 inline mr-0.5" /> : null}{s}
+                    </button>
+                    {i < STEPS.length - 1 && <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+                  </div>
+                ))}
               </div>
+
+              {step === 0 && (
+                <div className="space-y-4">
+                  <div>
+                    <Label>Campaign Name *</Label>
+                    <Input
+                      value={form.name}
+                      onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="e.g. Q2 2026 Product Launch"
+                      data-testid="input-campaign-name"
+                    />
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <Textarea
+                      value={form.description}
+                      onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Campaign goals and context..."
+                      rows={3}
+                      data-testid="input-campaign-description"
+                    />
+                  </div>
+                  <Button
+                    className="w-full"
+                    disabled={!form.name.trim()}
+                    onClick={() => setStep(1)}
+                    data-testid="button-next-to-assets"
+                  >
+                    Next: Select Assets <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              )}
+
+              {step === 1 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Select content assets to include in this campaign.</p>
+                  {allAssets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">No content assets available. Add assets in the Content Library first.</p>
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto space-y-2 border rounded-lg p-3">
+                      {allAssets.map(asset => (
+                        <label
+                          key={asset.id}
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
+                          data-testid={`checkbox-asset-${asset.id}`}
+                        >
+                          <Checkbox
+                            checked={form.selectedAssetIds.includes(asset.id)}
+                            onCheckedChange={() => toggleAsset(asset.id)}
+                          />
+                          {asset.leadImageUrl && (
+                            <img src={asset.leadImageUrl} alt="" className="w-10 h-10 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{asset.title}</p>
+                            {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">{form.selectedAssetIds.length} asset(s) selected</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setStep(0)} className="flex-1" data-testid="button-back-to-details">
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                    </Button>
+                    <Button onClick={() => setStep(2)} className="flex-1" data-testid="button-next-to-accounts">
+                      Next: Social Accounts <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Select social accounts for post generation.</p>
+                  {allSocialAccounts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">No social accounts available. Add accounts in Social Accounts first.</p>
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto space-y-2 border rounded-lg p-3">
+                      {allSocialAccounts.map(account => (
+                        <label
+                          key={account.id}
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
+                          data-testid={`checkbox-social-${account.id}`}
+                        >
+                          <Checkbox
+                            checked={form.selectedSocialIds.includes(account.id)}
+                            onCheckedChange={() => toggleSocial(account.id)}
+                          />
+                          <Badge variant="outline">{account.platform}</Badge>
+                          <span className="text-sm">{account.accountName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">{form.selectedSocialIds.length} account(s) selected</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setStep(1)} className="flex-1" data-testid="button-back-to-assets">
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                    </Button>
+                    <Button onClick={() => setStep(3)} className="flex-1" data-testid="button-next-to-schedule">
+                      Next: Schedule <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {step === 3 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Start Date</Label>
+                      <Input
+                        type="date"
+                        value={form.startDate}
+                        onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                        data-testid="input-start-date"
+                      />
+                    </div>
+                    <div>
+                      <Label>Days to Run</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={form.numberOfDays}
+                        onChange={e => setForm(f => ({ ...f, numberOfDays: parseInt(e.target.value) || 1 }))}
+                        data-testid="input-number-of-days"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={form.includeSaturday}
+                        onCheckedChange={v => setForm(f => ({ ...f, includeSaturday: v }))}
+                        data-testid="switch-include-saturday"
+                      />
+                      <Label className="text-sm">Include Saturday</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={form.includeSunday}
+                        onCheckedChange={v => setForm(f => ({ ...f, includeSunday: v }))}
+                        data-testid="switch-include-sunday"
+                      />
+                      <Label className="text-sm">Include Sunday</Label>
+                    </div>
+                  </div>
+                  {computedEndDate && (
+                    <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm">
+                        End date: <strong>{format(computedEndDate, "MMM d, yyyy")}</strong>
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="border rounded-lg p-3 bg-muted/30 space-y-1">
+                    <p className="text-xs font-medium">Summary</p>
+                    <p className="text-xs text-muted-foreground">{form.selectedAssetIds.length} asset(s), {form.selectedSocialIds.length} social account(s)</p>
+                    <p className="text-xs text-muted-foreground">{form.numberOfDays} days, {form.includeSaturday ? "incl." : "excl."} Saturday, {form.includeSunday ? "incl." : "excl."} Sunday</p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setStep(2)} className="flex-1" data-testid="button-back-to-accounts">
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      disabled={!form.name.trim() || createMutation.isPending}
+                      onClick={() => createMutation.mutate()}
+                      data-testid="button-create-campaign"
+                    >
+                      {createMutation.isPending ? "Creating..." : "Create Campaign"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>
@@ -147,14 +438,14 @@ export default function CampaignsPage() {
           <div className="text-center text-muted-foreground py-12">Loading...</div>
         ) : campaigns.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
+            <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-campaigns">
               No campaigns yet. Create your first campaign to start generating content.
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {campaigns.map(c => (
-              <Card key={c.id} className="hover:shadow-md transition-shadow">
+              <Card key={c.id} className="hover:shadow-md transition-shadow" data-testid={`card-campaign-${c.id}`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base leading-tight">{c.name}</CardTitle>
@@ -164,15 +455,25 @@ export default function CampaignsPage() {
                   </div>
                   {c.description && <CardDescription className="line-clamp-2">{c.description}</CardDescription>}
                 </CardHeader>
-                <CardContent className="pt-0 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Created {format(new Date(c.createdAt), "MMM d, yyyy")}
-                  </span>
-                  <Link href={`/app/marketing/campaigns/${c.id}`}>
-                    <Button variant="ghost" size="sm" className="gap-1">
-                      Open <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
+                <CardContent className="pt-0 space-y-2">
+                  {c.startDate && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar className="w-3 h-3" />
+                      {format(new Date(c.startDate), "MMM d")}
+                      {c.endDate && <> — {format(new Date(c.endDate), "MMM d, yyyy")}</>}
+                      {c.numberOfDays && <span className="ml-1">({c.numberOfDays}d)</span>}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      Created {format(new Date(c.createdAt), "MMM d, yyyy")}
+                    </span>
+                    <Link href={`/app/marketing/campaigns/${c.id}`}>
+                      <Button variant="ghost" size="sm" className="gap-1" data-testid={`button-open-campaign-${c.id}`}>
+                        Open <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             ))}
