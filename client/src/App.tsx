@@ -49,6 +49,7 @@ import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
 import GettingStartedPage from "@/pages/app/getting-started";
 import Pricing from "@/pages/pricing";
 import AdminOrganizationsPage from "@/pages/app/admin/organizations";
+import AISettingsPage from "@/pages/app/admin/ai-settings";
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -91,6 +92,7 @@ function Router() {
       <Route path="/app/settings" component={Settings} />
       <Route path="/app/users" component={UsersPage} />
       <Route path="/app/admin/organizations" component={AdminOrganizationsPage} />
+      <Route path="/app/admin/ai-settings" component={AISettingsPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products" component={ProductsPage} />
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />

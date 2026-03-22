@@ -1107,6 +1107,140 @@ export const insertExecutiveSummarySchema = createInsertSchema(executiveSummarie
 export type ExecutiveSummary = typeof executiveSummaries.$inferSelect;
 export type InsertExecutiveSummary = z.infer<typeof insertExecutiveSummarySchema>;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// AI Provider & Model Management
+// Multi-provider support with per-function model assignments.
+// Providers: Replit AI (Anthropic/OpenAI), Azure AI Foundry
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const AI_PROVIDERS = {
+  REPLIT_ANTHROPIC: 'replit_anthropic',
+  REPLIT_OPENAI: 'replit_openai',
+  AZURE_FOUNDRY: 'azure_foundry',
+} as const;
+
+export type AIProviderKey = typeof AI_PROVIDERS[keyof typeof AI_PROVIDERS];
+
+export const AI_FEATURES = {
+  COMPETITOR_ANALYSIS: 'competitor_analysis',
+  GAP_ANALYSIS: 'gap_analysis',
+  RECOMMENDATIONS: 'recommendations',
+  BATTLECARD: 'battlecard',
+  GTM_PLAN: 'gtm_plan',
+  MESSAGING_FRAMEWORK: 'messaging_framework',
+  CHANGE_DETECTION: 'change_detection',
+  INTELLIGENCE_BRIEFING: 'intelligence_briefing',
+  ROADMAP_RECOMMENDATIONS: 'roadmap_recommendations',
+  FEATURE_EXTRACTION: 'feature_extraction',
+  PRODUCT_ONE_SHEET: 'product_one_sheet',
+  MARKETING_TASKS: 'marketing_tasks',
+} as const;
+
+export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
+
+export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
+  competitor_analysis: 'Competitor Website Analysis',
+  gap_analysis: 'Gap Analysis',
+  recommendations: 'Recommendations',
+  battlecard: 'Battlecard Generation',
+  gtm_plan: 'GTM Plan Generation',
+  messaging_framework: 'Messaging Framework',
+  change_detection: 'Website Change Detection',
+  intelligence_briefing: 'Intelligence Briefing',
+  roadmap_recommendations: 'Product Roadmap Recommendations',
+  feature_extraction: 'Feature Extraction',
+  product_one_sheet: 'Product One-Sheet',
+  marketing_tasks: 'Marketing Task Generation',
+};
+
+export const AI_MODELS: Record<string, readonly string[]> = {
+  replit_anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-sonnet-4', 'claude-opus-4'],
+  replit_openai: ['gpt-4o', 'gpt-4o-mini'],
+  azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o'],
+} as const;
+
+export const AI_MODEL_INFO: Record<string, {
+  name: string;
+  description: string;
+  costTier: 'free' | 'low' | 'medium' | 'high';
+  providers: string[];
+  contextWindow: number;
+  costPer1kPrompt: number;
+  costPer1kCompletion: number;
+}> = {
+  'gpt-5.4': { name: 'GPT-5.4', description: 'Latest and most capable OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
+  'gpt-5.2': { name: 'GPT-5.2', description: 'Advanced reasoning OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
+  'gpt-4o': { name: 'GPT-4o', description: 'Fast multimodal model', costTier: 'medium', providers: ['replit_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01 },
+  'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Cost-effective for simple tasks', costTier: 'low', providers: ['replit_openai'], contextWindow: 128000, costPer1kPrompt: 0.00015, costPer1kCompletion: 0.0006 },
+  'claude-sonnet-4-5': { name: 'Claude Sonnet 4.5', description: 'Balanced intelligence and speed', costTier: 'medium', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
+  'claude-haiku-4-5': { name: 'Claude Haiku 4.5', description: 'Fast and cost-effective', costTier: 'low', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.0008, costPer1kCompletion: 0.004 },
+  'claude-sonnet-4': { name: 'Claude Sonnet 4', description: 'Previous generation balanced model', costTier: 'medium', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
+  'claude-opus-4': { name: 'Claude Opus 4', description: 'Most capable Claude model', costTier: 'high', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.015, costPer1kCompletion: 0.075 },
+};
+
+export const AI_PROVIDER_LABELS: Record<string, string> = {
+  replit_anthropic: 'Replit AI (Anthropic)',
+  replit_openai: 'Replit AI (OpenAI)',
+  azure_foundry: 'Azure AI Foundry',
+};
+
+export const aiConfiguration = pgTable("ai_configuration", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  defaultProvider: text("default_provider").notNull().default('replit_anthropic'),
+  defaultModel: text("default_model").notNull().default('claude-sonnet-4-5'),
+  maxTokensPerRequest: integer("max_tokens_per_request").default(8192),
+  monthlyTokenBudget: integer("monthly_token_budget"),
+  alertThresholds: jsonb("alert_thresholds").$type<number[]>().default([75, 90, 100]),
+  alertEnabled: boolean("alert_enabled").default(true),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAiConfigurationSchema = createInsertSchema(aiConfiguration).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAiConfiguration = z.infer<typeof insertAiConfigurationSchema>;
+export type AiConfiguration = typeof aiConfiguration.$inferSelect;
+
+export const aiFeatureModelAssignments = pgTable("ai_feature_model_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feature: text("feature").notNull().unique(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  maxTokens: integer("max_tokens"),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAiFeatureModelAssignmentSchema = createInsertSchema(aiFeatureModelAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAiFeatureModelAssignment = z.infer<typeof insertAiFeatureModelAssignmentSchema>;
+export type AiFeatureModelAssignment = typeof aiFeatureModelAssignments.$inferSelect;
+
+export const aiUsageAlerts = pgTable("ai_usage_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  periodMonth: varchar("period_month", { length: 7 }).notNull(),
+  thresholdPercent: integer("threshold_percent").notNull(),
+  tokenUsageAtAlert: integer("token_usage_at_alert").notNull(),
+  monthlyBudget: integer("monthly_budget").notNull(),
+  alertedAt: timestamp("alerted_at").notNull().defaultNow(),
+  notifiedEmails: jsonb("notified_emails").$type<string[]>(),
+});
+
+export const insertAiUsageAlertSchema = createInsertSchema(aiUsageAlerts).omit({
+  id: true,
+  alertedAt: true,
+});
+export type InsertAiUsageAlert = z.infer<typeof insertAiUsageAlertSchema>;
+export type AiUsageAlert = typeof aiUsageAlerts.$inferSelect;
+
 // AI Usage tracking for monitoring API costs across tenants
 export const aiUsage = pgTable("ai_usage", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

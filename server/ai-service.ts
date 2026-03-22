@@ -1,9 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
-});
+import { AI_FEATURES, type AIFeature } from "@shared/schema";
+import { completeForFeature, type AICompletionResult } from "./services/ai-provider";
 
 export interface CompetitorAnalysis {
   summary: string;
@@ -12,12 +8,10 @@ export interface CompetitorAnalysis {
   valueProposition: string;
   keywords: string[];
   tone: string;
-  // Directory info extracted from website
   headquarters?: string;
   foundedYear?: number;
   revenueRange?: string;
   fundingInfo?: string;
-  // LinkedIn-enhanced fields
   companyDescription?: string;
   industry?: string;
   employeeCount?: number;
@@ -26,7 +20,6 @@ export interface CompetitorAnalysis {
   recentPostThemes?: string[];
 }
 
-// LinkedIn data structure for AI analysis
 export interface LinkedInContext {
   companyDescription?: string;
   industry?: string;
@@ -56,6 +49,60 @@ export interface Recommendation {
   rationale: string;
 }
 
+function parseJsonResponse<T>(text: string, fallback: T): T {
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.slice(7);
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.slice(3);
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.slice(0, -3);
+  }
+  return JSON.parse(cleaned.trim());
+}
+
+function parseJsonArrayResponse<T>(text: string): T[] {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "").trim();
+  
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        // try truncation recovery
+      }
+    }
+    
+    const arrayStart = cleaned.indexOf("[");
+    if (arrayStart !== -1) {
+      let partial = cleaned.slice(arrayStart);
+      partial = partial.replace(/,\s*\{[^}]*$/, "");
+      if (!partial.endsWith("]")) {
+        partial = partial + "]";
+      }
+      try {
+        const recovered = JSON.parse(partial);
+        console.log(`[AI Parse] Recovered ${recovered.length} items from truncated response`);
+        return recovered;
+      } catch {
+        // ignore
+      }
+    }
+    
+    throw new Error("No JSON array found in response");
+  }
+}
+
+export interface AICallResult<T> {
+  data: T;
+  completion: AICompletionResult;
+}
+
 export async function analyzeCompetitorWebsite(
   competitorName: string,
   websiteUrl: string,
@@ -63,7 +110,6 @@ export async function analyzeCompetitorWebsite(
   groundingContext?: string,
   linkedInData?: LinkedInContext
 ): Promise<CompetitorAnalysis> {
-  // Build the prompt with optional grounding context
   let contextSection = "";
   if (groundingContext) {
     contextSection = `
@@ -75,7 +121,6 @@ Use this context to better understand the company's intended positioning and mes
 `;
   }
 
-  // Build LinkedIn context section if available
   let linkedInSection = "";
   if (linkedInData) {
     const linkedInParts: string[] = [];
@@ -108,13 +153,7 @@ Use this LinkedIn data to understand their social presence, thought leadership t
     }
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: `Analyze this company's website content${linkedInData ? " and LinkedIn presence" : ""} and extract key marketing insights.
+  const prompt = `Analyze this company's website content${linkedInData ? " and LinkedIn presence" : ""} and extract key marketing insights.
 
 Company: ${competitorName}
 Website: ${websiteUrl}
@@ -144,30 +183,21 @@ Please provide a JSON response with the following structure:
 
 Note: For headquarters, foundedYear, revenueRange, and fundingInfo, only include if explicitly stated on the website (About page, footer, press releases). Return null if not found - do not guess.
 
-Return ONLY valid JSON, no additional text.`,
-      },
-    ],
-  });
+Return ONLY valid JSON, no additional text.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.COMPETITOR_ANALYSIS, prompt, { maxTokens: 2048 });
 
   try {
-    // Handle markdown-wrapped JSON responses
-    let text = content.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    return JSON.parse(text.trim());
+    return parseJsonResponse<CompetitorAnalysis>(result.text, {
+      summary: "Analysis could not be completed",
+      keyMessages: [],
+      targetAudience: "Unknown",
+      valueProposition: "Unknown",
+      keywords: [],
+      tone: "Unknown",
+    });
   } catch (e) {
-    console.error("Failed to parse AI response:", content.text, e);
+    console.error("Failed to parse AI response:", result.text, e);
     return {
       summary: "Analysis could not be completed",
       keyMessages: [],
@@ -185,7 +215,6 @@ export async function generateGapAnalysis(
   baselineAnalysis?: CompetitorAnalysis,
   groundingContext?: string
 ): Promise<GapAnalysis[]> {
-  // Build comprehensive context including baseline and grounding documents
   let baselineSection = "";
   if (baselineAnalysis) {
     baselineSection = `
@@ -202,13 +231,7 @@ ${groundingContext.slice(0, 6000)}
 `;
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: `Based on our company analysis, positioning documents, and competitor analyses, identify gaps in our market strategy.
+  const prompt = `Based on our company analysis, positioning documents, and competitor analyses, identify gaps in our market strategy.
 
 Our Positioning Statement: ${ourPositioning}
 ${baselineSection}
@@ -241,29 +264,14 @@ Categories:
 - positioning: Market positioning, differentiation, competitive stance
 - other: Other gaps that don't fit above categories
 
-Return ONLY valid JSON array, no additional text.`,
-      },
-    ],
-  });
+Return ONLY valid JSON array, no additional text.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.GAP_ANALYSIS, prompt, { maxTokens: 2048 });
 
   try {
-    let text = content.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    return JSON.parse(text.trim());
+    return parseJsonResponse<GapAnalysis[]>(result.text, []);
   } catch (e) {
-    console.error("Failed to parse gap analysis response:", content.text, e);
+    console.error("Failed to parse gap analysis response:", result.text, e);
     return [];
   }
 }
@@ -322,13 +330,7 @@ ${poorlyRated.slice(0, 5).map(r => `- "${r.title}" [Area: ${r.area}] - AVOID: ${
     }
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: `Based on these gaps and competitor analyses, generate actionable recommendations.
+  const prompt = `Based on these gaps and competitor analyses, generate actionable recommendations.
 
 Gaps Identified:
 ${JSON.stringify(gaps, null, 2)}
@@ -356,29 +358,14 @@ Please generate 3-5 NEW recommendations and return as a JSON array:
   }
 ]
 
-Return ONLY valid JSON array, no additional text.`,
-      },
-    ],
-  });
+Return ONLY valid JSON array, no additional text.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.RECOMMENDATIONS, prompt, { maxTokens: 2048 });
 
   try {
-    let text = content.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    return JSON.parse(text.trim());
+    return parseJsonResponse<Recommendation[]>(result.text, []);
   } catch (e) {
-    console.error("Failed to parse recommendations response:", content.text, e);
+    console.error("Failed to parse recommendations response:", result.text, e);
     return [];
   }
 }
@@ -391,13 +378,7 @@ export async function detectChanges(
     return { hasChanges: false, description: "", impact: "Low" };
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 512,
-    messages: [
-      {
-        role: "user",
-        content: `Compare these two versions of website content and identify meaningful changes.
+  const prompt = `Compare these two versions of website content and identify meaningful changes.
 
 Previous:
 ${previousContent.slice(0, 3000)}
@@ -412,29 +393,13 @@ Return a JSON response:
   "impact": "High/Medium/Low"
 }
 
-Return ONLY valid JSON, no additional text.`,
-      },
-    ],
-  });
-
-  const content = message.content[0];
-  if (content.type !== "text") {
-    return { hasChanges: false, description: "", impact: "Low" };
-  }
+Return ONLY valid JSON, no additional text.`;
 
   try {
-    let text = content.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    return JSON.parse(text.trim());
+    const result = await completeForFeature(AI_FEATURES.CHANGE_DETECTION, prompt, { maxTokens: 512 });
+    return parseJsonResponse(result.text, { hasChanges: false, description: "", impact: "Low" });
   } catch (e) {
-    console.error("Failed to parse change detection response:", content.text, e);
+    console.error("Failed change detection:", e);
     return { hasChanges: false, description: "", impact: "Low" };
   }
 }
@@ -462,13 +427,7 @@ export async function generateRoadmapRecommendations(
     ? competitorData.map(c => `Competitor: ${c.name}\nAnalysis: ${c.analysis}`).join("\n\n")
     : "No competitor analysis available yet.";
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: `You are a product strategy advisor. Based on competitive intelligence, suggest roadmap recommendations for the following product.
+  const prompt = `You are a product strategy advisor. Based on competitive intelligence, suggest roadmap recommendations for the following product.
 
 PRODUCT: ${productName}
 ${productDescription ? `Description: ${productDescription}` : ""}
@@ -497,34 +456,18 @@ Return a JSON array with recommendations in this format:
   }
 ]
 
-Return ONLY valid JSON array, no additional text.`,
-      },
-    ],
-  });
+Return ONLY valid JSON array, no additional text.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.ROADMAP_RECOMMENDATIONS, prompt, { maxTokens: 2048 });
 
   try {
-    let text = content.text.trim();
-    if (text.startsWith("```json")) {
-      text = text.slice(7);
-    } else if (text.startsWith("```")) {
-      text = text.slice(3);
-    }
-    if (text.endsWith("```")) {
-      text = text.slice(0, -3);
-    }
-    return JSON.parse(text.trim());
+    return parseJsonResponse<RoadmapRecommendation[]>(result.text, []);
   } catch (e) {
-    console.error("Failed to parse roadmap recommendations:", content.text, e);
+    console.error("Failed to parse roadmap recommendations:", result.text, e);
     return [];
   }
 }
 
-// Feature extraction from URL content or pasted text
 export interface ExtractedFeature {
   name: string;
   description: string | null;
@@ -539,13 +482,7 @@ export async function extractFeaturesFromContent(
 ): Promise<ExtractedFeature[]> {
   const contextInfo = productName ? `for the product "${productName}"` : "";
   
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 8192,
-    messages: [
-      {
-        role: "user",
-        content: `You are a product analyst extracting ALL product features and capabilities from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+  const prompt = `You are a product analyst extracting ALL product features and capabilities from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
 
 IMPORTANT: Be thorough and extract EVERY distinct feature, capability, module, and functionality mentioned. Marketing pages often describe many features - capture them all.
 
@@ -577,62 +514,18 @@ Return a JSON array of features. Each feature should have:
 - status: "backlog" | "planned" | "in_progress" | "released"
 
 Be comprehensive! Extract 10-30 features if the content has that many. Each distinct capability, module, integration, or security feature should be its own entry. Do not be conservative - if something sounds like a feature, include it.
-Return ONLY valid JSON array, no additional text or code fences.`,
-      },
-    ],
-  });
+Return ONLY valid JSON array, no additional text or code fences.`;
 
-  const responseContent = message.content[0];
-  if (responseContent.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.FEATURE_EXTRACTION, prompt, { maxTokens: 8192 });
 
   try {
-    let text = responseContent.text.trim();
-    text = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "").trim();
-    
-    console.log(`[Feature Parse] stop_reason: ${message.stop_reason}, text length: ${text.length}`);
-    
-    try {
-      return JSON.parse(text);
-    } catch {
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch {
-          // ignore, will try truncation recovery below
-        }
-      }
-      
-      const arrayStart = text.indexOf("[");
-      if (arrayStart !== -1) {
-        let partial = text.slice(arrayStart);
-        
-        partial = partial.replace(/,\s*\{[^}]*$/, "");
-        
-        if (!partial.endsWith("]")) {
-          partial = partial + "]";
-        }
-        
-        try {
-          const recovered = JSON.parse(partial);
-          console.log(`[Feature Parse] Recovered ${recovered.length} features from truncated response`);
-          return recovered;
-        } catch {
-          // ignore
-        }
-      }
-      
-      throw new Error("No JSON array found in response");
-    }
+    return parseJsonArrayResponse<ExtractedFeature>(result.text);
   } catch (e) {
-    console.error("Failed to parse extracted features:", responseContent.text.slice(0, 500), e);
+    console.error("Failed to parse extracted features:", result.text.slice(0, 500), e);
     return [];
   }
 }
 
-// Roadmap item extraction from content
 export interface ExtractedRoadmapItem {
   title: string;
   description: string | null;
@@ -647,13 +540,7 @@ export async function extractRoadmapFromContent(
 ): Promise<ExtractedRoadmapItem[]> {
   const contextInfo = productName ? `for the product "${productName}"` : "";
   
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: `You are a product analyst extracting roadmap items from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+  const prompt = `You are a product analyst extracting roadmap items from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
 
 Analyze the following content and extract roadmap items, upcoming features, or planned work. For each item:
 1. A clear title (max 80 characters)
@@ -671,31 +558,14 @@ Return a JSON array of roadmap items. Each should have:
 - effort: "xs" | "s" | "m" | "l" | "xl" | null
 
 Extract 3-15 roadmap items. Focus on planned or upcoming work.
-Return ONLY valid JSON array, no additional text.`,
-      },
-    ],
-  });
+Return ONLY valid JSON array, no additional text.`;
 
-  const responseContent = message.content[0];
-  if (responseContent.type !== "text") {
-    throw new Error("Unexpected response type");
-  }
+  const result = await completeForFeature(AI_FEATURES.ROADMAP_RECOMMENDATIONS, prompt, { maxTokens: 4096 });
 
   try {
-    let text = responseContent.text.trim();
-    text = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "").trim();
-    
-    try {
-      return JSON.parse(text);
-    } catch {
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-      throw new Error("No JSON array found in response");
-    }
+    return parseJsonArrayResponse<ExtractedRoadmapItem>(result.text);
   } catch (e) {
-    console.error("Failed to parse extracted roadmap:", responseContent.text.slice(0, 500), e);
+    console.error("Failed to parse extracted roadmap:", result.text.slice(0, 500), e);
     return [];
   }
 }

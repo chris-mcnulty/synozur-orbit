@@ -30,6 +30,8 @@ import { startFullRegeneration, getRegenerationStatus } from "./services/full-re
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
+import { completeForFeature, getProviderForFeature, getAllProviderStatuses, invalidateAIConfigCache, type AICompletionResult } from "./services/ai-provider";
+import { AI_FEATURES, AI_MODELS, AI_MODEL_INFO, AI_FEATURE_LABELS, AI_PROVIDERS, AI_PROVIDER_LABELS, aiConfiguration, aiFeatureModelAssignments, aiUsageAlerts, type AIFeature } from "@shared/schema";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
 import { validateDocumentUpload } from "./utils/file-validator";
@@ -46,7 +48,7 @@ async function logAiUsage(
   try {
     const inputTokens = usage?.input_tokens || 0;
     const outputTokens = usage?.output_tokens || 0;
-    const estimatedCost = calculateEstimatedCost(model, inputTokens, outputTokens);
+    const estimatedCost = calculateEstimatedCost(model, inputTokens, outputTokens, provider);
     
     await storage.logAiUsage({
       tenantDomain: ctx.tenantDomain,
@@ -6617,6 +6619,322 @@ Respond in JSON format:
 
       const stats = await storage.getAiUsageStats();
       res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== AI MODEL CONFIGURATION (Global Admin only) ====================
+
+  app.get("/api/admin/ai-config", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const rows = await db.select().from(aiConfiguration).limit(1);
+      if (rows.length === 0) {
+        const [created] = await db.insert(aiConfiguration).values({}).returning();
+        return res.json(created);
+      }
+      res.json(rows[0]);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/ai-config", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const { defaultProvider, defaultModel, maxTokensPerRequest, monthlyTokenBudget, alertThresholds, alertEnabled } = req.body;
+
+      if (defaultProvider !== undefined) {
+        const validProviders = Object.values(AI_PROVIDERS);
+        if (!validProviders.includes(defaultProvider)) return res.status(400).json({ error: `Invalid provider: ${defaultProvider}` });
+      }
+      if (defaultModel !== undefined && defaultProvider) {
+        const providerModels = AI_MODELS[defaultProvider];
+        if (!providerModels || !providerModels.includes(defaultModel)) {
+          return res.status(400).json({ error: `Model ${defaultModel} is not available for provider ${defaultProvider}` });
+        }
+      }
+      if (alertThresholds !== undefined && !Array.isArray(alertThresholds)) {
+        return res.status(400).json({ error: "alertThresholds must be an array of numbers" });
+      }
+
+      const rows = await db.select().from(aiConfiguration).limit(1);
+      let configId: string;
+      if (rows.length === 0) {
+        const [created] = await db.insert(aiConfiguration).values({}).returning();
+        configId = created.id;
+      } else {
+        configId = rows[0].id;
+      }
+
+      const updates: Record<string, any> = { updatedBy: user.id, updatedAt: new Date() };
+      if (defaultProvider !== undefined) updates.defaultProvider = defaultProvider;
+      if (defaultModel !== undefined) updates.defaultModel = defaultModel;
+      if (maxTokensPerRequest !== undefined) updates.maxTokensPerRequest = maxTokensPerRequest;
+      if (monthlyTokenBudget !== undefined) updates.monthlyTokenBudget = monthlyTokenBudget;
+      if (alertThresholds !== undefined) updates.alertThresholds = alertThresholds;
+      if (alertEnabled !== undefined) updates.alertEnabled = alertEnabled;
+
+      const [updated] = await db.update(aiConfiguration).set(updates).where(eq(aiConfiguration.id, configId)).returning();
+      invalidateAIConfigCache();
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/ai-config/options", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const providerStatuses = getAllProviderStatuses();
+      res.json({
+        providers: providerStatuses.map(p => ({
+          ...p,
+          label: AI_PROVIDER_LABELS[p.key] || p.name,
+        })),
+        models: AI_MODEL_INFO,
+        features: Object.entries(AI_FEATURE_LABELS).map(([key, label]) => ({ key, label })),
+        modelsByProvider: AI_MODELS,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/ai-config/feature-assignments", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const assignments = await db.select().from(aiFeatureModelAssignments);
+      res.json(assignments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/admin/ai-config/feature-assignments", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const { assignments } = req.body;
+      if (!Array.isArray(assignments)) return res.status(400).json({ error: "assignments must be an array" });
+
+      const validFeatures = Object.values(AI_FEATURES);
+      const validProviders = Object.values(AI_PROVIDERS);
+
+      for (const a of assignments) {
+        if (!validFeatures.includes(a.feature)) return res.status(400).json({ error: `Invalid feature: ${a.feature}` });
+        if (!validProviders.includes(a.provider)) return res.status(400).json({ error: `Invalid provider: ${a.provider}` });
+        const providerModels = AI_MODELS[a.provider];
+        if (!providerModels || !providerModels.includes(a.model)) {
+          return res.status(400).json({ error: `Model ${a.model} is not available for provider ${a.provider}` });
+        }
+      }
+
+      const assignedFeatures = new Set(assignments.map((a: any) => a.feature));
+      const currentAssignments = await db.select().from(aiFeatureModelAssignments);
+      for (const existing of currentAssignments) {
+        if (!assignedFeatures.has(existing.feature)) {
+          await db.delete(aiFeatureModelAssignments).where(eq(aiFeatureModelAssignments.feature, existing.feature));
+        }
+      }
+
+      const results = [];
+      for (const a of assignments) {
+        if (!a.feature || !a.provider || !a.model) continue;
+
+        const existing = await db.select().from(aiFeatureModelAssignments).where(eq(aiFeatureModelAssignments.feature, a.feature)).limit(1);
+
+        if (existing.length > 0) {
+          const [updated] = await db.update(aiFeatureModelAssignments)
+            .set({ provider: a.provider, model: a.model, maxTokens: a.maxTokens ?? null, updatedBy: user.id, updatedAt: new Date() })
+            .where(eq(aiFeatureModelAssignments.feature, a.feature))
+            .returning();
+          results.push(updated);
+        } else {
+          const [created] = await db.insert(aiFeatureModelAssignments)
+            .values({ feature: a.feature, provider: a.provider, model: a.model, maxTokens: a.maxTokens ?? null, updatedBy: user.id })
+            .returning();
+          results.push(created);
+        }
+      }
+
+      invalidateAIConfigCache();
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/admin/ai-config/feature-assignments/:feature", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      await db.delete(aiFeatureModelAssignments).where(eq(aiFeatureModelAssignments.feature, req.params.feature));
+      invalidateAIConfigCache();
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/ai-config/provider-status", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const statuses = getAllProviderStatuses();
+      res.json(statuses.map(s => ({
+        ...s,
+        label: AI_PROVIDER_LABELS[s.key] || s.name,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/ai-usage/stats", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const days = parseInt(req.query.days as string) || 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const usageRows = await db.execute(sql`
+        SELECT 
+          provider,
+          model,
+          operation,
+          DATE(created_at) as date,
+          COUNT(*) as call_count,
+          SUM(input_tokens) as total_input_tokens,
+          SUM(output_tokens) as total_output_tokens,
+          SUM(total_tokens) as total_tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as total_cost,
+          SUM(CASE WHEN success = true THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN success = false THEN 1 ELSE 0 END) as error_count,
+          AVG(duration_ms) as avg_duration_ms
+        FROM ai_usage
+        WHERE created_at >= ${since}
+        GROUP BY provider, model, operation, DATE(created_at)
+        ORDER BY DATE(created_at) DESC
+      `);
+
+      const totals = await db.execute(sql`
+        SELECT 
+          COUNT(*) as total_calls,
+          SUM(total_tokens) as total_tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as total_cost,
+          SUM(CASE WHEN success = false THEN 1 ELSE 0 END) as total_errors
+        FROM ai_usage
+        WHERE created_at >= ${since}
+      `);
+
+      const byProvider = await db.execute(sql`
+        SELECT 
+          provider,
+          COUNT(*) as calls,
+          SUM(total_tokens) as tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as cost
+        FROM ai_usage
+        WHERE created_at >= ${since}
+        GROUP BY provider
+      `);
+
+      const byFeature = await db.execute(sql`
+        SELECT 
+          operation,
+          COUNT(*) as calls,
+          SUM(total_tokens) as tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as cost,
+          AVG(duration_ms) as avg_duration_ms
+        FROM ai_usage
+        WHERE created_at >= ${since}
+        GROUP BY operation
+        ORDER BY calls DESC
+      `);
+
+      const byModel = await db.execute(sql`
+        SELECT 
+          model,
+          provider,
+          COUNT(*) as calls,
+          SUM(total_tokens) as tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as cost
+        FROM ai_usage
+        WHERE created_at >= ${since}
+        GROUP BY model, provider
+        ORDER BY calls DESC
+      `);
+
+      const dailyTrend = await db.execute(sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as calls,
+          SUM(total_tokens) as tokens,
+          SUM(CAST(estimated_cost AS DECIMAL)) as cost
+        FROM ai_usage
+        WHERE created_at >= ${since}
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at) ASC
+      `);
+
+      res.json({
+        period: { days, since: since.toISOString() },
+        totals: totals.rows[0] || { total_calls: 0, total_tokens: 0, total_cost: 0, total_errors: 0 },
+        byProvider: byProvider.rows,
+        byFeature: byFeature.rows,
+        byModel: byModel.rows,
+        dailyTrend: dailyTrend.rows,
+        detailed: usageRows.rows,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/ai-usage/logs", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const logs = await db.execute(sql`
+        SELECT * FROM ai_usage
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const totalCount = await db.execute(sql`SELECT COUNT(*) as count FROM ai_usage`);
+
+      res.json({
+        logs: logs.rows,
+        total: parseInt(totalCount.rows[0]?.count as string) || 0,
+        limit,
+        offset,
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

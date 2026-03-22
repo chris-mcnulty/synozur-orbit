@@ -75,7 +75,8 @@ Preferred communication style: Simple, everyday language.
 - **Drizzle ORM**
 
 ### AI Services
-- **OpenAI/Azure OpenAI** (via provider abstraction)
+- **Multi-Provider AI Abstraction** (`server/services/ai-provider.ts`): Three providers — Replit AI (Anthropic), Replit AI (OpenAI), Azure AI Foundry — behind `IAIProvider` interface. Per-function model assignment via `aiFeatureModelAssignments` table. DB-driven config with 60s TTL cache. `getProviderForFeature(feature)` resolves provider+model; falls back to `aiConfiguration` global default, then hardcoded Anthropic fallback. Admin UI at `/app/admin/ai-settings` with tabs: Model Config, Feature Assignments, Provider Status, Usage & Costs, Budget Alerts. Constants in `shared/schema.ts`: `AI_PROVIDERS`, `AI_FEATURES`, `AI_MODELS`, `AI_MODEL_INFO`, `AI_FEATURE_LABELS`, `AI_PROVIDER_LABELS`. Foundry env vars: `AZURE_FOUNDRY_OPENAI_ENDPOINT`, `AZURE_FOUNDRY_API_KEY`.
+- **AI Features Registry**: 12 functions — competitor_analysis, gap_analysis, recommendations, battlecard, gtm_plan, messaging_framework, change_detection, intelligence_briefing, roadmap_recommendations, feature_extraction, product_one_sheet, marketing_tasks. Each can have an independent provider+model assignment.
 
 ### UI Libraries
 - **Radix UI**
