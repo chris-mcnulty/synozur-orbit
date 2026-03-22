@@ -974,16 +974,14 @@ Return a JSON object with:
 - hashtags: string[] (3-5 relevant hashtags without the # symbol)
 - imagePrompt: string (a suggested image description for this post)`;
 
-      const result = await completeForFeature("marketing_tasks", [
-        { role: "user", content: prompt }
-      ]);
+      const result = await completeForFeature("marketing_tasks", prompt);
 
       let parsed: any = {};
       try {
-        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
         parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
       } catch {
-        parsed = { content: result.content, hashtags: [], imagePrompt: "" };
+        parsed = { content: result.text, hashtags: [], imagePrompt: "" };
       }
 
       generatedRows.push({
@@ -992,7 +990,7 @@ Return a JSON object with:
         socialAccountId: account.id === "placeholder" ? account.id : account.id,
         tenantDomain,
         platform: account.platform,
-        content: parsed.content ?? result.content,
+        content: parsed.content ?? result.text,
         hashtags: parsed.hashtags ?? [],
         imagePrompt: parsed.imagePrompt ?? "",
         generationJobId: jobId,
