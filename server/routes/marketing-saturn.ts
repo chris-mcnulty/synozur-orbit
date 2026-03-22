@@ -386,6 +386,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(brandAssets.id, req.params.id),
         eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
       ));
     if (!row) return res.status(404).json({ error: "Not found" });
     const tagLinks = await db.select().from(brandAssetProductTags)
@@ -425,6 +426,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(brandAssets.id, req.params.id),
         eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -447,6 +449,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(brandAssets.id, req.params.id),
         eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
       ));
     res.status(204).send();
   });
