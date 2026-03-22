@@ -806,22 +806,20 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
 - htmlBody: string (complete HTML email body, inline styles, responsive)
 - textBody: string (plain text fallback)`;
 
-    const result = await completeForFeature("marketing_tasks", [
-      { role: "user", content: prompt }
-    ]);
+    const result = await completeForFeature("marketing_tasks", prompt);
 
     let parsed: any = {};
     try {
-      const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
     } catch {
-      parsed = { subject: "Generated Email", htmlBody: result.content, textBody: result.content };
+      parsed = { subject: "Generated Email", htmlBody: result.text, textBody: result.text };
     }
 
     res.json({
       subject: parsed.subject ?? "Generated Email",
       previewText: parsed.previewText ?? "",
-      htmlBody: parsed.htmlBody ?? result.content,
+      htmlBody: parsed.htmlBody ?? result.text,
       textBody: parsed.textBody ?? "",
       usage: result.usage,
     });
