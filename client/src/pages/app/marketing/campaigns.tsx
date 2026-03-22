@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useSearch } from "wouter";
 import {
@@ -169,6 +169,22 @@ export default function CampaignsPage() {
       setAddOpen(false);
       resetForm();
       toast({ title: "Campaign created" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      const r = await fetch(`/api/campaigns/${campaignId}/duplicate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Campaign duplicated" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -468,11 +484,22 @@ export default function CampaignsPage() {
                     <span className="text-xs text-muted-foreground">
                       Created {format(new Date(c.createdAt), "MMM d, yyyy")}
                     </span>
-                    <Link href={`/app/marketing/campaigns/${c.id}`}>
-                      <Button variant="ghost" size="sm" className="gap-1" data-testid={`button-open-campaign-${c.id}`}>
-                        Open <ArrowRight className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1"
+                        onClick={(e) => { e.preventDefault(); duplicateMutation.mutate(c.id); }}
+                        data-testid={`button-duplicate-campaign-${c.id}`}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
                       </Button>
-                    </Link>
+                      <Link href={`/app/marketing/campaigns/${c.id}`}>
+                        <Button variant="ghost" size="sm" className="gap-1" data-testid={`button-open-campaign-${c.id}`}>
+                          Open <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

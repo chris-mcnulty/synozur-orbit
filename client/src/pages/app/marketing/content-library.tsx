@@ -91,6 +91,12 @@ export default function ContentLibraryPage() {
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [detailAsset, setDetailAsset] = useState<ContentAsset | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "", description: "", categoryId: "", productIds: [] as string[],
+    tags: { seasons: [] as string[], topics: [] as string[] },
+    aiSummary: "",
+  });
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const [urlInput, setUrlInput] = useState("");
@@ -225,6 +231,69 @@ export default function ContentLibraryPage() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] }),
   });
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof editForm }) => {
+      const r = await fetch(`/api/content-assets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title: data.title,
+          description: data.description,
+          categoryId: data.categoryId || null,
+          productIds: data.productIds.length ? data.productIds : null,
+          tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
+          aiSummary: data.aiSummary || null,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      setEditOpen(false);
+      toast({ title: "Asset updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const openEditDialog = (asset: ContentAsset) => {
+    setEditForm({
+      title: asset.title,
+      description: asset.description || "",
+      categoryId: asset.categoryId || "",
+      productIds: asset.productIds || [],
+      tags: {
+        seasons: asset.tags?.seasons || [],
+        topics: asset.tags?.topics || [],
+      },
+      aiSummary: asset.aiSummary || "",
+    });
+    setDetailAsset(asset);
+    setEditOpen(true);
+  };
+
+  const toggleEditTag = (type: "seasons" | "topics", value: string) => {
+    setEditForm(f => ({
+      ...f,
+      tags: {
+        ...f.tags,
+        [type]: f.tags[type].includes(value)
+          ? f.tags[type].filter(v => v !== value)
+          : [...f.tags[type], value],
+      },
+    }));
+  };
+
+  const toggleEditProduct = (productId: string) => {
+    setEditForm(f => ({
+      ...f,
+      productIds: f.productIds.includes(productId)
+        ? f.productIds.filter(id => id !== productId)
+        : [...f.productIds, productId],
+    }));
+  };
 
   const saveLeadImageMutation = useMutation({
     mutationFn: async ({ assetId, name }: { assetId: string; name: string }) => {
@@ -379,7 +448,7 @@ export default function ContentLibraryPage() {
     <Card
       key={asset.id}
       className="group cursor-pointer hover:border-primary/40 transition-colors"
-      onClick={() => setDetailAsset(asset)}
+      onClick={() => openEditDialog(asset)}
       data-testid={`card-content-asset-${asset.id}`}
     >
       {asset.leadImageUrl && (
@@ -886,16 +955,15 @@ export default function ContentLibraryPage() {
           </div>
         )}
 
-        {/* Asset Detail Dialog */}
-        <Dialog open={!!detailAsset} onOpenChange={v => !v && setDetailAsset(null)}>
+        {/* Edit Asset Dialog */}
+        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) setDetailAsset(null); }}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             {detailAsset && (
               <>
                 <DialogHeader>
-                  <DialogTitle>{detailAsset.title}</DialogTitle>
+                  <DialogTitle>Edit Content Asset</DialogTitle>
                   <DialogDescription>
-                    {categoryName(detailAsset.categoryId) && <Badge variant="outline" className="mr-2">{categoryName(detailAsset.categoryId)}</Badge>}
-                    Added {new Date(detailAsset.createdAt).toLocaleDateString()}
+                    Modify the asset details below. Changes are saved immediately.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -917,57 +985,113 @@ export default function ContentLibraryPage() {
                   </div>
                 )}
 
-                {detailAsset.url && (
-                  <a href={detailAsset.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-primary hover:underline" data-testid="link-asset-url">
-                    <ExternalLink className="w-4 h-4" /> {detailAsset.url}
-                  </a>
-                )}
-
-                {detailAsset.description && (
-                  <div><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm mt-1">{detailAsset.description}</p></div>
-                )}
-
-                {detailAsset.aiSummary && (
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                    <Label className="text-xs text-muted-foreground flex items-center gap-1"><Sparkles className="w-3 h-3" /> AI Summary</Label>
-                    <p className="text-sm mt-1 whitespace-pre-line">{detailAsset.aiSummary}</p>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Title *</Label>
+                    <Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} data-testid="input-edit-content-title" />
                   </div>
-                )}
+                  <div>
+                    <Label>Description</Label>
+                    <Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} data-testid="input-edit-content-description" />
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-primary" /> AI Summary</Label>
+                    <Textarea value={editForm.aiSummary} onChange={e => setEditForm(f => ({ ...f, aiSummary: e.target.value }))} rows={3} data-testid="input-edit-content-ai-summary" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Category</Label>
+                      <Select value={editForm.categoryId || "none"} onValueChange={v => setEditForm(f => ({ ...f, categoryId: v === "none" ? "" : v }))}>
+                        <SelectTrigger data-testid="select-edit-content-category"><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No category</SelectItem>
+                          {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Products</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-products">
+                            {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                            <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                          {marketProducts.map(p => (
+                            <DropdownMenuCheckboxItem
+                              key={p.id}
+                              checked={editForm.productIds.includes(p.id)}
+                              onCheckedChange={() => toggleEditProduct(p.id)}
+                            >
+                              {p.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
 
-                {detailAsset.content && (
                   <Collapsible>
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
-                        Full Content <ChevronDown className="w-4 h-4 ml-auto" />
+                        <Tag className="w-4 h-4 mr-1" /> Tags & Classifications <ChevronDown className="w-4 h-4 ml-auto" />
                       </Button>
                     </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="text-xs font-mono bg-muted/50 p-3 rounded max-h-64 overflow-y-auto whitespace-pre-line" data-testid="text-asset-content">
-                        {detailAsset.content}
+                    <CollapsibleContent className="space-y-3 pt-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Topics</Label>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {TOPIC_OPTIONS.map(t => (
+                            <Badge
+                              key={t}
+                              variant={editForm.tags.topics.includes(t) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleEditTag("topics", t)}
+                            >{t}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Seasons / Timing</Label>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {SEASON_OPTIONS.map(s => (
+                            <Badge
+                              key={s}
+                              variant={editForm.tags.seasons.includes(s) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleEditTag("seasons", s)}
+                            >{s}</Badge>
+                          ))}
+                        </div>
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
-                )}
 
-                <div className="flex flex-wrap gap-1.5">
-                  {detailAsset.productIds?.map(pid => (
-                    <Badge key={pid} variant="outline" className="text-xs text-primary">{productName(pid) || pid}</Badge>
-                  ))}
-                  {detailAsset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
-                  {detailAsset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2"
+                      onClick={() => {
+                        setEditOpen(false);
+                        setDetailAsset(null);
+                        navigate(`/app/marketing/campaigns?preselect=${detailAsset.id}`);
+                      }}
+                      data-testid="button-create-campaign-from-detail"
+                    >
+                      <Megaphone className="w-4 h-4" /> Create Campaign
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      disabled={!editForm.title.trim() || editMutation.isPending}
+                      onClick={() => editMutation.mutate({ id: detailAsset.id, data: editForm })}
+                      data-testid="button-save-edit-content"
+                    >
+                      {editMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
                 </div>
-
-                <Button
-                  variant="outline"
-                  className="w-full gap-2"
-                  onClick={() => {
-                    setDetailAsset(null);
-                    navigate(`/app/marketing/campaigns?preselect=${detailAsset.id}`);
-                  }}
-                  data-testid="button-create-campaign-from-detail"
-                >
-                  <Megaphone className="w-4 h-4" /> Create Campaign with This Asset
-                </Button>
               </>
             )}
           </DialogContent>

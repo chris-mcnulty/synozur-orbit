@@ -573,11 +573,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/brand-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, url, categoryId, status, productTagIds, productIds, tags } = req.body;
+    const { name, description, url, fileUrl, fileType, categoryId, status, productTagIds, productIds, tags } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (url !== undefined) updates.url = url;
+    if (fileUrl !== undefined) updates.fileUrl = fileUrl;
+    if (fileType !== undefined) updates.fileType = fileType;
     if (categoryId !== undefined) updates.categoryId = categoryId;
     if (status !== undefined) updates.status = status;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
@@ -824,6 +826,63 @@ export function registerSaturnMarketingRoutes(app: Express) {
     res.status(204).send();
   });
 
+  // Campaign Duplication
+  app.post("/api/campaigns/:id/duplicate", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [source] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!source) return res.status(404).json({ error: "Campaign not found" });
+
+    const newId = randomUUID();
+    await db.transaction(async (tx) => {
+      await tx.insert(campaigns).values({
+        id: newId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name: `${source.name} (Copy)`,
+        description: source.description,
+        startDate: source.startDate,
+        endDate: source.endDate,
+        numberOfDays: source.numberOfDays,
+        includeSaturday: source.includeSaturday,
+        includeSunday: source.includeSunday,
+        status: "draft",
+        createdBy: ctx.userId,
+      } as InsertCampaign);
+
+      const sourceAssets = await tx.select().from(campaignAssets)
+        .where(eq(campaignAssets.campaignId, source.id));
+      if (sourceAssets.length > 0) {
+        await tx.insert(campaignAssets).values(
+          sourceAssets.map(a => ({
+            id: randomUUID(),
+            campaignId: newId,
+            assetId: a.assetId,
+            overrideTitle: a.overrideTitle,
+            overrideContent: a.overrideContent,
+            sortOrder: a.sortOrder,
+          } as InsertCampaignAsset))
+        );
+      }
+
+      const sourceSocial = await tx.select().from(campaignSocialAccounts)
+        .where(eq(campaignSocialAccounts.campaignId, source.id));
+      if (sourceSocial.length > 0) {
+        await tx.insert(campaignSocialAccounts).values(
+          sourceSocial.map(s => ({
+            id: randomUUID(),
+            campaignId: newId,
+            socialAccountId: s.socialAccountId,
+          } as InsertCampaignSocialAccount))
+        );
+      }
+    });
+
+    const [row] = await db.select().from(campaigns).where(eq(campaigns.id, newId));
+    res.status(201).json(row);
+  });
+
   // Campaign Assets
 
   app.post("/api/campaigns/:id/assets", async (req, res) => {
@@ -958,12 +1017,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { editedContent, status, overrideImageUrl, overrideBrandAssetId } = req.body;
+    const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate } = req.body;
     const updateFields: any = { updatedAt: new Date() };
     if (editedContent !== undefined) updateFields.editedContent = editedContent;
     if (status !== undefined) updateFields.status = status;
     if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
     if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
+    if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
     const [row] = await db.update(generatedPosts)
       .set(updateFields)
       .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
@@ -1047,12 +1107,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const format = (req.query.format as string || "socialpilot").toLowerCase();
     let lines: string[];
 
+    const fmtDate = (d: Date | null | undefined) => d ? d.toISOString().split("T")[0] : "";
+    const fmtTime = (d: Date | null | undefined) => d ? d.toISOString().split("T")[1]?.substring(0, 5) || "09:00" : "";
+    const fmtDateTime = (d: Date | null | undefined) => d ? d.toISOString().replace("T", " ").substring(0, 16) : "";
+
     switch (format) {
       case "hootsuite": {
         lines = ["Message,Date,Time,Social Profile"];
         for (const post of posts) {
           const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-          lines.push(`"${content}",,,${post.platform}`);
+          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          lines.push(`"${content}",${fmtDate(sd)},${fmtTime(sd)},${post.platform}`);
         }
         break;
       }
@@ -1060,7 +1125,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
         lines = ["Text,Scheduled At,Profile"];
         for (const post of posts) {
           const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-          lines.push(`"${content}",,${post.platform}`);
+          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          lines.push(`"${content}",${fmtDateTime(sd)},${post.platform}`);
         }
         break;
       }
@@ -1068,7 +1134,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
         lines = ["Caption,Scheduled Date,Platform"];
         for (const post of posts) {
           const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-          lines.push(`"${content}",,${post.platform}`);
+          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          lines.push(`"${content}",${fmtDate(sd)},${post.platform}`);
         }
         break;
       }
@@ -1076,7 +1143,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
         lines = ["message,scheduled_time,account"];
         for (const post of posts) {
           const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-          lines.push(`"${content}",,${post.platform}`);
+          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          lines.push(`"${content}",${fmtDateTime(sd)},${post.platform}`);
         }
         break;
       }
@@ -1193,6 +1261,27 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
       createdBy: ctx.userId,
     } as InsertGeneratedEmail).returning();
     res.status(201).json(row);
+  });
+
+  app.patch("/api/email/saved/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    const { subject, htmlBody, textBody, status } = req.body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (subject !== undefined) updates.subject = subject;
+    if (htmlBody !== undefined) updates.htmlBody = htmlBody;
+    if (textBody !== undefined) updates.textBody = textBody;
+    if (status !== undefined) updates.status = status;
+    const [row] = await db.update(generatedEmails)
+      .set(updates)
+      .where(and(
+        eq(generatedEmails.id, req.params.id),
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+      ))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json(row);
   });
 
   app.delete("/api/email/saved/:id", async (req, res) => {
@@ -1374,8 +1463,27 @@ Return a JSON array of ${VARIANTS_PER_ACCOUNT} objects, each with:
       }
     }
 
-    if (generatedRows.length) {
-      await db.insert(generatedPosts).values(generatedRows);
+    // Assign scheduledDate to each post based on campaign timeline
+    const [cam] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
+    let eligibleDates: Date[] = [];
+    if (cam?.startDate && cam?.numberOfDays) {
+      const start = new Date(cam.startDate);
+      let current = new Date(start);
+      while (eligibleDates.length < cam.numberOfDays) {
+        const dow = current.getDay();
+        const skip = (dow === 0 && !cam.includeSunday) || (dow === 6 && !cam.includeSaturday);
+        if (!skip) eligibleDates.push(new Date(current));
+        current = new Date(current.getTime() + 86400000);
+      }
+    }
+
+    const rowsWithSchedule = generatedRows.map((row, i) => ({
+      ...row,
+      scheduledDate: eligibleDates.length > 0 ? eligibleDates[i % eligibleDates.length] : undefined,
+    }));
+
+    if (rowsWithSchedule.length) {
+      await db.insert(generatedPosts).values(rowsWithSchedule);
     }
 
     await db.update(scheduledJobRuns)

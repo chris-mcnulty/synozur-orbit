@@ -1,11 +1,18 @@
+import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
-import { Mail, Lock, ArrowRight, LayoutList } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Mail, Lock, ArrowRight, LayoutList, Filter, Pencil } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 interface Campaign {
   id: string;
@@ -16,11 +23,19 @@ interface Campaign {
 interface SavedEmail {
   id: string;
   subject: string;
+  htmlBody: string;
   status: string;
+  campaignId?: string;
   createdAt: string;
 }
 
 export default function EmailNewslettersPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [campaignFilter, setCampaignFilter] = useState<string>("all");
+  const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
+  const [editSubject, setEditSubject] = useState("");
+  const [editBody, setEditBody] = useState("");
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
@@ -48,6 +63,36 @@ export default function EmailNewslettersPage() {
     },
     enabled: isAllowed,
   });
+
+  const updateEmailMutation = useMutation({
+    mutationFn: async ({ emailId, subject, htmlBody }: { emailId: string; subject: string; htmlBody: string }) => {
+      const r = await fetch(`/api/email/saved/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ subject, htmlBody }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setEditingEmail(null);
+      toast({ title: "Email updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const filteredEmails = savedEmails.filter(e => {
+    if (campaignFilter === "all") return true;
+    if (campaignFilter === "none") return !e.campaignId;
+    return e.campaignId === campaignFilter;
+  });
+
+  const getCampaignName = (cId?: string) => {
+    if (!cId) return null;
+    return campaigns.find(c => c.id === cId)?.name || null;
+  };
 
   if (!isAllowed) {
     return (
@@ -97,20 +142,89 @@ export default function EmailNewslettersPage() {
 
         {savedEmails.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Saved Emails</h2>
-            {savedEmails.map(email => (
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Saved Emails</h2>
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                  <SelectTrigger className="w-48" data-testid="select-email-campaign-filter">
+                    <SelectValue placeholder="Filter by campaign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Campaigns</SelectItem>
+                    <SelectItem value="none">No Campaign</SelectItem>
+                    {campaigns.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {filteredEmails.map(email => (
               <Card key={email.id}>
-                <CardContent className="py-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{email.subject}</p>
-                    <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{email.subject}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
+                        {getCampaignName(email.campaignId) && (
+                          <Badge variant="secondary" className="text-[10px]">{getCampaignName(email.campaignId)}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="capitalize">{email.status}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingEmail(email);
+                          setEditSubject(email.subject);
+                          setEditBody(email.htmlBody);
+                        }}
+                        data-testid={`button-edit-email-${email.id}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="capitalize">{email.status}</Badge>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
+
+        <Dialog open={!!editingEmail} onOpenChange={v => { if (!v) setEditingEmail(null); }}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Email</DialogTitle>
+              <DialogDescription>Modify the subject line and email body.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Subject</Label>
+                <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} data-testid="input-edit-email-subject" />
+              </div>
+              <div>
+                <Label>HTML Body</Label>
+                <Textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
+              </div>
+              <Button
+                className="w-full"
+                disabled={!editSubject.trim() || updateEmailMutation.isPending}
+                onClick={() => {
+                  if (editingEmail) {
+                    updateEmailMutation.mutate({ emailId: editingEmail.id, subject: editSubject, htmlBody: editBody });
+                  }
+                }}
+                data-testid="button-save-edit-email"
+              >
+                {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {campaigns.length === 0 ? (
           <Card>

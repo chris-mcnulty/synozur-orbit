@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Plus, Trash2, Lock } from "lucide-react";
+import { AtSign, Plus, Trash2, Lock, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -45,6 +46,8 @@ export default function SocialAccountsPage() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -85,14 +88,38 @@ export default function SocialAccountsPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const editMutation = useMutation({
+    mutationFn: async (data: typeof editForm) => {
+      const r = await fetch(`/api/social-accounts/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ platform: data.platform, accountName: data.accountName, profileUrl: data.profileUrl, notes: data.notes }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      setEditOpen(false);
+      toast({ title: "Social account updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const removeMutation = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/social-accounts/${id}`, {
+      const r = await fetch(`/api/social-accounts/${id}`, {
         method: "DELETE",
         credentials: "include",
       });
+      if (!r.ok) throw new Error("Delete failed");
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "Social account removed" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const platformLabel = (p: string) => PLATFORMS.find(x => x.value === p)?.label ?? p;
@@ -194,14 +221,29 @@ export default function SocialAccountsPage() {
                       <Badge className="mb-2">{platformLabel(account.platform)}</Badge>
                       <CardTitle className="text-base">{account.accountName}</CardTitle>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
-                      onClick={() => removeMutation.mutate(account.id)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
+                        onClick={() => {
+                          setEditForm({ id: account.id, platform: account.platform, accountName: account.accountName, profileUrl: account.profileUrl || "", notes: account.notes || "" });
+                          setEditOpen(true);
+                        }}
+                        data-testid={`button-edit-account-${account.id}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
+                        onClick={() => removeMutation.mutate(account.id)}
+                        data-testid={`button-delete-account-${account.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
@@ -216,6 +258,50 @@ export default function SocialAccountsPage() {
             ))}
           </div>
         )}
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Social Account</DialogTitle>
+              <DialogDescription>Update account details.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Platform *</Label>
+                <Select value={editForm.platform} onValueChange={v => setEditForm(f => ({ ...f, platform: v }))}>
+                  <SelectTrigger data-testid="select-edit-platform">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLATFORMS.map(p => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Account Name / Handle *</Label>
+                <Input value={editForm.accountName} onChange={e => setEditForm(f => ({ ...f, accountName: e.target.value }))} data-testid="input-edit-account-name" />
+              </div>
+              <div>
+                <Label>Profile URL</Label>
+                <Input value={editForm.profileUrl} onChange={e => setEditForm(f => ({ ...f, profileUrl: e.target.value }))} data-testid="input-edit-profile-url" />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} data-testid="input-edit-notes" />
+              </div>
+              <Button
+                className="w-full"
+                disabled={!editForm.accountName.trim() || editMutation.isPending}
+                onClick={() => editMutation.mutate(editForm)}
+                data-testid="button-save-edit-account"
+              >
+                {editMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

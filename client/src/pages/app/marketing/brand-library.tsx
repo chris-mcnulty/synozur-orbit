@@ -75,6 +75,13 @@ export default function BrandLibraryPage() {
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const importFileRef = useRef<HTMLInputElement>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editAsset, setEditAsset] = useState<BrandAsset | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", description: "", url: "", fileUrl: "", categoryId: "", fileType: "",
+    productIds: [] as string[],
+    tags: { seasons: [] as string[], topics: [] as string[] },
+  });
   const [form, setForm] = useState({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [] as string[],
@@ -195,6 +202,101 @@ export default function BrandLibraryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/brand-asset-categories"] }),
   });
 
+  const editMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof editForm }) => {
+      const r = await fetch(`/api/brand-assets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          url: data.url,
+          fileUrl: data.fileUrl || null,
+          fileType: data.fileType || null,
+          categoryId: data.categoryId || null,
+          productIds: data.productIds.length ? data.productIds : null,
+          tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      setEditOpen(false);
+      setEditAsset(null);
+      toast({ title: "Brand asset updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (file: File) => {
+    setUploadingFile(true);
+    try {
+      const reqRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+      if (!reqRes.ok) throw new Error((await reqRes.json()).error);
+      const { uploadURL, objectPath } = await reqRes.json();
+
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!uploadRes.ok) throw new Error("File upload failed");
+
+      setEditForm(f => ({ ...f, fileUrl: objectPath, fileType: file.type.startsWith("image/") ? "image" : "document" }));
+      toast({ title: "File uploaded successfully" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const openEditDialog = (asset: BrandAsset) => {
+    setEditForm({
+      name: asset.name,
+      description: asset.description || "",
+      url: asset.url || "",
+      fileUrl: asset.fileUrl || "",
+      categoryId: asset.categoryId || "",
+      fileType: asset.fileType || "",
+      productIds: asset.productIds || [],
+      tags: {
+        seasons: asset.tags?.seasons || [],
+        topics: asset.tags?.topics || [],
+      },
+    });
+    setEditAsset(asset);
+    setEditOpen(true);
+  };
+
+  const toggleEditTag = (type: "seasons" | "topics", value: string) => {
+    setEditForm(f => ({
+      ...f,
+      tags: {
+        ...f.tags,
+        [type]: f.tags[type].includes(value)
+          ? f.tags[type].filter(v => v !== value)
+          : [...f.tags[type], value],
+      },
+    }));
+  };
+
+  const toggleEditProduct = (productId: string) => {
+    setEditForm(f => ({
+      ...f,
+      productIds: f.productIds.includes(productId)
+        ? f.productIds.filter(id => id !== productId)
+        : [...f.productIds, productId],
+    }));
+  };
+
   const toggleTag = (type: "seasons" | "topics", value: string) => {
     setForm(f => ({
       ...f,
@@ -299,17 +401,21 @@ export default function BrandLibraryPage() {
   };
 
   const renderAssetCard = (asset: BrandAsset) => (
-    <Card key={asset.id} className="group" data-testid={`card-brand-asset-${asset.id}`}>
-      {asset.url && (asset.fileType === "image" || asset.fileType === "png" || asset.fileType === "jpg" || asset.fileType === "svg") && (
-        <div className="aspect-video overflow-hidden rounded-t-lg bg-muted flex items-center justify-center p-4">
-          <img
-            src={asset.url}
-            alt={asset.name}
-            className="max-w-full max-h-full object-contain"
-            onError={e => (e.currentTarget.style.display = "none")}
-          />
-        </div>
-      )}
+    <Card key={asset.id} className="group cursor-pointer hover:border-primary/40 transition-colors" onClick={() => openEditDialog(asset)} data-testid={`card-brand-asset-${asset.id}`}>
+      {(() => {
+        const imgSrc = asset.fileUrl || asset.url;
+        const isImage = asset.fileType === "image" || asset.fileType === "png" || asset.fileType === "jpg" || asset.fileType === "svg";
+        return imgSrc && isImage ? (
+          <div className="aspect-video overflow-hidden rounded-t-lg bg-muted flex items-center justify-center p-4">
+            <img
+              src={imgSrc}
+              alt={asset.name}
+              className="max-w-full max-h-full object-contain"
+              onError={e => (e.currentTarget.style.display = "none")}
+            />
+          </div>
+        ) : null;
+      })()}
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-tight">{asset.name}</CardTitle>
@@ -317,7 +423,7 @@ export default function BrandLibraryPage() {
             variant="ghost"
             size="icon"
             className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
-            onClick={() => archiveMutation.mutate(asset.id)}
+            onClick={e => { e.stopPropagation(); archiveMutation.mutate(asset.id); }}
             data-testid={`button-archive-brand-${asset.id}`}
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -335,10 +441,10 @@ export default function BrandLibraryPage() {
       </CardHeader>
       <CardContent className="pt-0 space-y-2">
         {asset.description && <p className="text-sm text-muted-foreground">{asset.description}</p>}
-        {asset.url && (
-          <a href={asset.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
+        {(asset.fileUrl || asset.url) && (
+          <a href={asset.fileUrl || asset.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
             <ExternalLink className="w-3 h-3" />
-            <span className="truncate">{asset.url}</span>
+            <span className="truncate">{asset.fileUrl ? "View uploaded file" : asset.url}</span>
           </a>
         )}
         {asset.tags && (
@@ -622,6 +728,138 @@ export default function BrandLibraryPage() {
             {filtered.map(renderAssetCard)}
           </div>
         )}
+
+        {/* Edit Brand Asset Dialog */}
+        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) setEditAsset(null); }}>
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+            {editAsset && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Edit Brand Asset</DialogTitle>
+                  <DialogDescription>Modify the brand asset details below.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Name *</Label>
+                    <Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} data-testid="input-edit-brand-name" />
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <Input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} data-testid="input-edit-brand-description" />
+                  </div>
+                  <div>
+                    <Label>URL or File Path</Label>
+                    <Input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} data-testid="input-edit-brand-url" />
+                  </div>
+                  <div>
+                    <Label>Upload File</Label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,.pdf,.docx,.doc,.txt"
+                        className="hidden"
+                        onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={uploadingFile}
+                        onClick={() => fileInputRef.current?.click()}
+                        data-testid="button-upload-brand-file"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingFile ? "Uploading..." : "Choose File"}
+                      </Button>
+                      {editForm.fileUrl && editForm.fileUrl.startsWith("/objects/") && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[200px]">File uploaded</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Category</Label>
+                      <Select value={editForm.categoryId || "none"} onValueChange={v => setEditForm(f => ({ ...f, categoryId: v === "none" ? "" : v }))}>
+                        <SelectTrigger data-testid="select-edit-brand-category"><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No category</SelectItem>
+                          {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Products</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-brand-select-products">
+                            {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                            <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                          {marketProducts.map(p => (
+                            <DropdownMenuCheckboxItem
+                              key={p.id}
+                              checked={editForm.productIds.includes(p.id)}
+                              onCheckedChange={() => toggleEditProduct(p.id)}
+                            >
+                              {p.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
+                        <Tag className="w-4 h-4 mr-1" /> Tags & Classifications <ChevronDown className="w-4 h-4 ml-auto" />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-3 pt-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Topics</Label>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {TOPIC_OPTIONS.map(t => (
+                            <Badge
+                              key={t}
+                              variant={editForm.tags.topics.includes(t) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleEditTag("topics", t)}
+                            >{t}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Seasons / Timing</Label>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {SEASON_OPTIONS.map(s => (
+                            <Badge
+                              key={s}
+                              variant={editForm.tags.seasons.includes(s) ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleEditTag("seasons", s)}
+                            >{s}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                  <Button
+                    className="w-full"
+                    disabled={!editForm.name.trim() || editMutation.isPending}
+                    onClick={() => editMutation.mutate({ id: editAsset.id, data: editForm })}
+                    data-testid="button-save-edit-brand"
+                  >
+                    {editMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Manage Categories Dialog */}
         <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>

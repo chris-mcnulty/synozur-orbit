@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import {
   Share2,
   Mail,
@@ -23,6 +23,11 @@ import {
   Calendar,
   Image as ImageLucide,
   X,
+  XCircle,
+  Filter,
+  CalendarDays,
+  FileDown,
+  Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,8 +38,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { format, addDays } from "date-fns";
 
 interface Campaign {
   id: string;
@@ -85,6 +93,7 @@ interface GeneratedPost {
   variantGroup?: string;
   overrideImageUrl?: string;
   overrideBrandAssetId?: string;
+  scheduledDate?: string;
 }
 
 interface GeneratedEmail {
@@ -107,6 +116,7 @@ export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [emailInstructions, setEmailInstructions] = useState("");
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<GeneratedEmail | null>(null);
@@ -115,6 +125,10 @@ export default function CampaignDetailPage() {
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
   const [addingAssets, setAddingAssets] = useState(false);
   const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
+  const [postFilter, setPostFilter] = useState<string>("active");
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editEmailSubject, setEditEmailSubject] = useState("");
+  const [editEmailBody, setEditEmailBody] = useState("");
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -210,6 +224,139 @@ export default function CampaignDetailPage() {
       setImagePickerPostId(null);
     },
   });
+
+  const deletePostMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Delete failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: "Post deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateCampaignStatusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      const r = await fetch(`/api/campaigns/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      toast({ title: "Campaign status updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateEmailMutation = useMutation({
+    mutationFn: async ({ emailId, subject, htmlBody }: { emailId: string; subject: string; htmlBody: string }) => {
+      const r = await fetch(`/api/email/saved/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ subject, htmlBody }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setEditingEmailId(null);
+      toast({ title: "Email updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const duplicateCampaignMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/duplicate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: (data: { id: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Campaign duplicated" });
+      navigate(`/app/marketing/campaigns/${data.id}`);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const schedulePostsMutation = useMutation({
+    mutationFn: async () => {
+      if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
+      const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+      if (activePosts.length === 0) throw new Error("No active posts to schedule");
+
+      const eligibleDates: Date[] = [];
+      const start = new Date(campaign.startDate);
+      let current = new Date(start);
+      while (eligibleDates.length < campaign.numberOfDays) {
+        const dow = current.getDay();
+        const skip = (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
+        if (!skip) {
+          eligibleDates.push(new Date(current));
+        }
+        current = addDays(current, 1);
+      }
+
+      const results = await Promise.all(activePosts.map(async (post, i) => {
+        const dateIndex = i % eligibleDates.length;
+        const r = await fetch(`/api/campaigns/${id}/generated-posts/${post.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ scheduledDate: eligibleDates[dateIndex].toISOString() }),
+        });
+        if (!r.ok) throw new Error(`Failed to schedule post ${post.id}`);
+        return r.json();
+      }));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: "Posts scheduled across campaign timeline" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const exportScheduleCSV = () => {
+    const scheduled = posts.filter(p => p.scheduledDate && p.status !== "deleted");
+    if (scheduled.length === 0) {
+      toast({ title: "No scheduled posts to export", variant: "destructive" });
+      return;
+    }
+    const sorted = [...scheduled].sort((a, b) => new Date(a.scheduledDate!).getTime() - new Date(b.scheduledDate!).getTime());
+    const rows = [["Platform", "Scheduled Date", "Status", "Content", "Hashtags"]];
+    sorted.forEach(p => {
+      rows.push([
+        p.platform,
+        format(new Date(p.scheduledDate!), "yyyy-MM-dd"),
+        p.status,
+        `"${(p.editedContent || p.content).replace(/"/g, '""')}"`,
+        p.hashtags?.join(" ") || "",
+      ]);
+    });
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${campaign?.name || "campaign"}-schedule.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const addAssetsMutation = useMutation({
     mutationFn: async (assetIds: string[]) => {
@@ -384,7 +531,33 @@ export default function CampaignDetailPage() {
               </div>
             )}
           </div>
-          <Badge variant="outline" className="capitalize">{campaign.status}</Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => duplicateCampaignMutation.mutate()}
+              disabled={duplicateCampaignMutation.isPending}
+              data-testid="button-duplicate-campaign"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              {duplicateCampaignMutation.isPending ? "Duplicating..." : "Duplicate"}
+            </Button>
+            <Select
+              value={campaign.status}
+              onValueChange={v => updateCampaignStatusMutation.mutate(v)}
+            >
+              <SelectTrigger className="w-40" data-testid="select-campaign-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <Tabs defaultValue="posts">
@@ -429,7 +602,49 @@ export default function CampaignDetailPage() {
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               )}
+              {posts.length > 0 && campaign?.startDate && campaign?.numberOfDays && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => schedulePostsMutation.mutate()}
+                  disabled={schedulePostsMutation.isPending}
+                  data-testid="button-schedule-posts"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
+                </Button>
+              )}
+              {posts.some(p => p.scheduledDate) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={exportScheduleCSV}
+                  data-testid="button-export-csv"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Export CSV
+                </Button>
+              )}
             </div>
+
+            {posts.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                <Select value={postFilter} onValueChange={setPostFilter}>
+                  <SelectTrigger className="w-36" data-testid="select-post-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {posts.length === 0 ? (
               <Card>
@@ -439,7 +654,11 @@ export default function CampaignDetailPage() {
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
-                {posts.map(post => {
+                {posts.filter(p => {
+                  if (postFilter === "all") return p.status !== "deleted";
+                  if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected";
+                  return p.status === postFilter;
+                }).map(post => {
                   const postImage = getPostImage(post);
                   return (
                     <Card key={post.id} data-testid={`card-post-${post.id}`}>
@@ -480,6 +699,26 @@ export default function CampaignDetailPage() {
                             >
                               <ImageLucide className="w-3.5 h-3.5" />
                             </Button>
+                            {post.status !== "rejected" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-orange-600"
+                                onClick={() => updatePostMutation.mutate({ postId: post.id, status: "rejected" })}
+                                data-testid={`button-reject-${post.id}`}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1 text-destructive"
+                              onClick={() => deletePostMutation.mutate(post.id)}
+                              data-testid={`button-delete-post-${post.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
                           </div>
                         </div>
                       </CardHeader>
@@ -519,7 +758,15 @@ export default function CampaignDetailPage() {
                         {post.hashtags?.length > 0 && (
                           <p className="text-xs text-primary">#{post.hashtags.join(" #")}</p>
                         )}
-                        {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
+                          {post.status === "rejected" && <Badge variant="outline" className="text-orange-600 border-orange-200">Rejected</Badge>}
+                          {post.scheduledDate && (
+                            <Badge variant="secondary" className="text-[10px] gap-1">
+                              <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy")}
+                            </Badge>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   );
@@ -576,17 +823,65 @@ export default function CampaignDetailPage() {
                 <h3 className="text-sm font-medium">Saved Emails</h3>
                 {savedEmails.map(email => (
                   <Card key={email.id}>
-                    <CardContent className="py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{email.subject}</p>
-                        <p className="text-xs text-muted-foreground">{new Date(email.createdAt).toLocaleDateString()}</p>
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{email.subject}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(email.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="capitalize">{email.status}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingEmailId(email.id);
+                              setEditEmailSubject(email.subject);
+                              setEditEmailBody(email.htmlBody);
+                            }}
+                            data-testid={`button-edit-email-${email.id}`}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="capitalize">{email.status}</Badge>
                     </CardContent>
                   </Card>
                 ))}
               </div>
             )}
+
+            {/* Edit Email Dialog */}
+            <Dialog open={!!editingEmailId} onOpenChange={v => { if (!v) setEditingEmailId(null); }}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Email</DialogTitle>
+                  <DialogDescription>Modify the subject line and email body.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Subject</Label>
+                    <Input value={editEmailSubject} onChange={e => setEditEmailSubject(e.target.value)} data-testid="input-edit-email-subject" />
+                  </div>
+                  <div>
+                    <Label>HTML Body</Label>
+                    <Textarea value={editEmailBody} onChange={e => setEditEmailBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
+                  </div>
+                  <Button
+                    className="w-full"
+                    disabled={!editEmailSubject.trim() || updateEmailMutation.isPending}
+                    onClick={() => {
+                      if (editingEmailId) {
+                        updateEmailMutation.mutate({ emailId: editingEmailId, subject: editEmailSubject, htmlBody: editEmailBody });
+                      }
+                    }}
+                    data-testid="button-save-edit-email"
+                  >
+                    {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Assets */}

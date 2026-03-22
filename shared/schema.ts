@@ -1661,7 +1661,8 @@ export const generatedPosts = pgTable("generated_posts", {
   overrideImageUrl: text("override_image_url"),
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),
-  status: text("status").notNull().default("draft"), // draft, approved, exported, deleted
+  scheduledDate: timestamp("scheduled_date"),
+  status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected
   editedContent: text("edited_content"), // User-edited version of the post
   generationJobId: varchar("generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
