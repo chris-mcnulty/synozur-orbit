@@ -36,7 +36,7 @@ export async function startFullRegeneration(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 8,
+    totalSteps: 9,
     startedAt: new Date(),
   };
   
@@ -65,6 +65,7 @@ async function runRegenerationInBackground(
     recommendationsGenerated: number;
     gtmPlanGenerated: boolean;
     messagingFrameworkGenerated: boolean;
+    marketingTasksGenerated: number;
   } = {
     competitorsAnalyzed: 0,
     battlecardsGenerated: 0,
@@ -72,6 +73,7 @@ async function runRegenerationInBackground(
     recommendationsGenerated: 0,
     gtmPlanGenerated: false,
     messagingFrameworkGenerated: false,
+    marketingTasksGenerated: 0,
   };
 
   try {
@@ -609,10 +611,211 @@ Make this practical and ready to use in marketing materials.`;
       }
     }
 
-    // Step 7: Record score history
-    progress.currentStep = "Recording scores";
+    // Step 7: Generate marketing tasks for existing marketing plans
+    progress.currentStep = "Generating marketing tasks";
     progress.stepsCompleted = 6;
-    
+
+    try {
+      const marketingCtx = { tenantDomain, marketId: marketId || null };
+      const marketingPlans = await storage.getMarketingPlans(marketingCtx);
+      if (marketingPlans.length > 0 && companyProfile) {
+        const anthropicForTasks = new Anthropic({
+          apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+          baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+        });
+
+        const categoryLabels: Record<string, string> = {
+          events: "Events & Trade Shows",
+          digital_marketing: "Digital Marketing",
+          outbound_campaigns: "Outbound Campaigns",
+          content_marketing: "Content Marketing",
+          social_media: "Social Media",
+          email_marketing: "Email Marketing",
+          seo_sem: "SEO/SEM",
+          pr_comms: "PR & Communications",
+          analyst_relations: "Analyst Relations",
+          partner_marketing: "Partner Marketing",
+          customer_marketing: "Customer Marketing",
+          product_marketing: "Product Marketing",
+          brand: "Brand",
+          website: "Website",
+          webinars: "Webinars",
+          podcasts: "Podcasts",
+          video: "Video",
+          research: "Research & Insights",
+          other: "Other",
+        };
+
+        const periodLabels: Record<string, string> = {
+          steady_state: "Steady State (Ongoing)",
+          Q1: "Q1", Q2: "Q2", Q3: "Q3", Q4: "Q4",
+          future: "Future",
+          q1: "Q1", q2: "Q2", q3: "Q3", q4: "Q4",
+          h1: "H1 (First Half)", h2: "H2 (Second Half)",
+          annual: "Full Year",
+        };
+
+        let gtmPlan: any = null;
+        gtmPlan = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
+
+        const recommendations = await storage.getRecommendationsByContext(contextFilter);
+
+        for (const mPlan of marketingPlans) {
+          try {
+            const configMatrix = mPlan.configMatrix as any;
+            if (!configMatrix?.categories?.length || !configMatrix?.periods?.length) {
+              console.log(`Full regen: Skipping marketing plan "${mPlan.name}" - no categories/periods configured`);
+              continue;
+            }
+
+            const categories: string[] = configMatrix.categories;
+            const periods: string[] = configMatrix.periods;
+
+            const existingTasks = await storage.getMarketingTasks(mPlan.id, marketingCtx);
+
+            const selectedCategoryNames = categories.map((c: string) => categoryLabels[c] || c);
+            const selectedPeriodNames = periods.map((p: string) => periodLabels[p] || p);
+
+            const companyName = companyProfile.companyName || companyProfile.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || "Unknown";
+            let contextInfo = `Company: ${companyName}\n`;
+            if (companyProfile.description) {
+              contextInfo += `Description: ${companyProfile.description}\n`;
+            }
+            if (competitors.length > 0) {
+              contextInfo += `Key Competitors: ${competitors.slice(0, 5).map((c: any) => c.name).join(", ")}\n`;
+            }
+
+            let gtmPlanContext = "";
+            if (gtmPlan?.content && gtmPlan.status === "generated") {
+              const truncatedGtm = gtmPlan.content.length > 3000
+                ? gtmPlan.content.substring(0, 3000) + "..."
+                : gtmPlan.content;
+              gtmPlanContext = `\n## Draft GTM Plan (Key Strategic Input)\n${truncatedGtm}\n`;
+            }
+
+            let recommendationsContext = "";
+            const activeRecs = recommendations.filter((r: any) => r.status !== "dismissed").slice(0, 10);
+            if (activeRecs.length > 0) {
+              recommendationsContext = `\n## Strategic Recommendations\n`;
+              activeRecs.forEach((r: any) => {
+                recommendationsContext += `- [${r.area}] ${r.title}: ${r.description?.substring(0, 150) || ""}...\n`;
+              });
+            }
+
+            let existingTasksContext = "";
+            if (existingTasks.length > 0) {
+              existingTasksContext = `\n## EXISTING TASKS (DO NOT DUPLICATE)\n`;
+              existingTasks.forEach((t: any) => {
+                existingTasksContext += `- [${categoryLabels[t.activityGroup] || t.activityGroup}] "${t.title}"\n`;
+              });
+              existingTasksContext += `\nGenerate only NEW, unique tasks that are different from the above.\n`;
+            }
+
+            const prompt = `Generate marketing tasks for a ${mPlan.fiscalYear} marketing plan.
+
+## Company Context
+${contextInfo}
+${gtmPlanContext}
+${recommendationsContext}
+${existingTasksContext}
+
+## Task Generation Request
+Selected Activity Categories: ${selectedCategoryNames.join(", ")}
+Time Periods: ${selectedPeriodNames.join(", ")}
+
+Generate 2-3 specific, actionable marketing tasks for EACH selected category. Each task should:
+1. Be specific and measurable
+2. DIRECTLY ALIGN with the Draft GTM Plan strategies and recommendations above
+3. Address competitive gaps or opportunities identified in the strategic recommendations
+4. Include a suggested priority (High, Medium, or Low)
+5. Be assigned to one of the selected time periods (use "steady_state" for ongoing activities)
+6. BE UNIQUE - DO NOT duplicate any existing tasks listed above
+
+Respond in JSON format:
+{
+  "tasks": [
+    {
+      "title": "Task title",
+      "description": "Brief description of the task and how it supports the GTM strategy",
+      "activityGroup": "category_value",
+      "priority": "High|Medium|Low",
+      "timeframe": "period_value"
+    }
+  ]
+}
+
+Only use these activityGroup values: ${categories.join(", ")}
+Only use these timeframe values: ${periods.join(", ")}`;
+
+            const message = await anthropicForTasks.messages.create({
+              model: "claude-sonnet-4-5",
+              max_tokens: 8000,
+              messages: [{ role: "user", content: prompt }],
+              system: "You are a marketing strategy expert. Generate practical, actionable marketing tasks based on the company's competitive landscape. Always respond with valid JSON only, no additional text.",
+            });
+
+            const aiResponse = message.content[0].type === "text" ? message.content[0].text : "";
+
+            let cleanedResponse = aiResponse.trim();
+            if (cleanedResponse.startsWith("```json")) cleanedResponse = cleanedResponse.slice(7);
+            else if (cleanedResponse.startsWith("```")) cleanedResponse = cleanedResponse.slice(3);
+            if (cleanedResponse.endsWith("```")) cleanedResponse = cleanedResponse.slice(0, -3);
+            cleanedResponse = cleanedResponse.trim();
+
+            let generatedTasks: any[] = [];
+            try {
+              if (cleanedResponse.startsWith("{")) {
+                const parsed = JSON.parse(cleanedResponse);
+                generatedTasks = parsed.tasks || [];
+              } else if (cleanedResponse.startsWith("[")) {
+                generatedTasks = JSON.parse(cleanedResponse);
+              }
+            } catch {
+              try {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*"tasks"\s*:\s*\[([\s\S]*)\]\s*\}/);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[0]);
+                  generatedTasks = parsed.tasks || [];
+                }
+              } catch {
+                console.error(`Full regen: Failed to parse AI marketing tasks for plan "${mPlan.name}"`);
+              }
+            }
+
+            for (const task of generatedTasks) {
+              if (!task.title || !task.activityGroup || !task.timeframe) continue;
+              if (!categories.includes(task.activityGroup)) continue;
+              if (!periods.includes(task.timeframe)) continue;
+
+              const created = await storage.createMarketingTask({
+                planId: mPlan.id,
+                title: task.title,
+                description: task.description || null,
+                activityGroup: task.activityGroup,
+                timeframe: task.timeframe,
+                priority: task.priority || "Medium",
+                status: "suggested",
+                aiGenerated: true,
+                sourceRecommendationId: null,
+              }, marketingCtx);
+              if (created) {
+                results.marketingTasksGenerated++;
+              }
+            }
+
+            console.log(`Full regen: Generated ${generatedTasks.length} marketing tasks for plan "${mPlan.name}"`);
+          } catch (planError) {
+            console.error(`Full regen: Failed to generate tasks for marketing plan "${mPlan.name}":`, planError);
+          }
+        }
+      }
+    } catch (marketingError) {
+      console.error("Full regen: Failed to generate marketing tasks:", marketingError);
+    }
+
+    progress.currentStep = "Recording scores";
+    progress.stepsCompleted = 7;
+
     try {
       const { calculateBaselineScore, calculateScores, getCurrentWeeklyPeriod } = await import("./scoring-service");
       const period = getCurrentWeeklyPeriod();
@@ -683,9 +886,8 @@ Make this practical and ready to use in marketing materials.`;
       console.error("Full regen: Failed to record score history:", scoreError);
     }
     
-    // Step 8: Generate product competitive position summaries
     progress.currentStep = "Generating product summaries";
-    progress.stepsCompleted = 7;
+    progress.stepsCompleted = 8;
     
     try {
       const allProducts = await storage.getProductsByContext(contextFilter);
@@ -744,7 +946,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
     }
 
     progress.currentStep = "Complete";
-    progress.stepsCompleted = 8;
+    progress.stepsCompleted = 9;
     progress.status = "completed";
     progress.completedAt = new Date();
 
@@ -773,6 +975,7 @@ async function sendCompletionEmail(
     recommendationsGenerated: number;
     gtmPlanGenerated: boolean;
     messagingFrameworkGenerated: boolean;
+    marketingTasksGenerated: number;
   }
 ): Promise<void> {
   const content = `
@@ -816,6 +1019,13 @@ async function sendCompletionEmail(
       <div class="feature">
         <div class="feature-title">Messaging Framework Created</div>
         <p class="feature-desc">Complete messaging guide for your marketing team.</p>
+      </div>
+      ` : ''}
+      
+      ${results.marketingTasksGenerated > 0 ? `
+      <div class="feature">
+        <div class="feature-title">${results.marketingTasksGenerated} Marketing Tasks Generated</div>
+        <p class="feature-desc">AI-generated marketing tasks for your existing marketing plans.</p>
       </div>
       ` : ''}
     </div>

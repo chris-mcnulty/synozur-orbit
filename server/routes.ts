@@ -13548,7 +13548,7 @@ Generate a comprehensive battlecard in this JSON format:
       
       // Check if tenant is enterprise
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13567,7 +13567,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13593,7 +13593,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13628,7 +13628,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13658,7 +13658,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13682,7 +13682,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13706,7 +13706,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13751,7 +13751,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13787,7 +13787,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
@@ -13816,7 +13816,7 @@ Generate a comprehensive battlecard in this JSON format:
       const ctx = await getRequestContext(req);
       
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || tenant.plan !== "enterprise") {
+      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
         return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
       }
       
