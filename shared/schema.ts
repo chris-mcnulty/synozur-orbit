@@ -1641,7 +1641,7 @@ export type InsertCampaignSocialAccount = z.infer<typeof insertCampaignSocialAcc
 export const generatedPosts = pgTable("generated_posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
-  socialAccountId: varchar("social_account_id").notNull().references(() => socialAccounts.id, { onDelete: "set null" }),
+  socialAccountId: varchar("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
   tenantDomain: text("tenant_domain").notNull(),
   platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook
   content: text("content").notNull(), // Generated post copy
