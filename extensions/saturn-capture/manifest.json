@@ -9,7 +9,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://app.orbit.love/*",
+    "https://app.synozur.com/*",
     "http://localhost:5000/*"
   ],
   "background": {
