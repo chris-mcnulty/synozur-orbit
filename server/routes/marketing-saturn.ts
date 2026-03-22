@@ -857,6 +857,17 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
     if (!subject?.trim() || !htmlBody?.trim()) {
       return res.status(400).json({ error: "subject and htmlBody are required" });
     }
+    // Validate that the supplied campaignId belongs to this tenant to prevent
+    // cross-tenant references from guessed IDs.
+    if (campaignId) {
+      const [campaign] = await db.select({ id: campaigns.id })
+        .from(campaigns)
+        .where(and(eq(campaigns.id, campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)))
+        .limit(1);
+      if (!campaign) {
+        return res.status(400).json({ error: "Campaign not found" });
+      }
+    }
     const [row] = await db.insert(generatedEmails).values({
       id: randomUUID(),
       tenantDomain: ctx.tenantDomain,
