@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DOMPurify from "dompurify";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -414,7 +415,7 @@ export default function CampaignDetailPage() {
                 <CardContent>
                   <div
                     className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto"
-                    dangerouslySetInnerHTML={{ __html: previewEmail.htmlBody }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
                   />
                 </CardContent>
               </Card>
