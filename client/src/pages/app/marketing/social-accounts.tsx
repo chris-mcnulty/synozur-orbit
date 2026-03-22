@@ -1,0 +1,222 @@
+import { useState } from "react";
+import AppLayout from "@/components/layout/AppLayout";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AtSign, Plus, Trash2, Lock, Linkedin, Twitter } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const PLATFORMS = [
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "twitter", label: "X / Twitter" },
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook" },
+];
+
+interface SocialAccount {
+  id: string;
+  platform: string;
+  accountName: string;
+  accountId?: string;
+  profileUrl?: string;
+  notes?: string;
+  status: string;
+}
+
+export default function SocialAccountsPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState({ platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+
+  const isAllowed = tenantInfo?.features?.socialAccounts === true;
+
+  const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/social-accounts"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const r = await fetch("/api/social-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      setAddOpen(false);
+      setForm({ platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+      toast({ title: "Social account added" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/social-accounts/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] }),
+  });
+
+  const platformLabel = (p: string) => PLATFORMS.find(x => x.value === p)?.label ?? p;
+
+  if (!isAllowed) {
+    return (
+      <AppLayout>
+        <div className="p-6 max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">
+          <Card className="max-w-md text-center">
+            <CardHeader>
+              <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
+                <Lock className="w-10 h-10 text-primary" />
+              </div>
+              <CardTitle>Social Accounts</CardTitle>
+              <CardDescription>Available on the Enterprise plan. Connect your social media accounts to campaigns and export AI-generated posts directly.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="w-full">
+                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Social Accounts">Contact Sales</a>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  return (
+    <AppLayout>
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <AtSign className="w-6 h-6" /> Social Accounts
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">Manage social media accounts for use in campaigns and post generation.</p>
+          </div>
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="w-4 h-4 mr-2" />Add Account</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Social Account</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Platform *</Label>
+                  <Select value={form.platform} onValueChange={v => setForm(f => ({ ...f, platform: v }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLATFORMS.map(p => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Account Name / Handle *</Label>
+                  <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="@yourcompany" />
+                </div>
+                <div>
+                  <Label>Profile URL</Label>
+                  <Input value={form.profileUrl} onChange={e => setForm(f => ({ ...f, profileUrl: e.target.value }))} placeholder="https://linkedin.com/company/..." />
+                </div>
+                <div>
+                  <Label>Notes</Label>
+                  <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={!form.accountName.trim() || createMutation.isPending}
+                  onClick={() => createMutation.mutate(form)}
+                >
+                  {createMutation.isPending ? "Adding..." : "Add Account"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {isLoading ? (
+          <div className="text-center text-muted-foreground py-12">Loading...</div>
+        ) : accounts.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No social accounts yet. Add an account to link it to your campaigns.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {accounts.map(account => (
+              <Card key={account.id} className="group">
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <Badge className="mb-2">{platformLabel(account.platform)}</Badge>
+                      <CardTitle className="text-base">{account.accountName}</CardTitle>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
+                      onClick={() => removeMutation.mutate(account.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {account.profileUrl && (
+                    <a href={account.profileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate block">
+                      {account.profileUrl}
+                    </a>
+                  )}
+                  {account.notes && <p className="text-xs text-muted-foreground mt-1">{account.notes}</p>}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppLayout>
+  );
+}

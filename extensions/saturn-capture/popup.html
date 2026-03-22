@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saturn Capture</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <img src="icons/icon48.png" alt="Orbit" width="24" height="24" />
+        <span>Saturn Capture</span>
+      </div>
+      <div id="auth-status" class="status"></div>
+    </header>
+
+    <div id="not-authenticated" class="panel hidden">
+      <p class="hint">You must be signed into Orbit in this browser to use Saturn Capture.</p>
+      <a id="open-orbit" href="#" class="btn btn-primary">Open Orbit</a>
+    </div>
+
+    <div id="authenticated" class="panel hidden">
+      <div class="page-info">
+        <div class="label">Current page</div>
+        <div id="page-title" class="truncate"></div>
+        <div id="page-url" class="url truncate"></div>
+      </div>
+
+      <div class="field">
+        <label for="capture-title">Title</label>
+        <input id="capture-title" type="text" placeholder="Asset title" />
+      </div>
+
+      <div class="field">
+        <label for="capture-description">Description (optional)</label>
+        <input id="capture-description" type="text" placeholder="Short description" />
+      </div>
+
+      <div class="field">
+        <label>
+          <input id="include-content" type="checkbox" checked />
+          Include page text / selected text
+        </label>
+      </div>
+
+      <button id="btn-capture" class="btn btn-primary">Add to Content Library</button>
+
+      <div id="capture-result" class="result hidden"></div>
+    </div>
+
+    <footer>
+      <button id="btn-settings" class="link">Settings</button>
+    </footer>
+
+    <div id="settings-panel" class="panel hidden">
+      <div class="field">
+        <label for="orbit-url">Orbit URL</label>
+        <input id="orbit-url" type="url" placeholder="https://app.synozur.com" />
+      </div>
+      <button id="btn-save-settings" class="btn btn-primary">Save</button>
+      <button id="btn-back" class="link">Back</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

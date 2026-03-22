@@ -34,7 +34,11 @@ import {
   Megaphone,
   MessageCircle,
   Share2,
-  Mail
+  Mail,
+  Library,
+  Image,
+  LayoutList,
+  AtSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -263,6 +267,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (f.socialMonitoring === false) locked.add("/app/activity");
     if (f.socialPosts === false) locked.add("/app/marketing/social-posts");
     if (f.emailNewsletters === false) locked.add("/app/marketing/email-newsletters");
+    if (f.contentLibrary === false) locked.add("/app/marketing/content-library");
+    if (f.brandLibrary === false) locked.add("/app/marketing/brand-library");
+    if (f.campaigns === false) locked.add("/app/marketing/campaigns");
+    if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
     return locked;
   }, [tenantInfo]);
 
@@ -408,8 +416,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
-        { label: "Social Posts", icon: Share2, href: "/app/marketing/social-posts", comingSoon: true },
-        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", comingSoon: true },
+        { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
+        { label: "Social Posts", icon: Share2, href: "/app/marketing/social-posts", enterprise: true },
+        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
+        { label: "Content Library", icon: Library, href: "/app/marketing/content-library", enterprise: true },
+        { label: "Brand Library", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
+        { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
       ]
     },
     {
