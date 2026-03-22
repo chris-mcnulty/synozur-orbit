@@ -623,11 +623,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.patch("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { overrideTitle, overrideContent, sortOrder } = req.body;
     const [row] = await db.update(campaignAssets)
       .set({ overrideTitle, overrideContent, sortOrder })
       .where(and(
-        eq(campaignAssets.campaignId, req.params.campaignId),
+        eq(campaignAssets.campaignId, campaign.id),
         eq(campaignAssets.assetId, req.params.assetId),
       ))
       .returning();
@@ -637,9 +641,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.delete("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     await db.delete(campaignAssets)
       .where(and(
-        eq(campaignAssets.campaignId, req.params.campaignId),
+        eq(campaignAssets.campaignId, campaign.id),
         eq(campaignAssets.assetId, req.params.assetId),
       ));
     res.status(204).send();
@@ -665,9 +673,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.delete("/api/campaigns/:campaignId/social-accounts/:accountId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     await db.delete(campaignSocialAccounts)
       .where(and(
-        eq(campaignSocialAccounts.campaignId, req.params.campaignId),
+        eq(campaignSocialAccounts.campaignId, campaign.id),
         eq(campaignSocialAccounts.socialAccountId, req.params.accountId),
       ));
     res.status(204).send();
@@ -691,10 +703,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { editedContent, status } = req.body;
     const [row] = await db.update(generatedPosts)
       .set({ editedContent, status, updatedAt: new Date() })
-      .where(eq(generatedPosts.id, req.params.postId))
+      .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
     res.json(row);
@@ -702,9 +718,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.delete("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     await db.update(generatedPosts)
       .set({ status: "deleted", updatedAt: new Date() })
-      .where(eq(generatedPosts.id, req.params.postId));
+      .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
     res.status(204).send();
   });
 
