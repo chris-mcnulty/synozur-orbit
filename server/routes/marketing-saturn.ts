@@ -846,7 +846,10 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
     const rows = await db.select().from(generatedEmails)
-      .where(eq(generatedEmails.tenantDomain, ctx.tenantDomain))
+      .where(and(
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+      ))
       .orderBy(desc(generatedEmails.createdAt));
     res.json(rows);
   });
@@ -861,6 +864,7 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
     const [row] = await db.insert(generatedEmails).values({
       id: randomUUID(),
       tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
       campaignId,
       subject,
       previewText,
@@ -879,6 +883,7 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
       .where(and(
         eq(generatedEmails.id, req.params.id),
         eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
       ));
     res.status(204).send();
   });

@@ -1676,6 +1676,7 @@ export const generatedEmails = pgTable("generated_emails", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   subject: text("subject").notNull(),
   previewText: text("preview_text"),
   htmlBody: text("html_body").notNull(), // Full HTML email body
@@ -1691,6 +1692,10 @@ export const generatedEmailsRelations = relations(generatedEmails, ({ one }) => 
   campaign: one(campaigns, {
     fields: [generatedEmails.campaignId],
     references: [campaigns.id],
+  }),
+  market: one(markets, {
+    fields: [generatedEmails.marketId],
+    references: [markets.id],
   }),
   createdByUser: one(users, {
     fields: [generatedEmails.createdBy],
