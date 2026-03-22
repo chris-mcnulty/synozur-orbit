@@ -238,6 +238,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssets.id, req.params.id),
         eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
       ));
     if (!row) return res.status(404).json({ error: "Not found" });
     // Fetch product tag IDs
