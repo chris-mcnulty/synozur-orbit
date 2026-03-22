@@ -1,8 +1,9 @@
 /**
  * Saturn Capture — Content Script
  *
- * Runs on every page. Exposes a helper that the popup can trigger via
- * chrome.scripting.executeScript to extract page metadata.
+ * Runs on every page. Exposes a helper that the popup or background script
+ * can trigger by sending a runtime message (e.g. via chrome.tabs.sendMessage)
+ * to extract page metadata.
  */
 
 function getPageMetadata() {
