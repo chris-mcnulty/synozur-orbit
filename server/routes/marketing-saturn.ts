@@ -77,7 +77,23 @@ async function guardFeature(
     }
     return true;
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    if (
+      err &&
+      typeof err === "object" &&
+      "status" in err &&
+      typeof (err as any).status === "number"
+    ) {
+      const status = (err as any).status as number;
+      let safeMessage = "Request failed";
+      if (status === 401) {
+        safeMessage = "Not authenticated";
+      } else if (status === 403) {
+        safeMessage = "Forbidden";
+      }
+      res.status(status).json({ error: safeMessage });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
     return false;
   }
 }
