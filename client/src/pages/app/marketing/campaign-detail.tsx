@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import DOMPurify from "dompurify";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +8,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import {
   Share2,
-  Mail,
   Sparkles,
   Loader2,
   Download,
@@ -31,7 +29,6 @@ import {
   Copy,
   Package,
   ChevronDown,
-  Lightbulb,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -52,7 +49,6 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { format, addDays } from "date-fns";
 
 interface Campaign {
@@ -115,20 +111,6 @@ interface GeneratedPost {
   scheduledDate?: string;
 }
 
-interface GeneratedEmail {
-  id: string;
-  subject: string;
-  htmlBody: string;
-  textBody?: string;
-  platform?: string;
-  tone?: string;
-  callToAction?: string;
-  recipientContext?: string;
-  subjectLineSuggestions?: string[];
-  coachingTips?: string[];
-  status: string;
-  createdAt: string;
-}
 
 interface BrandAsset {
   id: string;
@@ -142,24 +124,12 @@ export default function CampaignDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [emailPlatform, setEmailPlatform] = useState("outlook");
-  const [emailTone, setEmailTone] = useState("professional");
-  const [emailCallToAction, setEmailCallToAction] = useState("");
-  const [emailRecipientContext, setEmailRecipientContext] = useState("");
-  const [emailInstructions, setEmailInstructions] = useState("");
-  const [generatingEmail, setGeneratingEmail] = useState(false);
-  const [previewEmail, setPreviewEmail] = useState<GeneratedEmail | null>(null);
-  const [coachingTipsOpen, setCoachingTipsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
   const [addingAssets, setAddingAssets] = useState(false);
   const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
   const [postFilter, setPostFilter] = useState<string>("active");
-  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
-  const [editingEmailPlatform, setEditingEmailPlatform] = useState<string>("outlook");
-  const [editEmailSubject, setEditEmailSubject] = useState("");
-  const [editEmailBody, setEditEmailBody] = useState("");
   const [editCampaignOpen, setEditCampaignOpen] = useState(false);
   const [editCampaignName, setEditCampaignName] = useState("");
   const [editCampaignDescription, setEditCampaignDescription] = useState("");
@@ -231,13 +201,6 @@ export default function CampaignDetailPage() {
     refetchInterval: (data: any) => (data?.status === "running" || data?.status === "pending") ? 3000 : false,
   });
 
-  const { data: savedEmails = [] } = useQuery<GeneratedEmail[]>({
-    queryKey: ["/api/email/saved"],
-    queryFn: async () => {
-      const r = await fetch("/api/email/saved", { credentials: "include" });
-      return r.ok ? r.json() : [];
-    },
-  });
 
   const generatePostsMutation = useMutation({
     mutationFn: async () => {
@@ -403,30 +366,6 @@ export default function CampaignDetailPage() {
     });
   };
 
-  const updateEmailMutation = useMutation({
-    mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
-      const payload: Record<string, string> = { subject };
-      if (isHtml) {
-        payload.htmlBody = body;
-      } else {
-        payload.textBody = body;
-      }
-      const r = await fetch(`/api/email/saved/${emailId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) throw new Error((await r.json()).error);
-      return r.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
-      setEditingEmailId(null);
-      toast({ title: "Email updated" });
-    },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
 
   const duplicateCampaignMutation = useMutation({
     mutationFn: async () => {
@@ -581,71 +520,6 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Export failed", description: err.message, variant: "destructive" }),
   });
 
-  const handleGenerateEmail = async () => {
-    setGeneratingEmail(true);
-    try {
-      const assetIds = campaign?.assets.map(a => a.assetId) ?? [];
-      const r = await fetch("/api/email/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          campaignId: id,
-          assetIds,
-          instructions: emailInstructions,
-          platform: emailPlatform,
-          tone: emailTone,
-          callToAction: emailCallToAction || undefined,
-          recipientContext: emailRecipientContext || undefined,
-        }),
-      });
-      if (!r.ok) throw new Error((await r.json()).error);
-      const data = await r.json();
-      setPreviewEmail({
-        id: "",
-        subject: data.subject,
-        htmlBody: data.htmlBody,
-        textBody: data.textBody,
-        platform: data.platform,
-        subjectLineSuggestions: data.subjectLineSuggestions,
-        coachingTips: data.coachingTips,
-        status: "draft",
-        createdAt: new Date().toISOString(),
-      });
-      setCoachingTipsOpen(false);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setGeneratingEmail(false);
-    }
-  };
-
-  const saveEmailMutation = useMutation({
-    mutationFn: async () => {
-      if (!previewEmail) return;
-      const r = await fetch("/api/email/saved", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          campaignId: id,
-          platform: emailPlatform,
-          tone: emailTone,
-          callToAction: emailCallToAction || undefined,
-          recipientContext: emailRecipientContext || undefined,
-          subjectLineSuggestions: previewEmail.subjectLineSuggestions,
-          coachingTips: previewEmail.coachingTips,
-          ...previewEmail,
-        }),
-      });
-      if (!r.ok) throw new Error((await r.json()).error);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
-      setPreviewEmail(null);
-      toast({ title: "Email saved" });
-    },
-  });
 
   const linkedAssetIds = new Set(campaign?.assets.map(a => a.assetId) ?? []);
   const linkedSocialIds = new Set(campaign?.socialAccounts.map(a => a.socialAccountId) ?? []);
@@ -808,7 +682,6 @@ export default function CampaignDetailPage() {
         <Tabs defaultValue="posts">
           <TabsList>
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
-            <TabsTrigger value="email" className="gap-1.5" data-testid="tab-email"><Mail className="w-3.5 h-3.5" />Email</TabsTrigger>
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
           </TabsList>
@@ -1123,225 +996,6 @@ export default function CampaignDetailPage() {
             )}
           </TabsContent>
 
-          {/* Email */}
-          <TabsContent value="email" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Generate Email</CardTitle>
-                <CardDescription>AI will use the campaign's content assets and marketing grounding docs to draft an email for your chosen platform.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">Platform</label>
-                    <Select value={emailPlatform} onValueChange={setEmailPlatform}>
-                      <SelectTrigger data-testid="select-email-platform">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="outlook">Outlook</SelectItem>
-                        <SelectItem value="hubspot-marketing">HubSpot Marketing Email</SelectItem>
-                        <SelectItem value="hubspot-1to1">HubSpot 1:1 Email</SelectItem>
-                        <SelectItem value="dynamics-365">Dynamics 365 Customer Email</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Tone</label>
-                    <Select value={emailTone} onValueChange={setEmailTone}>
-                      <SelectTrigger data-testid="select-email-tone">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="professional">Professional</SelectItem>
-                        <SelectItem value="friendly">Friendly</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Call to Action (optional)</label>
-                  <Input
-                    value={emailCallToAction}
-                    onChange={e => setEmailCallToAction(e.target.value)}
-                    placeholder="e.g. Book a demo, Download the whitepaper..."
-                    data-testid="input-email-cta"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Recipient Context (optional)</label>
-                  <Input
-                    value={emailRecipientContext}
-                    onChange={e => setEmailRecipientContext(e.target.value)}
-                    placeholder="e.g. IT decision makers at mid-market companies..."
-                    data-testid="input-email-recipient-context"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Additional Instructions (optional)</label>
-                  <Textarea
-                    value={emailInstructions}
-                    onChange={e => setEmailInstructions(e.target.value)}
-                    placeholder="e.g. Focus on the enterprise audience, highlight ROI..."
-                    rows={3}
-                    data-testid="input-email-instructions"
-                  />
-                </div>
-                <Button onClick={handleGenerateEmail} disabled={generatingEmail} className="gap-2" data-testid="button-generate-email">
-                  {generatingEmail ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Email</>}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {previewEmail && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Preview: {previewEmail.subject}</CardTitle>
-                    <Button size="sm" onClick={() => saveEmailMutation.mutate()} disabled={saveEmailMutation.isPending} data-testid="button-save-email">
-                      Save Email
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {previewEmail.subjectLineSuggestions && previewEmail.subjectLineSuggestions.length > 0 && (
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Subject Line Suggestions</label>
-                      <ol className="space-y-1">
-                        {previewEmail.subjectLineSuggestions.map((line, i) => (
-                          <li key={i} className="flex items-center justify-between gap-2 text-sm border rounded px-3 py-2 bg-muted/30" data-testid={`text-subject-suggestion-${i}`}>
-                            <span>{i + 1}. {line}</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 shrink-0"
-                              onClick={() => {
-                                navigator.clipboard.writeText(line);
-                                toast({ title: "Copied", description: "Subject line copied to clipboard" });
-                              }}
-                              data-testid={`button-copy-subject-${i}`}
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </Button>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-
-                  {previewEmail.platform === "hubspot-marketing" ? (
-                    <div
-                      className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto"
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
-                      data-testid="preview-email-html"
-                    />
-                  ) : (
-                    <pre className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
-                      {previewEmail.textBody || previewEmail.htmlBody}
-                    </pre>
-                  )}
-
-                  {previewEmail.coachingTips && previewEmail.coachingTips.length > 0 && (
-                    <Collapsible open={coachingTipsOpen} onOpenChange={setCoachingTipsOpen}>
-                      <CollapsibleTrigger asChild>
-                        <Button variant="ghost" size="sm" className="gap-2 w-full justify-start text-muted-foreground" data-testid="button-toggle-coaching-tips">
-                          <Lightbulb className="w-4 h-4" />
-                          Coaching Tips
-                          <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${coachingTipsOpen ? "rotate-180" : ""}`} />
-                        </Button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <ul className="mt-2 space-y-1 text-sm text-muted-foreground pl-6 list-disc">
-                          {previewEmail.coachingTips.map((tip, i) => (
-                            <li key={i} data-testid={`text-coaching-tip-${i}`}>{tip}</li>
-                          ))}
-                        </ul>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {savedEmails.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium">Saved Emails</h3>
-                {savedEmails.map(email => (
-                  <Card key={email.id}>
-                    <CardContent className="py-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{email.subject}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            {email.platform && (
-                              <Badge variant="secondary" className="text-[10px]">
-                                {{"outlook":"Outlook","hubspot-marketing":"HubSpot Marketing","hubspot-1to1":"HubSpot 1:1","dynamics-365":"Dynamics 365"}[email.platform] || email.platform}
-                              </Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground">{new Date(email.createdAt).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="capitalize">{email.status}</Badge>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingEmailId(email.id);
-                              setEditingEmailPlatform(email.platform || "outlook");
-                              setEditEmailSubject(email.subject);
-                              setEditEmailBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
-                            }}
-                            data-testid={`button-edit-email-${email.id}`}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            {/* Edit Email Dialog */}
-            <Dialog open={!!editingEmailId} onOpenChange={v => { if (!v) setEditingEmailId(null); }}>
-              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Edit Email</DialogTitle>
-                  <DialogDescription>Modify the subject line and email body.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label>Subject</Label>
-                    <Input value={editEmailSubject} onChange={e => setEditEmailSubject(e.target.value)} data-testid="input-edit-email-subject" />
-                  </div>
-                  <div>
-                    <Label>{editingEmailPlatform === "hubspot-marketing" ? "HTML Body" : "Email Body"}</Label>
-                    <Textarea value={editEmailBody} onChange={e => setEditEmailBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
-                  </div>
-                  <Button
-                    className="w-full"
-                    disabled={!editEmailSubject.trim() || updateEmailMutation.isPending}
-                    onClick={() => {
-                      if (editingEmailId) {
-                        updateEmailMutation.mutate({
-                          emailId: editingEmailId,
-                          subject: editEmailSubject,
-                          body: editEmailBody,
-                          isHtml: editingEmailPlatform === "hubspot-marketing",
-                        });
-                      }
-                    }}
-                    data-testid="button-save-edit-email"
-                  >
-                    {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </TabsContent>
 
           {/* Assets */}
           <TabsContent value="assets" className="space-y-4">

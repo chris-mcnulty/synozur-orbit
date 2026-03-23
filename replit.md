@@ -1,17 +1,10 @@
 # Orbit - Go-to-Market Intelligence Platform
 
 ## Overview
-
-Orbit is an AI-driven go-to-market intelligence platform developed for The Synozur Alliance LLC. Its primary purpose is to centralize and enhance go-to-market strategies by unifying Competitive Intelligence, Marketing Planning, and Product Management. The platform is designed as a multi-tenant SaaS application with robust features like role-based access control (RBAC), advanced competitive analysis, AI-powered insights, and branded PDF reporting. Key capabilities include competitor change monitoring, grounding document management, and company profile baselining for self-analysis against competitors. Orbit aims to transition users "from insight to action in one platform."
+Orbit is an AI-driven go-to-market intelligence platform designed to centralize and enhance go-to-market strategies by unifying Competitive Intelligence, Marketing Planning, and Product Management. It functions as a multi-tenant SaaS application with features like role-based access control, advanced competitive analysis, AI-powered insights, and branded PDF reporting. Key capabilities include competitor change monitoring, grounding document management, and company profile baselining. Orbit aims to facilitate a seamless transition "from insight to action in one platform."
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
-
-### Testing
-- **Test Login**: Auth page is at `/auth` (not `/login`). Use test credentials from the `TEST_EMAIL` and `TEST_PASSWORD` environment variables.
-- **Auth Form Test IDs**: `input-signin-email`, `input-signin-password`, `button-signin`
-- After login, user is redirected to `/app`.
 
 ## System Architecture
 
@@ -21,8 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack React Query (server state), React Context (authentication)
 - **UI Components**: shadcn/ui (Radix UI primitives)
 - **Styling**: Tailwind CSS v4 with CSS variables
-- **Theme**: Aurora theme from Constellation (`synozur-scdp` repo, `client/src/themes/aurora.css`). Purple-tinted surfaces (hue 268), Synozur brand primary (#810FFB) / secondary (#E60CB3), 1.3rem radius, full shadow scale. Includes `.sidebar-item-active-gradient` (3px gradient left border on active nav) and `.page-header-gradient-bar` (gradient top border on page headers) utility classes.
-- **Theme Source**: Constellation repo (`github.com/chris-mcnulty/synozur-scdp`) is the master source for shared UX themes across the Synozur suite. Other available themes: baseline, navigators-chart, night-sky.
+- **Theme**: Aurora theme from Constellation, characterized by purple-tinted surfaces, Synozur brand colors, 1.3rem radius, and full shadow scale. Includes specific utility classes for navigation and page headers.
 - **Font**: Avenir Next LT Pro
 - **Structure**: Page-based with distinct public and authenticated layouts.
 
@@ -39,37 +31,38 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas.
-- **Key Tables**: Focus on `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, and `organizations`.
+- **Key Tables**: `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, `organizations`.
 
 ### Authentication & Authorization
-- **Authentication**: Session-based with `express-session`.
-- **SSO**: Microsoft Entra ID (OAuth 2.0 via `@azure/msal-node`) and planned Google SSO. Traditional email/password login as fallback.
+- **Authentication**: Session-based with `express-session`, supporting Microsoft Entra ID (OAuth 2.0) and planned Google SSO, with email/password as a fallback.
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
-- **Provisioning**: First user from a new domain becomes Domain Admin; subsequent users are Standard Users. Global Admin and Consultant roles are manually assigned. Consultant role provides cross-tenant read access for Synozur staff. Entra ID user provisioning via Microsoft Graph API is supported.
+- **Provisioning**: Automatic domain-based role assignment for new users; manual assignment for Global Admin and Consultant roles. Consultant role provides cross-tenant read access.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
-- **Service Plans**: Database-driven plans (Trial, Free, Pro, Enterprise, Unlimited) with flexible feature gating via a JSONB `features` column and a central Feature Registry (`server/services/plan-policy.ts`). Includes a 60-day trial system with automated email reminders.
-- **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX), company profile baselining. Grounding documents have a `contexts` JSONB column for multi-select AI context scoping (competitive_analysis, recommendations, executive_summary, intelligence_briefing, marketing_content, email_generation). Each AI feature only loads documents tagged for its context. Constants: `GROUNDING_DOC_CONTEXTS`, `GROUNDING_DOC_CONTEXT_LABELS`, `GROUNDING_DOC_CONTEXT_PRESETS` in `shared/schema.ts`.
+- **Service Plans**: Database-driven plans with flexible feature gating.
+- **Data Inputs**: Competitor URL management, grounding document upload (PDF, DOCX) with AI context scoping, company profile baselining.
 - **AI Analysis**: Competitive website analysis, AI-guided recommendations (RAG), gap analysis.
-- **Web Crawling Service**: Multi-page crawling, social media link discovery, blog post detection, scheduled background jobs.
-- **Competitor Intelligence Dashboard**: Provides insights from AI-summarized website changes, social signals, blog activity, and a raw activity log.
-- **Intelligence Briefings**: AI-synthesized periodic market intelligence reports, scoped to the active market context. Gathers all signals (website changes, social activity, blog posts) and news articles (via GNews API) over a configurable period (7/14/30 days) and produces structured briefings with executive summary, key themes, competitive movements, action items, risk alerts, and press coverage. Available in-app at `/app/intelligence` and integrated into the weekly digest email. Generated via `server/services/intelligence-briefing-service.ts`. News fetched via `server/services/news-service.ts`. Supports branded PDF export (`GET /api/intelligence-briefings/:id/pdf`), email sharing (`POST /api/intelligence-briefings/:id/share`) with SendGrid, and deletion (`DELETE /api/intelligence-briefings/:id`, admin only). Before generating, admins see a **Data Source Freshness** dialog showing staleness of each competitor's website crawl, change monitor, and social monitor data, with options to selectively refresh stale sources first. Source freshness endpoint: `GET /api/intelligence-briefings/source-freshness`.
-- **News Monitoring**: GNews API integration (`GNEWS_API_KEY` env var) searches for news articles about tracked competitors and the baseline company. Results are included in intelligence briefings as both AI context and a browsable "News & Press Coverage" section. Rate-limited with 1.2s delay between entity searches.
-- **Enhanced Change Detection**: Website monitoring uses a 5% change threshold (lowered from 15%) with structured AI analysis that categorizes changes by type (messaging, pricing, product, team, content, design) and rates significance.
-- **Marketing Content Library**: Enterprise-gated content asset management. URL auto-extraction: paste a URL and Orbit fetches title, description, body content (stripped HTML preserving line breaks), and lead image (OG image or page hero) via `server/services/content-extraction.ts`. AI summarization via `completeForFeature("marketing_tasks")` generates a 2-4 paragraph summary optimized for social post and email generation. Per-tenant customizable categories (seeded with defaults: Blog Post, White Paper, Case Study, etc.) via `content_asset_categories` table. Cross-linked to Orbit's `products` table via `productIds` array column. Flexible tagging with topics (Modern Workplace, Cloud, Security, etc.) and seasons (Q1-Q4, Holiday, etc.) via JSONB `tags` column. SSRF-protected extraction via `validateUrlWithDnsCheck()`. Routes in `server/routes/marketing-saturn.ts`.
-- **Marketing Brand Library**: Enterprise-gated brand asset management. Supports product cross-linking, tenant-customizable categories (seeded defaults: Logo, Icon, Hero Image, etc.), and flexible topic/season tags. Lead images extracted from content assets can be saved directly to the Brand Library via `POST /api/content-assets/:id/save-lead-image`.
+- **Web Crawling Service**: Multi-page crawling, social media discovery, blog post detection, scheduled background jobs.
+- **Competitor Intelligence Dashboard**: Provides insights from AI-summarized website changes, social signals, and activity logs.
+- **Intelligence Briefings**: AI-synthesized periodic market intelligence reports, with configurable periods, executive summaries, and action items. Supports branded PDF export and email sharing. Includes data source freshness checks.
+- **News Monitoring**: Integration with GNews API for competitor and baseline company news, included in intelligence briefings.
+- **Enhanced Change Detection**: Website monitoring with structured AI analysis categorizing changes by type and significance.
+- **Campaigns (Social)**: Containers for content assets, social accounts, and generated social posts, with automatic hashtag merging.
+- **Email Newsletters**: Standalone tool for generating emails from content assets, with platform, tone, and CTA configuration.
+- **Marketing Content Library**: Enterprise-gated content asset management with URL auto-extraction, AI summarization, customizable categories, and flexible tagging.
+- **Marketing Brand Library**: Enterprise-gated brand asset management, supporting product cross-linking, customizable categories, and flexible tagging.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
-- **Client Projects**: Facilitate product-level competitive analysis against competitor products, supporting proxy analysis for consulting firms.
-- **Product Management MVP**: Feature catalog, quarterly roadmap view with effort sizing, AI-powered roadmap recommendations based on competitive intelligence. Roadmap recommendation generation is project-scoped: when a product belongs to a project, competitor data is sourced from that project's competitor products (not market-wide baseline competitors).
-- **Report Generation**: Branded PDF reports scoped to baseline or specific products.
-- **CSV Exports**: Export various lists (Gap Analysis, Recommendations, Product Features, Roadmap Items, AI Recommendations) to CSV.
-- **Multi-Market Support**: Enterprise feature allowing tenants to manage multiple client contexts (markets) with separate baselines, competitors, and projects.
-- **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants. The `competitors` table has a `tenantDomain` column for direct tenant scoping (avoiding userId-based lookup that breaks for cross-tenant Global Admin operations). A startup backfill (`backfillCompetitorTenantDomains`) populates this for legacy records.
-- **Canonical Organization Layer**: Centralizes publicly-derived company data (crawl results, social data, visual assets) in the `organizations` table, keyed by canonical domain. Competitors and company profiles reference organizations via `organizationId` FK. URL normalization via `server/utils/url-normalization.ts` (strips www/www2, lowercases). Ref-counted lifecycle: organizations auto-archive when all references are removed, auto-reactivate when new references are added. Crawl/monitor write paths dual-write to both the local record and the organization. Read paths (GET /api/competitors, source freshness) merge org data with local data, picking the freshest timestamps ("rising tide" effect across tenants). Global Admin management UI at `/app/admin/organizations` with Active/Archived tabs, reactivate, and permanent delete. Permanent delete mutates canonicalDomain to allow future domain reuse.
-- **Centralized Job Queue**: Priority-based concurrency-limited job queue (`server/services/job-queue.ts`) throttles all heavy background work. Config: max 4 concurrent globally, per-type limits (pdf:1, crawl:2, monitor:2, analysis:1). PDF jobs have highest priority (priority 10) and jump ahead of pending crawl/monitor work. All scheduled jobs (website crawl, social monitor, website monitor, product monitor) route through `enqueueCrawl()`/`enqueueMonitor()`. PDF route handlers use `enqueuePdf()`. Queue status visible to admins at `GET /api/admin/queue-status` and in the Refresh Center UI. Pause/resume via `POST /api/admin/queue-pause` and `POST /api/admin/queue-resume` (Global Admin only).
-- **PDF Browser Pool**: Singleton Chromium instance (`server/services/pdf-browser-pool.ts`) shared across all PDF generation. All 5 PDF generators use `withPdfPage()` instead of launching individual browsers. Auto-recreates browser on disconnect. Request interception blocks images/CSS/fonts for faster rendering.
-- **SharePoint Embedded (SPE) Storage**: Tenant-isolated document storage using Microsoft SharePoint Embedded. Each tenant gets its own SPE container (no data commingling). Container type ID (`ORBIT_SPE_CONTAINER_TYPE_ID`) is shared; per-tenant container IDs stored in the `tenants` table (`speContainerIdDev`, `speContainerIdProd`). Admin UX at `/app/admin/spe-storage` — Domain Admins can self-service create containers for their own tenant; Global Admins see all tenants' container status. Container creation auto-saves to tenant record. Services: `server/services/sharepoint-container-creator.ts` (create/delete/info), `server/services/sharepoint-file-storage.ts` (read/write files), `server/services/sharepoint-orphan-cleaner.ts` (orphan detection/cleanup).
+- **Client Projects**: Facilitate product-level competitive analysis for consulting firms.
+- **Product Management MVP**: Feature catalog, quarterly roadmap view, AI-powered roadmap recommendations.
+- **Report Generation**: Branded PDF reports.
+- **CSV Exports**: Export of various data lists.
+- **Multi-Market Support**: Enterprise feature for managing multiple client contexts.
+- **Cross-Tenant Access**: Global Admins can access all tenants; Consultants can access assigned tenants.
+- **Canonical Organization Layer**: Centralizes public company data in the `organizations` table, with URL normalization and a ref-counted lifecycle.
+- **Centralized Job Queue**: Priority-based, concurrency-limited job queue for heavy background tasks (PDF generation, crawls, monitors, analysis).
+- **PDF Browser Pool**: Singleton Chromium instance for efficient PDF generation.
+- **SharePoint Embedded (SPE) Storage**: Tenant-isolated document storage, with admin UI for container management.
 
 ## External Dependencies
 
@@ -78,8 +71,8 @@ Preferred communication style: Simple, everyday language.
 - **Drizzle ORM**
 
 ### AI Services
-- **Multi-Provider AI Abstraction** (`server/services/ai-provider.ts`): Three providers — Replit AI (Anthropic), Replit AI (OpenAI), Azure AI Foundry — behind `IAIProvider` interface. Per-function model assignment via `aiFeatureModelAssignments` table. DB-driven config with 60s TTL cache. `getProviderForFeature(feature)` resolves provider+model; falls back to `aiConfiguration` global default, then hardcoded Anthropic fallback. Admin UI at `/app/admin/ai-settings` with tabs: Model Config, Feature Assignments, Provider Status, Usage & Costs, Budget Alerts. Constants in `shared/schema.ts`: `AI_PROVIDERS`, `AI_FEATURES`, `AI_MODELS`, `AI_MODEL_INFO`, `AI_FEATURE_LABELS`, `AI_PROVIDER_LABELS`. Foundry env vars: `AZURE_FOUNDRY_OPENAI_ENDPOINT`, `AZURE_FOUNDRY_API_KEY`.
-- **AI Features Registry**: 12 functions — competitor_analysis, gap_analysis, recommendations, battlecard, gtm_plan, messaging_framework, change_detection, intelligence_briefing, roadmap_recommendations, feature_extraction, product_one_sheet, marketing_tasks. Each can have an independent provider+model assignment.
+- **Multi-Provider AI Abstraction**: Supports Replit AI (Anthropic), Replit AI (OpenAI), and Azure AI Foundry via a common interface. Features can be assigned specific models, with fallback mechanisms.
+- **AI Features Registry**: 12 defined AI functions (e.g., competitor_analysis, recommendations, intelligence_briefing).
 
 ### UI Libraries
 - **Radix UI**
@@ -99,9 +92,17 @@ Preferred communication style: Simple, everyday language.
 - **URL Validation**: SSRF protection, private IP blocking, protocol validation.
 - **File Validation**: Magic bytes verification, dangerous content pattern scanning, size limits.
 
+### Third-Party APIs
+- **GNews API**: For news monitoring.
+- **Microsoft Graph API**: For Entra ID user provisioning.
+- **SendGrid**: For email sharing of intelligence briefings.
+
 ### Environment Variables
 - `DATABASE_URL`
 - `SESSION_SECRET`
 - AI provider keys
 - Microsoft Entra ID specific: `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_TENANT_ID`
-- `GNEWS_API_KEY` (GNews API for news monitoring)
+- `GNEWS_API_KEY`
+- `AZURE_FOUNDRY_OPENAI_ENDPOINT`
+- `AZURE_FOUNDRY_API_KEY`
+- `ORBIT_SPE_CONTAINER_TYPE_ID`

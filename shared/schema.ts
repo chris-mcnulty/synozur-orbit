@@ -1632,7 +1632,6 @@ export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   campaignAssets: many(campaignAssets),
   campaignSocialAccounts: many(campaignSocialAccounts),
   generatedPosts: many(generatedPosts),
-  generatedEmails: many(generatedEmails),
 }));
 
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({
