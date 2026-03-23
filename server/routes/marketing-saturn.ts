@@ -53,7 +53,7 @@ import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
-import { extractContentFromUrl, generateContentSummary } from "../services/content-extraction";
+import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -342,6 +342,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.post("/api/content-assets/extract", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
     const { url } = req.body;
     if (!url?.trim()) return res.status(400).json({ error: "url is required" });
 
@@ -352,7 +353,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
 
     try {
-      const result = await extractContentFromUrl(url.trim());
+      const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
+      const result = await extractContentFromUrl(url.trim(), groundingContext);
       res.json(result);
     } catch (err: any) {
       console.error("[Saturn] Content extraction error:", err.message);
@@ -393,6 +395,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     (async () => {
       let processed = 0;
       let failed = 0;
+      const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
       for (const asset of assetsToProcess) {
         try {
           const summary = await generateContentSummary(
@@ -400,6 +403,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
             asset.description || "",
             asset.content || asset.description || "",
             asset.url || "",
+            groundingContext,
           );
           await db.update(contentAssets)
             .set({ aiSummary: summary, updatedAt: new Date() })
@@ -427,11 +431,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!asset) return res.status(404).json({ error: "Content asset not found" });
 
     try {
+      const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
       const summary = await generateContentSummary(
         asset.title,
         asset.description || "",
         asset.content || asset.description || "",
         asset.url || "",
+        groundingContext,
       );
 
       const [updated] = await db.update(contentAssets)

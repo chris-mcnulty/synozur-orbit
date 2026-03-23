@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List
+  Download, Upload, LayoutGrid, List, RefreshCw
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -322,6 +322,40 @@ export default function ContentLibraryPage() {
         }, 10000);
       } else {
         toast({ title: "All done", description: "All active assets already have AI summaries." });
+        setBulkGenerating(false);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setBulkGenerating(false);
+    }
+  };
+
+  const handleRegenerateAllSummaries = async () => {
+    if (!assets?.length) return;
+    setBulkGenerating(true);
+    setBulkQueuedCount(0);
+    try {
+      const allIds = assets.map((a) => a.id);
+      const r = await fetch("/api/content-assets/generate-summaries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ assetIds: allIds }),
+      });
+      if (!r.ok) {
+        const data = await r.json();
+        throw new Error(data.error || "Failed to start regeneration");
+      }
+      const data = await r.json();
+      if (data.queued) {
+        setBulkQueuedCount(data.queued);
+        toast({ title: "Regenerating all summaries", description: `${data.queued} assets queued for AI summary regeneration. This will run in the background — refresh the page in a few minutes to see results.` });
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+          setBulkGenerating(false);
+        }, 15000);
+      } else {
+        toast({ title: "No assets", description: "No content assets found to regenerate." });
         setBulkGenerating(false);
       }
     } catch (err: any) {
@@ -684,7 +718,20 @@ export default function ContentLibraryPage() {
                 {bulkGenerating ? (
                   <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Generating{bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}...</>
                 ) : (
-                  <><Sparkles className="w-4 h-4 mr-1" /> Generate All Summaries</>
+                  <><Sparkles className="w-4 h-4 mr-1" /> Generate Missing Summaries</>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRegenerateAllSummaries}
+                disabled={bulkGenerating}
+                data-testid="button-regenerate-all-summaries"
+              >
+                {bulkGenerating ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Regenerating{bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}...</>
+                ) : (
+                  <><RefreshCw className="w-4 h-4 mr-1" /> Regenerate All Summaries</>
                 )}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-categories">

@@ -1,5 +1,9 @@
+import * as cheerio from "cheerio";
 import { completeForFeature } from "./ai-provider";
 import { validateUrlWithDnsCheck } from "../utils/url-validator";
+import { db } from "../db";
+import { groundingDocuments, globalGroundingDocuments } from "@shared/schema";
+import { eq, and, sql } from "drizzle-orm";
 
 interface ExtractionResult {
   title: string;
@@ -19,54 +23,85 @@ function getRandomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&nbsp;/g, " ");
+function extractVisibleText(html: string): string {
+  const $ = cheerio.load(html);
+
+  $("script, style, noscript, iframe, svg, head").remove();
+
+  $(
+    "nav, header, footer, " +
+    "[role='navigation'], [role='banner'], [role='contentinfo'], " +
+    ".nav, .navbar, .sidebar, .menu, .breadcrumb, .cookie-banner, " +
+    ".site-header, .site-footer, .site-nav"
+  ).remove();
+
+  const semanticSelectors = [
+    "article",
+    "main",
+    "[role='main']",
+    ".post-content",
+    ".entry-content",
+    ".page-content",
+  ];
+
+  for (const selector of semanticSelectors) {
+    const el = $(selector);
+    if (el.length) {
+      const text = el.text().replace(/\s+/g, " ").trim();
+      if (text.length > 100) {
+        return text.substring(0, 3000);
+      }
+    }
+  }
+
+  const paragraphs = $("p")
+    .map((_, el) => $(el).text().trim())
+    .get()
+    .filter((t: string) => t.length > 30);
+
+  if (paragraphs.length > 0) {
+    const combined = paragraphs.join("\n\n");
+    return combined.substring(0, 3000);
+  }
+
+  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  return bodyText.substring(0, 3000);
 }
 
-function extractMeta(html: string, property: string): string | null {
-  const patterns = [
-    new RegExp(`<meta[^>]*property=["']${property}["'][^>]*content=["']([^"']+)["']`, "i"),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*property=["']${property}["']`, "i"),
-    new RegExp(`<meta[^>]*name=["']${property}["'][^>]*content=["']([^"']+)["']`, "i"),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*name=["']${property}["']`, "i"),
+function extractMeta($: cheerio.CheerioAPI, property: string): string | null {
+  const selectors = [
+    `meta[property='${property}']`,
+    `meta[name='${property}']`,
   ];
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return decodeHtmlEntities(match[1].trim());
+  for (const sel of selectors) {
+    const content = $(sel).attr("content");
+    if (content?.trim()) return content.trim();
   }
   return null;
 }
 
-function extractTitle(html: string): string {
-  const ogTitle = extractMeta(html, "og:title");
+function extractTitle($: cheerio.CheerioAPI): string {
+  const ogTitle = extractMeta($, "og:title");
   if (ogTitle) return ogTitle;
 
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (titleMatch?.[1]) return decodeHtmlEntities(titleMatch[1].trim());
+  const titleText = $("title").first().text().trim();
+  if (titleText) return titleText;
 
   return "";
 }
 
-function extractDescription(html: string): string {
-  const metaDesc = extractMeta(html, "description");
+function extractDescription($: cheerio.CheerioAPI): string {
+  const metaDesc = extractMeta($, "description");
   if (metaDesc) return metaDesc;
 
-  const ogDesc = extractMeta(html, "og:description");
+  const ogDesc = extractMeta($, "og:description");
   if (ogDesc) return ogDesc;
 
   return "";
 }
 
-function extractLeadImage(html: string, baseUrl: string): string | null {
-  const ogImage = extractMeta(html, "og:image");
+function extractLeadImage($: cheerio.CheerioAPI, baseUrl: string): string | null {
+  const ogImage = extractMeta($, "og:image");
   if (ogImage) {
     try {
       return new URL(ogImage, baseUrl).href;
@@ -75,7 +110,7 @@ function extractLeadImage(html: string, baseUrl: string): string | null {
     }
   }
 
-  const twitterImage = extractMeta(html, "twitter:image");
+  const twitterImage = extractMeta($, "twitter:image");
   if (twitterImage) {
     try {
       return new URL(twitterImage, baseUrl).href;
@@ -84,73 +119,62 @@ function extractLeadImage(html: string, baseUrl: string): string | null {
     }
   }
 
-  const heroMatch = html.match(/<(?:img|source)[^>]*src=["']([^"']+)["'][^>]*(?:class=["'][^"']*hero[^"']*["']|id=["'][^"']*hero[^"']*["'])/i) ||
-    html.match(/<(?:img|source)[^>]*(?:class=["'][^"']*hero[^"']*["']|id=["'][^"']*hero[^"']*["'])[^>]*src=["']([^"']+)["']/i);
-  if (heroMatch) {
-    const src = heroMatch[1] || heroMatch[2];
-    if (src) {
-      try {
-        return new URL(src, baseUrl).href;
-      } catch {
-        return src;
-      }
+  const heroImg = $("img.hero, img#hero, img[class*='hero']").first().attr("src");
+  if (heroImg) {
+    try {
+      return new URL(heroImg, baseUrl).href;
+    } catch {
+      return heroImg;
     }
   }
 
   return null;
 }
 
-function stripHtmlToText(html: string): string {
-  let text = html;
+async function loadGroundingContext(tenantDomain: string, marketId?: string): Promise<string> {
+  const tiers: string[] = [];
 
-  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
-  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
-  text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "");
-  text = text.replace(/<!--[\s\S]*?-->/g, "");
-  text = text.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "");
-  text = text.replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "");
-  text = text.replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "");
+  const globalDocs = await db.select().from(globalGroundingDocuments)
+    .where(and(
+      eq(globalGroundingDocuments.isActive, true),
+      sql`${globalGroundingDocuments.extractedText} IS NOT NULL AND ${globalGroundingDocuments.extractedText} != ''`,
+    ));
+  if (globalDocs.length > 0) {
+    const systemContext = globalDocs
+      .map(d => `[${d.name}]\n${d.extractedText}`)
+      .join("\n\n");
+    tiers.push(`## System Guidelines\n${systemContext}`);
+  }
 
-  text = text.replace(/<br\s*\/?>/gi, "\n");
-  text = text.replace(/<\/p>/gi, "\n\n");
-  text = text.replace(/<\/div>/gi, "\n");
-  text = text.replace(/<\/h[1-6]>/gi, "\n\n");
-  text = text.replace(/<\/li>/gi, "\n");
-  text = text.replace(/<li[^>]*>/gi, "• ");
-  text = text.replace(/<\/tr>/gi, "\n");
+  const tenantDocs = await db.select().from(groundingDocuments)
+    .where(and(
+      eq(groundingDocuments.tenantDomain, tenantDomain),
+      sql`${groundingDocuments.useCase} = 'marketing'`,
+      sql`${groundingDocuments.extractedText} IS NOT NULL AND ${groundingDocuments.extractedText} != ''`,
+    ));
 
-  text = text.replace(/<[^>]+>/g, "");
+  const tenantOnlyDocs = tenantDocs.filter(d => !d.marketId);
+  if (tenantOnlyDocs.length > 0) {
+    const tenantContext = tenantOnlyDocs
+      .map(d => `[${d.name}]\n${d.extractedText}`)
+      .join("\n\n");
+    tiers.push(`## Tenant Guidelines\n${tenantContext}`);
+  }
 
-  text = decodeHtmlEntities(text);
+  if (marketId) {
+    const marketDocs = tenantDocs.filter(d => d.marketId === marketId);
+    if (marketDocs.length > 0) {
+      const marketContext = marketDocs
+        .map(d => `[${d.name}]\n${d.extractedText}`)
+        .join("\n\n");
+      tiers.push(`## Market-Specific Guidelines\n${marketContext}`);
+    }
+  }
 
-  text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
-
-  text = text.replace(/[ \t]+/g, " ");
-  text = text.replace(/\n{3,}/g, "\n\n");
-
-  text = text.split("\n").map(line => line.trim()).join("\n");
-  text = text.trim();
-
-  return text;
+  return tiers.join("\n\n");
 }
 
-function extractArticleContent(html: string): string {
-  const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-  if (articleMatch) return stripHtmlToText(articleMatch[1]);
-
-  const mainMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
-  if (mainMatch) return stripHtmlToText(mainMatch[1]);
-
-  const roleMain = html.match(/<[^>]+role=["']main["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
-  if (roleMain) return stripHtmlToText(roleMain[1]);
-
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (bodyMatch) return stripHtmlToText(bodyMatch[1]);
-
-  return stripHtmlToText(html);
-}
-
-export async function extractContentFromUrl(url: string): Promise<ExtractionResult> {
+export async function extractContentFromUrl(url: string, groundingContext?: string): Promise<ExtractionResult> {
   const validation = await validateUrlWithDnsCheck(url);
   if (!validation.isValid) {
     throw new Error(validation.error || "URL validation failed");
@@ -184,17 +208,16 @@ export async function extractContentFromUrl(url: string): Promise<ExtractionResu
     }
 
     const html = await response.text();
-    const title = extractTitle(html);
-    const description = extractDescription(html);
-    const content = extractArticleContent(html);
-    const leadImageUrl = extractLeadImage(html, url);
-    const siteName = extractMeta(html, "og:site_name");
-
-    const truncatedContent = content.length > 15000 ? content.substring(0, 15000) + "..." : content;
+    const $ = cheerio.load(html);
+    const title = extractTitle($);
+    const description = extractDescription($);
+    const content = extractVisibleText(html);
+    const leadImageUrl = extractLeadImage($, url);
+    const siteName = extractMeta($, "og:site_name");
 
     let aiSummary: string | null = null;
     try {
-      aiSummary = await generateContentSummary(title, description, truncatedContent, url);
+      aiSummary = await generateContentSummary(title, description, content, url, groundingContext);
     } catch (err: any) {
       console.error("[ContentExtraction] AI summary generation failed:", err.message);
     }
@@ -202,7 +225,7 @@ export async function extractContentFromUrl(url: string): Promise<ExtractionResu
     return {
       title: title || url,
       description,
-      content: truncatedContent,
+      content,
       leadImageUrl,
       aiSummary,
       siteName,
@@ -217,24 +240,23 @@ export async function generateContentSummary(
   description: string,
   content: string,
   url: string,
+  groundingContext?: string,
 ): Promise<string> {
-  const contentPreview = content.length > 8000 ? content.substring(0, 8000) + "..." : content;
+  const contentPreview = content.length > 3000 ? content.substring(0, 3000) + "..." : content;
 
   const hasSubstantiveContent = contentPreview && contentPreview.trim().length > 100;
 
-  const prompt = `You are a senior marketing content strategist. Your task is to produce a rich, detailed summary of the following content that can stand on its own as the definitive description of this asset in a marketing content library.
+  const systemParts = [
+    `You are a social media marketing expert who writes engaging post captions for B2B brands.`,
+  ];
 
-IMPORTANT: Before analyzing, you MUST strip and ignore all non-editorial material that may have been captured from the source web page. This includes but is not limited to:
-- Copyright notices and legal disclaimers
-- Cookie consent banners and privacy notices
-- Navigation menus, breadcrumbs, and site headers/footers
-- Newsletter signup forms and CTAs from the website itself
-- Boilerplate "About Us" or company info sections
-- Social sharing buttons text
-- Comment sections
-- Any text that is clearly not part of the actual article/page editorial content
+  if (groundingContext) {
+    systemParts.push(`\n## Brand & Marketing Context\n${groundingContext}`);
+  }
 
-Only use the actual article substance and editorial content for your analysis.
+  const systemMessage = systemParts.join("\n");
+
+  const prompt = `${systemMessage}
 
 ## Source
 Title: ${title}
@@ -243,22 +265,21 @@ ${description ? `Meta Description: ${description}` : ""}
 
 ${hasSubstantiveContent ? `## Page Content\n${contentPreview}` : "## Note\nNo full page content is available. Generate the best summary you can from the title and meta description above."}
 
-Write a 3-5 paragraph summary (each paragraph should be 2-4 sentences) that includes ALL of the following:
+Write a concise, engaging social media caption (3-5 sentences, 150-250 words) that reads as a standalone social post. Follow these rules strictly:
 
-1. **What this content is about**: Explain the core subject matter, the main argument or offering, and why it matters. Be specific — name the product, service, framework, or topic.
+1. Open with a strong hook — a surprising stat, bold claim, or thought-provoking question that stops the scroll
+2. Focus on the value, key takeaway, or transformation the content delivers — not a description of the article itself
+3. The caption must be fully readable and valuable on its own without clicking through to the source
+4. Strip and ignore all non-editorial material: navigation text, cookie banners, headers/footers, download prompts, breadcrumbs, sidebar content
+5. Do NOT include hashtags
+6. Do NOT lead with the company or brand name
+7. Use an active, conversational tone — write like you're sharing an insight with a peer
+8. Use line breaks between distinct thoughts for readability
 
-2. **Who it's for and what problem it solves**: Identify the target audience (industry, role, company size) and the specific pain points or challenges this content addresses.
-
-3. **Key facts, data points, and proof points**: Extract specific statistics, results, case outcomes, named frameworks, named people, or concrete claims. If the content mentions measurable results (cost savings, ROI, growth metrics), include them. These details are essential for creating compelling social media posts.
-
-4. **Unique differentiators and positioning**: What makes this content or offering distinctive compared to alternatives? What's the unique angle or perspective?
-
-5. **Recommended marketing angles**: Suggest 2-3 specific angles for social media posts or email campaigns that would drive engagement. Be concrete — not "highlight the benefits" but rather "Lead with the $2M productivity savings stat to catch CFO attention."
-
-The summary must be detailed enough that a social media manager could write multiple distinct posts from it without needing to read the original content. Avoid generic filler phrases like "this content explores" or "this article discusses" — instead, directly state what the content reveals, proves, or demonstrates.
-
-Keep the tone professional, confident, and factual. Write for a B2B audience.`;
+Return ONLY the caption text, nothing else.`;
 
   const result = await completeForFeature("marketing_tasks", prompt);
   return result.text.trim();
 }
+
+export { loadGroundingContext };
