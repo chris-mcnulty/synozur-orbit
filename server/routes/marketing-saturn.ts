@@ -908,7 +908,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds } = req.body;
+    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags } = req.body;
     const updateData: any = { updatedAt: new Date() };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
@@ -919,6 +919,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
     if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
     if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
+    if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
     const [row] = await db.update(campaigns)
       .set(updateData)
       .where(and(
@@ -1139,13 +1140,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate } = req.body;
+    const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags } = req.body;
     const updateFields: any = { updatedAt: new Date() };
     if (editedContent !== undefined) updateFields.editedContent = editedContent;
     if (status !== undefined) updateFields.status = status;
     if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
     if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
     if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
+    if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
     const [row] = await db.update(generatedPosts)
       .set(updateFields)
       .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
@@ -1592,6 +1594,9 @@ async function generatePostsAsync(
     .where(eq(scheduledJobRuns.id, jobId));
 
   try {
+    const [campaignRow] = await db.select().from(campaigns)
+      .where(eq(campaigns.id, campaignId));
+
     // Load campaign assets
     const camAssets = await db.select().from(campaignAssets)
       .where(eq(campaignAssets.campaignId, campaignId))
@@ -1701,6 +1706,18 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
         let hashtags: string[] = (parsed.hashtags ?? [])
           .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
           .filter((h: string) => h.length > 0 && h.length < 50);
+
+        const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
+          .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+          .filter((h: string) => h.length > 0);
+        if (campaignAlwaysHashtags.length > 0) {
+          const existing = new Set(hashtags.map(h => h.toLowerCase()));
+          for (const ah of campaignAlwaysHashtags) {
+            if (!existing.has(ah.toLowerCase())) {
+              hashtags.push(ah);
+            }
+          }
+        }
 
         if (account.platform === "twitter" && postContent.length > 280) {
           postContent = postContent.substring(0, 277) + "...";

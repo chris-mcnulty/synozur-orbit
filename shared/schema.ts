@@ -1602,6 +1602,7 @@ export const campaigns = pgTable("campaigns", {
   includeSaturday: boolean("include_saturday").notNull().default(false),
   includeSunday: boolean("include_sunday").notNull().default(false),
   productIds: text("product_ids").array(),
+  alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

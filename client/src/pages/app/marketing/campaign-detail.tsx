@@ -66,6 +66,7 @@ interface Campaign {
   includeSaturday?: boolean;
   includeSunday?: boolean;
   productIds?: string[];
+  alwaysHashtags?: string[];
   assets: CampaignAsset[];
   socialAccounts: CampaignSocialAccount[];
 }
@@ -168,6 +169,9 @@ export default function CampaignDetailPage() {
   const [editCampaignSaturday, setEditCampaignSaturday] = useState(false);
   const [editCampaignSunday, setEditCampaignSunday] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
+  const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
+  const [editHashtagsValue, setEditHashtagsValue] = useState("");
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -252,15 +256,15 @@ export default function CampaignDetailPage() {
   });
 
   const updatePostMutation = useMutation({
-    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId }: {
+    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags }: {
       postId: string; editedContent?: string; status?: string;
-      overrideImageUrl?: string; overrideBrandAssetId?: string;
+      overrideImageUrl?: string; overrideBrandAssetId?: string; hashtags?: string[];
     }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId }),
+        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -268,6 +272,7 @@ export default function CampaignDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       setEditingPostId(null);
+      setEditingPostHashtags(null);
       setImagePickerPostId(null);
     },
   });
@@ -334,7 +339,7 @@ export default function CampaignDetailPage() {
   });
 
   const editCampaignMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean }) => {
+    mutationFn: async (data: { name: string; description?: string; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; alwaysHashtags?: string[] }) => {
       const r = await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -377,10 +382,15 @@ export default function CampaignDetailPage() {
     setEditCampaignDays(campaign.numberOfDays || "");
     setEditCampaignSaturday(campaign.includeSaturday || false);
     setEditCampaignSunday(campaign.includeSunday || false);
+    setEditCampaignAlwaysHashtags((campaign.alwaysHashtags || []).join(", "));
     setEditCampaignOpen(true);
   };
 
   const handleEditCampaignSubmit = () => {
+    const alwaysHashtags = editCampaignAlwaysHashtags
+      .split(/[,\s]+/)
+      .map(h => h.replace(/^#/, "").trim())
+      .filter(h => h.length > 0);
     editCampaignMutation.mutate({
       name: editCampaignName,
       description: editCampaignDescription || undefined,
@@ -389,6 +399,7 @@ export default function CampaignDetailPage() {
       numberOfDays: editCampaignDays ? Number(editCampaignDays) : null,
       includeSaturday: editCampaignSaturday,
       includeSunday: editCampaignSunday,
+      alwaysHashtags,
     });
   };
 
@@ -843,6 +854,7 @@ export default function CampaignDetailPage() {
                   className="gap-1.5"
                   onClick={() => schedulePostsMutation.mutate()}
                   disabled={schedulePostsMutation.isPending}
+                  title="Distribute approved posts evenly across the campaign date range"
                   data-testid="button-schedule-posts"
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
@@ -902,6 +914,36 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
+            {campaign?.alwaysHashtags && campaign.alwaysHashtags.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                <span className="font-medium">Always include:</span>
+                {campaign.alwaysHashtags.map((h, i) => (
+                  <Badge key={i} variant="secondary" className="text-[10px]">#{h}</Badge>
+                ))}
+              </div>
+            )}
+
+            {campaign?.assets && campaign.assets.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                <Library className="w-3 h-3 shrink-0" />
+                <span className="font-medium">Source assets:</span>
+                {campaign.assets.map(ca => {
+                  const asset = allAssets.find(a => a.id === ca.assetId);
+                  return asset ? (
+                    <a
+                      key={ca.id}
+                      href={`/app/marketing/content`}
+                      onClick={(e) => { e.preventDefault(); navigate("/app/marketing/content"); }}
+                      className="inline-flex"
+                      data-testid={`link-source-asset-${asset.id}`}
+                    >
+                      <Badge variant="outline" className="text-[10px] hover:bg-accent cursor-pointer">{ca.overrideTitle || asset.title}</Badge>
+                    </a>
+                  ) : null;
+                })}
+              </div>
+            )}
+
             {posts.length === 0 && !isGenerating ? (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-posts">
@@ -909,7 +951,7 @@ export default function CampaignDetailPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 grid-cols-1">
                 {posts.filter(p => {
                   if (postFilter === "all") return p.status !== "deleted";
                   if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected";
@@ -939,6 +981,7 @@ export default function CampaignDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              title="Edit post content"
                               onClick={() => {
                                 setEditingPostId(post.id);
                                 setEditContent(post.editedContent ?? post.content);
@@ -950,6 +993,7 @@ export default function CampaignDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              title="Change image"
                               onClick={() => setImagePickerPostId(post.id)}
                               data-testid={`button-change-image-${post.id}`}
                             >
@@ -960,27 +1004,29 @@ export default function CampaignDetailPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="gap-1 text-orange-600"
+                                title="Reject this post"
                                 onClick={() => updatePostMutation.mutate({ postId: post.id, status: "rejected" })}
                                 data-testid={`button-reject-${post.id}`}
                               >
-                                <XCircle className="w-3.5 h-3.5" />
+                                <XCircle className="w-3.5 h-3.5" />Reject
                               </Button>
                             )}
                             <Button
                               variant="ghost"
                               size="sm"
                               className="gap-1 text-destructive"
+                              title="Delete this post permanently"
                               onClick={() => deletePostMutation.mutate(post.id)}
                               data-testid={`button-delete-post-${post.id}`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />Delete
                             </Button>
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="pt-0 space-y-2">
+                      <CardContent className="pt-0 space-y-3">
                         {postImage && (
-                          <div className="rounded-lg overflow-hidden bg-muted aspect-video relative">
+                          <div className="rounded-lg overflow-hidden bg-muted aspect-video relative max-w-md">
                             <img
                               src={postImage}
                               alt=""
@@ -1011,9 +1057,55 @@ export default function CampaignDetailPage() {
                         ) : (
                           <p className="text-sm whitespace-pre-wrap">{post.editedContent ?? post.content}</p>
                         )}
-                        {post.hashtags?.length > 0 && (
-                          <p className="text-xs text-primary">#{post.hashtags.join(" #")}</p>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {editingPostHashtags === post.id ? (
+                            <div className="flex items-center gap-2 w-full">
+                              <Input
+                                value={editHashtagsValue}
+                                onChange={e => setEditHashtagsValue(e.target.value)}
+                                placeholder="tag1, tag2, tag3 (comma or space separated)"
+                                className="text-xs h-7 flex-1"
+                                data-testid={`input-hashtags-${post.id}`}
+                              />
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  const tags = editHashtagsValue
+                                    .split(/[,\s]+/)
+                                    .map(h => h.replace(/^#/, "").trim())
+                                    .filter(h => h.length > 0);
+                                  updatePostMutation.mutate({ postId: post.id, hashtags: tags });
+                                }}
+                                data-testid={`button-save-hashtags-${post.id}`}
+                              >Save</Button>
+                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingPostHashtags(null)}>Cancel</Button>
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center gap-1 flex-wrap cursor-pointer group"
+                              onClick={() => {
+                                setEditingPostHashtags(post.id);
+                                setEditHashtagsValue((post.hashtags || []).join(", "));
+                              }}
+                              title="Click to edit hashtags"
+                              data-testid={`hashtags-${post.id}`}
+                            >
+                              {post.hashtags?.length > 0 ? (
+                                <>
+                                  {post.hashtags.map((h, i) => (
+                                    <Badge key={i} variant="secondary" className="text-[10px] text-primary">#{h}</Badge>
+                                  ))}
+                                  <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                  <Pencil className="w-2.5 h-2.5" /> Add hashtags
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
                           {post.status === "rejected" && <Badge variant="outline" className="text-orange-600 border-orange-200">Rejected</Badge>}
@@ -1546,6 +1638,17 @@ export default function CampaignDetailPage() {
                 />
                 Include Sundays
               </label>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-hashtags">Always-Include Hashtags</Label>
+              <Input
+                id="edit-campaign-hashtags"
+                value={editCampaignAlwaysHashtags}
+                onChange={e => setEditCampaignAlwaysHashtags(e.target.value)}
+                placeholder="e.g. SynozurAlliance, DigitalTransformation"
+                data-testid="input-edit-campaign-hashtags"
+              />
+              <p className="text-[11px] text-muted-foreground">Comma or space separated. These hashtags will be added to every generated post.</p>
             </div>
           </div>
           <div className="flex justify-end gap-2">
