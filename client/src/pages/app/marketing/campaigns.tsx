@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -169,14 +169,16 @@ export default function CampaignsPage() {
 
   const categoryName = (id?: string) => categories.find(c => c.id === id)?.name;
 
+  const instantNameSet = useRef(false);
   useEffect(() => {
-    if (isInstant && preselectedAssetId && activeAssets.length > 0 && !form.name) {
-      const asset = activeAssets.find(a => a.id === preselectedAssetId);
+    if (isInstant && preselectedAssetId && allAssets.length > 0 && !instantNameSet.current) {
+      const asset = allAssets.find(a => a.id === preselectedAssetId);
       if (asset) {
+        instantNameSet.current = true;
         setForm(f => ({ ...f, name: `Campaign: ${asset.title}` }));
       }
     }
-  }, [isInstant, preselectedAssetId, activeAssets, form.name]);
+  }, [isInstant, preselectedAssetId, allAssets]);
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],
