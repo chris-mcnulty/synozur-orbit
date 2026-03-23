@@ -390,7 +390,7 @@ export interface IStorage {
   getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]>;
   clearRecommendationsByContext(ctx: ContextFilter): Promise<number>;
   getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
-  getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]>;
+  getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string): Promise<GroundingDocument[]>;
   getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]>;
   
   // AI usage tracking methods
@@ -2363,18 +2363,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(activity.createdAt));
   }
 
-  async getGroundingDocumentsByContext(ctx: ContextFilter): Promise<GroundingDocument[]> {
+  async getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string): Promise<GroundingDocument[]> {
     const marketCondition = ctx.isDefaultMarket
       ? or(eq(groundingDocuments.marketId, ctx.marketId), isNull(groundingDocuments.marketId))
       : eq(groundingDocuments.marketId, ctx.marketId);
     
+    const conditions = [
+      eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
+      marketCondition,
+    ];
+
+    if (forContext) {
+      conditions.push(
+        sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> ${JSON.stringify([forContext])}::jsonb)`
+      );
+    }
+    
     return await db.select().from(groundingDocuments)
-      .where(
-        and(
-          eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
-          marketCondition
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(groundingDocuments.createdAt));
   }
 

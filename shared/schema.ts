@@ -735,23 +735,47 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
 // Grounding documents table for AI context
+export const GROUNDING_DOC_CONTEXTS = [
+  "competitive_analysis",
+  "recommendations",
+  "executive_summary",
+  "intelligence_briefing",
+  "marketing_content",
+  "email_generation",
+] as const;
+
+export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
+  competitive_analysis: "Competitive Analysis",
+  recommendations: "Recommendations",
+  executive_summary: "Executive Summary",
+  intelligence_briefing: "Intelligence Briefing",
+  marketing_content: "Social Posts & Content Summaries",
+  email_generation: "Email Generation",
+};
+
+export const GROUNDING_DOC_CONTEXT_PRESETS: Record<string, string[]> = {
+  all: [...GROUNDING_DOC_CONTEXTS],
+  intelligence: ["competitive_analysis", "recommendations", "executive_summary", "intelligence_briefing"],
+  marketing: ["marketing_content", "email_generation"],
+};
+
 export const groundingDocuments = pgTable("grounding_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
-  fileType: text("file_type").notNull(), // pdf, docx, txt, md
-  fileUrl: text("file_url").notNull(), // Object storage path
-  fileSize: integer("file_size").notNull(), // Size in bytes
-  extractedText: text("extracted_text"), // Extracted text content for AI context
-  scope: text("scope").notNull().default("tenant"), // tenant-wide or competitor-specific
-  useCase: text("use_case").notNull().default("intelligence"), // intelligence | marketing
+  fileType: text("file_type").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size").notNull(),
+  extractedText: text("extracted_text"),
+  scope: text("scope").notNull().default("tenant"),
+  useCase: text("use_case").notNull().default("intelligence"),
+  contexts: jsonb("contexts").$type<string[]>(),
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
   userId: varchar("user_id").notNull().references(() => users.id),
-  tenantDomain: text("tenant_domain").notNull(), // Email domain for tenant scoping
-  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
-  // SharePoint Embedded — drive-item ID when stored in SPE (null = stored in GCS)
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   speFileId: text("spe_file_id"),
-  speContainerId: text("spe_container_id"), // SPE container the file lives in
+  speContainerId: text("spe_container_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

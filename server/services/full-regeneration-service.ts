@@ -89,7 +89,7 @@ async function runRegenerationInBackground(
     
     const companyProfile = await storage.getCompanyProfileByContext(contextFilter);
     const competitors = await storage.getCompetitorsByContext(contextFilter);
-    const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter);
+    const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter, "competitive_analysis");
     const groundingContext = groundingDocs
       .filter(doc => doc.extractedText)
       .map(doc => doc.extractedText)

@@ -36,7 +36,7 @@ export async function generateExecutiveSummary(
   const competitors = await storage.getCompetitorsByContext(contextFilter);
   const analysis = await storage.getLatestAnalysisByContext(contextFilter);
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
-  const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter);
+  const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter, "executive_summary");
   
   console.log("[ExecutiveSummary] Data loaded - Competitors:", competitors.length, "Docs:", groundingDocs.length, "Recs:", recommendations.length);
   

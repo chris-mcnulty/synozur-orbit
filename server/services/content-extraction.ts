@@ -149,7 +149,7 @@ async function loadGroundingContext(tenantDomain: string, marketId?: string): Pr
   const tenantDocs = await db.select().from(groundingDocuments)
     .where(and(
       eq(groundingDocuments.tenantDomain, tenantDomain),
-      sql`${groundingDocuments.useCase} = 'marketing'`,
+      sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> '["marketing_content"]'::jsonb)`,
       sql`${groundingDocuments.extractedText} IS NOT NULL AND ${groundingDocuments.extractedText} != ''`,
     ));
 

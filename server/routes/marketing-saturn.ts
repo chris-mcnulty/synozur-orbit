@@ -1343,7 +1343,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const groundingDocs = await db.select().from(groundingDocuments)
       .where(and(
         eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
-        eq(groundingDocuments.useCase as any, "marketing"),
+        sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> '["email_generation"]'::jsonb)`,
       ));
     const groundingContext = groundingDocs
       .filter(d => d.extractedText)
@@ -1622,11 +1622,11 @@ async function generatePostsAsync(
         )
       : [];
 
-    // Load marketing grounding docs for AI context
+    // Load marketing grounding docs for AI context (scoped to marketing_content)
     const groundingDocs = await db.select().from(groundingDocuments)
       .where(and(
         eq(groundingDocuments.tenantDomain, tenantDomain),
-        eq(groundingDocuments.useCase as any, "marketing"),
+        sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> '["marketing_content"]'::jsonb)`,
       ));
     const groundingContext = groundingDocs
       .filter(d => d.extractedText)

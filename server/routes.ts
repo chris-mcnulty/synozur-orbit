@@ -2059,8 +2059,8 @@ Return ONLY the JSON object, no other text.`;
       // Get company profile for "our" positioning (context-scoped)
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
-      // Get grounding documents for additional context (context-scoped)
-      const groundingDocs = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
+      // Get grounding documents for additional context (context-scoped, competitive_analysis only)
+      const groundingDocs = await storage.getGroundingDocumentsByContext(toContextFilter(ctx), "competitive_analysis");
       const groundingContext = groundingDocs
         .filter(doc => doc.extractedText)
         .map(doc => doc.extractedText)
@@ -3692,6 +3692,15 @@ Return ONLY valid JSON, no markdown or explanations.`;
   app.post("/api/documents", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+
+      if (req.body.contexts && Array.isArray(req.body.contexts)) {
+        const { GROUNDING_DOC_CONTEXTS } = await import("@shared/schema");
+        const validContexts = GROUNDING_DOC_CONTEXTS as readonly string[];
+        const invalid = req.body.contexts.filter((c: string) => !validContexts.includes(c));
+        if (invalid.length > 0) {
+          return res.status(400).json({ error: `Invalid context values: ${invalid.join(", ")}` });
+        }
+      }
       
       const parsed = insertGroundingDocumentSchema.safeParse({
         ...req.body,
