@@ -1,0 +1,117 @@
+PS C:\users\cmcnu\powershell> Install-Module -Name Az -Scope CurrentUser -Repository PSGallery -Force
+PackageManagement\Install-Package : Could not find a part of the path
+'C:\Users\cmcnu\OneDrive\Documents\WindowsPowerShell\Modules\Az.Accounts\5.3.3'.
+At C:\Program Files\WindowsPowerShell\Modules\PowerShellGet\2.2.5\PSModule.psm1:9711 char:34
++ ... talledPackages = PackageManagement\Install-Package @PSBoundParameters
++                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Microsoft.Power....InstallPackage:InstallPackage) [Install-Package],
+   Exception
+    + FullyQualifiedErrorId : System.IO.DirectoryNotFoundException,Microsoft.PowerShell.Commands.CopyItemCommand,M
+   icrosoft.PowerShell.PackageManagement.Cmdlets.InstallPackage
+
+PS C:\users\cmcnu\powershell> Connect-AzAccount
+>> Set-AzContext -SubscriptionId "2620b26b-aa28-4730-8eba-715a6c3795de"
+>> Get-AzResourceProvider -ProviderNamespace Microsoft.Syntex
+Connect-AzAccount : The term 'Connect-AzAccount' is not recognized as the name of a cmdlet, function, script file,
+or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct
+and try again.
+At line:1 char:1
++ Connect-AzAccount
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Connect-AzAccount:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+Set-AzContext : The term 'Set-AzContext' is not recognized as the name of a cmdlet, function, script file, or
+operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and
+try again.
+At line:2 char:1
++ Set-AzContext -SubscriptionId "2620b26b-aa28-4730-8eba-715a6c3795de"
++ ~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Set-AzContext:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+Get-AzResourceProvider : The term 'Get-AzResourceProvider' is not recognized as the name of a cmdlet, function,
+script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path
+is correct and try again.
+At line:3 char:1
++ Get-AzResourceProvider -ProviderNamespace Microsoft.Syntex
++ ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-AzResourceProvider:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\users\cmcnu\powershell>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
