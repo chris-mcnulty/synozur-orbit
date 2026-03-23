@@ -898,6 +898,11 @@ export default function CampaignDetailPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="pt-0 space-y-3">
+                        {post.scheduledDate && (
+                          <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
+                            <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy")}
+                          </Badge>
+                        )}
                         {postImage && (
                           <div className="rounded-lg overflow-hidden bg-muted aspect-video relative max-w-md">
                             <img
@@ -982,11 +987,6 @@ export default function CampaignDetailPage() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
                           {post.status === "rejected" && <Badge variant="outline" className="text-orange-600 border-orange-200">Rejected</Badge>}
-                          {post.scheduledDate && (
-                            <Badge variant="secondary" className="text-[10px] gap-1">
-                              <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy")}
-                            </Badge>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
