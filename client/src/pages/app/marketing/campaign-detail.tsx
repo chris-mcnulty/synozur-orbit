@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import DOMPurify from "dompurify";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import {
   Image as ImageLucide,
   X,
   XCircle,
+  AlertCircle,
   Filter,
   CalendarDays,
   FileDown,
@@ -101,6 +102,7 @@ interface GeneratedEmail {
   subject: string;
   htmlBody: string;
   textBody?: string;
+  format?: string;
   status: string;
   createdAt: string;
 }
@@ -117,6 +119,7 @@ export default function CampaignDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const [emailFormat, setEmailFormat] = useState("promotional");
   const [emailInstructions, setEmailInstructions] = useState("");
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<GeneratedEmail | null>(null);
@@ -438,7 +441,7 @@ export default function CampaignDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ campaignId: id, assetIds, instructions: emailInstructions }),
+        body: JSON.stringify({ campaignId: id, assetIds, instructions: emailInstructions, format: emailFormat }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       const data = await r.json();
@@ -457,7 +460,7 @@ export default function CampaignDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ campaignId: id, ...previewEmail }),
+        body: JSON.stringify({ campaignId: id, format: emailFormat, ...previewEmail }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
     },
@@ -474,6 +477,19 @@ export default function CampaignDetailPage() {
   const availableSocial = allSocialAccounts.filter(a => !linkedSocialIds.has(a.id));
 
   const isGenerating = jobStatus?.status === "running" || jobStatus?.status === "pending";
+
+  const prevJobStatus = useRef(jobStatus?.status);
+  useEffect(() => {
+    const prev = prevJobStatus.current;
+    const curr = jobStatus?.status;
+    if ((prev === "running" || prev === "pending") && (curr === "completed" || curr === "failed")) {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      if (curr === "completed") {
+        toast({ title: "Posts generated", description: "Your AI-generated posts are ready for review." });
+      }
+    }
+    prevJobStatus.current = curr;
+  }, [jobStatus?.status, id, queryClient, toast]);
 
   const getPostImage = (post: GeneratedPost): string | null => {
     if (post.overrideImageUrl) return post.overrideImageUrl;
@@ -629,6 +645,28 @@ export default function CampaignDetailPage() {
               )}
             </div>
 
+            {isGenerating && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5" data-testid="status-generating-posts">
+                <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Generating social posts...</p>
+                  <p className="text-xs text-muted-foreground">
+                    {jobStatus?.status === "pending" ? "Queued — waiting to start..." : "AI is writing your posts. This usually takes 30–60 seconds."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {jobStatus?.status === "failed" && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-destructive/30 bg-destructive/5" data-testid="status-generation-failed">
+                <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Post generation failed</p>
+                  <p className="text-xs text-muted-foreground">Something went wrong. Try generating again.</p>
+                </div>
+              </div>
+            )}
+
             {posts.length > 0 && (
               <div className="flex items-center gap-2">
                 <Filter className="w-3.5 h-3.5 text-muted-foreground" />
@@ -646,10 +684,10 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
-            {posts.length === 0 ? (
+            {posts.length === 0 && !isGenerating ? (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-posts">
-                  {isGenerating ? "Generating posts... this may take a moment." : "No posts yet. Click Generate Posts to create AI-powered social content."}
+                  {jobStatus?.status === "failed" ? "Generation failed. Click Generate Posts to try again." : "No posts yet. Click Generate Posts to create AI-powered social content."}
                 </CardContent>
               </Card>
             ) : (
@@ -780,9 +818,27 @@ export default function CampaignDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Generate Email</CardTitle>
-                <CardDescription>AI will use the campaign's content assets and marketing grounding docs to draft a promotional email.</CardDescription>
+                <CardDescription>AI will use the campaign's content assets and marketing grounding docs to draft an email in your chosen format.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Email Format</label>
+                  <Select value={emailFormat} onValueChange={setEmailFormat}>
+                    <SelectTrigger data-testid="select-email-format">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="promotional">Promotional</SelectItem>
+                      <SelectItem value="newsletter">Newsletter</SelectItem>
+                      <SelectItem value="product-announcement">Product Announcement</SelectItem>
+                      <SelectItem value="event-invitation">Event / Webinar Invitation</SelectItem>
+                      <SelectItem value="follow-up">Follow-up / Nurture</SelectItem>
+                      <SelectItem value="case-study">Case Study Highlight</SelectItem>
+                      <SelectItem value="re-engagement">Re-engagement</SelectItem>
+                      <SelectItem value="welcome">Welcome / Onboarding</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
                   <label className="text-sm font-medium">Additional Instructions (optional)</label>
                   <Textarea
@@ -827,7 +883,10 @@ export default function CampaignDetailPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-medium">{email.subject}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(email.createdAt).toLocaleDateString()}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {email.format && email.format !== "promotional" && <span className="capitalize">{email.format.replace(/-/g, " ")} · </span>}
+                            {new Date(email.createdAt).toLocaleDateString()}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="capitalize">{email.status}</Badge>

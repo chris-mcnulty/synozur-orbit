@@ -1691,7 +1691,8 @@ export const generatedEmails = pgTable("generated_emails", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
-  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  format: text("format").notNull().default("promotional"),
   subject: text("subject").notNull(),
   previewText: text("preview_text"),
   htmlBody: text("html_body").notNull(), // Full HTML email body

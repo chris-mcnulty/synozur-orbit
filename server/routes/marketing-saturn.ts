@@ -1269,7 +1269,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, assetIds, instructions } = req.body;
+    const { campaignId, assetIds, instructions, format } = req.body;
+
+    const emailFormatPrompts: Record<string, string> = {
+      "promotional": "Generate a compelling promotional email that drives action. Include a clear value proposition, benefits-focused copy, and a strong call-to-action.",
+      "newsletter": "Generate a newsletter-style email with a curated digest format. Include a brief intro, 2-3 content sections with summaries, and links to read more. Use a scannable layout with clear section headers.",
+      "product-announcement": "Generate a product announcement email. Lead with the news, explain what's new and why it matters, highlight key features/benefits, and include a CTA to learn more or try it.",
+      "event-invitation": "Generate an event or webinar invitation email. Include the event name, date/time placeholder, a compelling description of what attendees will learn, speaker highlights if relevant, and a clear registration CTA.",
+      "follow-up": "Generate a follow-up / nurture email. Use a warm, conversational tone. Reference the content naturally, provide additional value or insights, and gently guide toward the next step without being pushy.",
+      "case-study": "Generate a case study highlight email. Structure it as: challenge, solution, results. Include a compelling subject line, a brief narrative, quantifiable outcomes where possible, and a CTA to read the full case study.",
+      "re-engagement": "Generate a re-engagement email to win back inactive contacts. Use a friendly, non-pushy tone. Highlight what's new or what they're missing, offer value, and include a simple CTA to re-engage.",
+      "welcome": "Generate a welcome / onboarding email. Use a warm, helpful tone. Introduce the brand briefly, set expectations for what's coming, highlight immediate next steps or resources, and make the recipient feel valued.",
+    };
+
+    const formatInstruction = emailFormatPrompts[format || "promotional"] || emailFormatPrompts["promotional"];
 
     // Load selected assets - scoped by tenant, market, and explicit asset IDs
     const selectedAssets = assetIds?.length
@@ -1304,14 +1317,28 @@ export function registerSaturnMarketingRoutes(app: Express) {
       })
       .join("\n\n");
 
-    const prompt = `You are an expert B2B email marketing copywriter. Generate a professional promotional email based on the following content assets and brand guidelines.
+    const formatLabel = {
+      "promotional": "Promotional",
+      "newsletter": "Newsletter",
+      "product-announcement": "Product Announcement",
+      "event-invitation": "Event / Webinar Invitation",
+      "follow-up": "Follow-up / Nurture",
+      "case-study": "Case Study Highlight",
+      "re-engagement": "Re-engagement",
+      "welcome": "Welcome / Onboarding",
+    }[format || "promotional"] || "Promotional";
+
+    const prompt = `You are an expert B2B email marketing copywriter. Generate a professional "${formatLabel}" email based on the following content assets and brand guidelines.
+
+## Email Format
+${formatInstruction}
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no assets provided)"}
 
 ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a JSON object with:
 - subject: string (email subject line)
 - previewText: string (40-90 char preview text)
-- htmlBody: string (complete HTML email body, inline styles, responsive)
+- htmlBody: string (complete HTML email body, inline styles, responsive, professional design)
 - textBody: string (plain text fallback)`;
 
     const result = await completeForFeature("marketing_tasks", prompt);
@@ -1348,7 +1375,7 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
   app.post("/api/email/saved", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, subject, previewText, htmlBody, textBody } = req.body;
+    const { campaignId, subject, previewText, htmlBody, textBody, format } = req.body;
     if (!subject?.trim() || !htmlBody?.trim()) {
       return res.status(400).json({ error: "subject and htmlBody are required" });
     }
@@ -1368,6 +1395,7 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
       tenantDomain: ctx.tenantDomain,
       marketId: ctx.marketId,
       campaignId,
+      format: format || "promotional",
       subject,
       previewText,
       htmlBody,

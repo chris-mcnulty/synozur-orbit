@@ -24,6 +24,7 @@ interface SavedEmail {
   id: string;
   subject: string;
   htmlBody: string;
+  format?: string;
   status: string;
   campaignId?: string;
   createdAt: string;
@@ -167,6 +168,9 @@ export default function EmailNewslettersPage() {
                     <div>
                       <p className="font-medium">{email.subject}</p>
                       <div className="flex items-center gap-2 mt-1">
+                        {email.format && email.format !== "promotional" && (
+                          <Badge variant="secondary" className="text-[10px] capitalize">{email.format.replace(/-/g, " ")}</Badge>
+                        )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                         {getCampaignName(email.campaignId) && (
                           <Badge variant="secondary" className="text-[10px]">{getCampaignName(email.campaignId)}</Badge>
