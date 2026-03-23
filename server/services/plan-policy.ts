@@ -478,9 +478,20 @@ export async function seedDefaultPlans(): Promise<void> {
       if (!existing) {
         await storage.createServicePlan(def as any);
         console.log(`[Plan Seed] Created plan: ${def.displayName}`);
-      } else if (Object.keys((existing.features as Record<string, any>) || {}).length === 0) {
-        await storage.updateServicePlan(existing.id, { features: def.features } as any);
-        console.log(`[Plan Seed] Updated features for plan: ${def.displayName}`);
+      } else {
+        const existingFeatures = (existing.features && typeof existing.features === "object" && !Array.isArray(existing.features))
+          ? existing.features as Record<string, boolean>
+          : {};
+        const defaultFeatures = def.features as Record<string, boolean>;
+        const missingKeys = Object.keys(defaultFeatures).filter(k => !(k in existingFeatures));
+        if (missingKeys.length > 0) {
+          const merged = { ...existingFeatures };
+          for (const k of missingKeys) {
+            merged[k] = defaultFeatures[k];
+          }
+          await storage.updateServicePlan(existing.id, { features: merged } as any);
+          console.log(`[Plan Seed] Synced ${missingKeys.length} new feature(s) for plan ${def.displayName}: ${missingKeys.join(", ")}`);
+        }
       }
     } catch (err: any) {
       console.error(`[Plan Seed] Error seeding plan ${def.name}:`, err.message);
