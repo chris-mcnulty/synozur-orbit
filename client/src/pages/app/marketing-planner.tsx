@@ -132,7 +132,7 @@ export default function MarketingPlanner() {
     },
   });
 
-  const isEnterprise = tenantSettings?.plan === "enterprise";
+  const isEnterprise = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
 
   const { data: plans = [], isLoading, error } = useQuery<MarketingPlan[]>({
     queryKey: ["/api/marketing-plans"],

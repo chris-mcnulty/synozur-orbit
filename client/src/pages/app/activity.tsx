@@ -171,7 +171,7 @@ export default function Activity() {
     },
   });
 
-  const isEnterprise = tenant?.plan === "enterprise";
+  const isEnterprise = tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
 
   const websiteChanges = activity.filter((item) => 
     item.type === "website_update" && 

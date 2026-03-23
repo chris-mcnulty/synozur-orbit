@@ -120,7 +120,7 @@ export default function Analysis() {
     },
   });
 
-  const isPremium = tenant?.isPremium || tenant?.plan === "pro" || tenant?.plan === "enterprise";
+  const isPremium = tenant?.isPremium || tenant?.plan === "pro" || tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
   const analysisLimit = tenant?.limits?.analysisLimit ?? tenant?.features?.analysisLimit ?? -1;
   const analysisCount = tenant?.usage?.monthlyAnalysisCount ?? 0;
 
