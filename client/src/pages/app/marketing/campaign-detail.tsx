@@ -1140,12 +1140,12 @@ export default function CampaignDetailPage() {
 
                   {previewEmail.platform === "hubspot-marketing" ? (
                     <div
-                      className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto"
+                      className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
                       data-testid="preview-email-html"
                     />
                   ) : (
-                    <pre className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
+                    <pre className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
                       {previewEmail.textBody || previewEmail.htmlBody}
                     </pre>
                   )}
