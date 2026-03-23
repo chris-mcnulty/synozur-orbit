@@ -97,6 +97,7 @@ export default function ContentLibraryPage() {
     tags: { seasons: [] as string[], topics: [] as string[] },
     aiSummary: "",
   });
+  const [generatingSummary, setGeneratingSummary] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const [urlInput, setUrlInput] = useState("");
@@ -293,6 +294,30 @@ export default function ContentLibraryPage() {
         ? f.productIds.filter(id => id !== productId)
         : [...f.productIds, productId],
     }));
+  };
+
+  const handleGenerateSummary = async () => {
+    if (!detailAsset) return;
+    setGeneratingSummary(true);
+    try {
+      const r = await fetch(`/api/content-assets/${detailAsset.id}/generate-summary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const data = await r.json();
+        throw new Error(data.error || "Failed to generate summary");
+      }
+      const data = await r.json();
+      setEditForm(f => ({ ...f, aiSummary: data.aiSummary }));
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "AI summary generated" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingSummary(false);
+    }
   };
 
   const saveLeadImageMutation = useMutation({
@@ -1038,8 +1063,23 @@ export default function ContentLibraryPage() {
                     <Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} data-testid="input-edit-content-description" />
                   </div>
                   <div>
-                    <Label className="flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-primary" /> AI Summary</Label>
-                    <Textarea value={editForm.aiSummary} onChange={e => setEditForm(f => ({ ...f, aiSummary: e.target.value }))} rows={3} data-testid="input-edit-content-ai-summary" />
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-primary" /> AI Summary</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGenerateSummary}
+                        disabled={generatingSummary}
+                        data-testid="button-generate-ai-summary"
+                      >
+                        {generatingSummary ? (
+                          <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Generating...</>
+                        ) : (
+                          <><Sparkles className="w-3.5 h-3.5 mr-1" /> {editForm.aiSummary ? "Regenerate" : "Generate"} Summary</>
+                        )}
+                      </Button>
+                    </div>
+                    <Textarea value={editForm.aiSummary} onChange={e => setEditForm(f => ({ ...f, aiSummary: e.target.value }))} rows={6} placeholder={generatingSummary ? "Generating AI summary..." : "Click 'Generate Summary' to create an AI-powered summary for this asset"} data-testid="input-edit-content-ai-summary" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>

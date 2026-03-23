@@ -212,7 +212,7 @@ export async function extractContentFromUrl(url: string): Promise<ExtractionResu
   }
 }
 
-async function generateContentSummary(
+export async function generateContentSummary(
   title: string,
   description: string,
   content: string,
@@ -220,7 +220,9 @@ async function generateContentSummary(
 ): Promise<string> {
   const contentPreview = content.length > 8000 ? content.substring(0, 8000) + "..." : content;
 
-  const prompt = `You are a marketing content analyst. Analyze the following web page content and produce a concise, actionable summary that will be useful for creating social media posts and marketing emails.
+  const hasSubstantiveContent = contentPreview && contentPreview.trim().length > 100;
+
+  const prompt = `You are a senior marketing content strategist. Your task is to produce a rich, detailed summary of the following content that can stand on its own as the definitive description of this asset in a marketing content library.
 
 IMPORTANT: Before analyzing, you MUST strip and ignore all non-editorial material that may have been captured from the source web page. This includes but is not limited to:
 - Copyright notices and legal disclaimers
@@ -237,18 +239,25 @@ Only use the actual article substance and editorial content for your analysis.
 ## Source
 Title: ${title}
 URL: ${url}
-${description ? `Description: ${description}` : ""}
+${description ? `Meta Description: ${description}` : ""}
 
-## Page Content
-${contentPreview}
+${hasSubstantiveContent ? `## Page Content\n${contentPreview}` : "## Note\nNo full page content is available. Generate the best summary you can from the title and meta description above."}
 
-Write a 2-4 paragraph summary that captures:
-1. The key message or value proposition
-2. The target audience and what problem it addresses
-3. Notable quotes, statistics, or proof points worth highlighting
-4. Suggested angles for social media and email marketing
+Write a 3-5 paragraph summary (each paragraph should be 2-4 sentences) that includes ALL of the following:
 
-Keep the tone professional and factual. Focus on elements that would resonate in B2B marketing.`;
+1. **What this content is about**: Explain the core subject matter, the main argument or offering, and why it matters. Be specific — name the product, service, framework, or topic.
+
+2. **Who it's for and what problem it solves**: Identify the target audience (industry, role, company size) and the specific pain points or challenges this content addresses.
+
+3. **Key facts, data points, and proof points**: Extract specific statistics, results, case outcomes, named frameworks, named people, or concrete claims. If the content mentions measurable results (cost savings, ROI, growth metrics), include them. These details are essential for creating compelling social media posts.
+
+4. **Unique differentiators and positioning**: What makes this content or offering distinctive compared to alternatives? What's the unique angle or perspective?
+
+5. **Recommended marketing angles**: Suggest 2-3 specific angles for social media posts or email campaigns that would drive engagement. Be concrete — not "highlight the benefits" but rather "Lead with the $2M productivity savings stat to catch CFO attention."
+
+The summary must be detailed enough that a social media manager could write multiple distinct posts from it without needing to read the original content. Avoid generic filler phrases like "this content explores" or "this article discusses" — instead, directly state what the content reveals, proves, or demonstrates.
+
+Keep the tone professional, confident, and factual. Write for a B2B audience.`;
 
   const result = await completeForFeature("marketing_tasks", prompt);
   return result.text.trim();

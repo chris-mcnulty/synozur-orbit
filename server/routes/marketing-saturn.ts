@@ -53,7 +53,7 @@ import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
-import { extractContentFromUrl } from "../services/content-extraction";
+import { extractContentFromUrl, generateContentSummary } from "../services/content-extraction";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -357,6 +357,38 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Saturn] Content extraction error:", err.message);
       res.status(422).json({ error: `Could not extract content: ${err.message}` });
+    }
+  });
+
+  app.post("/api/content-assets/:id/generate-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const [asset] = await db.select().from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, req.params.id),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ));
+    if (!asset) return res.status(404).json({ error: "Content asset not found" });
+
+    try {
+      const summary = await generateContentSummary(
+        asset.title,
+        asset.description || "",
+        asset.content || asset.description || "",
+        asset.url || "",
+      );
+
+      const [updated] = await db.update(contentAssets)
+        .set({ aiSummary: summary, updatedAt: new Date() })
+        .where(eq(contentAssets.id, asset.id))
+        .returning();
+
+      res.json({ aiSummary: updated.aiSummary });
+    } catch (err: any) {
+      console.error("[Saturn] AI summary generation error:", err.message);
+      res.status(500).json({ error: `Summary generation failed: ${err.message}` });
     }
   });
 
