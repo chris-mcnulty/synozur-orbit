@@ -212,7 +212,19 @@ export function invalidatePlanCache() {
   planCacheTime = 0;
 }
 
+function buildUnlimitedFeatures(): PlanFeatures {
+  const allTrue: Record<string, boolean> = {};
+  for (const feat of FEATURE_REGISTRY) {
+    allTrue[feat.key] = true;
+  }
+  return {
+    ...DEFAULT_PLAN_LIMITS.unlimited,
+    ...allTrue,
+  };
+}
+
 export async function getPlanFeaturesAsync(planName: string): Promise<PlanFeatures> {
+  if (planName === "unlimited") return buildUnlimitedFeatures();
   const plans = await loadPlansFromDb();
   const dbPlan = plans.get(planName);
   if (dbPlan) {
@@ -227,17 +239,20 @@ export async function getPlanFeaturesAsync(planName: string): Promise<PlanFeatur
 }
 
 export function getPlanFeatures(planName: string): PlanFeatures {
+  if (planName === "unlimited") return buildUnlimitedFeatures();
   const fallbackLimits = DEFAULT_PLAN_LIMITS[planName] || DEFAULT_PLAN_LIMITS.free;
   const fallbackFeatures = DEFAULT_PLAN_FEATURES[planName] || DEFAULT_PLAN_FEATURES.free;
   return { ...fallbackLimits, ...fallbackFeatures };
 }
 
 export function isFeatureEnabled(plan: string, feature: FeatureKey): boolean {
+  if (plan === "unlimited") return true;
   const features = getPlanFeatures(plan);
   return features[feature] === true;
 }
 
 export async function isFeatureEnabledAsync(plan: string, feature: FeatureKey): Promise<boolean> {
+  if (plan === "unlimited") return true;
   const features = await getPlanFeaturesAsync(plan);
   return features[feature] === true;
 }
@@ -265,6 +280,7 @@ export interface PlanGateResult {
 }
 
 export async function checkCompetitorLimitAsync(plan: string, currentCount: number): Promise<PlanGateResult> {
+  if (plan === "unlimited") return { allowed: true };
   const features = await getPlanFeaturesAsync(plan);
   const limit = features.competitorLimit as number;
   if (limit === -1) {
@@ -284,6 +300,7 @@ export async function checkCompetitorLimitAsync(plan: string, currentCount: numb
 }
 
 export function checkCompetitorLimit(plan: string, currentCount: number): PlanGateResult {
+  if (plan === "unlimited") return { allowed: true };
   const features = getPlanFeatures(plan);
   const limit = features.competitorLimit as number;
   if (limit === -1) {
@@ -303,6 +320,7 @@ export function checkCompetitorLimit(plan: string, currentCount: number): PlanGa
 }
 
 export async function checkAnalysisLimitAsync(plan: string, monthlyCount: number): Promise<PlanGateResult> {
+  if (plan === "unlimited") return { allowed: true };
   const features = await getPlanFeaturesAsync(plan);
   const limit = features.analysisLimit as number;
   if (limit === -1) {
@@ -322,6 +340,7 @@ export async function checkAnalysisLimitAsync(plan: string, monthlyCount: number
 }
 
 export function checkAnalysisLimit(plan: string, monthlyCount: number): PlanGateResult {
+  if (plan === "unlimited") return { allowed: true };
   const features = getPlanFeatures(plan);
   const limit = features.analysisLimit as number;
   if (limit === -1) {
@@ -341,6 +360,7 @@ export function checkAnalysisLimit(plan: string, monthlyCount: number): PlanGate
 }
 
 export async function checkFeatureAccessAsync(plan: string, feature: FeatureKey): Promise<PlanGateResult> {
+  if (plan === "unlimited") return { allowed: true };
   const enabled = await isFeatureEnabledAsync(plan, feature);
   if (enabled) {
     return { allowed: true };
@@ -357,6 +377,7 @@ export async function checkFeatureAccessAsync(plan: string, feature: FeatureKey)
 }
 
 export function checkFeatureAccess(plan: string, feature: FeatureKey): PlanGateResult {
+  if (plan === "unlimited") return { allowed: true };
   if (isFeatureEnabled(plan, feature)) {
     return { allowed: true };
   }
@@ -483,14 +504,36 @@ export async function seedDefaultPlans(): Promise<void> {
           ? existing.features as Record<string, boolean>
           : {};
         const defaultFeatures = def.features as Record<string, boolean>;
-        const missingKeys = Object.keys(defaultFeatures).filter(k => !(k in existingFeatures));
-        if (missingKeys.length > 0) {
-          const merged = { ...existingFeatures };
-          for (const k of missingKeys) {
-            merged[k] = defaultFeatures[k];
+
+        if (def.name === "unlimited") {
+          const correctedFeatures: Record<string, boolean> = { ...existingFeatures };
+          let correctedCount = 0;
+          for (const k of Object.keys(defaultFeatures)) {
+            if (correctedFeatures[k] !== true) {
+              correctedFeatures[k] = true;
+              correctedCount++;
+            }
           }
-          await storage.updateServicePlan(existing.id, { features: merged } as any);
-          console.log(`[Plan Seed] Synced ${missingKeys.length} new feature(s) for plan ${def.displayName}: ${missingKeys.join(", ")}`);
+          for (const k of Object.keys(correctedFeatures)) {
+            if (correctedFeatures[k] !== true) {
+              correctedFeatures[k] = true;
+              correctedCount++;
+            }
+          }
+          if (correctedCount > 0) {
+            await storage.updateServicePlan(existing.id, { features: correctedFeatures } as any);
+            console.log(`[Plan Seed] Force-corrected ${correctedCount} feature(s) to true for Unlimited plan`);
+          }
+        } else {
+          const missingKeys = Object.keys(defaultFeatures).filter(k => !(k in existingFeatures));
+          if (missingKeys.length > 0) {
+            const merged = { ...existingFeatures };
+            for (const k of missingKeys) {
+              merged[k] = defaultFeatures[k];
+            }
+            await storage.updateServicePlan(existing.id, { features: merged } as any);
+            console.log(`[Plan Seed] Synced ${missingKeys.length} new feature(s) for plan ${def.displayName}: ${missingKeys.join(", ")}`);
+          }
         }
       }
     } catch (err: any) {

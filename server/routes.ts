@@ -2029,9 +2029,9 @@ Return ONLY the JSON object, no other text.`;
       // Check premium for full_with_change mode
       const tenant = await storage.getTenantByDomain(tenantDomain);
       if (analysisType === "full_with_change") {
-        const isPremium = tenant?.plan === "pro" || tenant?.plan === "enterprise";
+        const isPremium = tenant?.plan === "pro" || tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
         if (!isPremium) {
-          return res.status(403).json({ error: "Change detection requires a Pro or Enterprise plan", upgradeRequired: true });
+          return res.status(403).json({ error: "Change detection requires a Pro, Enterprise, or Unlimited plan", upgradeRequired: true });
         }
       }
 
