@@ -610,7 +610,7 @@ export default function ContentLibraryPage() {
             onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
             data-testid={`button-create-campaign-${asset.id}`}
           >
-            <Megaphone className="w-3 h-3" /> Campaign
+            <Megaphone className="w-3 h-3" /> Instant Campaign
           </Button>
         </div>
         {asset.tags && (
@@ -1211,7 +1211,7 @@ export default function ContentLibraryPage() {
                       }}
                       data-testid="button-create-campaign-from-detail"
                     >
-                      <Megaphone className="w-4 h-4" /> Create Campaign
+                      <Megaphone className="w-4 h-4" /> Instant Campaign
                     </Button>
                     <Button
                       className="flex-1"

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useSearch } from "wouter";
 import {
@@ -39,6 +39,13 @@ interface ContentAsset {
   title: string;
   description?: string;
   leadImageUrl?: string;
+  categoryId?: string;
+  status?: string;
+}
+
+interface ContentCategory {
+  id: string;
+  name: string;
 }
 
 interface SocialAccount {
@@ -77,8 +84,11 @@ export default function CampaignsPage() {
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("preselect");
 
-  const [addOpen, setAddOpen] = useState(!!preselectedAssetId);
+  const isInstant = !!preselectedAssetId;
+  const [addOpen, setAddOpen] = useState(isInstant);
   const [step, setStep] = useState(0);
+  const [assetSearch, setAssetSearch] = useState("");
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -93,11 +103,14 @@ export default function CampaignsPage() {
   const resetForm = () => {
     setForm({
       name: "", description: "",
-      selectedAssetIds: [], selectedSocialIds: [],
+      selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [],
+      selectedSocialIds: [],
       startDate: format(new Date(), "yyyy-MM-dd"),
       numberOfDays: 7, includeSaturday: false, includeSunday: false,
     });
     setStep(0);
+    setAssetSearch("");
+    setAssetCategoryFilter("all");
   };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -127,6 +140,43 @@ export default function CampaignsPage() {
     },
     enabled: isAllowed,
   });
+
+  const { data: categories = [] } = useQuery<ContentCategory[]>({
+    queryKey: ["/api/content-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/content-categories", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const activeAssets = useMemo(() => allAssets.filter(a => a.status !== "archived"), [allAssets]);
+
+  const filteredAssets = useMemo(() => {
+    let list = activeAssets;
+    if (assetCategoryFilter !== "all") {
+      list = list.filter(a => a.categoryId === assetCategoryFilter);
+    }
+    if (assetSearch.trim()) {
+      const q = assetSearch.toLowerCase();
+      list = list.filter(a =>
+        a.title.toLowerCase().includes(q) ||
+        (a.description || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [activeAssets, assetSearch, assetCategoryFilter]);
+
+  const categoryName = (id?: string) => categories.find(c => c.id === id)?.name;
+
+  useEffect(() => {
+    if (isInstant && preselectedAssetId && activeAssets.length > 0 && !form.name) {
+      const asset = activeAssets.find(a => a.id === preselectedAssetId);
+      if (asset) {
+        setForm(f => ({ ...f, name: `Campaign: ${asset.title}` }));
+      }
+    }
+  }, [isInstant, preselectedAssetId, activeAssets, form.name]);
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],
@@ -161,7 +211,12 @@ export default function CampaignsPage() {
           socialAccountIds: form.selectedSocialIds,
         }),
       });
-      if (!r.ok) throw new Error((await r.json()).error);
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Campaign creation failed";
+        try { msg = JSON.parse(text).error || msg; } catch { msg = text || msg; }
+        throw new Error(msg);
+      }
       return r.json();
     },
     onSuccess: () => {
@@ -242,11 +297,11 @@ export default function CampaignsPage() {
           </div>
           <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
-              <Button data-testid="button-new-campaign"><Plus className="w-4 h-4 mr-2" />New Campaign</Button>
+              <Button data-testid="button-new-campaign"><Plus className="w-4 h-4 mr-2" />{isInstant ? "Instant Campaign" : "New Campaign"}</Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>New Campaign</DialogTitle>
+                <DialogTitle>{isInstant ? "Instant Campaign" : "New Campaign"}</DialogTitle>
               </DialogHeader>
 
               <div className="flex items-center gap-1 mb-4">
@@ -300,34 +355,71 @@ export default function CampaignsPage() {
               )}
 
               {step === 1 && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">Select content assets to include in this campaign.</p>
-                  {allAssets.length === 0 ? (
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        value={assetSearch}
+                        onChange={e => setAssetSearch(e.target.value)}
+                        placeholder="Search assets..."
+                        className="pl-8 h-9"
+                        data-testid="input-asset-search"
+                      />
+                    </div>
+                    <select
+                      value={assetCategoryFilter}
+                      onChange={e => setAssetCategoryFilter(e.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm min-w-[140px]"
+                      data-testid="select-asset-category-filter"
+                    >
+                      <option value="all">All Categories</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {activeAssets.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">No content assets available. Add assets in the Content Library first.</p>
+                  ) : filteredAssets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">No assets match your search.</p>
                   ) : (
-                    <div className="max-h-80 overflow-y-auto space-y-2 border rounded-lg p-3">
-                      {allAssets.map(asset => (
+                    <div className="max-h-72 overflow-y-auto border rounded-lg divide-y">
+                      {filteredAssets.map(asset => (
                         <label
                           key={asset.id}
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
+                          className={`flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer transition-colors ${
+                            form.selectedAssetIds.includes(asset.id) ? "bg-primary/5" : ""
+                          }`}
                           data-testid={`checkbox-asset-${asset.id}`}
                         >
                           <Checkbox
                             checked={form.selectedAssetIds.includes(asset.id)}
                             onCheckedChange={() => toggleAsset(asset.id)}
+                            className="shrink-0"
                           />
                           {asset.leadImageUrl && (
-                            <img src={asset.leadImageUrl} alt="" className="w-10 h-10 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                            <img src={asset.leadImageUrl} alt="" className="w-12 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{asset.title}</p>
-                            {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                            <p className="text-sm font-medium leading-tight truncate">{asset.title}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {categoryName(asset.categoryId) && (
+                                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{categoryName(asset.categoryId)}</span>
+                              )}
+                              {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                            </div>
                           </div>
                         </label>
                       ))}
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground">{form.selectedAssetIds.length} asset(s) selected</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      {form.selectedAssetIds.length} selected{filteredAssets.length !== activeAssets.length ? ` · ${filteredAssets.length} of ${activeAssets.length} shown` : ` of ${activeAssets.length}`}
+                    </p>
+                  </div>
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setStep(0)} className="flex-1" data-testid="button-back-to-details">
                       <ChevronLeft className="w-4 h-4 mr-1" /> Back

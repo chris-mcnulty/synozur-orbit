@@ -807,74 +807,79 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.post("/api/campaigns", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+    try {
+      const ctx = await getRequestContext(req);
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
-    const validAssetIds: string[] = [];
-    if (Array.isArray(assetIds) && assetIds.length > 0) {
-      const found = await db.select({ id: contentAssets.id }).from(contentAssets)
-        .where(and(
-          inArray(contentAssets.id, assetIds),
-          eq(contentAssets.tenantDomain, ctx.tenantDomain),
-          eq(contentAssets.marketId, ctx.marketId),
-        ));
-      validAssetIds.push(...found.map(f => f.id));
-    }
-
-    const validSocialIds: string[] = [];
-    if (Array.isArray(socialAccountIds) && socialAccountIds.length > 0) {
-      const socialConditions = [
-        inArray(socialAccounts.id, socialAccountIds),
-        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
-      ];
-      if (ctx.marketId) socialConditions.push(eq(socialAccounts.marketId, ctx.marketId));
-      const found = await db.select({ id: socialAccounts.id }).from(socialAccounts)
-        .where(and(...socialConditions));
-      validSocialIds.push(...found.map(f => f.id));
-    }
-
-    const campaignId = randomUUID();
-
-    await db.transaction(async (tx) => {
-      await tx.insert(campaigns).values({
-        id: campaignId,
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        name: name.trim(),
-        description,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        numberOfDays: numberOfDays ?? undefined,
-        includeSaturday: includeSaturday ?? false,
-        includeSunday: includeSunday ?? false,
-        createdBy: ctx.userId,
-      } as InsertCampaign);
-
-      if (validAssetIds.length > 0) {
-        await tx.insert(campaignAssets).values(
-          validAssetIds.map((assetId, idx) => ({
-            id: randomUUID(),
-            campaignId,
-            assetId,
-            sortOrder: idx,
-          } as InsertCampaignAsset))
-        );
+      const validAssetIds: string[] = [];
+      if (Array.isArray(assetIds) && assetIds.length > 0) {
+        const found = await db.select({ id: contentAssets.id }).from(contentAssets)
+          .where(and(
+            inArray(contentAssets.id, assetIds),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+          ));
+        validAssetIds.push(...found.map(f => f.id));
       }
 
-      if (validSocialIds.length > 0) {
-        await tx.insert(campaignSocialAccounts).values(
-          validSocialIds.map((socialAccountId) => ({
-            id: randomUUID(),
-            campaignId,
-            socialAccountId,
-          } as InsertCampaignSocialAccount))
-        );
+      const validSocialIds: string[] = [];
+      if (Array.isArray(socialAccountIds) && socialAccountIds.length > 0) {
+        const socialConditions: any[] = [
+          inArray(socialAccounts.id, socialAccountIds),
+          eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+        ];
+        if (ctx.marketId) socialConditions.push(eq(socialAccounts.marketId, ctx.marketId));
+        const found = await db.select({ id: socialAccounts.id }).from(socialAccounts)
+          .where(and(...socialConditions));
+        validSocialIds.push(...found.map(f => f.id));
       }
-    });
 
-    const [row] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
-    res.status(201).json(row);
+      const campaignId = randomUUID();
+
+      await db.transaction(async (tx) => {
+        await tx.insert(campaigns).values({
+          id: campaignId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          name: name.trim(),
+          description: description || null,
+          startDate: startDate ? new Date(startDate) : null,
+          endDate: endDate ? new Date(endDate) : null,
+          numberOfDays: numberOfDays ?? null,
+          includeSaturday: includeSaturday ?? false,
+          includeSunday: includeSunday ?? false,
+          createdBy: ctx.userId,
+        } as InsertCampaign);
+
+        if (validAssetIds.length > 0) {
+          await tx.insert(campaignAssets).values(
+            validAssetIds.map((assetId, idx) => ({
+              id: randomUUID(),
+              campaignId,
+              assetId,
+              sortOrder: idx,
+            } as InsertCampaignAsset))
+          );
+        }
+
+        if (validSocialIds.length > 0) {
+          await tx.insert(campaignSocialAccounts).values(
+            validSocialIds.map((socialAccountId) => ({
+              id: randomUUID(),
+              campaignId,
+              socialAccountId,
+            } as InsertCampaignSocialAccount))
+          );
+        }
+      });
+
+      const [row] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[Campaign Create Error]", err.message, err.stack);
+      res.status(500).json({ error: "Failed to create campaign" });
+    }
   });
 
   app.patch("/api/campaigns/:id", async (req, res) => {
