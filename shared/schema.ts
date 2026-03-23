@@ -1186,8 +1186,19 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
 export const AI_MODELS: Record<string, readonly string[]> = {
   replit_anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-sonnet-4', 'claude-opus-4'],
   replit_openai: ['gpt-4o', 'gpt-4o-mini'],
-  azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o'],
+  azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o', 'mistral-large', 'cohere-command-r-plus', 'meta-llama-3.1-405b'],
 } as const;
+
+export type AzureFoundryEndpointType = 'aoai' | 'inference';
+
+export const AZURE_FOUNDRY_MODEL_ENDPOINT: Record<string, AzureFoundryEndpointType> = {
+  'gpt-5.4': 'aoai',
+  'gpt-5.2': 'aoai',
+  'gpt-4o': 'aoai',
+  'mistral-large': 'inference',
+  'cohere-command-r-plus': 'inference',
+  'meta-llama-3.1-405b': 'inference',
+};
 
 export const AI_MODEL_INFO: Record<string, {
   name: string;
@@ -1197,11 +1208,15 @@ export const AI_MODEL_INFO: Record<string, {
   contextWindow: number;
   costPer1kPrompt: number;
   costPer1kCompletion: number;
+  endpointType?: AzureFoundryEndpointType;
 }> = {
-  'gpt-5.4': { name: 'GPT-5.4', description: 'Latest and most capable OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
-  'gpt-5.2': { name: 'GPT-5.2', description: 'Advanced reasoning OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
+  'gpt-5.4': { name: 'GPT-5.4', description: 'Latest and most capable OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015, endpointType: 'aoai' },
+  'gpt-5.2': { name: 'GPT-5.2', description: 'Advanced reasoning OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015, endpointType: 'aoai' },
   'gpt-4o': { name: 'GPT-4o', description: 'Fast multimodal model', costTier: 'medium', providers: ['replit_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01 },
   'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Cost-effective for simple tasks', costTier: 'low', providers: ['replit_openai'], contextWindow: 128000, costPer1kPrompt: 0.00015, costPer1kCompletion: 0.0006 },
+  'mistral-large': { name: 'Mistral Large', description: 'Mistral flagship model via Azure Foundry', costTier: 'medium', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.002, costPer1kCompletion: 0.006, endpointType: 'inference' },
+  'cohere-command-r-plus': { name: 'Cohere Command R+', description: 'Cohere enterprise model via Azure Foundry', costTier: 'medium', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01, endpointType: 'inference' },
+  'meta-llama-3.1-405b': { name: 'Meta Llama 3.1 405B', description: 'Meta open-weight flagship model via Azure Foundry', costTier: 'medium', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.00533, costPer1kCompletion: 0.016, endpointType: 'inference' },
   'claude-sonnet-4-5': { name: 'Claude Sonnet 4.5', description: 'Balanced intelligence and speed', costTier: 'medium', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
   'claude-haiku-4-5': { name: 'Claude Haiku 4.5', description: 'Fast and cost-effective', costTier: 'low', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.0008, costPer1kCompletion: 0.004 },
   'claude-sonnet-4': { name: 'Claude Sonnet 4', description: 'Previous generation balanced model', costTier: 'medium', providers: ['replit_anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },

@@ -35,6 +35,8 @@ interface ProviderStatus {
   label: string;
   available: boolean;
   models: string[];
+  aoaiAvailable?: boolean;
+  inferenceAvailable?: boolean;
 }
 
 interface ModelInfo {
@@ -45,6 +47,7 @@ interface ModelInfo {
   contextWindow: number;
   costPer1kPrompt: number;
   costPer1kCompletion: number;
+  endpointType?: 'aoai' | 'inference';
 }
 
 interface FeatureAssignment {
@@ -178,6 +181,7 @@ function ModelConfigTab({ config, options, onSave }: { config: AIConfig; options
               <TableRow>
                 <TableHead>Model</TableHead>
                 <TableHead>Provider(s)</TableHead>
+                <TableHead>Endpoint</TableHead>
                 <TableHead>Cost Tier</TableHead>
                 <TableHead>Context Window</TableHead>
                 <TableHead>Cost / 1K tokens</TableHead>
@@ -185,7 +189,7 @@ function ModelConfigTab({ config, options, onSave }: { config: AIConfig; options
             </TableHeader>
             <TableBody>
               {Object.entries(options.models).map(([key, info]) => (
-                <TableRow key={key}>
+                <TableRow key={key} data-testid={`row-model-${key}`}>
                   <TableCell>
                     <div>
                       <span className="font-medium">{info.name}</span>
@@ -199,6 +203,22 @@ function ModelConfigTab({ config, options, onSave }: { config: AIConfig; options
                         return <Badge key={pk} variant="secondary" className="text-xs">{prov?.label || pk}</Badge>;
                       })}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {info.endpointType ? (
+                      <Badge
+                        variant="outline"
+                        className={info.endpointType === 'aoai'
+                          ? "text-xs bg-blue-500/10 text-blue-500 border-blue-500/20"
+                          : "text-xs bg-purple-500/10 text-purple-500 border-purple-500/20"
+                        }
+                        data-testid={`badge-endpoint-${key}`}
+                      >
+                        {info.endpointType === 'aoai' ? 'AOAI' : 'Inference'}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>{costTierBadge(info.costTier)}</TableCell>
                   <TableCell>{(info.contextWindow / 1000).toFixed(0)}K</TableCell>
@@ -408,10 +428,30 @@ function ProviderStatusTab({ options }: { options: AIOptions }) {
                   })}
                 </div>
               </div>
-              {p.key === "azure_foundry" && !p.available && (
-                <p className="text-xs text-muted-foreground mt-3">
-                  Configure AZURE_FOUNDRY_OPENAI_ENDPOINT and AZURE_FOUNDRY_API_KEY environment variables to enable this provider.
-                </p>
+              {p.key === "azure_foundry" && (
+                <div className="space-y-2 mt-3">
+                  <div className="flex items-center gap-2">
+                    {p.aoaiAvailable ? (
+                      <CheckCircle2 size={12} className="text-green-500" />
+                    ) : (
+                      <XCircle size={12} className="text-muted-foreground" />
+                    )}
+                    <span className="text-xs text-muted-foreground">AOAI Endpoint (OpenAI models)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {p.inferenceAvailable ? (
+                      <CheckCircle2 size={12} className="text-green-500" />
+                    ) : (
+                      <XCircle size={12} className="text-muted-foreground" />
+                    )}
+                    <span className="text-xs text-muted-foreground">Project Endpoint (Inference models)</span>
+                  </div>
+                  {!p.available && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Configure AZURE_FOUNDRY_OPENAI_ENDPOINT, AZURE_FOUNDRY_PROJECT_ENDPOINT, and AZURE_FOUNDRY_API_KEY environment variables to enable this provider.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </CardContent>

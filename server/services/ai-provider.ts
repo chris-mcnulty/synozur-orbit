@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import ModelClient, { isUnexpected, type ChatRequestMessage } from "@azure-rest/ai-inference";
+import { AzureKeyCredential } from "@azure/core-auth";
 import { db } from "../db";
-import { aiConfiguration, aiFeatureModelAssignments, AI_PROVIDERS, AI_MODELS, type AIFeature, type AIProviderKey } from "@shared/schema";
+import { aiConfiguration, aiFeatureModelAssignments, AI_PROVIDERS, AI_MODELS, AZURE_FOUNDRY_MODEL_ENDPOINT, type AIFeature, type AIProviderKey } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 export interface AICompletionOptions {
@@ -31,6 +33,7 @@ export interface IAIProvider {
     options?: AICompletionOptions,
   ): Promise<AICompletionResult>;
   isAvailable(): boolean;
+  isModelAvailable?(model: string): boolean;
 }
 
 class ReplitAnthropicProvider implements IAIProvider {
@@ -150,29 +153,107 @@ class ReplitOpenAIProvider implements IAIProvider {
 class AzureFoundryProvider implements IAIProvider {
   readonly providerKey = AI_PROVIDERS.AZURE_FOUNDRY;
   readonly providerName = "Azure AI Foundry";
-  private client: OpenAI | null = null;
+  private aoaiClient: OpenAI | null = null;
+  private inferenceClient: ReturnType<typeof ModelClient> | null = null;
 
-  private getClient(): OpenAI {
-    if (!this.client) {
+  private getAoaiClient(): OpenAI {
+    if (!this.aoaiClient) {
       const endpoint = process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT;
       const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
       if (!endpoint || !apiKey) {
         throw new Error("Azure AI Foundry not configured: missing AZURE_FOUNDRY_OPENAI_ENDPOINT or AZURE_FOUNDRY_API_KEY");
       }
-      this.client = new OpenAI({
+      this.aoaiClient = new OpenAI({
         apiKey,
         baseURL: endpoint,
       });
     }
-    return this.client;
+    return this.aoaiClient;
   }
 
-  isAvailable(): boolean {
+  private isAoaiAvailable(): boolean {
     return !!(process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT && process.env.AZURE_FOUNDRY_API_KEY);
   }
 
+  private isInferenceAvailable(): boolean {
+    return !!(process.env.AZURE_FOUNDRY_PROJECT_ENDPOINT && process.env.AZURE_FOUNDRY_API_KEY);
+  }
+
+  isAvailable(): boolean {
+    return this.isAoaiAvailable() || this.isInferenceAvailable();
+  }
+
+  isModelAvailable(model: string): boolean {
+    const endpointType = AZURE_FOUNDRY_MODEL_ENDPOINT[model];
+    if (endpointType === 'inference') {
+      return this.isInferenceAvailable();
+    }
+    return this.isAoaiAvailable();
+  }
+
+  private getInferenceClient(): ReturnType<typeof ModelClient> {
+    if (!this.inferenceClient) {
+      const projectEndpoint = process.env.AZURE_FOUNDRY_PROJECT_ENDPOINT;
+      const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
+      if (!projectEndpoint || !apiKey) {
+        throw new Error("Azure AI Foundry Inference not configured: missing AZURE_FOUNDRY_PROJECT_ENDPOINT or AZURE_FOUNDRY_API_KEY");
+      }
+      this.inferenceClient = ModelClient(projectEndpoint, new AzureKeyCredential(apiKey));
+    }
+    return this.inferenceClient;
+  }
+
+  private async completeViaInference(model: string, userPrompt: string, options?: AICompletionOptions): Promise<AICompletionResult> {
+    const client = this.getInferenceClient();
+    const startTime = Date.now();
+
+    const messages: ChatRequestMessage[] = [];
+    if (options?.systemPrompt) {
+      messages.push({ role: "system", content: options.systemPrompt });
+    }
+    messages.push({ role: "user", content: userPrompt });
+
+    const response = await client.path("/chat/completions").post({
+      body: {
+        messages,
+        model,
+        max_tokens: options?.maxTokens ?? 8192,
+        ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+      },
+    });
+
+    if (isUnexpected(response)) {
+      throw new Error(`Azure AI Inference error (${response.status}): ${JSON.stringify(response.body)}`);
+    }
+
+    const durationMs = Date.now() - startTime;
+    const result = response.body;
+    const choice = result.choices[0];
+    if (!choice?.message?.content) {
+      throw new Error("Unexpected response from Azure AI Inference");
+    }
+
+    return {
+      text: choice.message.content,
+      usage: {
+        inputTokens: result.usage?.prompt_tokens ?? 0,
+        outputTokens: result.usage?.completion_tokens ?? 0,
+        totalTokens: result.usage?.total_tokens ?? 0,
+      },
+      model: result.model,
+      provider: this.providerKey,
+      durationMs,
+    };
+  }
+
   async complete(model: string, userPrompt: string, options?: AICompletionOptions): Promise<AICompletionResult> {
-    const client = this.getClient();
+    const endpointType = AZURE_FOUNDRY_MODEL_ENDPOINT[model] ?? 'aoai';
+
+    if (endpointType === 'inference') {
+      return this.completeViaInference(model, userPrompt, options);
+    }
+
+    const client = this.getAoaiClient();
     const startTime = Date.now();
 
     const messages: OpenAI.ChatCompletionMessageParam[] = [];
@@ -277,13 +358,28 @@ export interface ResolvedProvider {
   maxTokens?: number;
 }
 
+function findFirstAvailableModel(provider: IAIProvider, providerKey: string): string | null {
+  const models = AI_MODELS[providerKey] ?? [];
+  for (const m of models) {
+    if (provider.isModelAvailable ? provider.isModelAvailable(m) : true) {
+      return m;
+    }
+  }
+  return null;
+}
+
 export async function getProviderForFeature(feature: AIFeature): Promise<ResolvedProvider> {
   const config = await loadConfig();
 
   const assignment = config.featureAssignments.get(feature);
   if (assignment) {
     const provider = providers[assignment.provider];
-    if (provider && provider.isAvailable()) {
+    const modelAvailable = provider && (
+      provider.isModelAvailable
+        ? provider.isModelAvailable(assignment.model)
+        : provider.isAvailable()
+    );
+    if (provider && modelAvailable) {
       return {
         provider,
         model: assignment.model,
@@ -291,14 +387,27 @@ export async function getProviderForFeature(feature: AIFeature): Promise<Resolve
         maxTokens: assignment.maxTokens ?? undefined,
       };
     }
-    console.warn(`[ai-provider] Provider ${assignment.provider} assigned to ${feature} is not available, falling back to default`);
+    console.warn(`[ai-provider] Provider ${assignment.provider} / model ${assignment.model} assigned to ${feature} is not available, falling back to default`);
   }
 
   const defaultProvider = config.globalConfig?.defaultProvider ?? AI_PROVIDERS.REPLIT_ANTHROPIC;
   const defaultModel = config.globalConfig?.defaultModel ?? "claude-sonnet-4-5";
   const provider = providers[defaultProvider];
 
-  if (!provider || !provider.isAvailable()) {
+  const defaultModelAvailable = provider && (
+    provider.isModelAvailable
+      ? provider.isModelAvailable(defaultModel)
+      : provider.isAvailable()
+  );
+
+  if (!provider || !defaultModelAvailable) {
+    if (provider?.isAvailable()) {
+      const availableModel = findFirstAvailableModel(provider, defaultProvider);
+      if (availableModel) {
+        console.warn(`[ai-provider] Default model ${defaultModel} not available for ${defaultProvider}, using ${availableModel} instead`);
+        return { provider, model: availableModel, providerKey: defaultProvider, maxTokens: config.globalConfig?.maxTokensPerRequest ?? undefined };
+      }
+    }
     const fallback = providers[AI_PROVIDERS.REPLIT_ANTHROPIC];
     if (fallback?.isAvailable()) {
       return { provider: fallback, model: "claude-sonnet-4-5", providerKey: AI_PROVIDERS.REPLIT_ANTHROPIC };
@@ -320,7 +429,20 @@ export async function getDefaultProvider(): Promise<ResolvedProvider> {
   const model = config.globalConfig?.defaultModel ?? "claude-sonnet-4-5";
   const provider = providers[providerKey];
 
-  if (!provider || !provider.isAvailable()) {
+  const modelAvailable = provider && (
+    provider.isModelAvailable
+      ? provider.isModelAvailable(model)
+      : provider.isAvailable()
+  );
+
+  if (!provider || !modelAvailable) {
+    if (provider?.isAvailable()) {
+      const availableModel = findFirstAvailableModel(provider, providerKey);
+      if (availableModel) {
+        console.warn(`[ai-provider] Default model ${model} not available for ${providerKey}, using ${availableModel} instead`);
+        return { provider, model: availableModel, providerKey };
+      }
+    }
     const fallback = providers[AI_PROVIDERS.REPLIT_ANTHROPIC];
     if (fallback?.isAvailable()) {
       return { provider: fallback, model: "claude-sonnet-4-5", providerKey: AI_PROVIDERS.REPLIT_ANTHROPIC };
@@ -340,13 +462,46 @@ export function getAllProviderStatuses(): Array<{
   name: string;
   available: boolean;
   models: readonly string[];
+  aoaiAvailable?: boolean;
+  inferenceAvailable?: boolean;
 }> {
-  return Object.entries(providers).map(([key, provider]) => ({
-    key,
-    name: provider.providerName,
-    available: provider.isAvailable(),
-    models: AI_MODELS[key] ?? [],
-  }));
+  return Object.entries(providers).map(([key, provider]) => {
+    const allModels = AI_MODELS[key] ?? [];
+    const base: {
+      key: string;
+      name: string;
+      available: boolean;
+      models: readonly string[];
+      aoaiAvailable?: boolean;
+      inferenceAvailable?: boolean;
+    } = {
+      key,
+      name: provider.providerName,
+      available: provider.isAvailable(),
+      models: allModels,
+    };
+    if (key === AI_PROVIDERS.AZURE_FOUNDRY && provider instanceof AzureFoundryProvider) {
+      const aoai = !!(process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT && process.env.AZURE_FOUNDRY_API_KEY);
+      const inference = !!(process.env.AZURE_FOUNDRY_PROJECT_ENDPOINT && process.env.AZURE_FOUNDRY_API_KEY);
+      base.aoaiAvailable = aoai;
+      base.inferenceAvailable = inference;
+      base.models = allModels.filter(m => {
+        const ept = AZURE_FOUNDRY_MODEL_ENDPOINT[m];
+        if (ept === 'inference') return inference;
+        return aoai;
+      });
+    }
+    return base;
+  });
+}
+
+export function getAvailableModelsByProvider(): Record<string, string[]> {
+  const statuses = getAllProviderStatuses();
+  const result: Record<string, string[]> = {};
+  for (const s of statuses) {
+    result[s.key] = [...s.models];
+  }
+  return result;
 }
 
 export async function completeForFeature(

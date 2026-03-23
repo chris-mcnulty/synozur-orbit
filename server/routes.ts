@@ -31,7 +31,7 @@ import { startFullRegeneration, getRegenerationStatus } from "./services/full-re
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "./services/scoring-service";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "./services/news-monitoring";
 import { calculateEstimatedCost } from "./services/ai-pricing";
-import { completeForFeature, getProviderForFeature, getAllProviderStatuses, invalidateAIConfigCache, type AICompletionResult } from "./services/ai-provider";
+import { completeForFeature, getProviderForFeature, getAllProviderStatuses, getAvailableModelsByProvider, invalidateAIConfigCache, type AICompletionResult } from "./services/ai-provider";
 import { AI_FEATURES, AI_MODELS, AI_MODEL_INFO, AI_FEATURE_LABELS, AI_PROVIDERS, AI_PROVIDER_LABELS, aiConfiguration, aiFeatureModelAssignments, aiUsageAlerts, type AIFeature } from "@shared/schema";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
@@ -6710,6 +6710,7 @@ Respond in JSON format:
       if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
 
       const providerStatuses = getAllProviderStatuses();
+      const availableModelsByProvider = getAvailableModelsByProvider();
       res.json({
         providers: providerStatuses.map(p => ({
           ...p,
@@ -6717,7 +6718,7 @@ Respond in JSON format:
         })),
         models: AI_MODEL_INFO,
         features: Object.entries(AI_FEATURE_LABELS).map(([key, label]) => ({ key, label })),
-        modelsByProvider: AI_MODELS,
+        modelsByProvider: availableModelsByProvider,
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
