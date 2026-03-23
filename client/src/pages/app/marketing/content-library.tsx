@@ -98,6 +98,8 @@ export default function ContentLibraryPage() {
     aiSummary: "",
   });
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkQueuedCount, setBulkQueuedCount] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const [urlInput, setUrlInput] = useState("");
@@ -294,6 +296,38 @@ export default function ContentLibraryPage() {
         ? f.productIds.filter(id => id !== productId)
         : [...f.productIds, productId],
     }));
+  };
+
+  const handleBulkGenerateSummaries = async () => {
+    setBulkGenerating(true);
+    setBulkQueuedCount(0);
+    try {
+      const r = await fetch("/api/content-assets/generate-summaries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        const data = await r.json();
+        throw new Error(data.error || "Failed to start bulk generation");
+      }
+      const data = await r.json();
+      if (data.queued) {
+        setBulkQueuedCount(data.queued);
+        toast({ title: "Generating summaries", description: `${data.queued} assets queued for AI summary generation. This will run in the background — refresh the page in a few minutes to see results.` });
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+          setBulkGenerating(false);
+        }, 10000);
+      } else {
+        toast({ title: "All done", description: "All active assets already have AI summaries." });
+        setBulkGenerating(false);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setBulkGenerating(false);
+    }
   };
 
   const handleGenerateSummary = async () => {
@@ -545,6 +579,7 @@ export default function ContentLibraryPage() {
         <div className="flex flex-wrap gap-1.5 mt-1">
           {asset.capturedViaExtension && <Badge variant="secondary" className="text-xs">Captured</Badge>}
           {asset.extractionStatus === "extracted" && <Badge variant="secondary" className="text-xs"><Sparkles className="w-2.5 h-2.5 mr-0.5" />AI Extracted</Badge>}
+          {asset.aiSummary && <Badge variant="secondary" className="text-xs text-primary"><Sparkles className="w-2.5 h-2.5 mr-0.5" />Summarized</Badge>}
           {categoryName(asset.categoryId) && <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId)}</Badge>}
           {asset.status === "archived" && <Badge variant="secondary" className="text-xs">Archived</Badge>}
           {asset.productIds?.map(pid => (
@@ -638,6 +673,19 @@ export default function ContentLibraryPage() {
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filtered.length === 0} data-testid="button-export-csv-content">
                 <Download className="w-4 h-4 mr-1" /> Export CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkGenerateSummaries}
+                disabled={bulkGenerating}
+                data-testid="button-generate-all-summaries"
+              >
+                {bulkGenerating ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Generating{bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4 mr-1" /> Generate All Summaries</>
+                )}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-categories">
                 <Settings className="w-4 h-4 mr-1" /> Categories

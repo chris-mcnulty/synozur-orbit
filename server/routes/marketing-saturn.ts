@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   contentAssets,
@@ -358,6 +358,60 @@ export function registerSaturnMarketingRoutes(app: Express) {
       console.error("[Saturn] Content extraction error:", err.message);
       res.status(422).json({ error: `Could not extract content: ${err.message}` });
     }
+  });
+
+  app.post("/api/content-assets/generate-summaries", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const { assetIds } = req.body;
+
+    let assetsToProcess;
+    if (assetIds?.length) {
+      assetsToProcess = await db.select().from(contentAssets)
+        .where(and(
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+          inArray(contentAssets.id, assetIds),
+        ));
+    } else {
+      assetsToProcess = await db.select().from(contentAssets)
+        .where(and(
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+          eq(contentAssets.status, "active"),
+          sql`(${contentAssets.aiSummary} IS NULL OR ${contentAssets.aiSummary} = '')`,
+        ));
+    }
+
+    if (assetsToProcess.length === 0) {
+      return res.json({ processed: 0, failed: 0, total: 0 });
+    }
+
+    res.json({ queued: assetsToProcess.length, message: "Summary generation started" });
+
+    (async () => {
+      let processed = 0;
+      let failed = 0;
+      for (const asset of assetsToProcess) {
+        try {
+          const summary = await generateContentSummary(
+            asset.title,
+            asset.description || "",
+            asset.content || asset.description || "",
+            asset.url || "",
+          );
+          await db.update(contentAssets)
+            .set({ aiSummary: summary, updatedAt: new Date() })
+            .where(eq(contentAssets.id, asset.id));
+          processed++;
+        } catch (err: any) {
+          console.error(`[Saturn] Bulk summary failed for ${asset.id}:`, err.message);
+          failed++;
+        }
+      }
+      console.log(`[Saturn] Bulk summary generation complete: ${processed} processed, ${failed} failed out of ${assetsToProcess.length}`);
+    })();
   });
 
   app.post("/api/content-assets/:id/generate-summary", async (req, res) => {
@@ -1220,7 +1274,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .join("\n\n");
 
     const assetContext = selectedAssets
-      .map((a: any) => `## ${a.title}\n${a.content ?? a.description ?? ""}`)
+      .map((a: any) => {
+        const parts = [`## ${a.title}`];
+        if (a.url) parts.push(`URL: ${a.url}`);
+        if (a.aiSummary) parts.push(`### AI Summary\n${a.aiSummary}`);
+        if (a.content) parts.push(`### Content\n${a.content}`);
+        else if (a.description) parts.push(`### Description\n${a.description}`);
+        return parts.join("\n");
+      })
       .join("\n\n");
 
     const prompt = `You are an expert B2B email marketing copywriter. Generate a professional promotional email based on the following content assets and brand guidelines.
@@ -1426,7 +1487,14 @@ async function generatePostsAsync(
       .join("\n\n");
 
     const assetContext = selectedAssets
-      .map((a: any) => `## ${a.title}\n${a.content ?? a.description ?? ""}`)
+      .map((a: any) => {
+        const parts = [`## ${a.title}`];
+        if (a.url) parts.push(`URL: ${a.url}`);
+        if (a.aiSummary) parts.push(`### AI Summary\n${a.aiSummary}`);
+        if (a.content) parts.push(`### Content\n${a.content}`);
+        else if (a.description) parts.push(`### Description\n${a.description}`);
+        return parts.join("\n");
+      })
       .join("\n\n");
 
     const platformTargets = linkedAccounts.length
