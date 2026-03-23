@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   contentAssets,
@@ -794,6 +794,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.tenantDomain, ctx.tenantDomain),
           eq(campaigns.marketId, ctx.marketId),
+          ne(campaigns.status, "deleted"),
         ))
         .orderBy(desc(campaigns.createdAt));
       res.json(rows);
@@ -811,6 +812,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
+          ne(campaigns.status, "deleted"),
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
 
@@ -935,7 +937,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
     await db.update(campaigns)
-      .set({ status: "archived", updatedAt: new Date() })
+      .set({ status: "deleted", updatedAt: new Date() })
       .where(and(
         eq(campaigns.id, req.params.id),
         eq(campaigns.tenantDomain, ctx.tenantDomain),

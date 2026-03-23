@@ -74,6 +74,7 @@ const STATUS_COLORS: Record<string, string> = {
   active: "default",
   completed: "outline",
   archived: "destructive",
+  deleted: "destructive",
 };
 
 const STEPS = ["Details", "Assets", "Accounts", "Schedule"];

@@ -1610,7 +1610,7 @@ export const campaigns = pgTable("campaigns", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
-  status: text("status").notNull().default("draft"), // draft, active, completed, archived
+  status: text("status").notNull().default("draft"), // draft, active, completed, archived, deleted
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   numberOfDays: integer("number_of_days"),
