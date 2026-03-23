@@ -632,29 +632,34 @@ export function registerSaturnMarketingRoutes(app: Express) {
   });
 
   app.post("/api/brand-assets", async (req, res) => {
-    if (!await guardFeature(req, res, "brandLibrary")) return;
-    const ctx = await getRequestContext(req);
-    const { name, description, url, categoryId, productTagIds, productIds, tags, fileType } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: "name is required" });
-    const [row] = await db.insert(brandAssets).values({
-      id: randomUUID(),
-      tenantDomain: ctx.tenantDomain,
-      marketId: ctx.marketId,
-      name: name.trim(),
-      description,
-      url,
-      categoryId,
-      fileType: fileType || null,
-      productIds: productIds?.length ? productIds : null,
-      tags: tags || null,
-      createdBy: ctx.userId,
-    } as InsertBrandAsset).returning();
-    if (productTagIds?.length) {
-      await db.insert(brandAssetProductTags).values(
-        productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
-      );
+    try {
+      if (!await guardFeature(req, res, "brandLibrary")) return;
+      const ctx = await getRequestContext(req);
+      const { name, description, url, categoryId, productTagIds, productIds, tags, fileType } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+      const [row] = await db.insert(brandAssets).values({
+        id: randomUUID(),
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name: name.trim(),
+        description: description || null,
+        url: url || null,
+        categoryId: categoryId || null,
+        fileType: fileType || null,
+        productIds: productIds?.length ? productIds : null,
+        tags: tags || null,
+        createdBy: ctx.userId,
+      } as InsertBrandAsset).returning();
+      if (productTagIds?.length) {
+        await db.insert(brandAssetProductTags).values(
+          productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
+        );
+      }
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[brand-assets POST]", err);
+      res.status(500).json({ error: err.message || "Failed to create brand asset" });
     }
-    res.status(201).json(row);
   });
 
   app.patch("/api/brand-assets/:id", async (req, res) => {

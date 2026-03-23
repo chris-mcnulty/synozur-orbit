@@ -153,7 +153,12 @@ export default function BrandLibraryPage() {
           productIds: data.productIds.length ? data.productIds : null,
         }),
       });
-      if (!r.ok) throw new Error((await r.json()).error);
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Failed to create brand asset";
+        try { msg = JSON.parse(text).error || msg; } catch { msg = text || msg; }
+        throw new Error(msg);
+      }
       return r.json();
     },
     onSuccess: () => {
