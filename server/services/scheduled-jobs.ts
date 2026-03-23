@@ -126,7 +126,8 @@ async function trackJobRun<T>(
   tenantDomain: string,
   targetId: string,
   targetName: string,
-  work: () => Promise<T>
+  work: () => Promise<T>,
+  options?: { onError?: () => Promise<void> }
 ): Promise<string | null> {
   const jobRunId = await trackJobStart(jobType, tenantDomain, targetId, targetName);
   if (!jobRunId) return null;
@@ -139,6 +140,9 @@ async function trackJobRun<T>(
     const errorMessage = error instanceof Error ? error.message : String(error);
     await trackJobComplete(jobRunId, "failed", undefined, errorMessage);
     console.error(`[Scheduled Job] Job failed for ${targetName}:`, error);
+    if (options?.onError) {
+      try { await options.onError(); } catch (e) { console.error(`[Scheduled Job] onError callback failed:`, e); }
+    }
     return jobRunId;
   }
 }
@@ -202,7 +206,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
         
         // Skip competitors with manual research or excluded from crawl
         const existingAnalysis = competitor.analysisData as any;
-        if (existingAnalysis?.source === "manual" || (competitor as any).excludeFromCrawl === true) {
+        if (existingAnalysis?.source === "manual" || competitor.excludeFromCrawl === true) {
           console.log(`[Scheduled Job] Skipping ${competitor.name} - manual research or excluded`);
           continue;
         }
@@ -218,17 +222,29 @@ async function runWebsiteCrawlJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Queuing crawl for ${competitor.name} (${competitor.url})...`);
 
-        enqueueCrawl(`crawl:${competitor.name}`, () => trackJobRun(
+        enqueueCrawl(`crawl:${competitor.name}`, (signal) => trackJobRun(
           "websiteCrawl",
           tenant.domain,
           competitor.id,
           competitor.name,
           async () => {
-            const crawlResult = await crawlCompetitorWebsite(competitor.url);
+            let crawlResult;
+            try {
+              crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
+            } catch (crawlError: any) {
+              if (!signal?.aborted) {
+                await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+              }
+              throw crawlError;
+            }
 
             if (crawlResult.pages.length === 0) {
+              await storage.incrementCompetitorCrawlFailures(competitor.id);
+              console.log(`[Scheduled Job] No pages crawled for ${competitor.name} - incrementing failure count`);
               return { status: "no_pages", message: `No pages found for ${competitor.name}` };
             }
+
+            await storage.resetCompetitorCrawlFailures(competitor.id);
 
             const updates: any = {
               crawlData: {
@@ -356,8 +372,13 @@ async function runWebsiteCrawlJob(): Promise<void> {
               socialLinksFound: Object.keys(crawlResult.socialLinks).filter(k => crawlResult.socialLinks[k as keyof typeof crawlResult.socialLinks]).length,
               analysis: analysisResult,
             };
+          },
+        )).catch(async (err) => {
+          console.error(`[Scheduled Job] Queued crawl failed for ${competitor.name}:`, err.message);
+          if (err.message?.includes("timed out")) {
+            await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued crawl failed for ${competitor.name}:`, err.message));
+        });
       }
 
       // Crawl baseline company profiles on the same frequency as competitors
@@ -574,7 +595,7 @@ async function runSocialMonitorJob(): Promise<void> {
               instagram: !!competitor.instagramUrl,
             };
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued social monitor failed for ${competitor.name}:`, err.message));
+        ), 5 * 60 * 1000).catch(err => console.error(`[Scheduled Job] Queued social monitor failed for ${competitor.name}:`, err.message));
       }
 
       // Monitor company profiles (baseline) for social changes
@@ -624,7 +645,7 @@ async function runSocialMonitorJob(): Promise<void> {
               twitter: !!profile.twitterUrl,
             };
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued baseline social failed for ${profile.companyName}:`, err.message));
+        ), 5 * 60 * 1000).catch(err => console.error(`[Scheduled Job] Queued baseline social failed for ${profile.companyName}:`, err.message));
       }
 
       // Monitor products for social changes (product-level social tracking)
@@ -668,7 +689,7 @@ async function runSocialMonitorJob(): Promise<void> {
               twitter: !!product.twitterUrl,
             };
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued product social failed for ${product.name}:`, err.message));
+        ), 5 * 60 * 1000).catch(err => console.error(`[Scheduled Job] Queued product social failed for ${product.name}:`, err.message));
       }
     }
   } catch (error) {
@@ -722,6 +743,12 @@ async function runWebsiteMonitorJob(): Promise<void> {
           console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - market is archived`);
           continue;
         }
+
+        // Skip competitors excluded from crawl
+        if (competitor.excludeFromCrawl) {
+          console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - excluded from crawl`);
+          continue;
+        }
         
         const lastWebsiteMonitor = competitor.lastWebsiteMonitor
           ? new Date(competitor.lastWebsiteMonitor).getTime()
@@ -734,24 +761,31 @@ async function runWebsiteMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Queuing website monitor for ${competitor.name}...`);
 
-        enqueueMonitor(`monitor:${competitor.name}`, () => trackJobRun(
+        enqueueMonitor(`monitor:${competitor.name}`, (signal) => trackJobRun(
           "websiteMonitor",
           tenant.domain,
           competitor.id,
           `Competitor: ${competitor.name}`,
           async () => {
-            await monitorCompetitorWebsite(
+            if (signal?.aborted) throw new Error("Monitor aborted");
+            const result = await monitorCompetitorWebsite(
               competitor.id, 
               competitor.userId,
-              tenant.domain
+              tenant.domain,
+              signal
             );
             return {
-              status: "success",
+              status: result.status,
               entityType: "competitor",
               url: competitor.url,
             };
+          },
+        )).catch(async (err) => {
+          console.error(`[Scheduled Job] Queued website monitor failed for ${competitor.name}:`, err.message);
+          if (err.message?.includes("timed out")) {
+            await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued website monitor failed for ${competitor.name}:`, err.message));
+        });
       }
 
       // Monitor company profiles (baseline) for website changes
@@ -848,6 +882,12 @@ async function runProductMonitorJob(): Promise<void> {
         // Skip products without a URL
         if (!product.url) continue;
 
+        // Skip products excluded from crawl
+        if (product.excludeFromCrawl) {
+          console.log(`[Scheduled Job] Skipping product monitor for ${product.name} - excluded from crawl`);
+          continue;
+        }
+
         // Skip products in archived markets
         if (await isMarketArchived(product.marketId)) {
           console.log(`[Scheduled Job] Skipping product monitor for ${product.name} - market is archived`);
@@ -865,25 +905,32 @@ async function runProductMonitorJob(): Promise<void> {
 
         console.log(`[Scheduled Job] Queuing product monitor for ${product.name}...`);
 
-        enqueueMonitor(`monitor:product:${product.name}`, () => trackJobRun(
+        enqueueMonitor(`monitor:product:${product.name}`, (signal) => trackJobRun(
           "productMonitor",
           tenant.domain,
           product.id,
           `Product: ${product.name}`,
           async () => {
-            await monitorProductWebsite(
+            if (signal?.aborted) throw new Error("Monitor aborted");
+            const result = await monitorProductWebsite(
               product.id,
               product.createdBy || "",
               tenant.domain,
-              product.marketId || undefined
+              product.marketId || undefined,
+              signal
             );
             return {
-              status: "success",
+              status: result.status,
               entityType: "product",
               url: product.url,
             };
+          },
+        )).catch(async (err) => {
+          console.error(`[Scheduled Job] Queued product monitor failed for ${product.name}:`, err.message);
+          if (err.message?.includes("timed out")) {
+            await storage.incrementProductCrawlFailures(product.id).catch(() => {});
           }
-        )).catch(err => console.error(`[Scheduled Job] Queued product monitor failed for ${product.name}:`, err.message));
+        });
       }
     }
   } catch (error) {

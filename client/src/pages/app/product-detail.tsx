@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart, Linkedin, Instagram, Twitter, Users } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart, Linkedin, Instagram, Twitter, Users, AlertTriangle, Ban } from "lucide-react";
 import FeaturesTab from "@/components/product/FeaturesTab";
 import RoadmapTab from "@/components/product/RoadmapTab";
 import { MarkdownContent } from "@/components/MarkdownViewer";
@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import RecentUpdatesCard from "@/components/RecentUpdatesCard";
+import { useUser } from "@/lib/userContext";
 
 interface Product {
   id: string;
@@ -35,6 +36,9 @@ interface Product {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  excludeFromCrawl: boolean;
+  consecutiveCrawlFailures: number;
+  crawlFlaggedAt: string | null;
 }
 
 interface ProjectProduct {
@@ -114,6 +118,8 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useUser();
+  const isAdmin = currentUser?.role === "Domain Admin" || currentUser?.role === "Global Admin";
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [isEditProductOpen, setIsEditProductOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1774,6 +1780,68 @@ export default function ProductDetail() {
                               >
                                 View <ExternalLink className="h-3 w-3" />
                               </a>
+                            )}
+                            {pp.product.crawlFlaggedAt && !pp.product.excludeFromCrawl && (
+                              <div className="mt-2 p-2 rounded border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700" data-testid={`badge-crawl-flagged-${pp.productId}`}>
+                                <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>Crawl failures detected ({pp.product.consecutiveCrawlFailures} failures)</span>
+                                </div>
+                                {isAdmin && (
+                                  <div className="flex gap-1 mt-1">
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      className="h-6 text-xs px-2"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                          const res = await fetch(`/api/admin/flagged-crawls/product/${pp.productId}/exclude`, { method: "POST", credentials: "include" });
+                                          if (res.ok) {
+                                            queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "products"] });
+                                            toast({ title: "Excluded from Crawl", description: "This product will no longer be crawled." });
+                                          } else {
+                                            toast({ title: "Error", description: "Failed to exclude product from crawl.", variant: "destructive" });
+                                          }
+                                        } catch {
+                                          toast({ title: "Error", description: "Network error. Please try again.", variant: "destructive" });
+                                        }
+                                      }}
+                                      data-testid={`button-exclude-crawl-${pp.productId}`}
+                                    >
+                                      <Ban className="h-3 w-3 mr-1" /> Exclude
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 text-xs px-2"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                          const res = await fetch(`/api/admin/flagged-crawls/product/${pp.productId}/dismiss`, { method: "POST", credentials: "include" });
+                                          if (res.ok) {
+                                            queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "products"] });
+                                            toast({ title: "Flag Dismissed", description: "Crawl failure counter has been reset." });
+                                          } else {
+                                            toast({ title: "Error", description: "Failed to dismiss flag.", variant: "destructive" });
+                                          }
+                                        } catch {
+                                          toast({ title: "Error", description: "Network error. Please try again.", variant: "destructive" });
+                                        }
+                                      }}
+                                      data-testid={`button-dismiss-flag-${pp.productId}`}
+                                    >
+                                      Dismiss
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {pp.product.excludeFromCrawl && (
+                              <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground" data-testid={`badge-excluded-crawl-${pp.productId}`}>
+                                <Ban className="h-3 w-3" />
+                                <span>Excluded from crawl</span>
+                              </div>
                             )}
                             {(pp.product as any).competitivePositionSummary && (
                               <p className="text-xs text-muted-foreground italic mt-1 line-clamp-2" data-testid={`text-position-summary-${pp.productId}`}>{(pp.product as any).competitivePositionSummary}</p>

@@ -7,13 +7,14 @@ interface QueuedJob<T = any> {
   priority: number;
   label: string;
   status: JobStatus;
-  work: () => Promise<T>;
+  work: (signal?: AbortSignal) => Promise<T>;
   resolve: (value: T) => void;
   reject: (reason: any) => void;
   enqueuedAt: number;
   startedAt?: number;
   completedAt?: number;
   timeoutMs: number;
+  abortController?: AbortController;
 }
 
 interface QueueConfig {
@@ -108,12 +109,15 @@ function processQueue(): void {
 function startJob(job: QueuedJob): void {
   job.status = "active";
   job.startedAt = Date.now();
+  const abortController = new AbortController();
+  job.abortController = abortController;
   activeJobs.set(job.id, job);
 
   const timeoutHandle = setTimeout(() => {
     if (activeJobs.has(job.id)) {
-      console.error(`[JobQueue] Job ${job.id} (${job.label}) timed out after ${job.timeoutMs / 1000}s`);
+      console.error(`[JobQueue] Job ${job.id} (${job.label}) timed out after ${job.timeoutMs / 1000}s - aborting`);
       job.status = "timeout";
+      abortController.abort();
       activeJobs.delete(job.id);
       failedCount++;
       job.reject(new Error(`Job timed out after ${job.timeoutMs / 1000}s: ${job.label}`));
@@ -123,7 +127,7 @@ function startJob(job: QueuedJob): void {
 
   console.log(`[JobQueue] Starting ${job.type}/${job.label} (active: ${activeJobs.size}/${config.maxConcurrent}, pending: ${pendingQueue.length})`);
 
-  job.work()
+  job.work(abortController.signal)
     .then(result => {
       clearTimeout(timeoutHandle);
       if (job.status === "timeout") return;
@@ -152,7 +156,7 @@ function startJob(job: QueuedJob): void {
 export function enqueue<T>(
   type: JobType,
   label: string,
-  work: () => Promise<T>,
+  work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
   options?: { priority?: number; timeoutMs?: number }
 ): Promise<T> {
   const priority = options?.priority ?? PRIORITY[type] ?? PRIORITY.other;
@@ -181,16 +185,16 @@ export function enqueue<T>(
   });
 }
 
-export function enqueuePdf<T>(label: string, work: () => Promise<T>, timeoutMs?: number): Promise<T> {
+export function enqueuePdf<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
   return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000 });
 }
 
-export function enqueueCrawl<T>(label: string, work: () => Promise<T>, timeoutMs?: number): Promise<T> {
-  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 5 * 60 * 1000 });
+export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
+  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 10 * 60 * 1000 });
 }
 
-export function enqueueMonitor<T>(label: string, work: () => Promise<T>, timeoutMs?: number): Promise<T> {
-  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 5 * 60 * 1000 });
+export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
+  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000 });
 }
 
 export function getQueueStatus(): QueueStats {

@@ -425,14 +425,16 @@ function createConcurrencyLimit(maxConcurrent: number) {
   };
 }
 
-export async function crawlCompetitorWebsite(url: string, options: { useHeadless?: boolean } = {}): Promise<CrawlSummary> {
-  const { useHeadless = true } = options;
+export async function crawlCompetitorWebsite(url: string, options: { useHeadless?: boolean; signal?: AbortSignal } = {}): Promise<CrawlSummary> {
+  const { useHeadless = true, signal } = options;
   const limit = createConcurrencyLimit(3);
   const crawledAt = new Date().toISOString();
   const pages: CrawlResult[] = [];
   let socialLinks: CrawlSummary["socialLinks"] = {};
   let blogSnapshot: CrawlSummary["blogSnapshot"] | undefined;
   let crawlMethod: "headless" | "http" = "http";
+  
+  if (signal?.aborted) throw new Error("Crawl aborted before start");
   
   console.log(`[Web Crawler] Starting crawl of ${url} (headless: ${useHeadless})`);
   
@@ -487,6 +489,7 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
     pagesToCrawl.map(({ url: pageUrl, type }) =>
       limit(async () => {
         try {
+          if (signal?.aborted) return null;
           if (crawledUrls.has(pageUrl)) return null;
           crawledUrls.add(pageUrl);
           
@@ -554,12 +557,12 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
     }
   }
   
-  // Crawl discovered sub-pages
   if (subPageUrls.length > 0) {
     const subPages = await Promise.all(
       subPageUrls.slice(0, 10).map((subUrl) =>
         limit(async () => {
           try {
+            if (signal?.aborted) return null;
             if (crawledUrls.has(subUrl)) return null;
             crawledUrls.add(subUrl);
             

@@ -6814,6 +6814,108 @@ Respond in JSON format:
     }
   });
 
+  app.get("/api/admin/flagged-crawls", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+
+      const [flaggedCompetitors, flaggedProducts] = await Promise.all([
+        storage.getFlaggedCompetitors(),
+        storage.getFlaggedProducts(),
+      ]);
+
+      const isGlobalAdmin = user.role === "Global Admin";
+      res.json({
+        competitors: flaggedCompetitors
+          .filter(c => isGlobalAdmin || c.tenantDomain === user.tenantDomain)
+          .map(c => ({
+            id: c.id,
+            name: c.name,
+            url: c.url,
+            consecutiveCrawlFailures: c.consecutiveCrawlFailures,
+            crawlFlaggedAt: c.crawlFlaggedAt,
+            excludeFromCrawl: c.excludeFromCrawl,
+            tenantDomain: c.tenantDomain,
+            marketId: c.marketId,
+          })),
+        products: flaggedProducts
+          .filter(p => isGlobalAdmin || p.tenantDomain === user.tenantDomain)
+          .map(p => ({
+            id: p.id,
+            name: p.name,
+            url: p.url,
+            consecutiveCrawlFailures: p.consecutiveCrawlFailures,
+            crawlFlaggedAt: p.crawlFlaggedAt,
+            excludeFromCrawl: p.excludeFromCrawl,
+            tenantDomain: p.tenantDomain,
+            marketId: p.marketId,
+          })),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/flagged-crawls/:type/:id/exclude", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+
+      const { type, id } = req.params;
+      const isGlobalAdmin = user.role === "Global Admin";
+      if (type === "competitor") {
+        const competitor = await storage.getCompetitor(id);
+        if (!competitor) return res.status(404).json({ error: "Competitor not found" });
+        if (!isGlobalAdmin && competitor.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateCompetitor(id, { excludeFromCrawl: true });
+        res.json(updated);
+      } else if (type === "product") {
+        const product = await storage.getProduct(id);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        if (!isGlobalAdmin && product.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateProduct(id, { excludeFromCrawl: true });
+        res.json(updated);
+      } else {
+        res.status(400).json({ error: "Invalid type. Must be 'competitor' or 'product'" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/flagged-crawls/:type/:id/dismiss", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+
+      const { type, id } = req.params;
+      const isGlobalAdmin = user.role === "Global Admin";
+      if (type === "competitor") {
+        const competitor = await storage.getCompetitor(id);
+        if (!competitor) return res.status(404).json({ error: "Competitor not found" });
+        if (!isGlobalAdmin && competitor.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateCompetitor(id, { crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
+        res.json(updated);
+      } else if (type === "product") {
+        const product = await storage.getProduct(id);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        if (!isGlobalAdmin && product.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateProduct(id, { crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
+        res.json(updated);
+      } else {
+        res.status(400).json({ error: "Invalid type. Must be 'competitor' or 'product'" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/ai-usage/stats", async (req, res) => {
     try {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });

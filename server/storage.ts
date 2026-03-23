@@ -115,7 +115,7 @@ import {
   type InsertOrganization,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count, countDistinct, isNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
 
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -181,6 +181,9 @@ export interface IStorage {
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
   updateCompetitorAnalysis(id: string, analysisData: any): Promise<void>;
   deleteCompetitor(id: string): Promise<void>;
+  incrementCompetitorCrawlFailures(id: string, threshold?: number): Promise<Competitor>;
+  resetCompetitorCrawlFailures(id: string): Promise<Competitor>;
+  getFlaggedCompetitors(): Promise<Competitor[]>;
   
   // Activity methods
   getAllActivity(): Promise<Activity[]>;
@@ -294,6 +297,9 @@ export interface IStorage {
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, data: Partial<Product>): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
+  incrementProductCrawlFailures(id: string, threshold?: number): Promise<Product>;
+  resetProductCrawlFailures(id: string): Promise<Product>;
+  getFlaggedProducts(): Promise<Product[]>;
   
   // Project-Product methods
   getProjectProducts(projectId: string): Promise<Array<ProjectProduct & { product: Product }>>;
@@ -671,6 +677,45 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompetitor(id: string): Promise<void> {
     await db.delete(competitors).where(eq(competitors.id, id));
+  }
+
+  async incrementCompetitorCrawlFailures(id: string, threshold: number = parseInt(process.env.CRAWL_FAILURE_THRESHOLD || "3", 10)): Promise<Competitor> {
+    const [existing] = await db.select().from(competitors).where(eq(competitors.id, id));
+    if (!existing) throw new Error("Competitor not found");
+    const newCount = (existing.consecutiveCrawlFailures || 0) + 1;
+    const updateData: Partial<Competitor> = { consecutiveCrawlFailures: newCount };
+    const isNewlyFlagged = newCount >= threshold && !existing.crawlFlaggedAt;
+    if (isNewlyFlagged) {
+      updateData.crawlFlaggedAt = new Date();
+    }
+    const [updated] = await db.update(competitors).set(updateData).where(eq(competitors.id, id)).returning();
+    if (isNewlyFlagged) {
+      await db.insert(recommendations).values({
+        title: `Crawl failures detected for ${existing.name}`,
+        description: `${existing.name} has failed ${newCount} consecutive crawl attempts. The site may be unreachable or blocking automated crawlers. Consider excluding it from automated crawling.`,
+        area: "crawl_health",
+        impact: "Medium",
+        status: "pending",
+        competitorId: id,
+        tenantDomain: existing.tenantDomain,
+        marketId: existing.marketId,
+      }).catch(err => console.error(`[CrawlFlag] Failed to create recommendation for competitor ${existing.name}:`, err.message));
+    }
+    return updated;
+  }
+
+  async resetCompetitorCrawlFailures(id: string): Promise<Competitor> {
+    const [updated] = await db.update(competitors).set({ consecutiveCrawlFailures: 0, crawlFlaggedAt: null }).where(eq(competitors.id, id)).returning();
+    return updated;
+  }
+
+  async getFlaggedCompetitors(): Promise<Competitor[]> {
+    return await db.select().from(competitors).where(
+      and(
+        isNotNull(competitors.crawlFlaggedAt),
+        eq(competitors.excludeFromCrawl, false)
+      )
+    ).orderBy(desc(competitors.crawlFlaggedAt));
   }
 
   // Activity methods
@@ -1298,6 +1343,45 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProduct(id: string): Promise<void> {
     await db.delete(products).where(eq(products.id, id));
+  }
+
+  async incrementProductCrawlFailures(id: string, threshold: number = parseInt(process.env.CRAWL_FAILURE_THRESHOLD || "3", 10)): Promise<Product> {
+    const [existing] = await db.select().from(products).where(eq(products.id, id));
+    if (!existing) throw new Error("Product not found");
+    const newCount = (existing.consecutiveCrawlFailures || 0) + 1;
+    const updateData: Partial<Product> = { consecutiveCrawlFailures: newCount, updatedAt: new Date() };
+    const isNewlyFlagged = newCount >= threshold && !existing.crawlFlaggedAt;
+    if (isNewlyFlagged) {
+      updateData.crawlFlaggedAt = new Date();
+    }
+    const [updated] = await db.update(products).set(updateData).where(eq(products.id, id)).returning();
+    if (isNewlyFlagged) {
+      await db.insert(recommendations).values({
+        title: `Crawl failures detected for ${existing.name}`,
+        description: `${existing.name} has failed ${newCount} consecutive crawl attempts. The site may be unreachable or blocking automated crawlers. Consider excluding it from automated crawling.`,
+        area: "crawl_health",
+        impact: "Medium",
+        status: "pending",
+        productId: id,
+        tenantDomain: existing.tenantDomain,
+        marketId: existing.marketId,
+      }).catch(err => console.error(`[CrawlFlag] Failed to create recommendation for product ${existing.name}:`, err.message));
+    }
+    return updated;
+  }
+
+  async resetProductCrawlFailures(id: string): Promise<Product> {
+    const [updated] = await db.update(products).set({ consecutiveCrawlFailures: 0, crawlFlaggedAt: null, updatedAt: new Date() }).where(eq(products.id, id)).returning();
+    return updated;
+  }
+
+  async getFlaggedProducts(): Promise<Product[]> {
+    return await db.select().from(products).where(
+      and(
+        isNotNull(products.crawlFlaggedAt),
+        eq(products.excludeFromCrawl, false)
+      )
+    ).orderBy(desc(products.crawlFlaggedAt));
   }
 
   // Project-Product methods

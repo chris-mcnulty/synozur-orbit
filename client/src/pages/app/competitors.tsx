@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users, Lock } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users, Lock, AlertTriangle, Ban } from "lucide-react";
 import { PlanLimitBadge } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -948,6 +948,16 @@ export default function Competitors() {
                                   {analysis && (
                                     <Badge variant="secondary" className="ml-2">
                                       <Brain className="w-3 h-3 mr-1" /> Analyzed
+                                    </Badge>
+                                  )}
+                                  {competitor.crawlFlaggedAt && !competitor.excludeFromCrawl && (
+                                    <Badge variant="outline" className="ml-2 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700">
+                                      <AlertTriangle className="w-3 h-3 mr-1" /> Crawl Issues
+                                    </Badge>
+                                  )}
+                                  {competitor.excludeFromCrawl && (
+                                    <Badge variant="outline" className="ml-2 text-muted-foreground">
+                                      <Ban className="w-3 h-3 mr-1" /> No Crawl
                                     </Badge>
                                   )}
                                 </div>

@@ -178,7 +178,8 @@ JSON:`
 export async function monitorCompetitorWebsite(
   competitorId: string,
   userId?: string,
-  tenantDomain?: string
+  tenantDomain?: string,
+  signal?: AbortSignal
 ): Promise<WebsiteMonitoringResult> {
   const competitor = await storage.getCompetitor(competitorId);
   if (!competitor) {
@@ -190,9 +191,10 @@ export async function monitorCompetitorWebsite(
   try {
     await delay(REQUEST_DELAY_MS + Math.random() * 500);
     
-    const crawlResult = await crawlCompetitorWebsite(competitor.url);
+    const crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
     
     if (crawlResult.pages.length === 0) {
+      await storage.incrementCompetitorCrawlFailures(competitor.id);
       return {
         competitorId: competitor.id,
         competitorName: competitor.name,
@@ -204,6 +206,8 @@ export async function monitorCompetitorWebsite(
       };
     }
     
+    await storage.resetCompetitorCrawlFailures(competitor.id);
+
     const newContent = getCombinedContent(crawlResult);
     const previousContent = competitor.previousWebsiteContent || "";
     
@@ -292,12 +296,15 @@ export async function monitorCompetitorWebsite(
     
   } catch (error: any) {
     console.error(`Error monitoring website for ${competitor.name}:`, error);
+    if (!signal?.aborted) {
+      await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+    }
     return {
       competitorId: competitor.id,
       competitorName: competitor.name,
       hasChanges: false,
       changeScore: 0,
-      status: "error",
+      status: signal?.aborted ? "timeout" : "error",
       message: error.message || "Unknown error occurred",
       pagesMonitored: 0,
     };
@@ -505,7 +512,8 @@ export async function monitorProductWebsite(
   productId: string,
   userId: string,
   tenantDomain: string,
-  marketId?: string
+  marketId?: string,
+  signal?: AbortSignal
 ): Promise<ProductMonitoringResult> {
   const product = await storage.getProduct(productId);
   if (!product) {
@@ -529,9 +537,10 @@ export async function monitorProductWebsite(
   try {
     await delay(REQUEST_DELAY_MS + Math.random() * 500);
 
-    const crawlResult = await crawlCompetitorWebsite(product.url);
+    const crawlResult = await crawlCompetitorWebsite(product.url, { signal });
 
     if (crawlResult.pages.length === 0) {
+      await storage.incrementProductCrawlFailures(product.id);
       return {
         productId: product.id,
         productName: product.name,
@@ -542,6 +551,8 @@ export async function monitorProductWebsite(
         pagesMonitored: 0,
       };
     }
+
+    await storage.resetProductCrawlFailures(product.id);
 
     const newContent = getCombinedContent(crawlResult);
     const previousContent = product.previousWebsiteContent || "";
@@ -614,12 +625,15 @@ export async function monitorProductWebsite(
     };
   } catch (error: any) {
     console.error(`Error monitoring website for product ${product.name}:`, error);
+    if (!signal?.aborted) {
+      await storage.incrementProductCrawlFailures(product.id).catch(() => {});
+    }
     return {
       productId: product.id,
       productName: product.name,
       hasChanges: false,
       changeScore: 0,
-      status: "error",
+      status: signal?.aborted ? "timeout" : "error",
       message: error.message || "Unknown error occurred",
       pagesMonitored: 0,
     };

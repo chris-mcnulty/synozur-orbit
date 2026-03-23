@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw, AlertTriangle, ExternalLink } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -322,6 +322,46 @@ export default function AdminPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/domain-blocklist"] });
+    },
+  });
+
+  const { data: flaggedCrawls } = useQuery<{
+    competitors: Array<{ id: string; name: string; url: string; consecutiveCrawlFailures: number; crawlFlaggedAt: string; tenantDomain: string }>;
+    products: Array<{ id: string; name: string; url: string; consecutiveCrawlFailures: number; crawlFlaggedAt: string; tenantDomain: string }>;
+  }>({
+    queryKey: ["/api/admin/flagged-crawls"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/flagged-crawls", { credentials: "include" });
+      if (!response.ok) return { competitors: [], products: [] };
+      return response.json();
+    },
+  });
+
+  const excludeFromCrawlMutation = useMutation({
+    mutationFn: async ({ type, id }: { type: "competitor" | "product"; id: string }) => {
+      const response = await fetch(`/api/admin/flagged-crawls/${type}/${id}/exclude`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to exclude");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/flagged-crawls"] });
+    },
+  });
+
+  const dismissFlagMutation = useMutation({
+    mutationFn: async ({ type, id }: { type: "competitor" | "product"; id: string }) => {
+      const response = await fetch(`/api/admin/flagged-crawls/${type}/${id}/dismiss`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to dismiss");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/flagged-crawls"] });
     },
   });
 
@@ -1051,6 +1091,124 @@ export default function AdminPage() {
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-flagged-crawls">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Flagged Crawl Sites
+            </CardTitle>
+            <CardDescription>
+              Sites that have repeatedly failed to return crawl results. Consider excluding them from automated crawling.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(!flaggedCrawls?.competitors?.length && !flaggedCrawls?.products?.length) ? (
+              <p className="text-muted-foreground text-sm py-4 text-center">
+                No sites are currently flagged for crawl exclusion.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>URL</TableHead>
+                    <TableHead>Failures</TableHead>
+                    <TableHead>Flagged</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {flaggedCrawls?.competitors?.map((c) => (
+                    <TableRow key={`c-${c.id}`} data-testid={`flagged-competitor-${c.id}`}>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">Competitor</Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                        <a href={c.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary">
+                          {c.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="destructive" className="text-xs">{c.consecutiveCrawlFailures}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(c.crawlFlaggedAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => excludeFromCrawlMutation.mutate({ type: "competitor", id: c.id })}
+                            disabled={excludeFromCrawlMutation.isPending}
+                            data-testid={`exclude-competitor-${c.id}`}
+                          >
+                            <Ban className="h-3 w-3 mr-1" /> Exclude
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => dismissFlagMutation.mutate({ type: "competitor", id: c.id })}
+                            disabled={dismissFlagMutation.isPending}
+                            data-testid={`dismiss-competitor-${c.id}`}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {flaggedCrawls?.products?.map((p) => (
+                    <TableRow key={`p-${p.id}`} data-testid={`flagged-product-${p.id}`}>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">Product</Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                        {p.url ? (
+                          <a href={p.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary">
+                            {p.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="destructive" className="text-xs">{p.consecutiveCrawlFailures}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(p.crawlFlaggedAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => excludeFromCrawlMutation.mutate({ type: "product", id: p.id })}
+                            disabled={excludeFromCrawlMutation.isPending}
+                            data-testid={`exclude-product-${p.id}`}
+                          >
+                            <Ban className="h-3 w-3 mr-1" /> Exclude
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => dismissFlagMutation.mutate({ type: "product", id: p.id })}
+                            disabled={dismissFlagMutation.isPending}
+                            data-testid={`dismiss-product-${p.id}`}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

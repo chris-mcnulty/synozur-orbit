@@ -9,18 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import DataFreshnessBar from "@/components/DataFreshnessBar";
+import { useUser } from "@/lib/userContext";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
   const id = params?.id;
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useUser();
+  const isAdmin = currentUser?.role === "Domain Admin" || currentUser?.role === "Global Admin";
   const [editOpen, setEditOpen] = useState(false);
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
@@ -383,6 +386,42 @@ export default function CompetitorDetail() {
     },
   });
 
+  const excludeFromCrawlMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/flagged-crawls/competitor/${id}/exclude`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to exclude from crawl");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      toast({ title: "Excluded from Crawl", description: "This competitor will no longer be crawled." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to exclude from crawl. Please try again.", variant: "destructive" });
+    },
+  });
+
+  const dismissFlagMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/flagged-crawls/competitor/${id}/dismiss`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to dismiss flag");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      toast({ title: "Flag Dismissed", description: "Crawl failure counter has been reset." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to dismiss flag. Please try again.", variant: "destructive" });
+    },
+  });
+
   const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl;
   const isPremium = monitoringSettings?.isPremium;
 
@@ -416,6 +455,47 @@ export default function CompetitorDetail() {
           <Link href="/app/competitors" className="text-sm text-muted-foreground hover:text-foreground flex items-center mb-4 transition-colors">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors
           </Link>
+
+          {competitor.crawlFlaggedAt && !competitor.excludeFromCrawl && (
+            <div className="mb-4 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 flex items-start gap-3" data-testid="banner-crawl-flagged">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-amber-800 dark:text-amber-300">Repeated crawl failures detected</p>
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                  This competitor has failed {competitor.consecutiveCrawlFailures} consecutive crawl attempts. The site may block automated crawlers. Consider excluding it from crawl.
+                </p>
+                {isAdmin && (
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => excludeFromCrawlMutation.mutate()}
+                      disabled={excludeFromCrawlMutation.isPending}
+                      data-testid="button-exclude-crawl"
+                    >
+                      <Ban className="h-3 w-3 mr-1" /> Exclude from Crawl
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => dismissFlagMutation.mutate()}
+                      disabled={dismissFlagMutation.isPending}
+                      data-testid="button-dismiss-flag"
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {competitor.excludeFromCrawl && (
+            <div className="mb-4 p-3 rounded-lg border border-muted bg-muted/50 flex items-center gap-2 text-sm text-muted-foreground" data-testid="banner-excluded-crawl">
+              <Ban className="h-4 w-4" />
+              <span>This competitor is excluded from automated crawling.</span>
+            </div>
+          )}
           
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
