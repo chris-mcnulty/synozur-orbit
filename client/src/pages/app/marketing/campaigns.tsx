@@ -41,6 +41,7 @@ interface ContentAsset {
   leadImageUrl?: string;
   categoryId?: string;
   status?: string;
+  createdAt?: string;
 }
 
 interface ContentCategory {
@@ -89,6 +90,7 @@ export default function CampaignsPage() {
   const [step, setStep] = useState(0);
   const [assetSearch, setAssetSearch] = useState("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
+  const [assetDateRange, setAssetDateRange] = useState<string>("all");
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -111,6 +113,7 @@ export default function CampaignsPage() {
     setStep(0);
     setAssetSearch("");
     setAssetCategoryFilter("all");
+    setAssetDateRange("all");
   };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -157,6 +160,15 @@ export default function CampaignsPage() {
     if (assetCategoryFilter !== "all") {
       list = list.filter(a => a.categoryId === assetCategoryFilter);
     }
+    if (assetDateRange !== "all") {
+      const now = new Date();
+      const cutoff = new Date(now);
+      if (assetDateRange === "7d") cutoff.setDate(now.getDate() - 7);
+      else if (assetDateRange === "30d") cutoff.setDate(now.getDate() - 30);
+      else if (assetDateRange === "90d") cutoff.setDate(now.getDate() - 90);
+      else if (assetDateRange === "1y") cutoff.setFullYear(now.getFullYear() - 1);
+      list = list.filter(a => a.createdAt && new Date(a.createdAt) >= cutoff);
+    }
     if (assetSearch.trim()) {
       const q = assetSearch.toLowerCase();
       list = list.filter(a =>
@@ -165,7 +177,7 @@ export default function CampaignsPage() {
       );
     }
     return list;
-  }, [activeAssets, assetSearch, assetCategoryFilter]);
+  }, [activeAssets, assetSearch, assetCategoryFilter, assetDateRange]);
 
   const categoryName = (id?: string) => categories.find(c => c.id === id)?.name;
 
@@ -301,7 +313,7 @@ export default function CampaignsPage() {
             <DialogTrigger asChild>
               <Button data-testid="button-new-campaign"><Plus className="w-4 h-4 mr-2" />{isInstant ? "Instant Campaign" : "New Campaign"}</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
               <DialogHeader>
                 <DialogTitle>{isInstant ? "Instant Campaign" : "New Campaign"}</DialogTitle>
               </DialogHeader>
@@ -359,21 +371,21 @@ export default function CampaignsPage() {
               {step === 1 && (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">Select content assets to include in this campaign.</p>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      value={assetSearch}
+                      onChange={e => setAssetSearch(e.target.value)}
+                      placeholder="Search assets..."
+                      className="pl-8 h-9"
+                      data-testid="input-asset-search"
+                    />
+                  </div>
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        value={assetSearch}
-                        onChange={e => setAssetSearch(e.target.value)}
-                        placeholder="Search assets..."
-                        className="pl-8 h-9"
-                        data-testid="input-asset-search"
-                      />
-                    </div>
                     <select
                       value={assetCategoryFilter}
                       onChange={e => setAssetCategoryFilter(e.target.value)}
-                      className="h-9 rounded-md border bg-background px-3 text-sm min-w-[140px]"
+                      className="h-8 rounded-md border bg-background px-2 text-xs flex-1"
                       data-testid="select-asset-category-filter"
                     >
                       <option value="all">All Categories</option>
@@ -381,17 +393,29 @@ export default function CampaignsPage() {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
+                    <select
+                      value={assetDateRange}
+                      onChange={e => setAssetDateRange(e.target.value)}
+                      className="h-8 rounded-md border bg-background px-2 text-xs flex-1"
+                      data-testid="select-asset-date-range"
+                    >
+                      <option value="all">Any Date</option>
+                      <option value="7d">Last 7 Days</option>
+                      <option value="30d">Last 30 Days</option>
+                      <option value="90d">Last 90 Days</option>
+                      <option value="1y">Last Year</option>
+                    </select>
                   </div>
                   {activeAssets.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">No content assets available. Add assets in the Content Library first.</p>
                   ) : filteredAssets.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">No assets match your search.</p>
+                    <p className="text-sm text-muted-foreground text-center py-6">No assets match your filters.</p>
                   ) : (
-                    <div className="max-h-72 overflow-y-auto border rounded-lg divide-y">
+                    <div className="max-h-80 overflow-y-auto border rounded-lg divide-y">
                       {filteredAssets.map(asset => (
                         <label
                           key={asset.id}
-                          className={`flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer transition-colors ${
+                          className={`flex items-center gap-2 px-2 py-2 hover:bg-muted/50 cursor-pointer transition-colors ${
                             form.selectedAssetIds.includes(asset.id) ? "bg-primary/5" : ""
                           }`}
                           data-testid={`checkbox-asset-${asset.id}`}
@@ -406,11 +430,13 @@ export default function CampaignsPage() {
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium leading-tight truncate">{asset.title}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-1.5 mt-0.5">
                               {categoryName(asset.categoryId) && (
                                 <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{categoryName(asset.categoryId)}</span>
                               )}
-                              {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                              {asset.createdAt && (
+                                <span className="text-[10px] text-muted-foreground">{format(new Date(asset.createdAt), "MMM d, yyyy")}</span>
+                              )}
                             </div>
                           </div>
                         </label>
