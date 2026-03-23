@@ -776,33 +776,43 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.get("/api/campaigns", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const rows = await db.select().from(campaigns)
-      .where(and(
-        eq(campaigns.tenantDomain, ctx.tenantDomain),
-        eq(campaigns.marketId, ctx.marketId),
-      ))
-      .orderBy(desc(campaigns.createdAt));
-    res.json(rows);
+    try {
+      const ctx = await getRequestContext(req);
+      const rows = await db.select().from(campaigns)
+        .where(and(
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+        ))
+        .orderBy(desc(campaigns.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[Campaigns List Error]", err.message);
+      res.status(500).json({ error: "Failed to load campaigns" });
+    }
   });
 
   app.get("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(
-        eq(campaigns.id, req.params.id),
-        eq(campaigns.tenantDomain, ctx.tenantDomain),
-      ));
-    if (!campaign) return res.status(404).json({ error: "Not found" });
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ));
+      if (!campaign) return res.status(404).json({ error: "Not found" });
 
-    const assets = await db.select().from(campaignAssets)
-      .where(eq(campaignAssets.campaignId, campaign.id))
-      .orderBy(campaignAssets.sortOrder);
-    const socialAccts = await db.select().from(campaignSocialAccounts)
-      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+      const assets = await db.select().from(campaignAssets)
+        .where(eq(campaignAssets.campaignId, campaign.id))
+        .orderBy(campaignAssets.sortOrder);
+      const socialAccts = await db.select().from(campaignSocialAccounts)
+        .where(eq(campaignSocialAccounts.campaignId, campaign.id));
 
-    res.json({ ...campaign, assets, socialAccounts: socialAccts });
+      res.json({ ...campaign, assets, socialAccounts: socialAccts });
+    } catch (err: any) {
+      console.error("[Campaign Detail Error]", err.message);
+      res.status(500).json({ error: "Failed to load campaign" });
+    }
   });
 
   app.post("/api/campaigns", async (req, res) => {
@@ -1093,14 +1103,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.get("/api/campaigns/:id/generated-posts", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const posts = await db.select().from(generatedPosts)
-      .where(eq(generatedPosts.campaignId, campaign.id))
-      .orderBy(generatedPosts.platform, desc(generatedPosts.createdAt));
-    res.json(posts);
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const posts = await db.select().from(generatedPosts)
+        .where(eq(generatedPosts.campaignId, campaign.id))
+        .orderBy(generatedPosts.platform, desc(generatedPosts.createdAt));
+      res.json(posts);
+    } catch (err: any) {
+      console.error("[Generated Posts List Error]", err.message);
+      res.status(500).json({ error: "Failed to load generated posts" });
+    }
   });
 
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
@@ -1515,53 +1530,63 @@ async function generatePostsAsync(
       const variantGroupId = randomUUID();
       const prompt = `You are an expert B2B social media copywriter. Generate ${VARIANTS_PER_ACCOUNT} variant ${account.platform} posts for the account "${account.accountName}" based on the following content.
 
-IMPORTANT: Before using the content below, you MUST strip and ignore all non-editorial material that may have been captured from the source web page. This includes but is not limited to:
-- Copyright notices and legal disclaimers
-- Cookie consent banners and privacy notices
-- Navigation menus, breadcrumbs, and site headers/footers
-- Newsletter signup forms and CTAs from the website itself
-- Boilerplate "About Us" or company info sections
-- Social sharing buttons text
-- Comment sections
-- Any text that is clearly not part of the actual article/page editorial content
-
-Only use the actual article substance, key messages, and editorial content for writing the posts.
+IMPORTANT RULES — follow these strictly:
+1. Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate "About Us", social sharing button text, comment sections. Only use the actual article substance and key messages.
+2. Do NOT include any URLs or links in the post content — the user will add their own links when publishing.
+3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
+4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
+5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
+6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
 
-## Platform Guidelines\n${platformGuide}
+## Platform Guidelines
+${platformGuide}
 
 Each variant should take a different angle, tone, or hook while staying on-brand and on-message.
 
-Return a JSON array of ${VARIANTS_PER_ACCOUNT} objects, each with:
-- content: string (the post body)
-- hashtags: string[] (3-5 relevant hashtags without the # symbol)
-- imagePrompt: string (a suggested image description for this post)`;
+Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANTS_PER_ACCOUNT} objects, each with:
+- "content": string (the post body — no URLs, no inline hashtags)
+- "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
+- "imagePrompt": string (a suggested image description for this post)`;
 
       const result = await completeForFeature("marketing_tasks", prompt);
 
       let variants: any[] = [];
       try {
-        const jsonMatch = result.text.match(/\[[\s\S]*\]/);
+        let cleaned = result.text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
+        const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           variants = JSON.parse(jsonMatch[0]);
         } else {
-          const objMatch = result.text.match(/\{[\s\S]*\}/);
-          variants = objMatch ? [JSON.parse(objMatch[0])] : [{ content: result.text, hashtags: [], imagePrompt: "" }];
+          const objMatch = cleaned.match(/\{[\s\S]*\}/);
+          variants = objMatch ? [JSON.parse(objMatch[0])] : [{ content: cleaned, hashtags: [], imagePrompt: "" }];
         }
       } catch {
         variants = [{ content: result.text, hashtags: [], imagePrompt: "" }];
       }
 
       for (const parsed of variants) {
+        let postContent = (parsed.content ?? result.text).trim();
+        postContent = postContent.replace(/https?:\/\/[^\s)]+/g, "").trim();
+        postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
+
+        let hashtags: string[] = (parsed.hashtags ?? [])
+          .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+          .filter((h: string) => h.length > 0 && h.length < 50);
+
+        if (account.platform === "twitter" && postContent.length > 280) {
+          postContent = postContent.substring(0, 277) + "...";
+        }
+
         generatedRows.push({
           id: randomUUID(),
           campaignId,
           socialAccountId: account.id === "placeholder" ? null : account.id,
           tenantDomain,
           platform: account.platform,
-          content: parsed.content ?? result.text,
-          hashtags: parsed.hashtags ?? [],
+          content: postContent,
+          hashtags,
           imagePrompt: parsed.imagePrompt ?? "",
           variantGroup: variantGroupId,
           generationJobId: jobId,
@@ -1596,17 +1621,17 @@ Return a JSON array of ${VARIANTS_PER_ACCOUNT} objects, each with:
       .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: generatedRows.length } })
       .where(eq(scheduledJobRuns.id, jobId));
   } catch (err: any) {
+    console.error("[Saturn] Post generation failed:", err.message, err.stack);
     await db.update(scheduledJobRuns)
       .set({ status: "failed", completedAt: new Date(), errorMessage: err.message })
       .where(eq(scheduledJobRuns.id, jobId));
-    throw err;
   }
 }
 
 function getPlatformGuide(platform: string): string {
   const guides: Record<string, string> = {
     linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability.",
-    twitter: "Concise and punchy. Max 280 characters. Conversational. One key message only.",
+    twitter: "HARD LIMIT: 280 characters maximum including spaces. Count every character. Concise and punchy. Conversational. One key message only. Do NOT exceed 280 characters.",
     instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line.",
     facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA.",
   };
