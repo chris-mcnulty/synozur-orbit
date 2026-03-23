@@ -45,9 +45,9 @@ export default function SocialAccountsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+  const [form, setForm] = useState({ platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+  const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -82,7 +82,7 @@ export default function SocialAccountsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
       setAddOpen(false);
-      setForm({ platform: "linkedin", accountName: "", profileUrl: "", notes: "" });
+      setForm({ platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
       toast({ title: "Social account added" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -94,7 +94,7 @@ export default function SocialAccountsPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ platform: data.platform, accountName: data.accountName, profileUrl: data.profileUrl, notes: data.notes }),
+        body: JSON.stringify({ platform: data.platform, accountName: data.accountName, accountId: data.accountId, profileUrl: data.profileUrl, notes: data.notes }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -164,12 +164,13 @@ export default function SocialAccountsPage() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Add Social Account</DialogTitle>
+                <DialogDescription>Add a social media account to use in campaigns and post exports.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Platform *</Label>
+                  <Label>Platform</Label>
                   <Select value={form.platform} onValueChange={v => setForm(f => ({ ...f, platform: v }))}>
-                    <SelectTrigger>
+                    <SelectTrigger data-testid="select-add-platform">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -180,24 +181,24 @@ export default function SocialAccountsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Account Name / Handle *</Label>
-                  <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="@yourcompany" />
+                  <Label>Account Name</Label>
+                  <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="Synozur Alliance" data-testid="input-add-account-name" />
                 </div>
                 <div>
-                  <Label>Profile URL</Label>
-                  <Input value={form.profileUrl} onChange={e => setForm(f => ({ ...f, profileUrl: e.target.value }))} placeholder="https://linkedin.com/company/..." />
+                  <Label>Account ID</Label>
+                  <Input value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))} placeholder="SocialPilot account number" data-testid="input-add-account-id" />
                 </div>
-                <div>
-                  <Label>Notes</Label>
-                  <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                <div className="flex gap-4 pt-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setAddOpen(false)} data-testid="button-cancel-add-account">Cancel</Button>
+                  <Button
+                    className="flex-1"
+                    disabled={!form.accountName.trim() || createMutation.isPending}
+                    onClick={() => createMutation.mutate(form)}
+                    data-testid="button-submit-add-account"
+                  >
+                    {createMutation.isPending ? "Adding..." : "Add Account"}
+                  </Button>
                 </div>
-                <Button
-                  className="w-full"
-                  disabled={!form.accountName.trim() || createMutation.isPending}
-                  onClick={() => createMutation.mutate(form)}
-                >
-                  {createMutation.isPending ? "Adding..." : "Add Account"}
-                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -227,7 +228,7 @@ export default function SocialAccountsPage() {
                         size="icon"
                         className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
                         onClick={() => {
-                          setEditForm({ id: account.id, platform: account.platform, accountName: account.accountName, profileUrl: account.profileUrl || "", notes: account.notes || "" });
+                          setEditForm({ id: account.id, platform: account.platform, accountName: account.accountName, accountId: account.accountId || "", profileUrl: account.profileUrl || "", notes: account.notes || "" });
                           setEditOpen(true);
                         }}
                         data-testid={`button-edit-account-${account.id}`}
@@ -246,13 +247,16 @@ export default function SocialAccountsPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-0">
+                <CardContent className="pt-0 space-y-1">
+                  {account.accountId && (
+                    <p className="text-xs text-muted-foreground">ID: <span className="font-mono">{account.accountId}</span></p>
+                  )}
                   {account.profileUrl && (
                     <a href={account.profileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate block">
                       {account.profileUrl}
                     </a>
                   )}
-                  {account.notes && <p className="text-xs text-muted-foreground mt-1">{account.notes}</p>}
+                  {account.notes && <p className="text-xs text-muted-foreground">{account.notes}</p>}
                 </CardContent>
               </Card>
             ))}
@@ -263,11 +267,10 @@ export default function SocialAccountsPage() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit Social Account</DialogTitle>
-              <DialogDescription>Update account details.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>Platform *</Label>
+                <Label>Platform</Label>
                 <Select value={editForm.platform} onValueChange={v => setEditForm(f => ({ ...f, platform: v }))}>
                   <SelectTrigger data-testid="select-edit-platform">
                     <SelectValue />
@@ -280,25 +283,24 @@ export default function SocialAccountsPage() {
                 </Select>
               </div>
               <div>
-                <Label>Account Name / Handle *</Label>
+                <Label>Account Name</Label>
                 <Input value={editForm.accountName} onChange={e => setEditForm(f => ({ ...f, accountName: e.target.value }))} data-testid="input-edit-account-name" />
               </div>
               <div>
-                <Label>Profile URL</Label>
-                <Input value={editForm.profileUrl} onChange={e => setEditForm(f => ({ ...f, profileUrl: e.target.value }))} data-testid="input-edit-profile-url" />
+                <Label>Account ID</Label>
+                <Input value={editForm.accountId} onChange={e => setEditForm(f => ({ ...f, accountId: e.target.value }))} placeholder="SocialPilot account number" data-testid="input-edit-account-id" />
               </div>
-              <div>
-                <Label>Notes</Label>
-                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} data-testid="input-edit-notes" />
+              <div className="flex gap-4 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit-account">Cancel</Button>
+                <Button
+                  className="flex-1"
+                  disabled={!editForm.accountName.trim() || editMutation.isPending}
+                  onClick={() => editMutation.mutate(editForm)}
+                  data-testid="button-save-edit-account"
+                >
+                  {editMutation.isPending ? "Saving..." : "Update"}
+                </Button>
               </div>
-              <Button
-                className="w-full"
-                disabled={!editForm.accountName.trim() || editMutation.isPending}
-                onClick={() => editMutation.mutate(editForm)}
-                data-testid="button-save-edit-account"
-              >
-                {editMutation.isPending ? "Saving..." : "Save Changes"}
-              </Button>
             </div>
           </DialogContent>
         </Dialog>
