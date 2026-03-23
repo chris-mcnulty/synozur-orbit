@@ -33,7 +33,6 @@ import {
   Rocket,
   Megaphone,
   MessageCircle,
-  Share2,
   Mail,
   Library,
   Image,
@@ -266,7 +265,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (f.pdfReports === false) locked.add("/app/reports");
     if (f.marketingPlanner === false) locked.add("/app/marketing-planner");
     if (f.socialMonitoring === false) locked.add("/app/activity");
-    if (f.socialPosts === false) locked.add("/app/marketing/social-posts");
     if (f.emailNewsletters === false) locked.add("/app/marketing/email-newsletters");
     if (f.contentLibrary === false) locked.add("/app/marketing/content-library");
     if (f.brandLibrary === false) locked.add("/app/marketing/brand-library");
@@ -418,8 +416,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
-        { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
-        { label: "Social Posts", icon: Share2, href: "/app/marketing/social-posts", enterprise: true },
+        { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
         { label: "Content Library", icon: Library, href: "/app/marketing/content-library", enterprise: true },
         { label: "Brand Library", icon: Image, href: "/app/marketing/brand-library", enterprise: true },

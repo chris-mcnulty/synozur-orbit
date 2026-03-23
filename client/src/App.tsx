@@ -41,7 +41,6 @@ import MarketingPlannerPage from "@/pages/app/marketing-planner";
 import MarketingPlanDetail from "@/pages/app/marketing-plan-detail";
 import GtmPlanPage from "@/pages/app/marketing/gtm-plan";
 import MessagingFrameworkPage from "@/pages/app/marketing/messaging-framework";
-import SocialPostsPage from "@/pages/app/marketing/social-posts";
 import EmailNewslettersPage from "@/pages/app/marketing/email-newsletters";
 import MarketingLandingPage from "@/pages/app/marketing/index";
 import ContentLibraryPage from "@/pages/app/marketing/content-library";
@@ -116,7 +115,7 @@ function Router() {
       <Route path="/app/marketing" component={MarketingLandingPage} />
       <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
-      <Route path="/app/marketing/social-posts" component={SocialPostsPage} />
+      <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
       <Route path="/app/marketing/content-library" component={ContentLibraryPage} />
       <Route path="/app/marketing/brand-library" component={BrandLibraryPage} />
