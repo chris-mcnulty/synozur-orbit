@@ -779,7 +779,7 @@ export default function ContentLibraryPage() {
                                   checked={form.productIds.includes(p.id)}
                                   onCheckedChange={() => toggleProduct(p.id)}
                                 >
-                                  {p.name} {p.isBaseline && <Badge variant="secondary" className="ml-1 text-[10px]">Yours</Badge>}
+                                  {p.name}
                                 </DropdownMenuCheckboxItem>
                               ))}
                             </DropdownMenuContent>
@@ -919,7 +919,7 @@ export default function ContentLibraryPage() {
                                   checked={form.productIds.includes(p.id)}
                                   onCheckedChange={() => toggleProduct(p.id)}
                                 >
-                                  {p.name} {p.isBaseline && <Badge variant="secondary" className="ml-1 text-[10px]">Yours</Badge>}
+                                  {p.name}
                                 </DropdownMenuCheckboxItem>
                               ))}
                             </DropdownMenuContent>

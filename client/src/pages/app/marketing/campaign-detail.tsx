@@ -29,6 +29,7 @@ import {
   CalendarDays,
   FileDown,
   Copy,
+  Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +44,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import { format, addDays } from "date-fns";
 
 interface Campaign {
@@ -55,8 +63,15 @@ interface Campaign {
   numberOfDays?: number;
   includeSaturday?: boolean;
   includeSunday?: boolean;
+  productIds?: string[];
   assets: CampaignAsset[];
   socialAccounts: CampaignSocialAccount[];
+}
+
+interface MarketProduct {
+  id: string;
+  name: string;
+  isBaseline: boolean;
 }
 
 interface CampaignAsset {
@@ -158,6 +173,14 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const { data: marketProducts = [] } = useQuery<MarketProduct[]>({
+    queryKey: ["/api/marketing/products"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing/products", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+
   const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
     queryKey: ["/api/brand-assets"],
     queryFn: async () => {
@@ -242,6 +265,34 @@ export default function CampaignDetailPage() {
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const updateCampaignProductsMutation = useMutation({
+    mutationFn: async (productIds: string[]) => {
+      const r = await fetch(`/api/campaigns/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ productIds }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Products updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleCampaignProduct = (productId: string) => {
+    if (!campaign) return;
+    const current = campaign.productIds || [];
+    const updated = current.includes(productId)
+      ? current.filter(x => x !== productId)
+      : [...current, productId];
+    updateCampaignProductsMutation.mutate(updated);
+  };
 
   const updateCampaignStatusMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -536,6 +587,39 @@ export default function CampaignDetailPage() {
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-campaign-name">{campaign.name}</h1>
             {campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
+            <div className="flex flex-wrap items-center gap-1 mt-2" data-testid="campaign-detail-products">
+              {campaign.productIds && campaign.productIds.length > 0 && campaign.productIds.map(pid => {
+                const product = marketProducts.find(p => p.id === pid);
+                return product ? (
+                  <Badge key={pid} variant="outline" className="text-[10px] gap-1">
+                    <Package className="w-2.5 h-2.5" />{product.name}
+                  </Badge>
+                ) : null;
+              })}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" data-testid="button-edit-campaign-products">
+                    <Package className="w-3 h-3" />
+                    {campaign.productIds && campaign.productIds.length > 0 ? "Edit" : "Add Products"}
+                    <ChevronDown className="w-3 h-3 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                  {marketProducts.length === 0 ? (
+                    <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
+                  ) : marketProducts.map(p => (
+                    <DropdownMenuCheckboxItem
+                      key={p.id}
+                      checked={(campaign.productIds || []).includes(p.id)}
+                      onCheckedChange={() => toggleCampaignProduct(p.id)}
+                      data-testid={`checkbox-edit-campaign-product-${p.id}`}
+                    >
+                      {p.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             {campaign.startDate && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2">
                 <Calendar className="w-3 h-3" />

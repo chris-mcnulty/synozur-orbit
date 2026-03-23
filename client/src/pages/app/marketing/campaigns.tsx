@@ -19,6 +19,13 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown, Package } from "lucide-react";
 import { format, addDays } from "date-fns";
 
 interface Campaign {
@@ -31,7 +38,14 @@ interface Campaign {
   numberOfDays?: number;
   includeSaturday?: boolean;
   includeSunday?: boolean;
+  productIds?: string[];
   createdAt: string;
+}
+
+interface MarketProduct {
+  id: string;
+  name: string;
+  isBaseline: boolean;
 }
 
 interface ContentAsset {
@@ -96,6 +110,7 @@ export default function CampaignsPage() {
     description: "",
     selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [] as string[],
     selectedSocialIds: [] as string[],
+    selectedProductIds: [] as string[],
     startDate: format(new Date(), "yyyy-MM-dd"),
     numberOfDays: 7,
     includeSaturday: false,
@@ -107,6 +122,7 @@ export default function CampaignsPage() {
       name: "", description: "",
       selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [],
       selectedSocialIds: [],
+      selectedProductIds: [],
       startDate: format(new Date(), "yyyy-MM-dd"),
       numberOfDays: 7, includeSaturday: false, includeSunday: false,
     });
@@ -201,6 +217,26 @@ export default function CampaignsPage() {
     enabled: isAllowed,
   });
 
+  const { data: marketProducts = [] } = useQuery<MarketProduct[]>({
+    queryKey: ["/api/marketing/products"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing/products", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const toggleProduct = (id: string) => {
+    setForm(f => ({
+      ...f,
+      selectedProductIds: f.selectedProductIds.includes(id)
+        ? f.selectedProductIds.filter(x => x !== id)
+        : [...f.selectedProductIds, id],
+    }));
+  };
+
+  const productName = (id: string) => marketProducts.find(p => p.id === id)?.name;
+
   const computedEndDate = useMemo(() => {
     if (!form.startDate || !form.numberOfDays) return null;
     return calculateEndDate(form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday);
@@ -223,6 +259,7 @@ export default function CampaignsPage() {
           includeSunday: form.includeSunday,
           assetIds: form.selectedAssetIds,
           socialAccountIds: form.selectedSocialIds,
+          productIds: form.selectedProductIds,
         }),
       });
       if (!r.ok) {
@@ -356,6 +393,31 @@ export default function CampaignsPage() {
                       rows={3}
                       data-testid="input-campaign-description"
                     />
+                  </div>
+                  <div>
+                    <Label>Products</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-campaign-select-products">
+                          {form.selectedProductIds.length ? `${form.selectedProductIds.length} selected` : "Select products"}
+                          <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                        {marketProducts.length === 0 ? (
+                          <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
+                        ) : marketProducts.map(p => (
+                          <DropdownMenuCheckboxItem
+                            key={p.id}
+                            checked={form.selectedProductIds.includes(p.id)}
+                            onCheckedChange={() => toggleProduct(p.id)}
+                            data-testid={`checkbox-campaign-product-${p.id}`}
+                          >
+                            {p.name}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <Button
                     className="w-full"
@@ -592,6 +654,18 @@ export default function CampaignsPage() {
                   {c.description && <CardDescription className="line-clamp-2">{c.description}</CardDescription>}
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
+                  {c.productIds && c.productIds.length > 0 && (
+                    <div className="flex flex-wrap gap-1" data-testid={`campaign-products-${c.id}`}>
+                      {c.productIds.map(pid => {
+                        const name = productName(pid);
+                        return name ? (
+                          <Badge key={pid} variant="outline" className="text-[10px] gap-1">
+                            <Package className="w-2.5 h-2.5" />{name}
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
                   {c.startDate && (
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Calendar className="w-3 h-3" />

@@ -534,6 +534,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(products.tenantDomain, ctx.tenantDomain),
         eq(products.marketId, ctx.marketId),
+        eq(products.isBaseline, true),
       ))
       .orderBy(products.name);
     res.json(rows);
@@ -824,7 +825,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const validAssetIds: string[] = [];
@@ -864,6 +865,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           numberOfDays: numberOfDays ?? null,
           includeSaturday: includeSaturday ?? false,
           includeSunday: includeSunday ?? false,
+          productIds: Array.isArray(productIds) ? productIds : null,
           createdBy: ctx.userId,
         } as InsertCampaign);
 
@@ -900,7 +902,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday } = req.body;
+    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds } = req.body;
     const updateData: any = { updatedAt: new Date() };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
@@ -910,6 +912,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
     if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
     if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
+    if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
     const [row] = await db.update(campaigns)
       .set(updateData)
       .where(and(
@@ -954,6 +957,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         numberOfDays: source.numberOfDays,
         includeSaturday: source.includeSaturday,
         includeSunday: source.includeSunday,
+        productIds: source.productIds,
         status: "draft",
         createdBy: ctx.userId,
       } as InsertCampaign);
