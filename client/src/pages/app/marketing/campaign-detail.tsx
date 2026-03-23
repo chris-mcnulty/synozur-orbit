@@ -159,6 +159,15 @@ export default function CampaignDetailPage() {
   const [editingEmailPlatform, setEditingEmailPlatform] = useState<string>("outlook");
   const [editEmailSubject, setEditEmailSubject] = useState("");
   const [editEmailBody, setEditEmailBody] = useState("");
+  const [editCampaignOpen, setEditCampaignOpen] = useState(false);
+  const [editCampaignName, setEditCampaignName] = useState("");
+  const [editCampaignDescription, setEditCampaignDescription] = useState("");
+  const [editCampaignStartDate, setEditCampaignStartDate] = useState("");
+  const [editCampaignEndDate, setEditCampaignEndDate] = useState("");
+  const [editCampaignDays, setEditCampaignDays] = useState<number | "">("");
+  const [editCampaignSaturday, setEditCampaignSaturday] = useState(false);
+  const [editCampaignSunday, setEditCampaignSunday] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -323,6 +332,65 @@ export default function CampaignDetailPage() {
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const editCampaignMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean }) => {
+      const r = await fetch(`/api/campaigns/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      setEditCampaignOpen(false);
+      toast({ title: "Campaign updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteCampaignMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Failed to delete campaign");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Campaign deleted" });
+      navigate("/app/marketing/campaigns");
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const openEditCampaign = () => {
+    if (!campaign) return;
+    setEditCampaignName(campaign.name);
+    setEditCampaignDescription(campaign.description || "");
+    setEditCampaignStartDate(campaign.startDate ? new Date(campaign.startDate).toISOString().split("T")[0] : "");
+    setEditCampaignEndDate(campaign.endDate ? new Date(campaign.endDate).toISOString().split("T")[0] : "");
+    setEditCampaignDays(campaign.numberOfDays || "");
+    setEditCampaignSaturday(campaign.includeSaturday || false);
+    setEditCampaignSunday(campaign.includeSunday || false);
+    setEditCampaignOpen(true);
+  };
+
+  const handleEditCampaignSubmit = () => {
+    editCampaignMutation.mutate({
+      name: editCampaignName,
+      description: editCampaignDescription || undefined,
+      startDate: editCampaignStartDate || null,
+      endDate: editCampaignEndDate || null,
+      numberOfDays: editCampaignDays ? Number(editCampaignDays) : null,
+      includeSaturday: editCampaignSaturday,
+      includeSunday: editCampaignSunday,
+    });
+  };
 
   const updateEmailMutation = useMutation({
     mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
@@ -682,12 +750,32 @@ export default function CampaignDetailPage() {
               variant="outline"
               size="sm"
               className="gap-1.5"
+              onClick={openEditCampaign}
+              data-testid="button-edit-campaign"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
               onClick={() => duplicateCampaignMutation.mutate()}
               disabled={duplicateCampaignMutation.isPending}
               data-testid="button-duplicate-campaign"
             >
               <Copy className="w-3.5 h-3.5" />
               {duplicateCampaignMutation.isPending ? "Duplicating..." : "Duplicate"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-destructive hover:text-destructive"
+              onClick={() => setDeleteConfirmOpen(true)}
+              data-testid="button-delete-campaign"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete
             </Button>
             <Select
               value={campaign.status}
@@ -1377,6 +1465,120 @@ export default function CampaignDetailPage() {
                 ))}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editCampaignOpen} onOpenChange={setEditCampaignOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Edit Campaign</DialogTitle>
+            <DialogDescription>Update campaign details.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-name">Name</Label>
+              <Input
+                id="edit-campaign-name"
+                value={editCampaignName}
+                onChange={e => setEditCampaignName(e.target.value)}
+                data-testid="input-edit-campaign-name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-desc">Description</Label>
+              <Textarea
+                id="edit-campaign-desc"
+                value={editCampaignDescription}
+                onChange={e => setEditCampaignDescription(e.target.value)}
+                rows={2}
+                data-testid="input-edit-campaign-description"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-campaign-start">Start Date</Label>
+                <Input
+                  id="edit-campaign-start"
+                  type="date"
+                  value={editCampaignStartDate}
+                  onChange={e => setEditCampaignStartDate(e.target.value)}
+                  data-testid="input-edit-campaign-start"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-campaign-end">End Date</Label>
+                <Input
+                  id="edit-campaign-end"
+                  type="date"
+                  value={editCampaignEndDate}
+                  onChange={e => setEditCampaignEndDate(e.target.value)}
+                  data-testid="input-edit-campaign-end"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-days">Number of Days</Label>
+              <Input
+                id="edit-campaign-days"
+                type="number"
+                min={1}
+                value={editCampaignDays}
+                onChange={e => setEditCampaignDays(e.target.value ? Number(e.target.value) : "")}
+                placeholder="Auto-calculated from dates"
+                data-testid="input-edit-campaign-days"
+              />
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={editCampaignSaturday}
+                  onCheckedChange={(v) => setEditCampaignSaturday(!!v)}
+                  data-testid="checkbox-edit-campaign-saturday"
+                />
+                Include Saturdays
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={editCampaignSunday}
+                  onCheckedChange={(v) => setEditCampaignSunday(!!v)}
+                  data-testid="checkbox-edit-campaign-sunday"
+                />
+                Include Sundays
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditCampaignOpen(false)} data-testid="button-cancel-edit-campaign">Cancel</Button>
+            <Button
+              onClick={handleEditCampaignSubmit}
+              disabled={!editCampaignName.trim() || editCampaignMutation.isPending}
+              data-testid="button-save-edit-campaign"
+            >
+              {editCampaignMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete Campaign</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{campaign?.name}"? This will archive the campaign and all its content.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} data-testid="button-cancel-delete-campaign">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteCampaignMutation.mutate()}
+              disabled={deleteCampaignMutation.isPending}
+              data-testid="button-confirm-delete-campaign"
+            >
+              {deleteCampaignMutation.isPending ? "Deleting..." : "Delete Campaign"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
