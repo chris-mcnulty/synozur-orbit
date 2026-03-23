@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List, RefreshCw
+  Download, Upload, LayoutGrid, List, RefreshCw, Mail
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -641,6 +641,15 @@ export default function ContentLibraryPage() {
             variant="ghost"
             size="sm"
             className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            onClick={e => { e.stopPropagation(); navigate(`/app/marketing/email-newsletters?assetId=${asset.id}`); }}
+            data-testid={`button-generate-email-${asset.id}`}
+          >
+            <Mail className="w-3 h-3" /> Generate Email
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
             onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
             data-testid={`button-create-campaign-${asset.id}`}
           >
@@ -1248,6 +1257,18 @@ export default function ContentLibraryPage() {
                   </Collapsible>
 
                   <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2"
+                      onClick={() => {
+                        setEditOpen(false);
+                        setDetailAsset(null);
+                        navigate(`/app/marketing/email-newsletters?assetId=${detailAsset.id}`);
+                      }}
+                      data-testid="button-generate-email-from-detail"
+                    >
+                      <Mail className="w-4 h-4" /> Generate Email
+                    </Button>
                     <Button
                       variant="outline"
                       className="flex-1 gap-2"

@@ -35,6 +35,7 @@ import {
   scheduledJobRuns,
   groundingDocuments,
   products,
+  companyProfiles,
   DEFAULT_CONTENT_CATEGORIES,
   DEFAULT_BRAND_ASSET_CATEGORIES,
   type InsertContentAsset,
@@ -1299,11 +1300,34 @@ export function registerSaturnMarketingRoutes(app: Express) {
 - Use line breaks and simple formatting (dashes, asterisks) for structure.
 - Keep the layout clean, scannable, and professional.
 - The email should look natural when pasted into Outlook's compose window.`,
-      "hubspot-marketing": `Generate an HTML email fragment suitable for HubSpot Marketing Email.
-- Use clean, inline-styled HTML (no <html>, <head>, or <body> wrappers).
-- Include styled headings, paragraphs, buttons (as <a> tags with inline styles), and dividers.
-- Make it visually appealing and on-brand.
-- Use a single-column layout optimized for email clients.`,
+      "hubspot-marketing": `Generate a RICH, visually compelling HTML email suitable for HubSpot Marketing Email.
+Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
+
+REQUIRED HTML STRUCTURE:
+- Wrap everything in an outer <table width="100%" style="background-color: #f4f6f9"> with a centered inner <table width="620"> container
+- Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
+- Use table-based layout throughout (email clients don't support flexbox/grid)
+
+REQUIRED SECTIONS (adapt based on content):
+1. **Branded Header Banner**: Dark background with company name in small uppercase letters, a bold headline (h1), and a subheading. Use the brand colors if provided.
+2. **Hero Image**: If the content asset has an image URL, include it as a full-width <img> with width="620" style="display:block;width:100%;height:auto"
+3. **Opening Paragraph**: Personal greeting and context-setting copy (2-3 paragraphs)
+4. **Key Stats / Data Cards**: If the content contains numbers or stats, present them in side-by-side colored stat cards using a 2-column table layout with rounded corners and background colors
+5. **Numbered Highlights**: Present 3-5 key points as numbered items with circular number badges (dark background, white text) and bold titles with descriptions
+6. **Primary CTA Button**: Styled as [CTA_BUTTON: "Button Text" → URL] placeholder. Make it prominent.
+7. **Secondary Content Block**: If multiple assets provided, add another section with image and bullet points
+8. **Closing Section**: Wrap-up message and secondary CTA
+
+VISUAL DESIGN RULES:
+- Use <hr> dividers with style="border:none;border-top:1px solid #e8ecf0" between sections
+- Stat cards: colored backgrounds (#f0f6ff blue, #fff7f0 orange, #f0faf0 green), border-radius:8px, large bold numbers
+- Numbered circles: 40x40px, dark background, white text, border-radius:50%
+- Buttons: Use [CTA_BUTTON: "text" → url] syntax for CTAs
+- Typography: font-family:Arial,sans-serif throughout, headings 22-28px, body 15-16px, line-height:1.6-1.7
+- Colors: dark navy (#0a2540) for headings, #333 for body, #555 for secondary, lighter blues for accents
+- Padding: 32-40px horizontal padding in content cells
+- Use company brand colors for the header banner background and accent elements if brand info is provided
+- Include the company logo image if a logo URL is provided (in the header or footer)`,
       "hubspot-1to1": `Generate a personal, conversational email suitable for HubSpot 1:1 Sales Email.
 - Do NOT use any HTML tags.
 - Write as if one person is emailing another directly.
@@ -1354,10 +1378,46 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .map(d => `[${d.name}]\n${d.extractedText}`)
       .join("\n\n");
 
+    const [companyProfile] = await db.select().from(companyProfiles)
+      .where(and(
+        eq(companyProfiles.tenantDomain, ctx.tenantDomain),
+        eq(companyProfiles.marketId, ctx.marketId),
+      ))
+      .limit(1);
+
+    const logoAssets = await db.select().from(brandAssets)
+      .where(and(
+        eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.status, "active"),
+      ))
+      .limit(5);
+    const logoAsset = logoAssets.find((a: any) =>
+      a.name?.toLowerCase().includes("logo") || a.fileType?.startsWith("image")
+    );
+
+    let brandContext = "";
+    if (companyProfile) {
+      const parts = [`Company Name: ${companyProfile.companyName}`];
+      if (companyProfile.websiteUrl) parts.push(`Website: ${companyProfile.websiteUrl}`);
+      if (companyProfile.logoUrl) parts.push(`Company Logo URL: ${companyProfile.logoUrl}`);
+      else if (logoAsset?.fileUrl) parts.push(`Company Logo URL: ${logoAsset.fileUrl}`);
+      else if (logoAsset?.url) parts.push(`Company Logo URL: ${logoAsset.url}`);
+      if (companyProfile.industry) parts.push(`Industry: ${companyProfile.industry}`);
+      if (companyProfile.description) parts.push(`Company Description: ${companyProfile.description}`);
+      brandContext = parts.join("\n");
+    }
+
+    const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
+    if (tenantRow?.primaryColor || tenantRow?.secondaryColor) {
+      brandContext += `\nBrand Primary Color: ${tenantRow.primaryColor || "#0a2540"}`;
+      brandContext += `\nBrand Secondary Color: ${tenantRow.secondaryColor || "#7eb3e0"}`;
+    }
+
     const assetContext = selectedAssets
       .map((a: any) => {
         const parts = [`## ${a.title}`];
         if (a.url) parts.push(`URL: ${a.url}`);
+        if (a.leadImageUrl) parts.push(`Lead Image URL: ${a.leadImageUrl}`);
         if (a.aiSummary) parts.push(`### AI Summary\n${a.aiSummary}`);
         if (a.content) parts.push(`### Content\n${a.content}`);
         else if (a.description) parts.push(`### Description\n${a.description}`);
@@ -1373,7 +1433,7 @@ ${platformInstruction}
 ## Tone
 ${toneInstruction}
 
-${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets
+${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets
 ${assetContext || "(no assets provided)"}
 
 ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}## Response Format

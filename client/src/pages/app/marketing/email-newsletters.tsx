@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,6 +17,9 @@ import {
   Lightbulb,
   ChevronDown,
   Trash2,
+  Search,
+  ImageIcon,
+  Calendar,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,12 +29,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { useSearch } from "wouter";
 
 interface ContentAsset {
   id: string;
   title: string;
   description?: string;
   aiSummary?: string;
+  leadImageUrl?: string;
+  url?: string;
+  categoryId?: string;
+  createdAt: string;
+  status: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 interface SavedEmail {
@@ -59,6 +73,9 @@ interface PreviewEmail {
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const preselectedAssetId = params.get("assetId");
 
   const [emailPlatform, setEmailPlatform] = useState("outlook");
   const [emailTone, setEmailTone] = useState("professional");
@@ -69,6 +86,10 @@ export default function EmailNewslettersPage() {
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<PreviewEmail | null>(null);
   const [coachingTipsOpen, setCoachingTipsOpen] = useState(false);
+
+  const [assetSearchQuery, setAssetSearchQuery] = useState("");
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
+  const [assetDateSort, setAssetDateSort] = useState<string>("newest");
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
@@ -95,6 +116,15 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed,
   });
 
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ["/api/content-asset-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/content-asset-categories", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
   const { data: savedEmails = [] } = useQuery<SavedEmail[]>({
     queryKey: ["/api/email/saved"],
     queryFn: async () => {
@@ -103,6 +133,46 @@ export default function EmailNewslettersPage() {
     },
     enabled: isAllowed,
   });
+
+  useEffect(() => {
+    if (preselectedAssetId && contentAssets.length > 0) {
+      const exists = contentAssets.some(a => a.id === preselectedAssetId);
+      if (exists && !selectedAssetIds.includes(preselectedAssetId)) {
+        setSelectedAssetIds(prev => [...prev, preselectedAssetId]);
+      }
+    }
+  }, [preselectedAssetId, contentAssets]);
+
+  const categoryName = (catId?: string) => {
+    if (!catId) return "";
+    return categories.find(c => c.id === catId)?.name || "";
+  };
+
+  const activeAssets = contentAssets.filter(a => a.status === "active");
+
+  const filteredAssets = useMemo(() => {
+    let list = activeAssets;
+    if (assetSearchQuery) {
+      const q = assetSearchQuery.toLowerCase();
+      list = list.filter(a =>
+        a.title.toLowerCase().includes(q) ||
+        (a.description || "").toLowerCase().includes(q)
+      );
+    }
+    if (assetCategoryFilter !== "all") {
+      list = list.filter(a => a.categoryId === assetCategoryFilter);
+    }
+    list = [...list].sort((a, b) => {
+      if (assetDateSort === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    return list;
+  }, [activeAssets, assetSearchQuery, assetCategoryFilter, assetDateSort]);
+
+  const usedCategories = useMemo(() => {
+    const ids = new Set(activeAssets.map(a => a.categoryId).filter(Boolean));
+    return categories.filter(c => ids.has(c.id));
+  }, [activeAssets, categories]);
 
   const updateEmailMutation = useMutation({
     mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
@@ -272,23 +342,91 @@ export default function EmailNewslettersPage() {
             <CardDescription>Select content assets and configure your email generation settings.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {contentAssets.length > 0 && (
+            {activeAssets.length > 0 && (
               <div>
                 <label className="text-sm font-medium mb-2 block">Content Assets</label>
-                <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                  {contentAssets.map(asset => (
-                    <label key={asset.id} className="flex items-start gap-2 cursor-pointer hover:bg-muted/50 rounded p-1.5 -m-1.5">
-                      <Checkbox
-                        checked={selectedAssetIds.includes(asset.id)}
-                        onCheckedChange={() => toggleAsset(asset.id)}
-                        data-testid={`checkbox-asset-${asset.id}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{asset.title}</p>
-                        {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
-                      </div>
-                    </label>
-                  ))}
+
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <div className="relative flex-1 min-w-[180px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      value={assetSearchQuery}
+                      onChange={e => setAssetSearchQuery(e.target.value)}
+                      placeholder="Search assets..."
+                      className="h-8 pl-8 text-sm"
+                      data-testid="input-asset-search"
+                    />
+                  </div>
+                  <Select value={assetCategoryFilter} onValueChange={setAssetCategoryFilter}>
+                    <SelectTrigger className="h-8 w-[160px] text-sm" data-testid="select-asset-category-filter">
+                      <Filter className="w-3 h-3 mr-1 text-muted-foreground" />
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {usedCategories.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={assetDateSort} onValueChange={setAssetDateSort}>
+                    <SelectTrigger className="h-8 w-[130px] text-sm" data-testid="select-asset-date-sort">
+                      <Calendar className="w-3 h-3 mr-1 text-muted-foreground" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest First</SelectItem>
+                      <SelectItem value="oldest">Oldest First</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="border rounded-lg max-h-64 overflow-y-auto">
+                  {filteredAssets.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">No assets match your filters.</div>
+                  ) : (
+                    filteredAssets.map(asset => (
+                      <label
+                        key={asset.id}
+                        className={`flex items-start gap-3 cursor-pointer hover:bg-muted/50 p-3 border-b last:border-b-0 transition-colors ${
+                          selectedAssetIds.includes(asset.id) ? "bg-primary/5" : ""
+                        }`}
+                      >
+                        <Checkbox
+                          checked={selectedAssetIds.includes(asset.id)}
+                          onCheckedChange={() => toggleAsset(asset.id)}
+                          className="mt-0.5"
+                          data-testid={`checkbox-asset-${asset.id}`}
+                        />
+                        {asset.leadImageUrl ? (
+                          <div className="w-12 h-12 rounded border overflow-hidden shrink-0 bg-muted">
+                            <img
+                              src={asset.leadImageUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded border flex items-center justify-center shrink-0 bg-muted/50">
+                            <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-tight">{asset.title}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {categoryName(asset.categoryId) && (
+                              <Badge variant="outline" className="text-[10px] h-4">{categoryName(asset.categoryId)}</Badge>
+                            )}
+                            <span className="text-[10px] text-muted-foreground">{format(new Date(asset.createdAt), "MMM d, yyyy")}</span>
+                          </div>
+                          {asset.description && (
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{asset.description}</p>
+                          )}
+                        </div>
+                      </label>
+                    ))
+                  )}
                 </div>
                 {selectedAssetIds.length > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">{selectedAssetIds.length} asset{selectedAssetIds.length !== 1 ? "s" : ""} selected</p>
@@ -361,7 +499,7 @@ export default function EmailNewslettersPage() {
             >
               {generatingEmail ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Email</>}
             </Button>
-            {selectedAssetIds.length === 0 && contentAssets.length > 0 && (
+            {selectedAssetIds.length === 0 && activeAssets.length > 0 && (
               <p className="text-xs text-muted-foreground">Select at least one content asset to generate an email.</p>
             )}
           </CardContent>
@@ -405,7 +543,8 @@ export default function EmailNewslettersPage() {
 
               {previewEmail.platform === "hubspot-marketing" ? (
                 <div
-                  className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto"
+                  className="border rounded bg-white text-black text-sm overflow-y-auto"
+                  style={{ maxHeight: "600px" }}
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
                   data-testid="preview-email-html"
                 />

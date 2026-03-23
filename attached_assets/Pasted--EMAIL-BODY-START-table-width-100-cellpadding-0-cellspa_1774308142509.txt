@@ -1,0 +1,177 @@
+---EMAIL_BODY_START---
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f6f9; padding: 0; margin: 0;">
+  <tr>
+    <td align="center" style="padding: 40px 20px;">
+
+      <!-- Email Container -->
+      <table width="620" cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
+
+        <!-- Header Banner -->
+        <tr>
+          <td style="background-color: #0a2540; padding: 32px 40px; text-align: center;">
+            <p style="margin: 0 0 8px 0; font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #7eb3e0;">The Synozur Alliance</p>
+            <h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 28px; font-weight: 700; color: #ffffff; line-height: 1.3;">The AI Window Is Narrowing.<br/>Is Your Organization Ready?</h1>
+            <p style="margin: 16px 0 0 0; font-family: Arial, sans-serif; font-size: 16px; color: #a8c8e8; line-height: 1.5;">Introducing the Synozur 2026 AI Report — your grounded guide to what's ahead.</p>
+          </td>
+        </tr>
+
+        <!-- Hero Image -->
+        <tr>
+          <td style="padding: 0; margin: 0;">
+            <img src="https://static.wixstatic.com/media/b805ce_597f693b52f940b388ea2e3af675c3ed~mv2.jpeg/v1/fill/w_5110,h_2555,al_c,q_90/AdobeStock_307252854.jpeg" alt="Synozur 2026 AI Report" width="620" style="display: block; width: 100%; height: auto; border: 0;" />
+          </td>
+        </tr>
+
+        <!-- Opening Section -->
+        <tr>
+          <td style="padding: 40px 40px 24px 40px;">
+            <p style="margin: 0 0 16px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">Hi there,</p>
+            <p style="margin: 0 0 16px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">We know AI can feel overwhelming right now — the headlines are loud, the predictions are bold, and the pressure to act is real. So we did the work to cut through the noise for you.</p>
+            <p style="margin: 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">The <strong>Synozur 2026 AI Report</strong> is here — and it's built for leaders who want a clear, grounded picture of where AI is heading and, more importantly, what it means for your organization right now.</p>
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr>
+          <td style="padding: 0 40px;">
+            <hr style="border: none; border-top: 1px solid #e8ecf0; margin: 0;" />
+          </td>
+        </tr>
+
+        <!-- Key Stats Section -->
+        <tr>
+          <td style="padding: 32px 40px 24px 40px;">
+            <h2 style="margin: 0 0 20px 0; font-family: Arial, sans-serif; font-size: 22px; font-weight: 700; color: #0a2540; line-height: 1.3;">What the Numbers Are Telling Us</h2>
+            <p style="margin: 0 0 20px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">We analyzed <strong>120 AI maturity assessments</strong> across organizations of all sizes. Here's what stood out:</p>
+
+            <!-- Stats Cards -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="48%" style="background-color: #f0f6ff; border-radius: 8px; padding: 20px; vertical-align: top;">
+                  <p style="margin: 0 0 6px 0; font-family: Arial, sans-serif; font-size: 32px; font-weight: 700; color: #0a6abf;">$923B</p>
+                  <p style="margin: 0; font-family: Arial, sans-serif; font-size: 14px; color: #555555; line-height: 1.5;">Projected global AI market by 2030, up from $453B today. The growth is undeniable.</p>
+                </td>
+                <td width="4%"></td>
+                <td width="48%" style="background-color: #fff7f0; border-radius: 8px; padding: 20px; vertical-align: top;">
+                  <p style="margin: 0 0 6px 0; font-family: Arial, sans-serif; font-size: 32px; font-weight: 700; color: #d9641e;">260/500</p>
+                  <p style="margin: 0; font-family: Arial, sans-serif; font-size: 14px; color: #555555; line-height: 1.5;">Average AI maturity score. Most organizations are stuck in the middle — not experimenting, not scaling.</p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin: 24px 0 0 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">That middle-ground position is a risky place to sit still when a trillion-dollar market is taking shape around you. The report shows you exactly what it takes to move from <em>"exploring"</em> to <em>"leading."</em></p>
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr>
+          <td style="padding: 0 40px;">
+            <hr style="border: none; border-top: 1px solid #e8ecf0; margin: 0;" />
+          </td>
+        </tr>
+
+        <!-- 3 Predictions Section -->
+        <tr>
+          <td style="padding: 32px 40px 24px 40px;">
+            <h2 style="margin: 0 0 8px 0; font-family: Arial, sans-serif; font-size: 22px; font-weight: 700; color: #0a2540; line-height: 1.3;">3 Predictions Shaping 2026</h2>
+            <p style="margin: 0 0 24px 0; font-family: Arial, sans-serif; font-size: 15px; color: #666666; line-height: 1.6;">These aren't guesses — they're backed by real data from organizations navigating AI right now.</p>
+
+            <!-- Prediction 1 -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 16px;">
+              <tr>
+                <td width="48" style="vertical-align: top; padding-right: 16px;">
+                  <div style="background-color: #0a2540; border-radius: 50%; width: 40px; height: 40px; text-align: center; line-height: 40px;">
+                    <span style="font-family: Arial, sans-serif; font-size: 18px; font-weight: 700; color: #ffffff;">1</span>
+                  </div>
+                </td>
+                <td style="vertical-align: top;">
+                  <p style="margin: 0 0 4px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; color: #0a2540;">Microsoft's First-Party LLM</p>
+                  <p style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; color: #555555; line-height: 1.6;">A major shift in the AI landscape — and what it means for organizations already invested in the Microsoft ecosystem.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Prediction 2 -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 16px;">
+              <tr>
+                <td width="48" style="vertical-align: top; padding-right: 16px;">
+                  <div style="background-color: #0a2540; border-radius: 50%; width: 40px; height: 40px; text-align: center; line-height: 40px;">
+                    <span style="font-family: Arial, sans-serif; font-size: 18px; font-weight: 700; color: #ffffff;">2</span>
+                  </div>
+                </td>
+                <td style="vertical-align: top;">
+                  <p style="margin: 0 0 4px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; color: #0a2540;">The Agent Boss Era</p>
+                  <p style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; color: #555555; line-height: 1.6;">AI agents won't just assist — they'll orchestrate. Leaders who understand this shift will be the ones setting the pace.</p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Prediction 3 -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="48" style="vertical-align: top; padding-right: 16px;">
+                  <div style="background-color: #0a2540; border-radius: 50%; width: 40px; height: 40px; text-align: center; line-height: 40px;">
+                    <span style="font-family: Arial, sans-serif; font-size: 18px; font-weight: 700; color: #ffffff;">3</span>
+                  </div>
+                </td>
+                <td style="vertical-align: top;">
+                  <p style="margin: 0 0 4px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; color: #0a2540;">Industry-Led Governance Standards</p>
+                  <p style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; color: #555555; line-height: 1.6;">Governance is moving from optional to essential. The organizations that lead here will earn trust — and competitive advantage.</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Primary CTA -->
+        <tr>
+          <td style="padding: 8px 40px 40px 40px; text-align: center;">
+            <p style="margin: 0 0 24px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">The full report is ready for you — no fluff, no hype. Just the data and perspective you need to navigate 2026 with confidence.</p>
+            [CTA_BUTTON: "Download the 2026 AI Report" → https://www.synozur.com/items/2026-ai-report]
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr>
+          <td style="padding: 0 40px;">
+            <hr style="border: none; border-top: 1px solid #e8ecf0; margin: 0;" />
+          </td>
+        </tr>
+
+        <!-- Polaris Pulse Section -->
+        <tr>
+          <td style="padding: 32px 40px 24px 40px;">
+            <h2 style="margin: 0 0 16px 0; font-family: Arial, sans-serif; font-size: 22px; font-weight: 700; color: #0a2540; line-height: 1.3;">Prefer to Listen? We've Got You.</h2>
+
+            <!-- Podcast Image -->
+            <img src="https://static.wixstatic.com/media/b805ce_3a72bdc0e29b475cbc506b23114640be~mv2.png/v1/fill/w_1000,h_563,al_c,q_90,usm_0.66_1.00_0.01/b805ce_3a72bdc0e29b475cbc506b23114640be~mv2.png" alt="Polaris Pulse Podcast - AI in 2026: A Trillion Dollars is Coming. Who Wins?" width="540" style="display: block; width: 100%; height: auto; border-radius: 6px; margin-bottom: 20px; border: 0;" />
+
+            <p style="margin: 0 0 16px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">The latest episode of <strong>Polaris Pulse</strong> dives deep into the same insights from the report — in a format you can take on the go.</p>
+
+            <p style="margin: 0 0 8px 0; font-family: Arial, sans-serif; font-size: 15px; font-weight: 600; color: #0a2540;">In this episode, we break down:</p>
+
+            <ul style="margin: 0 0 20px 0; padding-left: 20px; font-family: Arial, sans-serif; font-size: 15px; color: #555555; line-height: 1.8;">
+              <li style="margin-bottom: 6px;">Where most organizations actually sit on the AI maturity curve (and what it means for you)</li>
+              <li style="margin-bottom: 6px;">What the global market growth numbers really signal for business leaders</li>
+              <li style="margin-bottom: 6px;">The three 2026 predictions you need to factor into your strategy today</li>
+            </ul>
+
+            <p style="margin: 0 0 24px 0; font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.7;">The window to move from exploring to leading is narrowing. Understanding where you stand on the maturity curve — and what it takes to close the gap — is no longer optional.</p>
+
+            [CTA_BUTTON: "Listen to Polaris Pulse" → https://www.synozur.com/post/ai-in-2026-a-trillion-dollars-is-coming-who-wins]
+          </td>
+        </tr>
+
+        <!-- Divider -->
+        <tr>
+          <td style="padding: 0 40px;">
+            <hr style="border: none; border-top: 1px solid #e8ecf0; margin: 0;" />
+          </td>
+        </tr>
+
+        <!-- Closing Section -->
+        <tr>
+          <td style="padding: 32px 40px 40px 40px;">
+            <h2 style="margin: 0 0 16px 0; font-family: Arial, sans-serif; font-size: 20px; font-weight: 700; color: #0a2540; line-height: 1.3;">Your North Star for 2026 Starts Here</h2>
+            <p style="margin: 0 0 16px 0; font-family</table></table></tr></tr></td></td>
