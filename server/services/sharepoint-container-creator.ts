@@ -40,6 +40,7 @@ export class ContainerCreator {
    * Set ORBIT_SPE_CONTAINER_TYPE_ID in your environment. This value is
    * required; an explicit error is thrown if it is missing so that
    * misconfiguration is detected early.
+   */
   private get containerTypeId(): string {
     const value = process.env.ORBIT_SPE_CONTAINER_TYPE_ID;
     if (!value) {

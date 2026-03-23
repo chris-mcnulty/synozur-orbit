@@ -22,14 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  HardDrive,
   Plus,
   CheckCircle2,
   XCircle,
@@ -44,18 +36,6 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
-
-interface TenantSpeInfo {
-  id: string;
-  domain: string;
-  name: string | null;
-  plan: string;
-  status: string;
-  speStorageEnabled: boolean;
-  hasContainer: boolean;
-  containerId: string | null;
-  entraTenantId: string | null;
-}
 
 interface SpeStatus {
   configured: boolean;
@@ -85,12 +65,10 @@ export default function SpeStoragePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isGlobalAdmin = user?.role === "Global Admin";
-
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForm, setCreateForm] = useState({
     containerName: "",
     description: "",
-    tenantId: "",
   });
   const [showOrphansDialog, setShowOrphansDialog] = useState(false);
 
@@ -111,15 +89,6 @@ export default function SpeStoragePage() {
     enabled: !!status?.configured,
   });
 
-  const { data: tenants = [], isLoading: tenantsLoading } = useQuery<TenantSpeInfo[]>({
-    queryKey: ["/api/admin/spe/tenants"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/spe/tenants", { credentials: "include" });
-      return res.json();
-    },
-    enabled: isGlobalAdmin,
-  });
-
   const { data: orphanReport } = useQuery<OrphanReport>({
     queryKey: ["/api/admin/spe/orphans"],
     queryFn: async () => {
@@ -130,7 +99,7 @@ export default function SpeStoragePage() {
   });
 
   const createContainerMutation = useMutation({
-    mutationFn: async (data: { containerName: string; description: string; tenantId?: string }) => {
+    mutationFn: async (data: { containerName: string; description: string }) => {
       const res = await fetch("/api/admin/spe/container", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,9 +114,8 @@ export default function SpeStoragePage() {
     onSuccess: (result) => {
       toast({ title: "Container Created", description: result.message });
       setShowCreateDialog(false);
-      setCreateForm({ containerName: "", description: "", tenantId: "" });
+      setCreateForm({ containerName: "", description: "" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/spe/status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/spe/tenants"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/spe/stats"] });
     },
     onError: (err: Error) => {
@@ -333,80 +301,6 @@ export default function SpeStoragePage() {
           </Card>
         )}
 
-        {isGlobalAdmin && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HardDrive className="h-5 w-5" />
-                All Tenant Containers
-              </CardTitle>
-              <CardDescription>
-                SPE container status for every tenant in the platform
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {tenantsLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tenant</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>SPE Enabled</TableHead>
-                      <TableHead>Container</TableHead>
-                      <TableHead>Entra Tenant</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tenants.map((t) => (
-                      <TableRow key={t.id} data-testid={`row-tenant-${t.id}`}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{t.name || t.domain}</p>
-                            <p className="text-xs text-muted-foreground">{t.domain}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{t.plan}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={t.status === "active" ? "default" : "destructive"}>
-                            {t.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {t.speStorageEnabled ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {t.hasContainer ? (
-                            <span className="font-mono text-xs">{t.containerId}</span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">None</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {t.entraTenantId ? (
-                            <span className="font-mono text-xs">{t.entraTenantId.substring(0, 12)}...</span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">Not set</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogContent>
@@ -414,7 +308,7 @@ export default function SpeStoragePage() {
               <DialogTitle>Create SPE Container</DialogTitle>
               <DialogDescription>
                 Create a new SharePoint Embedded container for document storage.
-                {!isGlobalAdmin && " This will be created for your tenant."}
+                This will be created for your tenant.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -438,29 +332,6 @@ export default function SpeStoragePage() {
                   data-testid="input-container-description"
                 />
               </div>
-              {isGlobalAdmin && tenants.length > 0 && (
-                <div>
-                  <Label htmlFor="tenantSelect">Tenant</Label>
-                  <Select
-                    value={createForm.tenantId}
-                    onValueChange={(val) => setCreateForm({ ...createForm, tenantId: val })}
-                  >
-                    <SelectTrigger data-testid="select-tenant">
-                      <SelectValue placeholder="Your tenant (default)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tenants.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name || t.domain} ({t.domain})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Select which tenant this container is for
-                  </p>
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
@@ -471,7 +342,6 @@ export default function SpeStoragePage() {
                   createContainerMutation.mutate({
                     containerName: createForm.containerName,
                     description: createForm.description,
-                    ...(isGlobalAdmin && createForm.tenantId ? { tenantId: createForm.tenantId } : {}),
                   })
                 }
                 disabled={!createForm.containerName || createContainerMutation.isPending}
