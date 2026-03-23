@@ -24,7 +24,8 @@ interface SavedEmail {
   id: string;
   subject: string;
   htmlBody: string;
-  format?: string;
+  textBody?: string;
+  platform?: string;
   status: string;
   campaignId?: string;
   createdAt: string;
@@ -66,12 +67,18 @@ export default function EmailNewslettersPage() {
   });
 
   const updateEmailMutation = useMutation({
-    mutationFn: async ({ emailId, subject, htmlBody }: { emailId: string; subject: string; htmlBody: string }) => {
+    mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
+      const payload: Record<string, string> = { subject };
+      if (isHtml) {
+        payload.htmlBody = body;
+      } else {
+        payload.textBody = body;
+      }
       const r = await fetch(`/api/email/saved/${emailId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ subject, htmlBody }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -168,8 +175,10 @@ export default function EmailNewslettersPage() {
                     <div>
                       <p className="font-medium">{email.subject}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        {email.format && email.format !== "promotional" && (
-                          <Badge variant="secondary" className="text-[10px] capitalize">{email.format.replace(/-/g, " ")}</Badge>
+                        {email.platform && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {{"outlook":"Outlook","hubspot-marketing":"HubSpot Marketing","hubspot-1to1":"HubSpot 1:1","dynamics-365":"Dynamics 365"}[email.platform] || email.platform}
+                          </Badge>
                         )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                         {getCampaignName(email.campaignId) && (
@@ -185,7 +194,7 @@ export default function EmailNewslettersPage() {
                         onClick={() => {
                           setEditingEmail(email);
                           setEditSubject(email.subject);
-                          setEditBody(email.htmlBody);
+                          setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
                         }}
                         data-testid={`button-edit-email-${email.id}`}
                       >
@@ -211,7 +220,7 @@ export default function EmailNewslettersPage() {
                 <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} data-testid="input-edit-email-subject" />
               </div>
               <div>
-                <Label>HTML Body</Label>
+                <Label>{editingEmail?.platform === "hubspot-marketing" ? "HTML Body" : "Email Body"}</Label>
                 <Textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
               </div>
               <Button
@@ -219,7 +228,12 @@ export default function EmailNewslettersPage() {
                 disabled={!editSubject.trim() || updateEmailMutation.isPending}
                 onClick={() => {
                   if (editingEmail) {
-                    updateEmailMutation.mutate({ emailId: editingEmail.id, subject: editSubject, htmlBody: editBody });
+                    updateEmailMutation.mutate({
+                      emailId: editingEmail.id,
+                      subject: editSubject,
+                      body: editBody,
+                      isHtml: editingEmail.platform === "hubspot-marketing",
+                    });
                   }
                 }}
                 data-testid="button-save-edit-email"

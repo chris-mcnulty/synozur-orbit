@@ -1693,12 +1693,17 @@ export const generatedEmails = pgTable("generated_emails", {
   campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
-  format: text("format").notNull().default("promotional"),
+  platform: text("platform").notNull().default("outlook"),
+  tone: text("tone").notNull().default("professional"),
+  callToAction: text("call_to_action"),
+  recipientContext: text("recipient_context"),
   subject: text("subject").notNull(),
   previewText: text("preview_text"),
-  htmlBody: text("html_body").notNull(), // Full HTML email body
-  textBody: text("text_body"), // Plain text fallback
-  status: text("status").notNull().default("draft"), // draft, approved, sent
+  htmlBody: text("html_body").notNull(),
+  textBody: text("text_body"),
+  subjectLineSuggestions: text("subject_line_suggestions").array(),
+  coachingTips: text("coaching_tips").array(),
+  status: text("status").notNull().default("draft"),
   sentAt: timestamp("sent_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

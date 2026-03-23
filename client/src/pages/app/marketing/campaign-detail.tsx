@@ -30,6 +30,8 @@ import {
   FileDown,
   Copy,
   Package,
+  ChevronDown,
+  Lightbulb,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,7 +52,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { format, addDays } from "date-fns";
 
 interface Campaign {
@@ -117,7 +119,12 @@ interface GeneratedEmail {
   subject: string;
   htmlBody: string;
   textBody?: string;
-  format?: string;
+  platform?: string;
+  tone?: string;
+  callToAction?: string;
+  recipientContext?: string;
+  subjectLineSuggestions?: string[];
+  coachingTips?: string[];
   status: string;
   createdAt: string;
 }
@@ -134,10 +141,14 @@ export default function CampaignDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [emailFormat, setEmailFormat] = useState("promotional");
+  const [emailPlatform, setEmailPlatform] = useState("outlook");
+  const [emailTone, setEmailTone] = useState("professional");
+  const [emailCallToAction, setEmailCallToAction] = useState("");
+  const [emailRecipientContext, setEmailRecipientContext] = useState("");
   const [emailInstructions, setEmailInstructions] = useState("");
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<GeneratedEmail | null>(null);
+  const [coachingTipsOpen, setCoachingTipsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
@@ -145,6 +156,7 @@ export default function CampaignDetailPage() {
   const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
   const [postFilter, setPostFilter] = useState<string>("active");
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editingEmailPlatform, setEditingEmailPlatform] = useState<string>("outlook");
   const [editEmailSubject, setEditEmailSubject] = useState("");
   const [editEmailBody, setEditEmailBody] = useState("");
 
@@ -313,12 +325,18 @@ export default function CampaignDetailPage() {
   });
 
   const updateEmailMutation = useMutation({
-    mutationFn: async ({ emailId, subject, htmlBody }: { emailId: string; subject: string; htmlBody: string }) => {
+    mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
+      const payload: Record<string, string> = { subject };
+      if (isHtml) {
+        payload.htmlBody = body;
+      } else {
+        payload.textBody = body;
+      }
       const r = await fetch(`/api/email/saved/${emailId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ subject, htmlBody }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -492,11 +510,30 @@ export default function CampaignDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ campaignId: id, assetIds, instructions: emailInstructions, format: emailFormat }),
+        body: JSON.stringify({
+          campaignId: id,
+          assetIds,
+          instructions: emailInstructions,
+          platform: emailPlatform,
+          tone: emailTone,
+          callToAction: emailCallToAction || undefined,
+          recipientContext: emailRecipientContext || undefined,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       const data = await r.json();
-      setPreviewEmail({ id: "", subject: data.subject, htmlBody: data.htmlBody, textBody: data.textBody, status: "draft", createdAt: new Date().toISOString() });
+      setPreviewEmail({
+        id: "",
+        subject: data.subject,
+        htmlBody: data.htmlBody,
+        textBody: data.textBody,
+        platform: data.platform,
+        subjectLineSuggestions: data.subjectLineSuggestions,
+        coachingTips: data.coachingTips,
+        status: "draft",
+        createdAt: new Date().toISOString(),
+      });
+      setCoachingTipsOpen(false);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -511,7 +548,16 @@ export default function CampaignDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ campaignId: id, format: emailFormat, ...previewEmail }),
+        body: JSON.stringify({
+          campaignId: id,
+          platform: emailPlatform,
+          tone: emailTone,
+          callToAction: emailCallToAction || undefined,
+          recipientContext: emailRecipientContext || undefined,
+          subjectLineSuggestions: previewEmail.subjectLineSuggestions,
+          coachingTips: previewEmail.coachingTips,
+          ...previewEmail,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
     },
@@ -902,26 +948,55 @@ export default function CampaignDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Generate Email</CardTitle>
-                <CardDescription>AI will use the campaign's content assets and marketing grounding docs to draft an email in your chosen format.</CardDescription>
+                <CardDescription>AI will use the campaign's content assets and marketing grounding docs to draft an email for your chosen platform.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Platform</label>
+                    <Select value={emailPlatform} onValueChange={setEmailPlatform}>
+                      <SelectTrigger data-testid="select-email-platform">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="outlook">Outlook</SelectItem>
+                        <SelectItem value="hubspot-marketing">HubSpot Marketing Email</SelectItem>
+                        <SelectItem value="hubspot-1to1">HubSpot 1:1 Email</SelectItem>
+                        <SelectItem value="dynamics-365">Dynamics 365 Customer Email</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Tone</label>
+                    <Select value={emailTone} onValueChange={setEmailTone}>
+                      <SelectTrigger data-testid="select-email-tone">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="friendly">Friendly</SelectItem>
+                        <SelectItem value="urgent">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 <div>
-                  <label className="text-sm font-medium">Email Format</label>
-                  <Select value={emailFormat} onValueChange={setEmailFormat}>
-                    <SelectTrigger data-testid="select-email-format">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="promotional">Promotional</SelectItem>
-                      <SelectItem value="newsletter">Newsletter</SelectItem>
-                      <SelectItem value="product-announcement">Product Announcement</SelectItem>
-                      <SelectItem value="event-invitation">Event / Webinar Invitation</SelectItem>
-                      <SelectItem value="follow-up">Follow-up / Nurture</SelectItem>
-                      <SelectItem value="case-study">Case Study Highlight</SelectItem>
-                      <SelectItem value="re-engagement">Re-engagement</SelectItem>
-                      <SelectItem value="welcome">Welcome / Onboarding</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label className="text-sm font-medium">Call to Action (optional)</label>
+                  <Input
+                    value={emailCallToAction}
+                    onChange={e => setEmailCallToAction(e.target.value)}
+                    placeholder="e.g. Book a demo, Download the whitepaper..."
+                    data-testid="input-email-cta"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Recipient Context (optional)</label>
+                  <Input
+                    value={emailRecipientContext}
+                    onChange={e => setEmailRecipientContext(e.target.value)}
+                    placeholder="e.g. IT decision makers at mid-market companies..."
+                    data-testid="input-email-recipient-context"
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Additional Instructions (optional)</label>
@@ -949,11 +1024,62 @@ export default function CampaignDetailPage() {
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div
-                    className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
-                  />
+                <CardContent className="space-y-4">
+                  {previewEmail.subjectLineSuggestions && previewEmail.subjectLineSuggestions.length > 0 && (
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Subject Line Suggestions</label>
+                      <ol className="space-y-1">
+                        {previewEmail.subjectLineSuggestions.map((line, i) => (
+                          <li key={i} className="flex items-center justify-between gap-2 text-sm border rounded px-3 py-2 bg-muted/30" data-testid={`text-subject-suggestion-${i}`}>
+                            <span>{i + 1}. {line}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 shrink-0"
+                              onClick={() => {
+                                navigator.clipboard.writeText(line);
+                                toast({ title: "Copied", description: "Subject line copied to clipboard" });
+                              }}
+                              data-testid={`button-copy-subject-${i}`}
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
+                  {previewEmail.platform === "hubspot-marketing" ? (
+                    <div
+                      className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
+                      data-testid="preview-email-html"
+                    />
+                  ) : (
+                    <pre className="border rounded p-4 bg-white text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
+                      {previewEmail.textBody || previewEmail.htmlBody}
+                    </pre>
+                  )}
+
+                  {previewEmail.coachingTips && previewEmail.coachingTips.length > 0 && (
+                    <Collapsible open={coachingTipsOpen} onOpenChange={setCoachingTipsOpen}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 w-full justify-start text-muted-foreground" data-testid="button-toggle-coaching-tips">
+                          <Lightbulb className="w-4 h-4" />
+                          Coaching Tips
+                          <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${coachingTipsOpen ? "rotate-180" : ""}`} />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <ul className="mt-2 space-y-1 text-sm text-muted-foreground pl-6 list-disc">
+                          {previewEmail.coachingTips.map((tip, i) => (
+                            <li key={i} data-testid={`text-coaching-tip-${i}`}>{tip}</li>
+                          ))}
+                        </ul>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -967,10 +1093,14 @@ export default function CampaignDetailPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-medium">{email.subject}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {email.format && email.format !== "promotional" && <span className="capitalize">{email.format.replace(/-/g, " ")} · </span>}
-                            {new Date(email.createdAt).toLocaleDateString()}
-                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {email.platform && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                {{"outlook":"Outlook","hubspot-marketing":"HubSpot Marketing","hubspot-1to1":"HubSpot 1:1","dynamics-365":"Dynamics 365"}[email.platform] || email.platform}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">{new Date(email.createdAt).toLocaleDateString()}</span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="capitalize">{email.status}</Badge>
@@ -979,8 +1109,9 @@ export default function CampaignDetailPage() {
                             size="sm"
                             onClick={() => {
                               setEditingEmailId(email.id);
+                              setEditingEmailPlatform(email.platform || "outlook");
                               setEditEmailSubject(email.subject);
-                              setEditEmailBody(email.htmlBody);
+                              setEditEmailBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
                             }}
                             data-testid={`button-edit-email-${email.id}`}
                           >
@@ -1007,7 +1138,7 @@ export default function CampaignDetailPage() {
                     <Input value={editEmailSubject} onChange={e => setEditEmailSubject(e.target.value)} data-testid="input-edit-email-subject" />
                   </div>
                   <div>
-                    <Label>HTML Body</Label>
+                    <Label>{editingEmailPlatform === "hubspot-marketing" ? "HTML Body" : "Email Body"}</Label>
                     <Textarea value={editEmailBody} onChange={e => setEditEmailBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
                   </div>
                   <Button
@@ -1015,7 +1146,12 @@ export default function CampaignDetailPage() {
                     disabled={!editEmailSubject.trim() || updateEmailMutation.isPending}
                     onClick={() => {
                       if (editingEmailId) {
-                        updateEmailMutation.mutate({ emailId: editingEmailId, subject: editEmailSubject, htmlBody: editEmailBody });
+                        updateEmailMutation.mutate({
+                          emailId: editingEmailId,
+                          subject: editEmailSubject,
+                          body: editEmailBody,
+                          isHtml: editingEmailPlatform === "hubspot-marketing",
+                        });
                       }
                     }}
                     data-testid="button-save-edit-email"

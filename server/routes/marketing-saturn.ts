@@ -1284,22 +1284,52 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, assetIds, instructions, format } = req.body;
+    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext } = req.body;
 
-    const emailFormatPrompts: Record<string, string> = {
-      "promotional": "Generate a compelling promotional email that drives action. Include a clear value proposition, benefits-focused copy, and a strong call-to-action.",
-      "newsletter": "Generate a newsletter-style email with a curated digest format. Include a brief intro, 2-3 content sections with summaries, and links to read more. Use a scannable layout with clear section headers.",
-      "product-announcement": "Generate a product announcement email. Lead with the news, explain what's new and why it matters, highlight key features/benefits, and include a CTA to learn more or try it.",
-      "event-invitation": "Generate an event or webinar invitation email. Include the event name, date/time placeholder, a compelling description of what attendees will learn, speaker highlights if relevant, and a clear registration CTA.",
-      "follow-up": "Generate a follow-up / nurture email. Use a warm, conversational tone. Reference the content naturally, provide additional value or insights, and gently guide toward the next step without being pushy.",
-      "case-study": "Generate a case study highlight email. Structure it as: challenge, solution, results. Include a compelling subject line, a brief narrative, quantifiable outcomes where possible, and a CTA to read the full case study.",
-      "re-engagement": "Generate a re-engagement email to win back inactive contacts. Use a friendly, non-pushy tone. Highlight what's new or what they're missing, offer value, and include a simple CTA to re-engage.",
-      "welcome": "Generate a welcome / onboarding email. Use a warm, helpful tone. Introduce the brand briefly, set expectations for what's coming, highlight immediate next steps or resources, and make the recipient feel valued.",
+    const platformKey = platform || "outlook";
+    const toneKey = tone || "professional";
+
+    const platformInstructions: Record<string, string> = {
+      "outlook": `Generate a plain-text email suitable for Microsoft Outlook.
+- Do NOT use any HTML tags.
+- Use line breaks and simple formatting (dashes, asterisks) for structure.
+- Keep the layout clean, scannable, and professional.
+- The email should look natural when pasted into Outlook's compose window.`,
+      "hubspot-marketing": `Generate an HTML email fragment suitable for HubSpot Marketing Email.
+- Use clean, inline-styled HTML (no <html>, <head>, or <body> wrappers).
+- Include styled headings, paragraphs, buttons (as <a> tags with inline styles), and dividers.
+- Make it visually appealing and on-brand.
+- Use a single-column layout optimized for email clients.`,
+      "hubspot-1to1": `Generate a personal, conversational email suitable for HubSpot 1:1 Sales Email.
+- Do NOT use any HTML tags.
+- Write as if one person is emailing another directly.
+- Keep it short (under 150 words ideally), warm, and personal.
+- Reference the recipient naturally if context is provided.
+- Include a soft, non-pushy call to action.`,
+      "dynamics-365": `Generate a professional CRM-style email suitable for Dynamics 365 Customer Email.
+- Do NOT use any HTML tags.
+- Use a structured, formal format with clear sections.
+- Include a professional greeting and sign-off.
+- Keep the tone business-appropriate and relationship-focused.
+- Suitable for customer communications, follow-ups, and account management.`,
     };
 
-    const formatInstruction = emailFormatPrompts[format || "promotional"] || emailFormatPrompts["promotional"];
+    const toneInstructions: Record<string, string> = {
+      "professional": "Use a professional, polished tone. Be authoritative yet approachable.",
+      "friendly": "Use a warm, friendly, conversational tone. Be personable and engaging.",
+      "urgent": "Use an urgent, action-oriented tone. Create a sense of timeliness and importance.",
+    };
 
-    // Load selected assets - scoped by tenant, market, and explicit asset IDs
+    const platformInstruction = platformInstructions[platformKey] || platformInstructions["outlook"];
+    const toneInstruction = toneInstructions[toneKey] || toneInstructions["professional"];
+
+    const platformLabel: Record<string, string> = {
+      "outlook": "Outlook",
+      "hubspot-marketing": "HubSpot Marketing Email",
+      "hubspot-1to1": "HubSpot 1:1 Email",
+      "dynamics-365": "Dynamics 365 Customer Email",
+    };
+
     const selectedAssets = assetIds?.length
       ? await db.select().from(contentAssets).where(
           and(
@@ -1310,7 +1340,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
         )
       : [];
 
-    // Load marketing grounding docs
     const groundingDocs = await db.select().from(groundingDocuments)
       .where(and(
         eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
@@ -1332,45 +1361,95 @@ export function registerSaturnMarketingRoutes(app: Express) {
       })
       .join("\n\n");
 
-    const formatLabel = {
-      "promotional": "Promotional",
-      "newsletter": "Newsletter",
-      "product-announcement": "Product Announcement",
-      "event-invitation": "Event / Webinar Invitation",
-      "follow-up": "Follow-up / Nurture",
-      "case-study": "Case Study Highlight",
-      "re-engagement": "Re-engagement",
-      "welcome": "Welcome / Onboarding",
-    }[format || "promotional"] || "Promotional";
+    const prompt = `You are an expert B2B email marketing copywriter. Generate an email for the "${platformLabel[platformKey] || "Outlook"}" platform.
 
-    const prompt = `You are an expert B2B email marketing copywriter. Generate a professional "${formatLabel}" email based on the following content assets and brand guidelines.
+## Platform Instructions
+${platformInstruction}
 
-## Email Format
-${formatInstruction}
+## Tone
+${toneInstruction}
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no assets provided)"}
+${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets
+${assetContext || "(no assets provided)"}
 
-${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a JSON object with:
-- subject: string (email subject line)
-- previewText: string (40-90 char preview text)
-- htmlBody: string (complete HTML email body, inline styles, responsive, professional design)
-- textBody: string (plain text fallback)`;
+${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}## Response Format
+Structure your response using these exact delimiters:
+
+===EMAIL_BODY_START===
+(your email body here)
+===EMAIL_BODY_END===
+
+===SUBJECT_LINES_START===
+1. (first subject line suggestion)
+2. (second subject line suggestion)
+3. (third subject line suggestion)
+===SUBJECT_LINES_END===`;
 
     const result = await completeForFeature("marketing_tasks", prompt);
 
-    let parsed: any = {};
-    try {
-      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      parsed = { subject: "Generated Email", htmlBody: result.text, textBody: result.text };
+    let emailBody = "";
+    let subjectLineSuggestions: string[] = [];
+
+    const bodyMatch = result.text.match(/===EMAIL_BODY_START===([\s\S]*?)===EMAIL_BODY_END===/);
+    if (bodyMatch) {
+      emailBody = bodyMatch[1].trim();
+    } else {
+      emailBody = result.text;
     }
 
+    const subjectMatch = result.text.match(/===SUBJECT_LINES_START===([\s\S]*?)===SUBJECT_LINES_END===/);
+    if (subjectMatch) {
+      subjectLineSuggestions = subjectMatch[1].trim().split("\n")
+        .map(line => line.replace(/^\d+\.\s*/, "").trim())
+        .filter(Boolean);
+    }
+
+    if (platformKey === "hubspot-marketing") {
+      emailBody = emailBody
+        .replace(/```html\s*/gi, "")
+        .replace(/```\s*$/gm, "")
+        .trim();
+    }
+
+    const coachingTipsMap: Record<string, string[]> = {
+      "outlook": [
+        "Keep subject lines under 60 characters for Outlook's preview pane",
+        "Avoid heavy formatting — Outlook strips most CSS",
+        "Use short paragraphs and bullet points for scannability",
+        "Include a clear text-based CTA since styled buttons may not render",
+      ],
+      "hubspot-marketing": [
+        "Use a single-column layout for best mobile rendering",
+        "Keep the primary CTA above the fold",
+        "Personalize with HubSpot tokens like {{contact.firstname}}",
+        "Test with HubSpot's email preview tool before sending",
+      ],
+      "hubspot-1to1": [
+        "Keep it under 150 words for higher response rates",
+        "Reference something specific about the recipient",
+        "Ask a question to encourage a reply",
+        "Avoid marketing language — write like a real person",
+      ],
+      "dynamics-365": [
+        "Use Dynamics merge fields for personalization",
+        "Include a follow-up task reminder in your CRM workflow",
+        "Keep the email concise and action-oriented",
+        "Reference previous interactions when possible",
+      ],
+    };
+
+    const coachingTips = coachingTipsMap[platformKey] || coachingTipsMap["outlook"];
+    const subject = subjectLineSuggestions[0] || "Generated Email";
+    const isHtml = platformKey === "hubspot-marketing";
+
     res.json({
-      subject: parsed.subject ?? "Generated Email",
-      previewText: parsed.previewText ?? "",
-      htmlBody: parsed.htmlBody ?? result.text,
-      textBody: parsed.textBody ?? "",
+      subject,
+      previewText: "",
+      htmlBody: isHtml ? emailBody : "",
+      textBody: isHtml ? "" : emailBody,
+      subjectLineSuggestions,
+      coachingTips,
+      platform: platformKey,
       usage: result.usage,
     });
   });
@@ -1390,9 +1469,9 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
   app.post("/api/email/saved", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, subject, previewText, htmlBody, textBody, format } = req.body;
-    if (!subject?.trim() || !htmlBody?.trim()) {
-      return res.status(400).json({ error: "subject and htmlBody are required" });
+    const { campaignId, subject, previewText, htmlBody, textBody, platform, tone, callToAction, recipientContext, subjectLineSuggestions, coachingTips } = req.body;
+    if (!subject?.trim() || (!htmlBody?.trim() && !textBody?.trim())) {
+      return res.status(400).json({ error: "subject and either htmlBody or textBody are required" });
     }
     // Validate that the supplied campaignId belongs to this tenant to prevent
     // cross-tenant references from guessed IDs.
@@ -1410,11 +1489,16 @@ ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}Return a
       tenantDomain: ctx.tenantDomain,
       marketId: ctx.marketId,
       campaignId,
-      format: format || "promotional",
+      platform: platform || "outlook",
+      tone: tone || "professional",
+      callToAction: callToAction || null,
+      recipientContext: recipientContext || null,
       subject,
       previewText,
-      htmlBody,
+      htmlBody: htmlBody || "",
       textBody,
+      subjectLineSuggestions: subjectLineSuggestions || null,
+      coachingTips: coachingTips || null,
       createdBy: ctx.userId,
     } as InsertGeneratedEmail).returning();
     res.status(201).json(row);
