@@ -418,11 +418,15 @@ export default function CampaignDetailPage() {
       };
 
       const eligibleDates: Date[] = [];
-      const start = new Date(campaign.startDate);
-      const endDate = addDays(start, campaign.numberOfDays - 1);
+      const campaignStart = new Date(campaign.startDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = campaignStart < today ? today : campaignStart;
+      const endDate = addDays(new Date(campaign.startDate), campaign.numberOfDays - 1);
+      const effectiveEnd = endDate < today ? addDays(today, campaign.numberOfDays - 1) : endDate;
       let current = pushToNextWeekday(new Date(start));
 
-      while (current <= endDate) {
+      while (current <= effectiveEnd) {
         const d = new Date(current);
         d.setHours(hours, minutes, 0, 0);
         eligibleDates.push(d);
@@ -1408,8 +1412,12 @@ export default function CampaignDetailPage() {
                 if (!campaign?.startDate || !campaign?.numberOfDays) {
                   return `${active} active post${active !== 1 ? "s" : ""} will be distributed across eligible days.`;
                 }
-                const start = new Date(campaign.startDate);
-                const endDate = addDays(start, campaign.numberOfDays - 1);
+                const campaignStart = new Date(campaign.startDate);
+                const todayPreview = new Date();
+                todayPreview.setHours(0, 0, 0, 0);
+                const start = campaignStart < todayPreview ? todayPreview : campaignStart;
+                const origEnd = addDays(new Date(campaign.startDate), campaign.numberOfDays - 1);
+                const endDate = origEnd < todayPreview ? addDays(todayPreview, campaign.numberOfDays - 1) : origEnd;
                 const isWeekendExcluded = (date: Date) => {
                   const dow = date.getDay();
                   return (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);

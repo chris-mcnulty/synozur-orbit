@@ -1294,6 +1294,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (post.overrideBrandAssetId) {
         const ba = brandMap.get(post.overrideBrandAssetId);
         if (ba?.fileUrl) return ba.fileUrl;
+        if (ba?.url) return ba.url;
       }
       return "";
     };
@@ -1968,7 +1969,7 @@ IMPORTANT RULES — follow these strictly:
 2. Each content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>"). If multiple assets are provided, include the most relevant URL.
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces and the URL. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including ALL spaces, punctuation, and the URL. This is a HARD TECHNICAL LIMIT enforced by the Twitter API — posts over 280 characters WILL be rejected. Aim for 200-250 characters to leave room. Write extremely concise copy. One short sentence + URL is ideal." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
@@ -2023,7 +2024,20 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
         }
 
         if (account.platform === "twitter" && postContent.length > 280) {
-          postContent = postContent.substring(0, 277) + "...";
+          const urlMatch = postContent.match(/https?:\/\/\S+/);
+          if (urlMatch) {
+            const url = urlMatch[0];
+            const textWithoutUrl = postContent.replace(url, "").trim();
+            const maxTextLen = 280 - url.length - 2;
+            if (maxTextLen > 20) {
+              const truncated = textWithoutUrl.substring(0, maxTextLen - 3).replace(/\s+\S*$/, "") + "…";
+              postContent = truncated + " " + url;
+            } else {
+              postContent = postContent.substring(0, 277) + "…";
+            }
+          } else {
+            postContent = postContent.substring(0, 277) + "…";
+          }
         }
 
         cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
