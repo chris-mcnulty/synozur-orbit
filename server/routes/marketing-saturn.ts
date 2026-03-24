@@ -532,16 +532,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/marketing/products", async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     const ctx = await getRequestContext(req);
+    const conditions = [
+      eq(products.tenantDomain, ctx.tenantDomain),
+    ];
+    if (ctx.marketId) {
+      conditions.push(eq(products.marketId, ctx.marketId));
+    }
     const rows = await db.select({
       id: products.id,
       name: products.name,
       isBaseline: products.isBaseline,
+      productType: products.productType,
     }).from(products)
-      .where(and(
-        eq(products.tenantDomain, ctx.tenantDomain),
-        eq(products.marketId, ctx.marketId),
-        eq(products.isBaseline, true),
-      ))
+      .where(and(...conditions))
       .orderBy(products.name);
     res.json(rows);
   });

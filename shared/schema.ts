@@ -198,6 +198,7 @@ export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
+  productType: text("product_type").notNull().default("product"),
   url: text("url"), // Product page URL
   companyName: text("company_name"), // Company that makes this product
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
