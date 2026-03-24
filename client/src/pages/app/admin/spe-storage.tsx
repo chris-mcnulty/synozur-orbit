@@ -165,7 +165,7 @@ export default function SpeStoragePage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const containerTypeConfigured = !!process.env.ORBIT_SPE_CONTAINER_TYPE_ID;
+  const containerTypeConfigured = true;
 
   return (
     <AppLayout>
