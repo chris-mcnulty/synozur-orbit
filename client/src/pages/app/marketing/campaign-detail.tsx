@@ -768,7 +768,7 @@ export default function CampaignDetailPage() {
               <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
                 <span className="font-medium">Always include:</span>
                 {campaign.alwaysHashtags.map((h, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px]">#{h}</Badge>
+                  <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
                 ))}
               </div>
             )}
@@ -961,7 +961,7 @@ export default function CampaignDetailPage() {
                               {post.hashtags?.length > 0 ? (
                                 <>
                                   {post.hashtags.map((h, i) => (
-                                    <Badge key={i} variant="secondary" className="text-[10px] text-primary">#{h}</Badge>
+                                    <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
                                   ))}
                                   <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </>
