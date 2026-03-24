@@ -409,7 +409,10 @@ export default function BrandLibraryPage() {
     <Card key={asset.id} className="group cursor-pointer hover:border-primary/40 transition-colors" onClick={() => openEditDialog(asset)} data-testid={`card-brand-asset-${asset.id}`}>
       {(() => {
         const imgSrc = asset.fileUrl || asset.url;
-        const isImage = asset.fileType === "image" || asset.fileType === "png" || asset.fileType === "jpg" || asset.fileType === "svg";
+        const ft = (asset.fileType || "").toLowerCase();
+        const isImage = ft === "image" || ft === "png" || ft === "jpg" || ft === "jpeg" || ft === "svg" || ft === "webp" || ft === "gif"
+          || ft.startsWith("image/")
+          || (!!imgSrc && /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|$)/i.test(imgSrc));
         return imgSrc && isImage ? (
           <div className="aspect-video overflow-hidden rounded-t-lg bg-muted flex items-center justify-center p-4">
             <img
@@ -722,14 +725,14 @@ export default function BrandLibraryPage() {
                   <Tag className="w-3.5 h-3.5" /> {catName}
                   <Badge variant="secondary" className="text-xs">{catAssets.length}</Badge>
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
                   {catAssets.map(renderAssetCard)}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
             {filtered.map(renderAssetCard)}
           </div>
         )}
@@ -755,6 +758,20 @@ export default function BrandLibraryPage() {
                   <div>
                     <Label>URL or File Path</Label>
                     <Input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} data-testid="input-edit-brand-url" />
+                    {(() => {
+                      const previewSrc = editForm.fileUrl || editForm.url;
+                      const ft = (editForm.fileType || "").toLowerCase();
+                      const showPreview = previewSrc && (
+                        ft === "image" || ft === "png" || ft === "jpg" || ft === "jpeg" || ft === "svg" || ft === "webp" || ft === "gif"
+                        || ft.startsWith("image/")
+                        || /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|$)/i.test(previewSrc)
+                      );
+                      return showPreview ? (
+                        <div className="mt-2 rounded-lg overflow-hidden bg-muted aspect-video flex items-center justify-center p-2">
+                          <img src={previewSrc} alt={editForm.name} className="max-w-full max-h-full object-contain" onError={e => (e.currentTarget.parentElement!.style.display = "none")} />
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                   <div>
                     <Label>Upload File</Label>
