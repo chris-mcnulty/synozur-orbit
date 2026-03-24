@@ -20,6 +20,7 @@ import {
   Search,
   ImageIcon,
   Calendar,
+  Eye,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -96,6 +97,7 @@ export default function EmailNewslettersPage() {
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -620,7 +622,7 @@ export default function EmailNewslettersPage() {
               </div>
             </div>
             {filteredEmails.map(email => (
-              <Card key={email.id} data-testid={`card-email-${email.id}`}>
+              <Card key={email.id} className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
