@@ -199,11 +199,19 @@ async function loadRecommendations(ctx: ContextFilter): Promise<string> {
 export async function loadStrategicContext(
   tenantDomain: string,
   marketId?: string,
+  isDefaultMarket?: boolean,
 ): Promise<StrategicContext> {
   // Resolve tenantId from domain for ContextFilter compatibility
   const tenant = await storage.getTenantByDomain(tenantDomain);
   const tenantId = tenant?.id || "";
-  const ctx: ContextFilter = { tenantId, tenantDomain, marketId: marketId || "", isDefaultMarket: !marketId };
+  const resolvedIsDefaultMarket =
+    typeof isDefaultMarket === "boolean" ? isDefaultMarket : !marketId;
+  const ctx: ContextFilter = {
+    tenantId,
+    tenantDomain,
+    marketId: marketId || "",
+    isDefaultMarket: resolvedIsDefaultMarket,
+  };
 
   const results = await Promise.allSettled([
     loadMessagingFramework(ctx),
