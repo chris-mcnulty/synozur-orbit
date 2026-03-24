@@ -403,6 +403,13 @@ export class ContainerCreator {
       throw new Error("[OrbitContainerCreator] Failed to acquire access token");
     }
 
+    try {
+      const payload = JSON.parse(Buffer.from(result.accessToken.split(".")[1], "base64").toString());
+      console.log("[OrbitContainerCreator] Token roles:", JSON.stringify(payload.roles || []));
+      console.log("[OrbitContainerCreator] Token audience:", payload.aud);
+      console.log("[OrbitContainerCreator] Token app:", payload.appid || payload.azp);
+    } catch { /* ignore decode errors */ }
+
     return result.accessToken;
   }
 }
