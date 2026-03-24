@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useUser } from "@/lib/userContext";
 
 interface ClientProject {
   id: string;
@@ -23,6 +24,7 @@ interface ClientProject {
   clientDomain: string | null;
   description: string | null;
   analysisType: "company" | "product";
+  productType?: string;
   status: string;
   notifyOnUpdates: boolean;
   tenantDomain: string;
@@ -32,6 +34,17 @@ interface ClientProject {
   competitors?: any[];
   baselineProductId?: string | null;
 }
+
+const PRODUCT_TYPES = [
+  { value: "product", label: "Product" },
+  { value: "software", label: "Software" },
+  { value: "service", label: "Service" },
+  { value: "platform", label: "Platform" },
+  { value: "solution", label: "Solution" },
+  { value: "tool", label: "Tool" },
+  { value: "framework", label: "Framework" },
+  { value: "api", label: "API" },
+];
 
 interface ContextData {
   activeMarket: { id: string; name: string } | null;
@@ -44,6 +57,7 @@ interface CreateFormData {
   description: string;
   productUrl: string;
   analysisType: "company" | "product";
+  productType: string;
   notifyOnUpdates: boolean;
   linkedInUrl: string;
   instagramUrl: string;
@@ -58,6 +72,7 @@ const emptyFormData: CreateFormData = {
   description: "",
   productUrl: "",
   analysisType: "product",
+  productType: "product",
   notifyOnUpdates: false,
   linkedInUrl: "",
   instagramUrl: "",
@@ -68,6 +83,7 @@ const emptyFormData: CreateFormData = {
 export default function Products() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useUser();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ClientProject | null>(null);
@@ -77,9 +93,12 @@ export default function Products() {
     const params = new URLSearchParams(window.location.search);
     const fromAsset = params.get("fromAsset");
     if (fromAsset) {
+      const tenantName = user?.company ? user.company.replace(/\.com$|\.org$|\.net$|\.io$/, "").split(".").pop() || user.company : "";
+      const displayName = tenantName ? tenantName.charAt(0).toUpperCase() + tenantName.slice(1) : "";
       setFormData({
         ...emptyFormData,
         name: params.get("name") || "",
+        clientName: displayName,
         description: params.get("description") || "",
         productUrl: params.get("url") || "",
         fromAssetId: fromAsset,
@@ -87,7 +106,7 @@ export default function Products() {
       setIsDialogOpen(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, []);
+  }, [user?.company]);
 
   const { data: contextData } = useQuery<ContextData>({
     queryKey: ["/api/context"],
@@ -124,6 +143,7 @@ export default function Products() {
         clientDomain: data.clientDomain,
         description: data.description,
         analysisType: data.analysisType,
+        productType: data.productType || "product",
         notifyOnUpdates: data.notifyOnUpdates,
         productUrl: data.productUrl || undefined,
       };
@@ -168,6 +188,7 @@ export default function Products() {
     status?: string;
     notifyOnUpdates?: boolean;
     analysisType?: "company" | "product";
+    productType?: string;
     baselineProduct?: {
       url: string | null;
       linkedInUrl: string | null;
@@ -248,6 +269,7 @@ export default function Products() {
       description: formData.description || null,
       notifyOnUpdates: formData.notifyOnUpdates,
       analysisType: formData.analysisType,
+      productType: formData.productType || "product",
     };
     if (editingProject.baselineProductId) {
       payload.baselineProduct = {
@@ -298,6 +320,7 @@ export default function Products() {
       clientDomain: project.clientDomain || "",
       description: project.description || "",
       analysisType: project.analysisType || "product",
+      productType: project.productType || "product",
       notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
@@ -369,7 +392,14 @@ export default function Products() {
               )}
             </div>
 
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (open && !formData.clientName && !formData.fromAssetId) {
+                const tenantName = user?.company ? user.company.replace(/\.com$|\.org$|\.net$|\.io$/, "").split(".").pop() || user.company : "";
+                const displayName = tenantName.charAt(0).toUpperCase() + tenantName.slice(1);
+                setFormData(prev => ({ ...prev, clientName: displayName }));
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button data-testid="button-new-product">
                   <Plus className="mr-2 h-4 w-4" />
@@ -442,6 +472,22 @@ export default function Products() {
                       <p className="text-xs text-muted-foreground">
                         If provided, automatically creates this as your baseline product
                       </p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="productType">Product Type</Label>
+                      <Select
+                        value={formData.productType}
+                        onValueChange={(v) => setFormData({ ...formData, productType: v })}
+                      >
+                        <SelectTrigger data-testid="select-product-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRODUCT_TYPES.map(pt => (
+                            <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                       <div className="space-y-0.5">
@@ -574,7 +620,7 @@ export default function Products() {
                       {getStatusBadge(project.status)}
                       <Badge variant="outline" className="text-xs" data-testid={`badge-analysis-type-${project.id}`}>
                         {project.analysisType === "product" ? (
-                          <><Package className="h-3 w-3 mr-1" /> Product</>
+                          <><Package className="h-3 w-3 mr-1" /> {PRODUCT_TYPES.find(pt => pt.value === project.productType)?.label || "Product"}</>
                         ) : (
                           <><Building className="h-3 w-3 mr-1" /> Company</>
                         )}
@@ -684,6 +730,24 @@ export default function Products() {
                     </SelectContent>
                   </Select>
                 </div>
+                {formData.analysisType === "product" && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-productType">Product Type</Label>
+                    <Select
+                      value={formData.productType}
+                      onValueChange={(v) => setFormData({ ...formData, productType: v })}
+                    >
+                      <SelectTrigger data-testid="select-edit-product-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRODUCT_TYPES.map(pt => (
+                          <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-description">Description (optional)</Label>

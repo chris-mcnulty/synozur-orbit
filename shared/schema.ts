@@ -198,6 +198,7 @@ export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
+  productType: text("product_type").notNull().default("product"),
   url: text("url"), // Product page URL
   companyName: text("company_name"), // Company that makes this product
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }), // Optional link to competitor
@@ -1749,6 +1750,7 @@ export const generatedEmails = pgTable("generated_emails", {
   textBody: text("text_body"),
   subjectLineSuggestions: text("subject_line_suggestions").array(),
   coachingTips: text("coaching_tips").array(),
+  label: text("label"),
   status: text("status").notNull().default("draft"),
   sentAt: timestamp("sent_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),

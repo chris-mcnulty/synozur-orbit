@@ -420,8 +420,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
         { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
-        { label: "Content Library", icon: Library, href: "/app/marketing/content-library", enterprise: true },
-        { label: "Brand Library", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
+        { label: "Asset Library", icon: Library, href: "/app/marketing/content-library", enterprise: true },
+        { label: "Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
         { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
         { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
       ]

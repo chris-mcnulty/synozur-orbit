@@ -143,6 +143,8 @@ export default function CampaignDetailPage() {
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
   const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -212,15 +214,19 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (brandImageIds?: string[]) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandImageIds: brandImageIds || [] }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
     onSuccess: () => {
+      setGenerateDialogOpen(false);
+      setSelectedBrandImageIds([]);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
     },
@@ -396,33 +402,61 @@ export default function CampaignDetailPage() {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("09:00");
   const [postsPerDay, setPostsPerDay] = useState("1");
+  const [daysBetweenPosts, setDaysBetweenPosts] = useState("1");
 
   const schedulePostsMutation = useMutation({
-    mutationFn: async ({ time, perDay }: { time: string; perDay: number }) => {
+    mutationFn: async ({ time, perDay, daysBetween }: { time: string; perDay: number; daysBetween: number }) => {
       if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
       const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
       if (activePosts.length === 0) throw new Error("No active posts to schedule");
 
       const [hours, minutes] = time.split(":").map(Number);
+      const timeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 
-      const eligibleDates: Date[] = [];
-      const start = new Date(campaign.startDate);
-      let current = new Date(start);
-      while (eligibleDates.length < campaign.numberOfDays) {
-        const dow = current.getDay();
-        const skip = (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
-        if (!skip) {
-          const d = new Date(current);
-          d.setHours(hours, minutes, 0, 0);
-          eligibleDates.push(d);
+      const toLocalDateStr = (d: Date): string => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      const localToday = new Date();
+      localToday.setHours(0, 0, 0, 0);
+
+      const isWeekendExcluded = (d: Date) => {
+        const dow = d.getDay();
+        return (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
+      };
+
+      const pushToNextWeekday = (date: Date): Date => {
+        let d = new Date(date);
+        while (isWeekendExcluded(d)) {
+          d = addDays(d, 1);
         }
-        current = addDays(current, 1);
+        return d;
+      };
+
+      const campaignStart = new Date(campaign.startDate);
+      campaignStart.setHours(0, 0, 0, 0);
+      const start = campaignStart < localToday ? localToday : campaignStart;
+      const origEnd = addDays(campaignStart, campaign.numberOfDays - 1);
+      const effectiveEnd = origEnd < localToday ? addDays(localToday, campaign.numberOfDays - 1) : origEnd;
+
+      const eligibleSlots: string[] = [];
+      let current = pushToNextWeekday(new Date(start));
+
+      while (current <= effectiveEnd) {
+        const dateStr = toLocalDateStr(current);
+        const isoStr = `${dateStr}T${timeStr}`;
+        eligibleSlots.push(isoStr);
+        current = addDays(current, daysBetween);
+        current = pushToNextWeekday(current);
       }
 
-      const slots: Date[] = [];
-      for (const date of eligibleDates) {
+      const slots: string[] = [];
+      for (const dateIso of eligibleSlots) {
         for (let s = 0; s < perDay; s++) {
-          slots.push(date);
+          slots.push(dateIso);
         }
       }
 
@@ -432,7 +466,7 @@ export default function CampaignDetailPage() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ scheduledDate: slots[slotIndex].toISOString() }),
+          body: JSON.stringify({ scheduledDate: slots[slotIndex] }),
         });
         if (!r.ok) throw new Error(`Failed to schedule post ${post.id}`);
         return r.json();
@@ -688,7 +722,7 @@ export default function CampaignDetailPage() {
           <TabsContent value="posts" className="space-y-4">
             <div className="flex items-center gap-3">
               <Button
-                onClick={() => generatePostsMutation.mutate()}
+                onClick={() => setGenerateDialogOpen(true)}
                 disabled={isGenerating || generatePostsMutation.isPending}
                 className="gap-2"
                 data-testid="button-generate-posts"
@@ -782,7 +816,7 @@ export default function CampaignDetailPage() {
               <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
                 <span className="font-medium">Always include:</span>
                 {campaign.alwaysHashtags.map((h, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px]">#{h}</Badge>
+                  <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
                 ))}
               </div>
             )}
@@ -891,7 +925,7 @@ export default function CampaignDetailPage() {
                       <CardContent className="pt-0 space-y-3">
                         {post.scheduledDate && (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
-                            <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy")}
+                            <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
                           </Badge>
                         )}
                         {postImage && (
@@ -975,7 +1009,7 @@ export default function CampaignDetailPage() {
                               {post.hashtags?.length > 0 ? (
                                 <>
                                   {post.hashtags.map((h, i) => (
-                                    <Badge key={i} variant="secondary" className="text-[10px] text-primary">#{h}</Badge>
+                                    <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
                                   ))}
                                   <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </>
@@ -1378,21 +1412,146 @@ export default function CampaignDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="space-y-2">
+              <Label htmlFor="days-between-posts">Days Between Posts</Label>
+              <Select value={daysBetweenPosts} onValueChange={setDaysBetweenPosts}>
+                <SelectTrigger id="days-between-posts" data-testid="select-days-between-posts">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Every day</SelectItem>
+                  <SelectItem value="2">Every 2 days</SelectItem>
+                  <SelectItem value="3">Every 3 days</SelectItem>
+                  <SelectItem value="4">Every 4 days</SelectItem>
+                  <SelectItem value="5">Every 5 days</SelectItem>
+                  <SelectItem value="6">Every 6 days</SelectItem>
+                  <SelectItem value="7">Every 7 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm text-muted-foreground" data-testid="text-schedule-preview">
               {(() => {
                 const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected").length;
-                return `${active} active post${active !== 1 ? "s" : ""} will be distributed across eligible days.`;
+                const interval = parseInt(daysBetweenPosts);
+                const perDay = parseInt(postsPerDay);
+                if (!campaign?.startDate || !campaign?.numberOfDays) {
+                  return `${active} active post${active !== 1 ? "s" : ""} will be distributed across eligible days.`;
+                }
+                const campaignStart = new Date(campaign.startDate);
+                const todayPreview = new Date();
+                todayPreview.setHours(0, 0, 0, 0);
+                const start = campaignStart < todayPreview ? todayPreview : campaignStart;
+                const origEnd = addDays(new Date(campaign.startDate), campaign.numberOfDays - 1);
+                const endDate = origEnd < todayPreview ? addDays(todayPreview, campaign.numberOfDays - 1) : origEnd;
+                const isWeekendExcluded = (date: Date) => {
+                  const dow = date.getDay();
+                  return (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
+                };
+                const pushToNextWeekday = (date: Date): Date => {
+                  let d = new Date(date);
+                  while (isWeekendExcluded(d)) {
+                    d = addDays(d, 1);
+                  }
+                  return d;
+                };
+                let postingDays = 0;
+                let current = pushToNextWeekday(new Date(start));
+                while (current <= endDate) {
+                  postingDays++;
+                  current = addDays(current, interval);
+                  current = pushToNextWeekday(current);
+                }
+                const weekdaysOnly = !campaign.includeSaturday || !campaign.includeSunday;
+                const intervalLabel = interval === 1 ? "daily" : `every ${interval} days`;
+                const dayTypeLabel = weekdaysOnly ? ", weekdays only" : "";
+                return `${active} active post${active !== 1 ? "s" : ""} will be distributed across ${postingDays} posting day${postingDays !== 1 ? "s" : ""} (${intervalLabel}${dayTypeLabel}).`;
               })()}
             </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowScheduleDialog(false)} data-testid="button-cancel-schedule">Cancel</Button>
             <Button
-              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay) })}
+              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts) })}
               disabled={schedulePostsMutation.isPending}
               data-testid="button-confirm-schedule"
             >
               {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); } else { setGenerateDialogOpen(true); } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generate Social Posts</DialogTitle>
+            <DialogDescription>
+              Optionally select brand images to rotate across your generated posts. Each day and platform will get a unique text + image combination.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Brand Images (optional)</Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                Select up to {Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3)} images. More images = more unique combinations per day.
+              </p>
+              {(() => {
+                const imageBrandAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
+                if (imageBrandAssets.length === 0) {
+                  return <p className="text-sm text-muted-foreground text-center py-4">No brand images available. Add images in the Brand Library first.</p>;
+                }
+                const maxImages = Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3);
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    {imageBrandAssets.map(ba => {
+                      const imgUrl = ba.fileUrl || ba.url || "";
+                      const isSelected = selectedBrandImageIds.includes(ba.id);
+                      const atLimit = selectedBrandImageIds.length >= maxImages && !isSelected;
+                      return (
+                        <button
+                          key={ba.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedBrandImageIds(prev => prev.filter(id => id !== ba.id));
+                            } else if (!atLimit) {
+                              setSelectedBrandImageIds(prev => [...prev, ba.id]);
+                            }
+                          }}
+                          disabled={atLimit}
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
+                          data-testid={`brand-image-option-${ba.id}`}
+                        >
+                          <img src={imgUrl} alt={ba.name} className="w-full h-20 object-cover" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                            <span className="text-[10px] text-white truncate block">{ba.name}</span>
+                          </div>
+                          {isSelected && (
+                            <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-3.5 h-3.5 text-white" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {selectedBrandImageIds.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedBrandImageIds.length} image{selectedBrandImageIds.length !== 1 ? "s" : ""} selected — with 3 text variations this gives {selectedBrandImageIds.length * 3} unique text+image combinations per platform.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button
+              onClick={() => generatePostsMutation.mutate(selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined)}
+              disabled={generatePostsMutation.isPending || isGenerating}
+              className="gap-2"
+              data-testid="button-confirm-generate"
+            >
+              {generatePostsMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
             </Button>
           </div>
         </DialogContent>

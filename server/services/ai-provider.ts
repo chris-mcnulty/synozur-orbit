@@ -12,6 +12,18 @@ export interface AICompletionOptions {
   systemPrompt?: string;
 }
 
+function useMaxTokensLegacy(model: string): boolean {
+  const lower = model.toLowerCase();
+  return lower.includes("gpt-3.5") || lower.includes("gpt-4-") || lower === "gpt-4";
+}
+
+function buildTokenParam(model: string, maxTokens: number): { max_tokens?: number; max_completion_tokens?: number } {
+  if (useMaxTokensLegacy(model)) {
+    return { max_tokens: maxTokens };
+  }
+  return { max_completion_tokens: maxTokens };
+}
+
 export interface AICompletionResult {
   text: string;
   usage: {
@@ -123,9 +135,10 @@ class ReplitOpenAIProvider implements IAIProvider {
     }
     messages.push({ role: "user", content: userPrompt });
 
+    const tokenParam = buildTokenParam(model, options?.maxTokens ?? 8192);
     const response = await client.chat.completions.create({
       model,
-      max_tokens: options?.maxTokens ?? 8192,
+      ...tokenParam,
       temperature: options?.temperature,
       messages,
     });
@@ -213,11 +226,12 @@ class AzureFoundryProvider implements IAIProvider {
     }
     messages.push({ role: "user", content: userPrompt });
 
+    const tokenParam = buildTokenParam(model, options?.maxTokens ?? 8192);
     const response = await client.path("/chat/completions").post({
       body: {
         messages,
         model,
-        max_tokens: options?.maxTokens ?? 8192,
+        ...tokenParam,
         ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       },
     });
@@ -262,9 +276,10 @@ class AzureFoundryProvider implements IAIProvider {
     }
     messages.push({ role: "user", content: userPrompt });
 
+    const tokenParam = buildTokenParam(model, options?.maxTokens ?? 8192);
     const response = await client.chat.completions.create({
       model,
-      max_tokens: options?.maxTokens ?? 8192,
+      ...tokenParam,
       temperature: options?.temperature,
       messages,
     });

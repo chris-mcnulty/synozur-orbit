@@ -533,16 +533,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/marketing/products", async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     const ctx = await getRequestContext(req);
+    const conditions = [
+      eq(products.tenantDomain, ctx.tenantDomain),
+    ];
+    if (ctx.marketId) {
+      conditions.push(eq(products.marketId, ctx.marketId));
+    }
     const rows = await db.select({
       id: products.id,
       name: products.name,
       isBaseline: products.isBaseline,
+      productType: products.productType,
     }).from(products)
-      .where(and(
-        eq(products.tenantDomain, ctx.tenantDomain),
-        eq(products.marketId, ctx.marketId),
-        eq(products.isBaseline, true),
-      ))
+      .where(and(...conditions))
       .orderBy(products.name);
     res.json(rows);
   });
@@ -1183,6 +1186,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
+    const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
+
     // Create a job run record
     const [job] = await db.insert(scheduledJobRuns).values({
       id: randomUUID(),
@@ -1199,7 +1204,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(eq(campaigns.id, campaign.id));
 
     // Kick off async generation (fire-and-forget)
-    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id).catch(err => {
+    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds).catch(err => {
       console.error("[Saturn] Post generation error:", err.message);
     });
 
@@ -1228,7 +1233,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const posts = await db.select().from(generatedPosts)
       .where(and(
         eq(generatedPosts.campaignId, campaign.id),
-        eq(generatedPosts.status, "approved"),
       ));
 
     const accountIds = Array.from(new Set(posts.map(p => p.socialAccountId).filter(Boolean))) as string[];
@@ -1291,6 +1295,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (post.overrideBrandAssetId) {
         const ba = brandMap.get(post.overrideBrandAssetId);
         if (ba?.fileUrl) return ba.fileUrl;
+        if (ba?.url) return ba.url;
       }
       return "";
     };
@@ -1386,31 +1391,36 @@ export function registerSaturnMarketingRoutes(app: Express) {
       "hubspot-marketing": `Generate a RICH, visually compelling HTML email suitable for HubSpot Marketing Email.
 Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
 
+CRITICAL WIDTH CONSTRAINT — STRICT 600px MAXIMUM:
+- The outer wrapper table is width="600". Every child element must fit INSIDE 600px.
+- Content <td> cells have 32px left + 32px right padding, so inner content max width = 536px.
+- Hero images must be exactly: <img src="URL" width="600" style="display:block;width:600px;max-width:600px;height:auto;border:0" alt="...">
+- Do NOT use width values greater than 600 on ANY element (table, td, img, div, or inline style).
+- Stat card tables inside a padded td must use percentage widths (width="33%"), NEVER pixel widths.
+
 REQUIRED HTML STRUCTURE:
-- Wrap everything in an outer <table width="100%" style="background-color: #f4f6f9"> with a centered inner <table width="620"> container
+- Wrap everything in: <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;background-color:#ffffff;margin:0 auto">
 - Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
-- Use table-based layout throughout (email clients don't support flexbox/grid)
+- Use table-based layout ONLY (email clients don't support flexbox, grid, or div layouts)
+- All content <td> cells should have style="padding:24px 32px"
 
 REQUIRED SECTIONS (adapt based on content):
-1. **Branded Header Banner**: Dark background with company name in small uppercase letters, a bold headline (h1), and a subheading. Use the brand colors if provided.
-2. **Hero Image**: If the content asset has an image URL, include it as a full-width <img> with width="620" style="display:block;width:100%;height:auto"
-3. **Opening Paragraph**: Personal greeting and context-setting copy (2-3 paragraphs)
-4. **Key Stats / Data Cards**: If the content contains numbers or stats, present them in side-by-side colored stat cards using a 2-column table layout with rounded corners and background colors
-5. **Numbered Highlights**: Present 3-5 key points as numbered items with circular number badges (dark background, white text) and bold titles with descriptions
-6. **Primary CTA Button**: Styled as [CTA_BUTTON: "Button Text" → URL] placeholder. Make it prominent.
-7. **Secondary Content Block**: If multiple assets provided, add another section with image and bullet points
-8. **Closing Section**: Wrap-up message and secondary CTA
+1. **Branded Header Banner**: Use the Brand Primary Color as the header background-color. Include company logo as a small image and company name in small uppercase white text, a bold headline (h1 style, max font-size 26px, color:#ffffff), and a subheading in white/light text.
+2. **Hero Image**: If the content asset has an image URL, include it as <img src="URL" width="600" style="display:block;width:600px;max-width:600px;height:auto;border:0" alt="...">. The image td must have NO padding (padding:0).
+3. **Opening Paragraph**: Personal greeting and 2-3 context-setting paragraphs.
+4. **Key Stats / Data Cards**: If stats exist, use a SINGLE-ROW table with 2-3 <td> cells, each with percentage widths (e.g. width="33%"). Each cell: use Brand Secondary Color as background, border-radius:8px, centered large bold number and label in white. Do NOT use fixed pixel widths on stat cells.
+5. **Key Points**: Present 3-5 highlights as styled paragraphs with bold titles (use Brand Primary Color for bold text) and descriptions.
+6. **Primary CTA Button**: Render as a centered <table> with a single <td bgcolor="BRAND_PRIMARY_COLOR" style="border-radius:6px;text-align:center"><a href="URL" style="display:inline-block;padding:14px 32px;color:#ffffff;font-weight:bold;text-decoration:none;font-family:Arial,sans-serif;font-size:16px">Button Text</a></td>. Do NOT use [CTA_BUTTON] placeholders.
+7. **Secondary Content**: If multiple assets, add another section.
+8. **Footer**: Simple single-column footer. Do NOT use multi-column footer layouts — stack footer items vertically.
 
 VISUAL DESIGN RULES:
-- Use <hr> dividers with style="border:none;border-top:1px solid #e8ecf0" between sections
-- Stat cards: colored backgrounds (#f0f6ff blue, #fff7f0 orange, #f0faf0 green), border-radius:8px, large bold numbers
-- Numbered circles: 40x40px, dark background, white text, border-radius:50%
-- Buttons: Use [CTA_BUTTON: "text" → url] syntax for CTAs
-- Typography: font-family:Arial,sans-serif throughout, headings 22-28px, body 15-16px, line-height:1.6-1.7
-- Colors: dark navy (#0a2540) for headings, #333 for body, #555 for secondary, lighter blues for accents
-- Padding: 32-40px horizontal padding in content cells
-- Use company brand colors for the header banner background and accent elements if brand info is provided
-- Include the company logo image if a logo URL is provided (in the header or footer)`,
+- Use <hr> with style="border:none;border-top:1px solid #e8ecf0;margin:24px 0" between sections
+- All buttons must be real HTML <table><tr><td bgcolor><a> buttons, NOT placeholders
+- Typography: font-family:Arial,sans-serif throughout, headings 22-26px, body 15-16px, line-height:1.6
+- IMPORTANT: Use the Brand Primary Color for heading text, header backgrounds, and CTA button backgrounds. Use Brand Secondary Color for accent elements (stat cards, highlights, secondary buttons). Do NOT fall back to navy (#0a2540) or generic blue when brand colors are provided.
+- Body text: #333 for primary body, #555 for secondary/lighter text
+- Include company logo image if a logo URL is provided`,
       "hubspot-1to1": `Generate a personal, conversational email suitable for HubSpot 1:1 Sales Email.
 - Do NOT use any HTML tags.
 - Write as if one person is emailing another directly.
@@ -1487,10 +1497,11 @@ VISUAL DESIGN RULES:
     }
 
     const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
-    if (tenantRow?.primaryColor || tenantRow?.secondaryColor) {
-      brandContext += `\nBrand Primary Color: ${tenantRow.primaryColor || "#0a2540"}`;
-      brandContext += `\nBrand Secondary Color: ${tenantRow.secondaryColor || "#7eb3e0"}`;
-    }
+    const brandPrimary = tenantRow?.primaryColor || "#810FFB";
+    const brandSecondary = tenantRow?.secondaryColor || "#E60CB3";
+    brandContext += `\nBrand Primary Color: ${brandPrimary}`;
+    brandContext += `\nBrand Secondary Color: ${brandSecondary}`;
+    brandContext += `\nIMPORTANT: Wherever the instructions say "BRAND_PRIMARY_COLOR", use ${brandPrimary}. Wherever they say "BRAND_SECONDARY_COLOR" or "Brand Secondary Color", use ${brandSecondary}. Use these exact hex values in bgcolor attributes, background-color styles, and color styles.`;
 
     const assetContext = selectedAssets
       .map((a: any) => {
@@ -1552,6 +1563,35 @@ Structure your response using these exact delimiters:
         .replace(/```html\s*/gi, "")
         .replace(/```\s*$/gm, "")
         .trim();
+
+      emailBody = emailBody.replace(
+        /\[CTA_BUTTON:\s*"([^"]+)"\s*(?:→|->|—>)\s*([^\]\s]+)\s*\]/gi,
+        (_, text, url) => `<table cellpadding="0" cellspacing="0" border="0" style="margin:24px auto;"><tr><td align="center" bgcolor="${brandPrimary}" style="border-radius:6px;"><a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">${text}</a></td></tr></table>`
+      );
+
+      emailBody = emailBody.replace(
+        /width\s*=\s*"(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})"/gi,
+        'width="600"'
+      );
+      emailBody = emailBody.replace(
+        /max-width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
+        'max-width:600px'
+      );
+      emailBody = emailBody.replace(
+        /width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
+        'width:600px'
+      );
+
+      emailBody = emailBody.replace(
+        /<img([^>]*?)width\s*=\s*"(\d+)"([^>]*?)>/gi,
+        (match, before, w, after) => {
+          const num = parseInt(w, 10);
+          if (num > 600) {
+            return `<img${before}width="600"${after}>`.replace(/width:\s*\d+px/gi, 'width:600px').replace(/max-width:\s*\d+px/gi, 'max-width:600px');
+          }
+          return match;
+        }
+      );
     }
 
     const coachingTipsMap: Record<string, string[]> = {
@@ -1650,12 +1690,13 @@ Structure your response using these exact delimiters:
   app.patch("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { subject, htmlBody, textBody, status } = req.body;
+    const { subject, htmlBody, textBody, status, label } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (subject !== undefined) updates.subject = subject;
     if (htmlBody !== undefined) updates.htmlBody = htmlBody;
     if (textBody !== undefined) updates.textBody = textBody;
     if (status !== undefined) updates.status = status;
+    if (label !== undefined) updates.label = label || null;
     const [row] = await db.update(generatedEmails)
       .set(updates)
       .where(and(
@@ -1671,8 +1712,7 @@ Structure your response using these exact delimiters:
   app.delete("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    await db.update(generatedEmails)
-      .set({ status: "archived", updatedAt: new Date() })
+    await db.delete(generatedEmails)
       .where(and(
         eq(generatedEmails.id, req.params.id),
         eq(generatedEmails.tenantDomain, ctx.tenantDomain),
@@ -1776,11 +1816,104 @@ Structure your response using these exact delimiters:
 
 // ─── async post generation ───────────────────────────────────────────────────
 
+function isValidVariant(v: any): boolean {
+  if (!v || typeof v !== "object") return false;
+  if (typeof v.content !== "string" || v.content.trim().length === 0) return false;
+  return true;
+}
+
+function normalizeVariant(v: any): { content: string; hashtags: string[]; imagePrompt: string } {
+  return {
+    content: (v.content as string).trim(),
+    hashtags: Array.isArray(v.hashtags)
+      ? v.hashtags.filter((h: any) => typeof h === "string")
+      : [],
+    imagePrompt: typeof v.imagePrompt === "string" ? v.imagePrompt : "",
+  };
+}
+
+function extractJsonVariants(raw: string): any[] {
+  let cleaned = raw
+    .replace(/```(?:json)?\s*\n?/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  const strategies: Array<() => any[]> = [
+    () => {
+      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (!arrMatch) throw new Error("no array");
+      return JSON.parse(arrMatch[0]);
+    },
+    () => {
+      const objects: any[] = [];
+      const objRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+      let m;
+      while ((m = objRegex.exec(cleaned)) !== null) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (parsed.content) objects.push(parsed);
+        } catch {}
+      }
+      if (objects.length === 0) throw new Error("no objects");
+      return objects;
+    },
+    () => {
+      const singleObj = cleaned.match(/\{[\s\S]*\}/);
+      if (!singleObj) throw new Error("no object");
+      const parsed = JSON.parse(singleObj[0]);
+      if (Array.isArray(parsed)) return parsed;
+      return [parsed];
+    },
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      const result = strategy();
+      const items = Array.isArray(result) ? result : [result];
+      const validated = items.filter(isValidVariant).map(normalizeVariant);
+      if (validated.length > 0) return validated;
+    } catch {}
+  }
+
+  throw new Error("All extraction strategies failed");
+}
+
+function buildFallbackVariants(raw: string): any[] {
+  const contentRegex = /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  const blocks: any[] = [];
+  let m;
+  while ((m = contentRegex.exec(raw)) !== null) {
+    try {
+      const content = JSON.parse(`"${m[1]}"`);
+      if (content.trim().length >= 10) {
+        blocks.push({ content: content.trim(), hashtags: [], imagePrompt: "" });
+      }
+    } catch {}
+  }
+  if (blocks.length > 0) return blocks;
+
+  const cleanedText = raw
+    .replace(/```(?:json)?\s*\n?/gi, "")
+    .replace(/```\s*/g, "")
+    .replace(/[\[\]{}"]/g, " ")
+    .replace(/,\s*$/gm, "")
+    .replace(/^\s*"?\w+"\s*:\s*/gm, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (cleanedText.length >= 10) {
+    return [{ content: cleanedText, hashtags: [], imagePrompt: "" }];
+  }
+
+  return [{ content: "Post generation failed — please try again.", hashtags: [], imagePrompt: "" }];
+}
+
 async function generatePostsAsync(
   campaignId: string,
   tenantDomain: string,
   marketId: string,
   jobId: string,
+  brandImageIds: string[] = [],
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
@@ -1826,6 +1959,21 @@ async function generatePostsAsync(
     ]);
     const strategicContext = formatStrategicContextForPrompt(strategicCtx);
 
+    let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
+    if (brandImageIds.length > 0) {
+      brandImageAssets = await db.select({
+        id: brandAssets.id,
+        fileUrl: brandAssets.fileUrl,
+        url: brandAssets.url,
+        name: brandAssets.name,
+      }).from(brandAssets).where(
+        and(
+          eq(brandAssets.tenantDomain, tenantDomain),
+          inArray(brandAssets.id, brandImageIds),
+        ),
+      );
+    }
+
     const assetContext = selectedAssets
       .map((a: any) => {
         const parts = [`## ${a.title}`];
@@ -1855,7 +2003,7 @@ IMPORTANT RULES — follow these strictly:
 2. Each content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>"). If multiple assets are provided, include the most relevant URL.
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces and the URL. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including ALL spaces, punctuation, and the URL. This is a HARD TECHNICAL LIMIT enforced by the Twitter API — posts over 280 characters WILL be rejected. Aim for 200-250 characters to leave room. Write extremely concise copy. One short sentence + URL is ideal." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
@@ -1874,20 +2022,16 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
 
       let variants: any[] = [];
       try {
-        let cleaned = result.text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
-        const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          variants = JSON.parse(jsonMatch[0]);
-        } else {
-          const objMatch = cleaned.match(/\{[\s\S]*\}/);
-          variants = objMatch ? [JSON.parse(objMatch[0])] : [{ content: cleaned, hashtags: [], imagePrompt: "" }];
-        }
-      } catch {
-        variants = [{ content: result.text, hashtags: [], imagePrompt: "" }];
+        variants = extractJsonVariants(result.text);
+      } catch (e) {
+        console.error("[Saturn] All JSON extraction strategies failed for campaign", campaignId);
+        console.error("[Saturn] Raw AI response:", result.text);
+        variants = buildFallbackVariants(result.text);
       }
 
       const primaryAssetUrl = selectedAssets.find((a: any) => a.url)?.url || null;
 
+      const cleanedVariants: { content: string; hashtags: string[]; imagePrompt: string }[] = [];
       for (const parsed of variants) {
         let postContent = (parsed.content ?? result.text).trim();
         postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
@@ -1914,22 +2058,65 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
         }
 
         if (account.platform === "twitter" && postContent.length > 280) {
-          postContent = postContent.substring(0, 277) + "...";
+          const urlMatch = postContent.match(/https?:\/\/\S+/);
+          if (urlMatch) {
+            const url = urlMatch[0];
+            const textWithoutUrl = postContent.replace(url, "").trim();
+            const maxTextLen = 280 - url.length - 2;
+            if (maxTextLen > 20) {
+              const truncated = textWithoutUrl.substring(0, maxTextLen - 3).replace(/\s+\S*$/, "") + "…";
+              postContent = truncated + " " + url;
+            } else {
+              postContent = postContent.substring(0, 277) + "…";
+            }
+          } else {
+            postContent = postContent.substring(0, 277) + "…";
+          }
         }
 
-        generatedRows.push({
-          id: randomUUID(),
-          campaignId,
-          socialAccountId: account.id === "placeholder" ? null : account.id,
-          tenantDomain,
-          platform: account.platform,
-          content: postContent,
-          hashtags,
-          imagePrompt: parsed.imagePrompt ?? "",
-          sourceUrl: primaryAssetUrl,
-          variantGroup: variantGroupId,
-          generationJobId: jobId,
-        } as InsertGeneratedPost);
+        cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
+      }
+
+      if (brandImageAssets.length > 0) {
+        let comboIndex = 0;
+        for (let vi = 0; vi < cleanedVariants.length; vi++) {
+          for (let ii = 0; ii < brandImageAssets.length; ii++) {
+            const v = cleanedVariants[vi];
+            const img = brandImageAssets[ii];
+            generatedRows.push({
+              id: randomUUID(),
+              campaignId,
+              socialAccountId: account.id === "placeholder" ? null : account.id,
+              tenantDomain,
+              platform: account.platform,
+              content: v.content,
+              hashtags: v.hashtags,
+              imagePrompt: v.imagePrompt,
+              sourceUrl: primaryAssetUrl,
+              variantGroup: variantGroupId,
+              generationJobId: jobId,
+              overrideBrandAssetId: img.id,
+            } as InsertGeneratedPost);
+            comboIndex++;
+          }
+        }
+        console.log(`[Saturn] Generated ${comboIndex} text×image combos for ${account.platform} (${cleanedVariants.length} text × ${brandImageAssets.length} images)`);
+      } else {
+        for (const v of cleanedVariants) {
+          generatedRows.push({
+            id: randomUUID(),
+            campaignId,
+            socialAccountId: account.id === "placeholder" ? null : account.id,
+            tenantDomain,
+            platform: account.platform,
+            content: v.content,
+            hashtags: v.hashtags,
+            imagePrompt: v.imagePrompt,
+            sourceUrl: primaryAssetUrl,
+            variantGroup: variantGroupId,
+            generationJobId: jobId,
+          } as InsertGeneratedPost);
+        }
       }
     }
 

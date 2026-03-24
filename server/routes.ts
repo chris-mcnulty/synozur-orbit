@@ -7074,14 +7074,19 @@ Respond in JSON format:
 
       const projects = await storage.getClientProjectsByContext(toContextFilter(ctx));
       
-      // Enrich projects with their baseline product ID for Features/Roadmap links
       const enrichedProjects = await Promise.all(
         projects.map(async (project) => {
           const projectProducts = await storage.getProjectProducts(project.id);
           const baselineProduct = projectProducts.find((pp: { role: string }) => pp.role === "baseline");
+          let productType: string | null = null;
+          if (baselineProduct?.productId) {
+            const [prod] = await db.select({ productType: products.productType }).from(products).where(eq(products.id, baselineProduct.productId));
+            productType = prod?.productType || null;
+          }
           return {
             ...project,
             baselineProductId: baselineProduct?.productId || null,
+            productType: productType || "product",
           };
         })
       );
@@ -7140,7 +7145,7 @@ Respond in JSON format:
         }
       }
 
-      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl, sourceContentAssetId } = req.body;
+      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl, sourceContentAssetId, productType } = req.body;
       
       if (!name || !clientName) {
         return res.status(400).json({ error: "Project name and client name are required" });
@@ -7179,9 +7184,11 @@ Respond in JSON format:
       // If productUrl provided or creating from content asset, automatically create the baseline product
       if ((productUrl && typeof productUrl === "string" && productUrl.trim()) || validatedAssetId) {
         try {
+          const validProductTypes = ["product", "software", "service", "platform", "solution", "tool", "framework", "api"];
           const product = await storage.createProduct({
             name: name.trim(),
             description: description?.trim() || null,
+            productType: productType && validProductTypes.includes(productType) ? productType : "product",
             url: productUrl?.trim() || null,
             companyName: clientName.trim(),
             createdBy: ctx.userId,
@@ -7226,7 +7233,7 @@ Respond in JSON format:
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { name, clientName, clientDomain, description, status, notifyOnUpdates, analysisType, baselineProduct } = req.body;
+      const { name, clientName, clientDomain, description, status, notifyOnUpdates, analysisType, baselineProduct, productType } = req.body;
       
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name.trim();
@@ -7243,17 +7250,21 @@ Respond in JSON format:
 
       const updated = await storage.updateClientProject(req.params.id, updates);
 
-      if (baselineProduct) {
+      if (baselineProduct || productType) {
         const projectProducts = await storage.getProjectProducts(req.params.id);
         const baselineEntry = projectProducts.find((pp: { role: string }) => pp.role === "baseline");
         if (baselineEntry) {
           const bp = await storage.getProduct(baselineEntry.productId);
           if (bp && validateResourceContext(bp, ctx)) {
             const bpUpdates: Record<string, string | null> = {};
-            if (baselineProduct.url !== undefined) bpUpdates.url = baselineProduct.url;
-            if (baselineProduct.linkedInUrl !== undefined) bpUpdates.linkedInUrl = baselineProduct.linkedInUrl;
-            if (baselineProduct.instagramUrl !== undefined) bpUpdates.instagramUrl = baselineProduct.instagramUrl;
-            if (baselineProduct.twitterUrl !== undefined) bpUpdates.twitterUrl = baselineProduct.twitterUrl;
+            if (baselineProduct?.url !== undefined) bpUpdates.url = baselineProduct.url;
+            if (baselineProduct?.linkedInUrl !== undefined) bpUpdates.linkedInUrl = baselineProduct.linkedInUrl;
+            if (baselineProduct?.instagramUrl !== undefined) bpUpdates.instagramUrl = baselineProduct.instagramUrl;
+            if (baselineProduct?.twitterUrl !== undefined) bpUpdates.twitterUrl = baselineProduct.twitterUrl;
+            const validProductTypes = ["product", "software", "service", "platform", "solution", "tool", "framework", "api"];
+            if (productType && validProductTypes.includes(productType)) {
+              (bpUpdates as any).productType = productType;
+            }
             if (Object.keys(bpUpdates).length > 0) {
               await storage.updateProduct(baselineEntry.productId, bpUpdates);
             }

@@ -87,7 +87,7 @@ export default function ContentLibraryPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [statusTab, setStatusTab] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [detailAsset, setDetailAsset] = useState<ContentAsset | null>(null);
@@ -253,20 +253,18 @@ export default function ContentLibraryPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const archiveMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/content-assets/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
         credentials: "include",
-        body: JSON.stringify({ status: "archived" }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast({ title: "Content asset archived" });
+      toast({ title: "Content asset deleted" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -477,7 +475,7 @@ export default function ContentLibraryPage() {
     const matchesSearch = !search ||
       a.title.toLowerCase().includes(search.toLowerCase()) ||
       a.description?.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = categoryFilter === "all" || a.categoryId === categoryFilter;
+    const matchesCategory = categoryFilter === "all" || (categoryFilter === "__uncategorized" ? !a.categoryId : a.categoryId === categoryFilter);
     const matchesSource = sourceFilter === "all" ||
       (sourceFilter === "captured" && a.capturedViaExtension) ||
       (sourceFilter === "manual" && !a.capturedViaExtension);
@@ -646,7 +644,7 @@ export default function ContentLibraryPage() {
             variant="ghost"
             size="icon"
             className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
-            onClick={e => { e.stopPropagation(); archiveMutation.mutate(asset.id); }}
+            onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
             data-testid={`button-archive-${asset.id}`}
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -756,10 +754,10 @@ export default function ContentLibraryPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-content-library-title">
-                <Library className="w-6 h-6" /> Content Library
+                <Library className="w-6 h-6" /> Asset Library
               </h1>
               <p className="text-muted-foreground text-sm mt-1">
-                Add URLs or paste content to build your marketing asset library. AI automatically extracts and summarizes page content for social posts and emails.
+                Manage web content used to generate posts.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -808,7 +806,7 @@ export default function ContentLibraryPage() {
               </Button>
               <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) { resetForm(); setDuplicateAsset(null); } }}>
                 <DialogTrigger asChild>
-                  <Button data-testid="button-add-content-asset"><Plus className="w-4 h-4 mr-2" />Add Content</Button>
+                  <Button data-testid="button-add-content-asset"><Plus className="w-4 h-4 mr-2" />Add Asset</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
@@ -1149,61 +1147,77 @@ export default function ContentLibraryPage() {
           </div>
         </div>
 
-        <Tabs value={statusTab} onValueChange={setStatusTab}>
-          <div className="flex items-center justify-between gap-3">
-            <TabsList data-testid="tabs-content-status">
-              <TabsTrigger value="all" data-testid="tab-content-all">All</TabsTrigger>
-              <TabsTrigger value="active" data-testid="tab-content-active">Active</TabsTrigger>
-              <TabsTrigger value="archived" data-testid="tab-content-archived">Archived</TabsTrigger>
-            </TabsList>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={viewMode === "flat" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setViewMode("flat")}
-                data-testid="button-view-flat-content"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </Button>
-              <Button
-                variant={viewMode === "grouped" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setViewMode("grouped")}
-                data-testid="button-view-grouped-content"
-              >
-                <List className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        </Tabs>
-
         <div className="flex gap-3 items-center">
-          <div className="relative flex-1">
+          <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input className="pl-9" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-content" />
           </div>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-48" data-testid="select-filter-category">
-              <Filter className="w-4 h-4 mr-1" />
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={sourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger className="w-40" data-testid="select-filter-source">
-              <SelectValue placeholder="All sources" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              <SelectItem value="captured">Captured</SelectItem>
-              <SelectItem value="manual">Manual</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setViewMode("table")}
+              data-testid="button-view-table-content"
+            >
+              <List className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "cards" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setViewMode("cards")}
+              data-testid="button-view-cards-content"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap" data-testid="category-pills-content">
+          {(() => {
+            const statusFiltered = assets.filter(a => statusTab === "all" || a.status === statusTab);
+            const allCount = statusFiltered.length;
+            const catCounts = new Map<string, number>();
+            for (const a of statusFiltered) {
+              const catId = a.categoryId || "__uncategorized";
+              catCounts.set(catId, (catCounts.get(catId) || 0) + 1);
+            }
+            return (
+              <>
+                <button
+                  onClick={() => setCategoryFilter("all")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  data-testid="pill-category-all"
+                >
+                  All <span className="bg-white/20 rounded-full px-1.5 text-[10px]">{allCount}</span>
+                </button>
+                {categories.map(cat => {
+                  const count = catCounts.get(cat.id) || 0;
+                  if (count === 0) return null;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCategoryFilter(cat.id === categoryFilter ? "all" : cat.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === cat.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                      data-testid={`pill-category-${cat.name.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      {cat.name} <span className={`rounded-full px-1.5 text-[10px] ${categoryFilter === cat.id ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{count}</span>
+                    </button>
+                  );
+                })}
+                {(catCounts.get("__uncategorized") || 0) > 0 && (
+                  <button
+                    onClick={() => setCategoryFilter(categoryFilter === "__uncategorized" ? "all" : "__uncategorized")}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "__uncategorized" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    data-testid="pill-category-uncategorized"
+                  >
+                    Uncategorized <span className={`rounded-full px-1.5 text-[10px] ${categoryFilter === "__uncategorized" ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{catCounts.get("__uncategorized")}</span>
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {isLoading ? (
@@ -1216,19 +1230,90 @@ export default function ContentLibraryPage() {
                 : "No assets match your search or filter."}
             </CardContent>
           </Card>
-        ) : viewMode === "grouped" ? (
-          <div className="space-y-6">
-            {groupedByCategory().map(([catName, catAssets]) => (
-              <div key={catName} data-testid={`group-content-${catName.toLowerCase().replace(/\s+/g, "-")}`}>
-                <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                  <Tag className="w-3.5 h-3.5" /> {catName}
-                  <Badge variant="secondary" className="text-xs">{catAssets.length}</Badge>
-                </h3>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
-                  {catAssets.map(renderAssetCard)}
-                </div>
-              </div>
-            ))}
+        ) : viewMode === "table" ? (
+          <div className="rounded-lg border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className="text-left py-2.5 px-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Content</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Category</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Status</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">AI Extraction</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Added</th>
+                  <th className="text-right py-2.5 px-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(asset => (
+                  <tr key={asset.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors" data-testid={`table-row-${asset.id}`}>
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center gap-3">
+                        {asset.leadImageUrl ? (
+                          <img src={asset.leadImageUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <button
+                            onClick={() => { setDetailAsset(asset); setEditOpen(true); }}
+                            className="text-sm font-medium hover:text-primary transition-colors truncate block max-w-[280px] text-left"
+                            data-testid={`link-asset-title-${asset.id}`}
+                          >
+                            {asset.title}
+                          </button>
+                          {asset.url && (
+                            <a href={asset.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-primary truncate block max-w-[280px]">
+                              {asset.url.replace(/^https?:\/\//, "").substring(0, 40)}...
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {asset.categoryId ? (
+                        <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId) || "—"}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge className={`text-xs ${asset.status === "active" ? "bg-green-500/20 text-green-400 border-green-500/50" : "bg-gray-500/20 text-gray-400 border-gray-500/50"}`}>
+                        {asset.status === "active" ? "Active" : "Archived"}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {asset.extractionStatus === "completed" ? (
+                        <span className="text-xs text-green-400 flex items-center gap-1"><Globe className="w-3 h-3" /> Completed</span>
+                      ) : asset.extractionStatus === "pending" ? (
+                        <span className="text-xs text-yellow-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Pending</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(asset.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center gap-1 justify-end">
+                        {asset.url && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => extractMutation.mutate(asset.id)} data-testid={`button-extract-${asset.id}`}>
+                            <RefreshCw className="w-3 h-3 mr-1" /> Extract
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setDetailAsset(asset); setEditOpen(true); }} data-testid={`button-view-${asset.id}`}>
+                          View
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(asset.id)} data-testid={`button-delete-table-${asset.id}`}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
