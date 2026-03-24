@@ -1670,12 +1670,13 @@ Structure your response using these exact delimiters:
   app.patch("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { subject, htmlBody, textBody, status } = req.body;
+    const { subject, htmlBody, textBody, status, label } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (subject !== undefined) updates.subject = subject;
     if (htmlBody !== undefined) updates.htmlBody = htmlBody;
     if (textBody !== undefined) updates.textBody = textBody;
     if (status !== undefined) updates.status = status;
+    if (label !== undefined) updates.label = label || null;
     const [row] = await db.update(generatedEmails)
       .set(updates)
       .where(and(
@@ -1691,8 +1692,7 @@ Structure your response using these exact delimiters:
   app.delete("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    await db.update(generatedEmails)
-      .set({ status: "archived", updatedAt: new Date() })
+    await db.delete(generatedEmails)
       .where(and(
         eq(generatedEmails.id, req.params.id),
         eq(generatedEmails.tenantDomain, ctx.tenantDomain),

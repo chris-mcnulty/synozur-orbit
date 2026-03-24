@@ -1750,6 +1750,7 @@ export const generatedEmails = pgTable("generated_emails", {
   textBody: text("text_body"),
   subjectLineSuggestions: text("subject_line_suggestions").array(),
   coachingTips: text("coaching_tips").array(),
+  label: text("label"),
   status: text("status").notNull().default("draft"),
   sentAt: timestamp("sent_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),

@@ -21,6 +21,7 @@ import {
   ImageIcon,
   Calendar,
   Eye,
+  Tag,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -56,6 +57,7 @@ interface SavedEmail {
   textBody?: string;
   platform?: string;
   tone?: string;
+  label?: string;
   status: string;
   subjectLineSuggestions?: string[];
   coachingTips?: string[];
@@ -93,11 +95,14 @@ export default function EmailNewslettersPage() {
   const [assetDateSort, setAssetDateSort] = useState<string>("newest");
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [labelFilter, setLabelFilter] = useState<string>("all");
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
+  const [labelDialogEmail, setLabelDialogEmail] = useState<SavedEmail | null>(null);
+  const [labelInput, setLabelInput] = useState("");
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -287,9 +292,31 @@ export default function EmailNewslettersPage() {
     },
   });
 
+  const setLabelMutation = useMutation({
+    mutationFn: async ({ id, label }: { id: string; label: string }) => {
+      const r = await fetch(`/api/email/saved/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ label: label || null }),
+      });
+      if (!r.ok) throw new Error("Failed to update label");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setLabelDialogEmail(null);
+      toast({ title: "Label updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const uniqueLabels = [...new Set(savedEmails.map(e => e.label).filter(Boolean))] as string[];
+
   const filteredEmails = savedEmails.filter(e => {
-    if (statusFilter === "all") return true;
-    return e.status === statusFilter;
+    const matchesStatus = statusFilter === "all" || e.status === statusFilter;
+    const matchesLabel = labelFilter === "all" || (labelFilter === "__unlabeled" ? !e.label : e.label === labelFilter);
+    return matchesStatus && matchesLabel;
   });
 
   const PLATFORM_LABELS: Record<string, string> = {
@@ -621,6 +648,39 @@ export default function EmailNewslettersPage() {
                 </Select>
               </div>
             </div>
+
+            <div className="flex items-center gap-2 flex-wrap" data-testid="label-pills-email">
+              <button
+                onClick={() => setLabelFilter("all")}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${labelFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                data-testid="pill-label-all"
+              >
+                All <span className="bg-white/20 rounded-full px-1.5 text-[10px]">{savedEmails.length}</span>
+              </button>
+              {uniqueLabels.map(label => {
+                const count = savedEmails.filter(e => e.label === label).length;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => setLabelFilter(labelFilter === label ? "all" : label)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${labelFilter === label ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    data-testid={`pill-label-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    {label} <span className={`rounded-full px-1.5 text-[10px] ${labelFilter === label ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{count}</span>
+                  </button>
+                );
+              })}
+              {savedEmails.some(e => !e.label) && uniqueLabels.length > 0 && (
+                <button
+                  onClick={() => setLabelFilter(labelFilter === "__unlabeled" ? "all" : "__unlabeled")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${labelFilter === "__unlabeled" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  data-testid="pill-label-unlabeled"
+                >
+                  Unlabeled <span className={`rounded-full px-1.5 text-[10px] ${labelFilter === "__unlabeled" ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{savedEmails.filter(e => !e.label).length}</span>
+                </button>
+              )}
+            </div>
+
             {filteredEmails.map(email => (
               <Card key={email.id} className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
                 <CardContent className="py-4">
@@ -636,11 +696,23 @@ export default function EmailNewslettersPage() {
                         {email.tone && (
                           <Badge variant="outline" className="text-[10px] capitalize">{email.tone}</Badge>
                         )}
+                        {email.label && (
+                          <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">{email.label}</Badge>
+                        )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge variant="outline" className="capitalize">{email.status}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Set label"
+                        onClick={e => { e.stopPropagation(); setLabelDialogEmail(email); setLabelInput(email.label || ""); }}
+                        data-testid={`button-label-email-${email.id}`}
+                      >
+                        <Tag className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -764,6 +836,47 @@ export default function EmailNewslettersPage() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={!!labelDialogEmail} onOpenChange={v => { if (!v) setLabelDialogEmail(null); }}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Set Label</DialogTitle>
+              <DialogDescription>Group this email by topic, product, or campaign. Leave blank to remove the label.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                value={labelInput}
+                onChange={e => setLabelInput(e.target.value)}
+                placeholder="e.g. Product Launch, Q2 Campaign..."
+                data-testid="input-email-label"
+              />
+              {uniqueLabels.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {uniqueLabels.map(l => (
+                    <button
+                      key={l}
+                      onClick={() => setLabelInput(l)}
+                      className={`px-2 py-0.5 rounded text-xs transition-colors ${labelInput === l ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                      data-testid={`button-existing-label-${l.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setLabelDialogEmail(null)}>Cancel</Button>
+                <Button
+                  onClick={() => { if (labelDialogEmail) setLabelMutation.mutate({ id: labelDialogEmail.id, label: labelInput.trim() }); }}
+                  disabled={setLabelMutation.isPending}
+                  data-testid="button-save-label"
+                >
+                  {setLabelMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={!!viewingEmail} onOpenChange={v => { if (!v) setViewingEmail(null); }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -778,6 +891,9 @@ export default function EmailNewslettersPage() {
                     )}
                     {viewingEmail?.tone && (
                       <Badge variant="outline" className="text-[10px] capitalize">{viewingEmail.tone}</Badge>
+                    )}
+                    {viewingEmail?.label && (
+                      <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">{viewingEmail.label}</Badge>
                     )}
                     {viewingEmail?.createdAt && (
                       <span className="text-xs">{format(new Date(viewingEmail.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
