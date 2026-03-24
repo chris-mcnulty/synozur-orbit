@@ -38,7 +38,8 @@ import {
   Image,
   LayoutList,
   AtSign,
-  HardDrive
+  HardDrive,
+  Puzzle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -270,6 +271,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (f.brandLibrary === false) locked.add("/app/marketing/brand-library");
     if (f.campaigns === false) locked.add("/app/marketing/campaigns");
     if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
+    if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
     return locked;
   }, [tenantInfo]);
 
@@ -421,6 +423,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Content Library", icon: Library, href: "/app/marketing/content-library", enterprise: true },
         { label: "Brand Library", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
         { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
+        { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
       ]
     },
     {

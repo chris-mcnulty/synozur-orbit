@@ -1715,6 +1715,33 @@ Structure your response using these exact delimiters:
       captureEnabled: gate.allowed,
     });
   });
+
+  app.get("/api/extension/download", async (req, res) => {
+    if (!await guardFeature(req, res, "saturnCapture")) return;
+    const archiver = (await import("archiver")).default;
+    const path = await import("path");
+    const fs = await import("fs");
+
+    const extensionDir = path.resolve(process.cwd(), "extensions", "saturn-capture");
+    if (!fs.existsSync(extensionDir)) {
+      return res.status(404).json({ error: "Extension files not found" });
+    }
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="saturn-capture.zip"');
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", () => {
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to create zip archive" });
+      } else {
+        res.destroy();
+      }
+    });
+    archive.pipe(res);
+    archive.directory(extensionDir, "saturn-capture");
+    await archive.finalize();
+  });
 }
 
 // ─── async post generation ───────────────────────────────────────────────────
