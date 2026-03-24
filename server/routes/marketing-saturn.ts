@@ -1746,6 +1746,98 @@ Structure your response using these exact delimiters:
 
 // ─── async post generation ───────────────────────────────────────────────────
 
+function isValidVariant(v: any): boolean {
+  if (!v || typeof v !== "object") return false;
+  if (typeof v.content !== "string" || v.content.trim().length === 0) return false;
+  return true;
+}
+
+function normalizeVariant(v: any): { content: string; hashtags: string[]; imagePrompt: string } {
+  return {
+    content: (v.content as string).trim(),
+    hashtags: Array.isArray(v.hashtags)
+      ? v.hashtags.filter((h: any) => typeof h === "string")
+      : [],
+    imagePrompt: typeof v.imagePrompt === "string" ? v.imagePrompt : "",
+  };
+}
+
+function extractJsonVariants(raw: string): any[] {
+  let cleaned = raw
+    .replace(/```(?:json)?\s*\n?/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  const strategies: Array<() => any[]> = [
+    () => {
+      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (!arrMatch) throw new Error("no array");
+      return JSON.parse(arrMatch[0]);
+    },
+    () => {
+      const objects: any[] = [];
+      const objRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+      let m;
+      while ((m = objRegex.exec(cleaned)) !== null) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (parsed.content) objects.push(parsed);
+        } catch {}
+      }
+      if (objects.length === 0) throw new Error("no objects");
+      return objects;
+    },
+    () => {
+      const singleObj = cleaned.match(/\{[\s\S]*\}/);
+      if (!singleObj) throw new Error("no object");
+      const parsed = JSON.parse(singleObj[0]);
+      if (Array.isArray(parsed)) return parsed;
+      return [parsed];
+    },
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      const result = strategy();
+      const items = Array.isArray(result) ? result : [result];
+      const validated = items.filter(isValidVariant).map(normalizeVariant);
+      if (validated.length > 0) return validated;
+    } catch {}
+  }
+
+  throw new Error("All extraction strategies failed");
+}
+
+function buildFallbackVariants(raw: string): any[] {
+  const contentRegex = /"content"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  const blocks: any[] = [];
+  let m;
+  while ((m = contentRegex.exec(raw)) !== null) {
+    try {
+      const content = JSON.parse(`"${m[1]}"`);
+      if (content.trim().length >= 10) {
+        blocks.push({ content: content.trim(), hashtags: [], imagePrompt: "" });
+      }
+    } catch {}
+  }
+  if (blocks.length > 0) return blocks;
+
+  const cleanedText = raw
+    .replace(/```(?:json)?\s*\n?/gi, "")
+    .replace(/```\s*/g, "")
+    .replace(/[\[\]{}"]/g, " ")
+    .replace(/,\s*$/gm, "")
+    .replace(/^\s*"?\w+"\s*:\s*/gm, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (cleanedText.length >= 10) {
+    return [{ content: cleanedText, hashtags: [], imagePrompt: "" }];
+  }
+
+  return [{ content: "Post generation failed — please try again.", hashtags: [], imagePrompt: "" }];
+}
+
 async function generatePostsAsync(
   campaignId: string,
   tenantDomain: string,
@@ -1840,16 +1932,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
 
       let variants: any[] = [];
       try {
-        let cleaned = result.text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
-        const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          variants = JSON.parse(jsonMatch[0]);
-        } else {
-          const objMatch = cleaned.match(/\{[\s\S]*\}/);
-          variants = objMatch ? [JSON.parse(objMatch[0])] : [{ content: cleaned, hashtags: [], imagePrompt: "" }];
-        }
-      } catch {
-        variants = [{ content: result.text, hashtags: [], imagePrompt: "" }];
+        variants = extractJsonVariants(result.text);
+      } catch (e) {
+        console.error("[Saturn] All JSON extraction strategies failed for campaign", campaignId);
+        console.error("[Saturn] Raw AI response:", result.text);
+        variants = buildFallbackVariants(result.text);
       }
 
       const primaryAssetUrl = selectedAssets.find((a: any) => a.url)?.url || null;
