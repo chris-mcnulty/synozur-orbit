@@ -700,7 +700,7 @@ export default function CampaignDetailPage() {
               >
                 {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
               </Button>
-              {posts.filter(p => p.status === "approved").length > 0 && (
+              {posts.filter(p => p.status !== "deleted" && p.status !== "rejected").length > 0 && (
                 <div className="flex items-center gap-2">
                   <Select value={csvFormat} onValueChange={setCsvFormat}>
                     <SelectTrigger className="w-40" data-testid="select-csv-format">
