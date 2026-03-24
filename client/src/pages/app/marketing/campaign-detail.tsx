@@ -155,6 +155,14 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
+    queryKey: ["/api/strategic-context/summary"],
+    queryFn: async () => {
+      const r = await fetch("/api/strategic-context/summary", { credentials: "include" });
+      return r.ok ? r.json() : { available: false, sections: {} };
+    },
+  });
+
   const { data: allAssets = [] } = useQuery<ContentAsset[]>({
     queryKey: ["/api/content-assets"],
     queryFn: async () => {
@@ -721,7 +729,13 @@ export default function CampaignDetailPage() {
               >
                 {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
               </Button>
-              {posts.filter(p => p.status !== "deleted" && p.status !== "rejected").length > 0 && (
+              {strategicContext?.available && (
+                <Badge variant="secondary" className="text-[10px] gap-1" data-testid="strategic-context-badge">
+                  <Sparkles className="w-3 h-3" />
+                  Intelligence-enriched
+                </Badge>
+              )}
+              {posts.filter(p => p.status === "approved").length > 0 && (
                 <div className="flex items-center gap-2">
                   <Select value={csvFormat} onValueChange={setCsvFormat}>
                     <SelectTrigger className="w-40" data-testid="select-csv-format">

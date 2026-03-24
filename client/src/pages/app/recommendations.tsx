@@ -1,11 +1,12 @@
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download, Trash2, XCircle } from "lucide-react";
+import { ThumbsUp, ThumbsDown, EyeOff, Sparkles, Star, RotateCcw, Filter, Download, Trash2, XCircle, Mail, Share2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -44,6 +45,7 @@ interface Recommendation {
 
 export default function Recommendations() {
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterImpact, setFilterImpact] = useState<string>("all");
@@ -132,6 +134,22 @@ export default function Recommendations() {
     },
     onError: () => {
       toast.error("Failed to delete recommendation");
+    },
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: async ({ id, actionType }: { id: string; actionType: string }) => {
+      const response = await fetch(`/api/recommendations/${id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ actionType }),
+      });
+      if (!response.ok) throw new Error("Failed to mark as actioned");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
     },
   });
 
@@ -298,6 +316,32 @@ export default function Recommendations() {
             <ThumbsDown className="h-3 w-3" />
             {rec.thumbsDown || 0}
           </span>
+          {!isDismissed && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" data-testid={`create-content-${rec.id}`}>
+                  <ArrowRight className="h-3 w-3 mr-1" />
+                  Create Content
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => {
+                  actionMutation.mutate({ id: rec.id, actionType: "email" });
+                  navigate(`/app/marketing/email-newsletters?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`)}`);
+                }}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Create Email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  actionMutation.mutate({ id: rec.id, actionType: "social_campaign" });
+                  navigate(`/app/marketing/campaigns?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`)}`);
+                }}>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Create Social Campaign
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         {isDismissed ? (
           <Button

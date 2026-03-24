@@ -54,6 +54,7 @@ import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
+import { loadStrategicContext, formatStrategicContextForPrompt } from "../services/strategic-context";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1460,7 +1461,11 @@ VISUAL DESIGN RULES:
         )
       : [];
 
-    const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
+    const [groundingContext, strategicCtx] = await Promise.all([
+      loadGroundingContext(ctx.tenantDomain, ctx.marketId),
+      loadStrategicContext(ctx.tenantDomain, ctx.marketId),
+    ]);
+    const strategicContext = formatStrategicContextForPrompt(strategicCtx);
 
     const [companyProfile] = await db.select().from(companyProfiles)
       .where(and(
@@ -1518,7 +1523,7 @@ ${platformInstruction}
 ## Tone
 ${toneInstruction}
 
-${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets
+${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets
 ${assetContext || "(no assets provided)"}
 
 ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}## Response Format
@@ -1782,6 +1787,31 @@ Structure your response using these exact delimiters:
     archive.directory(extensionDir, "saturn-capture");
     await archive.finalize();
   });
+
+  // ══════════════════════════════════════════════════════════
+  // STRATEGIC CONTEXT — surface intelligence summary for UI
+  // ══════════════════════════════════════════════════════════
+
+  app.get("/api/strategic-context/summary", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      const ctx = await getRequestContext(req);
+      const sc = await loadStrategicContext(ctx.tenantDomain, ctx.marketId);
+      const hasSections = !!(sc.messagingFramework || sc.competitiveIntelligence || sc.gtmPlanSummary || sc.briefingActionItems || sc.recommendations);
+      res.json({
+        available: hasSections,
+        sections: {
+          messagingFramework: !!sc.messagingFramework,
+          competitiveIntelligence: !!sc.competitiveIntelligence,
+          gtmPlan: !!sc.gtmPlanSummary,
+          briefingActionItems: !!sc.briefingActionItems,
+          recommendations: !!sc.recommendations,
+        },
+      });
+    } catch {
+      res.json({ available: false, sections: {} });
+    }
+  });
 }
 
 // ─── async post generation ───────────────────────────────────────────────────
@@ -1923,7 +1953,11 @@ async function generatePostsAsync(
         )
       : [];
 
-    const groundingContext = await loadGroundingContext(tenantDomain, marketId);
+    const [groundingContext, strategicCtx] = await Promise.all([
+      loadGroundingContext(tenantDomain, marketId),
+      loadStrategicContext(tenantDomain, marketId),
+    ]);
+    const strategicContext = formatStrategicContextForPrompt(strategicCtx);
 
     let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
     if (brandImageIds.length > 0) {
@@ -1972,7 +2006,7 @@ IMPORTANT RULES — follow these strictly:
 5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including ALL spaces, punctuation, and the URL. This is a HARD TECHNICAL LIMIT enforced by the Twitter API — posts over 280 characters WILL be rejected. Aim for 200-250 characters to leave room. Write extremely concise copy. One short sentence + URL is ideal." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
 
 ## Platform Guidelines
 ${platformGuide}
