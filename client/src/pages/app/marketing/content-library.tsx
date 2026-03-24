@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List, RefreshCw, Mail
+  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -654,6 +654,24 @@ export default function ContentLibraryPage() {
             data-testid={`button-create-campaign-${asset.id}`}
           >
             <Megaphone className="w-3 h-3" /> Instant Campaign
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            onClick={e => {
+              e.stopPropagation();
+              const params = new URLSearchParams({
+                fromAsset: asset.id,
+                name: asset.title,
+                ...(asset.description ? { description: asset.description } : {}),
+                ...(asset.url ? { url: asset.url } : {}),
+              });
+              navigate(`/app/products?${params.toString()}`);
+            }}
+            data-testid={`button-create-product-${asset.id}`}
+          >
+            <Package className="w-3 h-3" /> Create Product
           </Button>
         </div>
         {asset.tags && (

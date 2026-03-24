@@ -2213,38 +2213,50 @@ export default function ProductDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={() => generateGapAnalysis.mutate()} 
-                      disabled={generateGapAnalysis.isPending || !projectProducts.some(pp => pp.role === "baseline")}
-                      data-testid="button-generate-gaps"
-                    >
-                      {generateGapAnalysis.isPending ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</>
-                      ) : (
-                        <><Sparkles className="mr-2 h-4 w-4" /> {gapAnalysis?.status === "generated" ? "Regenerate" : "Generate"} Gap Analysis</>
-                      )}
-                    </Button>
-                  </div>
-                  
-                  {gapLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : gapAnalysis?.status === "generated" && gapAnalysis.content ? (
-                    <div className="border rounded-lg p-6 bg-muted/30">
-                      <MarkdownContent content={gapAnalysis.content} />
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                  {competitorProducts.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg" data-testid="gaps-no-competitors">
                       <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No Gap Analysis Yet</h3>
-                      <p className="text-muted-foreground">
-                        {projectProducts.some(pp => pp.role === "baseline") 
-                          ? "Click 'Generate Gap Analysis' to identify positioning gaps"
-                          : "Set a baseline product first to analyze gaps"}
+                      <h3 className="text-lg font-medium mb-2">No Competitors Added</h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">
+                        Gap analysis requires competitor products for comparison. Add competitors from the Overview tab to enable this feature.
                       </p>
                     </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => generateGapAnalysis.mutate()} 
+                          disabled={generateGapAnalysis.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                          data-testid="button-generate-gaps"
+                        >
+                          {generateGapAnalysis.isPending ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</>
+                          ) : (
+                            <><Sparkles className="mr-2 h-4 w-4" /> {gapAnalysis?.status === "generated" ? "Regenerate" : "Generate"} Gap Analysis</>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {gapLoading ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : gapAnalysis?.status === "generated" && gapAnalysis.content ? (
+                        <div className="border rounded-lg p-6 bg-muted/30">
+                          <MarkdownContent content={gapAnalysis.content} />
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                          <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                          <h3 className="text-lg font-medium mb-2">No Gap Analysis Yet</h3>
+                          <p className="text-muted-foreground">
+                            {projectProducts.some(pp => pp.role === "baseline") 
+                              ? "Click 'Generate Gap Analysis' to identify positioning gaps"
+                              : "Set a baseline product first to analyze gaps"}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -2273,38 +2285,50 @@ export default function ProductDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={() => generateStrategicRecs.mutate()} 
-                      disabled={generateStrategicRecs.isPending || !projectProducts.some(pp => pp.role === "baseline")}
-                      data-testid="button-generate-recs"
-                    >
-                      {generateStrategicRecs.isPending ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
-                      ) : (
-                        <><Star className="mr-2 h-4 w-4" /> {strategicRecs?.status === "generated" ? "Regenerate" : "Generate"} Recommendations</>
-                      )}
-                    </Button>
-                  </div>
-                  
-                  {recsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : strategicRecs?.status === "generated" && strategicRecs.content ? (
-                    <div className="border rounded-lg p-6 bg-muted/30">
-                      <MarkdownContent content={strategicRecs.content} />
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                  {competitorProducts.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg" data-testid="recs-no-competitors">
                       <Star className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No Recommendations Yet</h3>
-                      <p className="text-muted-foreground">
-                        {projectProducts.some(pp => pp.role === "baseline") 
-                          ? "Click 'Generate Recommendations' to get strategic advice"
-                          : "Set a baseline product first to get recommendations"}
+                      <h3 className="text-lg font-medium mb-2">No Competitors Added</h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">
+                        Strategic recommendations require competitor products for comparison. Add competitors from the Overview tab to enable this feature.
                       </p>
                     </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => generateStrategicRecs.mutate()} 
+                          disabled={generateStrategicRecs.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                          data-testid="button-generate-recs"
+                        >
+                          {generateStrategicRecs.isPending ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                          ) : (
+                            <><Star className="mr-2 h-4 w-4" /> {strategicRecs?.status === "generated" ? "Regenerate" : "Generate"} Recommendations</>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {recsLoading ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : strategicRecs?.status === "generated" && strategicRecs.content ? (
+                        <div className="border rounded-lg p-6 bg-muted/30">
+                          <MarkdownContent content={strategicRecs.content} />
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                          <Star className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                          <h3 className="text-lg font-medium mb-2">No Recommendations Yet</h3>
+                          <p className="text-muted-foreground">
+                            {projectProducts.some(pp => pp.role === "baseline") 
+                              ? "Click 'Generate Recommendations' to get strategic advice"
+                              : "Set a baseline product first to get recommendations"}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -2333,38 +2357,50 @@ export default function ProductDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={() => generateCompetitiveSummary.mutate()} 
-                      disabled={generateCompetitiveSummary.isPending || !projectProducts.some(pp => pp.role === "baseline")}
-                      data-testid="button-generate-summary"
-                    >
-                      {generateCompetitiveSummary.isPending ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
-                      ) : (
-                        <><FileText className="mr-2 h-4 w-4" /> {competitiveSummary?.status === "generated" ? "Regenerate" : "Generate"} Summary</>
-                      )}
-                    </Button>
-                  </div>
-                  
-                  {summaryLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : competitiveSummary?.status === "generated" && competitiveSummary.content ? (
-                    <div className="border rounded-lg p-6 bg-muted/30">
-                      <MarkdownContent content={competitiveSummary.content} />
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                  {competitorProducts.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg" data-testid="summary-no-competitors">
                       <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No Summary Yet</h3>
-                      <p className="text-muted-foreground">
-                        {projectProducts.some(pp => pp.role === "baseline") 
-                          ? "Click 'Generate Summary' to create a competitive overview"
-                          : "Set a baseline product first to create a summary"}
+                      <h3 className="text-lg font-medium mb-2">No Competitors Added</h3>
+                      <p className="text-muted-foreground max-w-md mx-auto">
+                        The competitive summary requires competitor products for comparison. Add competitors from the Overview tab to enable this feature.
                       </p>
                     </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => generateCompetitiveSummary.mutate()} 
+                          disabled={generateCompetitiveSummary.isPending || !projectProducts.some(pp => pp.role === "baseline")}
+                          data-testid="button-generate-summary"
+                        >
+                          {generateCompetitiveSummary.isPending ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                          ) : (
+                            <><FileText className="mr-2 h-4 w-4" /> {competitiveSummary?.status === "generated" ? "Regenerate" : "Generate"} Summary</>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {summaryLoading ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : competitiveSummary?.status === "generated" && competitiveSummary.content ? (
+                        <div className="border rounded-lg p-6 bg-muted/30">
+                          <MarkdownContent content={competitiveSummary.content} />
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                          <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                          <h3 className="text-lg font-medium mb-2">No Summary Yet</h3>
+                          <p className="text-muted-foreground">
+                            {projectProducts.some(pp => pp.role === "baseline") 
+                              ? "Click 'Generate Summary' to create a competitive overview"
+                              : "Set a baseline product first to create a summary"}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>

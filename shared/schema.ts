@@ -217,6 +217,7 @@ export const products = pgTable("products", {
   lastWebsiteMonitor: timestamp("last_website_monitor"), // When website was last monitored for changes
   competitivePositionSummary: text("competitive_position_summary"), // AI-generated 2-3 sentence summary of competitive positioning
   summaryGeneratedAt: timestamp("summary_generated_at"), // When the summary was last generated
+  sourceContentAssetId: varchar("source_content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
   excludeFromCrawl: boolean("exclude_from_crawl").notNull().default(false),
   consecutiveCrawlFailures: integer("consecutive_crawl_failures").notNull().default(0),
   crawlFlaggedAt: timestamp("crawl_flagged_at"),

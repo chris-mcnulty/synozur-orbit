@@ -1,13 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle, Bell, BellOff, Package, Building } from "lucide-react";
+import { Plus, MoreHorizontal, Building2, Edit2, Loader2, Trash2, FolderOpen, Users, ExternalLink, Archive, CheckCircle, Bell, BellOff, Package, Building, Filter, Linkedin, Instagram, Twitter } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,19 +33,69 @@ interface ClientProject {
   baselineProductId?: string | null;
 }
 
+interface ContextData {
+  activeMarket: { id: string; name: string } | null;
+}
+
+interface CreateFormData {
+  name: string;
+  clientName: string;
+  clientDomain: string;
+  description: string;
+  productUrl: string;
+  analysisType: "company" | "product";
+  notifyOnUpdates: boolean;
+  linkedInUrl: string;
+  instagramUrl: string;
+  twitterUrl: string;
+  fromAssetId: string;
+}
+
+const emptyFormData: CreateFormData = {
+  name: "",
+  clientName: "",
+  clientDomain: "",
+  description: "",
+  productUrl: "",
+  analysisType: "product",
+  notifyOnUpdates: false,
+  linkedInUrl: "",
+  instagramUrl: "",
+  twitterUrl: "",
+  fromAssetId: "",
+};
+
 export default function Products() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ClientProject | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    clientName: "",
-    clientDomain: "",
-    description: "",
-    productUrl: "",
-    notifyOnUpdates: false,
+  const [formData, setFormData] = useState<CreateFormData>({ ...emptyFormData });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromAsset = params.get("fromAsset");
+    if (fromAsset) {
+      setFormData({
+        ...emptyFormData,
+        name: params.get("name") || "",
+        description: params.get("description") || "",
+        productUrl: params.get("url") || "",
+        fromAssetId: fromAsset,
+      });
+      setIsDialogOpen(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const { data: contextData } = useQuery<ContextData>({
+    queryKey: ["/api/context"],
+    queryFn: async () => {
+      const response = await fetch("/api/context", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch context");
+      return response.json();
+    },
   });
 
   const { data: projects = [], isLoading, error } = useQuery<ClientProject[]>({
@@ -66,11 +117,23 @@ export default function Products() {
   });
 
   const createProject = useMutation({
-    mutationFn: async (data: typeof formData) => {
+    mutationFn: async (data: CreateFormData) => {
+      const payload: Record<string, unknown> = {
+        name: data.name,
+        clientName: data.clientName,
+        clientDomain: data.clientDomain,
+        description: data.description,
+        analysisType: data.analysisType,
+        notifyOnUpdates: data.notifyOnUpdates,
+        productUrl: data.productUrl || undefined,
+      };
+      if (data.fromAssetId) {
+        payload.sourceContentAssetId = data.fromAssetId;
+      }
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
         credentials: "include",
       });
       if (!response.ok) {
@@ -82,7 +145,7 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsDialogOpen(false);
-      setFormData({ name: "", clientName: "", clientDomain: "", description: "", productUrl: "", notifyOnUpdates: false });
+      setFormData({ ...emptyFormData });
       toast({
         title: "Product Created",
         description: "Your product analysis has been created.",
@@ -97,8 +160,24 @@ export default function Products() {
     },
   });
 
+  interface ProjectUpdatePayload {
+    name?: string;
+    clientName?: string;
+    clientDomain?: string | null;
+    description?: string | null;
+    status?: string;
+    notifyOnUpdates?: boolean;
+    analysisType?: "company" | "product";
+    baselineProduct?: {
+      url: string | null;
+      linkedInUrl: string | null;
+      instagramUrl: string | null;
+      twitterUrl: string | null;
+    };
+  }
+
   const updateProject = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<ClientProject> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: ProjectUpdatePayload }) => {
       const response = await fetch(`/api/projects/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -115,10 +194,7 @@ export default function Products() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsEditDialogOpen(false);
       setEditingProject(null);
-      toast({
-        title: "Product Updated",
-        description: "Your product has been updated.",
-      });
+      toast({ title: "Product Updated", description: "Your product has been updated." });
     },
     onError: (error: Error) => {
       toast({
@@ -162,30 +238,66 @@ export default function Products() {
     createProject.mutate(formData);
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingProject) {
-      updateProject.mutate({
-        id: editingProject.id,
-        data: {
-          name: formData.name,
-          clientName: formData.clientName,
-          clientDomain: formData.clientDomain || null,
-          description: formData.description || null,
-          notifyOnUpdates: formData.notifyOnUpdates,
-        },
-      });
+    if (!editingProject) return;
+    const payload: ProjectUpdatePayload = {
+      name: formData.name,
+      clientName: formData.clientName,
+      clientDomain: formData.clientDomain || null,
+      description: formData.description || null,
+      notifyOnUpdates: formData.notifyOnUpdates,
+      analysisType: formData.analysisType,
+    };
+    if (editingProject.baselineProductId) {
+      payload.baselineProduct = {
+        url: formData.productUrl || null,
+        linkedInUrl: formData.linkedInUrl || null,
+        instagramUrl: formData.instagramUrl || null,
+        twitterUrl: formData.twitterUrl || null,
+      };
     }
+    updateProject.mutate({ id: editingProject.id, data: payload });
   };
+
+  interface BaselineProductData {
+    url?: string | null;
+    linkedInUrl?: string | null;
+    instagramUrl?: string | null;
+    twitterUrl?: string | null;
+  }
+
+  const { data: baselineProductData } = useQuery<BaselineProductData | null>({
+    queryKey: ["/api/products", editingProject?.baselineProductId],
+    queryFn: async () => {
+      const response = await fetch(`/api/products/${editingProject?.baselineProductId}`, { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!editingProject?.baselineProductId && isEditDialogOpen,
+  });
+
+  React.useEffect(() => {
+    if (baselineProductData && isEditDialogOpen) {
+      setFormData(prev => ({
+        ...prev,
+        productUrl: baselineProductData.url || "",
+        linkedInUrl: baselineProductData.linkedInUrl || "",
+        instagramUrl: baselineProductData.instagramUrl || "",
+        twitterUrl: baselineProductData.twitterUrl || "",
+      }));
+    }
+  }, [baselineProductData, isEditDialogOpen]);
 
   const openEditDialog = (project: ClientProject) => {
     setEditingProject(project);
     setFormData({
+      ...emptyFormData,
       name: project.name,
       clientName: project.clientName,
       clientDomain: project.clientDomain || "",
       description: project.description || "",
-      productUrl: "",
+      analysisType: project.analysisType || "product",
       notifyOnUpdates: project.notifyOnUpdates || false,
     });
     setIsEditDialogOpen(true);
@@ -247,6 +359,14 @@ export default function Products() {
               <p className="text-muted-foreground">
                 Manage your products, features, and roadmap with competitive intelligence
               </p>
+              {contextData?.activeMarket && (
+                <div className="flex items-center gap-2 mt-2" data-testid="market-filter-indicator">
+                  <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                    <Filter className="h-3 w-3" />
+                    Showing products in: {contextData.activeMarket.name}
+                  </Badge>
+                </div>
+              )}
             </div>
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -259,9 +379,11 @@ export default function Products() {
               <DialogContent>
                 <form onSubmit={handleSubmit}>
                   <DialogHeader>
-                    <DialogTitle>Create Product</DialogTitle>
+                    <DialogTitle>{formData.fromAssetId ? "Create Product from Content Asset" : "Create Product"}</DialogTitle>
                     <DialogDescription>
-                      Create a new product to manage features and roadmap with competitive insights.
+                      {formData.fromAssetId
+                        ? "Review and customize the pre-filled details from your content asset."
+                        : "Create a new product to manage features and roadmap with competitive insights."}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
@@ -501,7 +623,7 @@ export default function Products() {
       </div>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <form onSubmit={handleEditSubmit}>
             <DialogHeader>
               <DialogTitle>Edit Product</DialogTitle>
@@ -510,34 +632,58 @@ export default function Products() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-name">Project Name</Label>
-                <Input
-                  id="edit-name"
-                  data-testid="input-edit-project-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Product Name</Label>
+                  <Input
+                    id="edit-name"
+                    data-testid="input-edit-project-name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-clientName">Client Name</Label>
+                  <Input
+                    id="edit-clientName"
+                    data-testid="input-edit-client-name"
+                    value={formData.clientName}
+                    onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-clientName">Client Name</Label>
-                <Input
-                  id="edit-clientName"
-                  data-testid="input-edit-client-name"
-                  value={formData.clientName}
-                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-clientDomain">Client Domain (optional)</Label>
-                <Input
-                  id="edit-clientDomain"
-                  data-testid="input-edit-client-domain"
-                  value={formData.clientDomain}
-                  onChange={(e) => setFormData({ ...formData, clientDomain: e.target.value })}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-clientDomain">Client Domain (optional)</Label>
+                  <Input
+                    id="edit-clientDomain"
+                    data-testid="input-edit-client-domain"
+                    placeholder="e.g., rightpoint.com"
+                    value={formData.clientDomain}
+                    onChange={(e) => setFormData({ ...formData, clientDomain: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-analysisType">Analysis Type</Label>
+                  <Select
+                    value={formData.analysisType}
+                    onValueChange={(v) => setFormData({ ...formData, analysisType: v as "company" | "product" })}
+                  >
+                    <SelectTrigger data-testid="select-edit-analysis-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="product">
+                        <span className="flex items-center gap-1"><Package className="h-3 w-3" /> Product</span>
+                      </SelectItem>
+                      <SelectItem value="company">
+                        <span className="flex items-center gap-1"><Building className="h-3 w-3" /> Company</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-description">Description (optional)</Label>
@@ -549,6 +695,58 @@ export default function Products() {
                   rows={3}
                 />
               </div>
+              {editingProject?.baselineProductId && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-productUrl">Product URL</Label>
+                    <Input
+                      id="edit-productUrl"
+                      data-testid="input-edit-product-url"
+                      placeholder="https://myproduct.com"
+                      value={formData.productUrl}
+                      onChange={(e) => setFormData({ ...formData, productUrl: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-linkedInUrl" className="flex items-center gap-1">
+                        <Linkedin className="h-3 w-3" /> LinkedIn
+                      </Label>
+                      <Input
+                        id="edit-linkedInUrl"
+                        data-testid="input-edit-linkedin-url"
+                        placeholder="https://linkedin.com/company/..."
+                        value={formData.linkedInUrl}
+                        onChange={(e) => setFormData({ ...formData, linkedInUrl: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-instagramUrl" className="flex items-center gap-1">
+                        <Instagram className="h-3 w-3" /> Instagram
+                      </Label>
+                      <Input
+                        id="edit-instagramUrl"
+                        data-testid="input-edit-instagram-url"
+                        placeholder="https://instagram.com/..."
+                        value={formData.instagramUrl}
+                        onChange={(e) => setFormData({ ...formData, instagramUrl: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-twitterUrl" className="flex items-center gap-1">
+                        <Twitter className="h-3 w-3" /> Twitter/X
+                      </Label>
+                      <Input
+                        id="edit-twitterUrl"
+                        data-testid="input-edit-twitter-url"
+                        placeholder="https://x.com/..."
+                        value={formData.twitterUrl}
+                        onChange={(e) => setFormData({ ...formData, twitterUrl: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
               <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
                 <div className="space-y-0.5">
                   <Label className="text-sm font-medium flex items-center gap-2">

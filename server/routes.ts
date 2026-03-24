@@ -6,12 +6,12 @@ import { join } from "path";
 import fileUpload, { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "./storage";
 import { db } from "./db";
-import { sql, eq, count } from "drizzle-orm";
+import { sql, eq, and, count } from "drizzle-orm";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable, contentAssets } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
@@ -7140,7 +7140,7 @@ Respond in JSON format:
         }
       }
 
-      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl } = req.body;
+      const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl, sourceContentAssetId } = req.body;
       
       if (!name || !clientName) {
         return res.status(400).json({ error: "Project name and client name are required" });
@@ -7151,7 +7151,7 @@ Respond in JSON format:
         clientName: clientName.trim(),
         clientDomain: clientDomain?.trim().toLowerCase() || null,
         description: description?.trim() || null,
-        analysisType: "product",
+        analysisType: analysisType && ["company", "product"].includes(analysisType) ? analysisType : "product",
         notifyOnUpdates: notifyOnUpdates === true,
         status: "active",
         tenantDomain: ctx.tenantDomain,
@@ -7159,18 +7159,35 @@ Respond in JSON format:
         ownerUserId: ctx.userId,
       });
 
-      // If productUrl provided, automatically create the baseline product
-      if (productUrl && typeof productUrl === "string" && productUrl.trim()) {
+      // Validate sourceContentAssetId belongs to current tenant/market if provided
+      let validatedAssetId: string | undefined;
+      if (sourceContentAssetId) {
+        const assetConditions = [
+          eq(contentAssets.id, sourceContentAssetId),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        ];
+        if (ctx.marketId) {
+          assetConditions.push(eq(contentAssets.marketId, ctx.marketId));
+        }
+        const [asset] = await db.select({ id: contentAssets.id }).from(contentAssets)
+          .where(and(...assetConditions));
+        if (asset) {
+          validatedAssetId = asset.id;
+        }
+      }
+
+      // If productUrl provided or creating from content asset, automatically create the baseline product
+      if ((productUrl && typeof productUrl === "string" && productUrl.trim()) || validatedAssetId) {
         try {
-          // Create the product
           const product = await storage.createProduct({
             name: name.trim(),
             description: description?.trim() || null,
-            url: productUrl.trim(),
+            url: productUrl?.trim() || null,
             companyName: clientName.trim(),
             createdBy: ctx.userId,
             tenantDomain: ctx.tenantDomain,
             marketId: ctx.marketId,
+            ...(validatedAssetId ? { sourceContentAssetId: validatedAssetId } : {}),
           });
 
           // Link it to the project as baseline
@@ -7209,9 +7226,9 @@ Respond in JSON format:
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { name, clientName, clientDomain, description, status } = req.body;
+      const { name, clientName, clientDomain, description, status, notifyOnUpdates, analysisType, baselineProduct } = req.body;
       
-      const updates: any = {};
+      const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name.trim();
       if (clientName !== undefined) updates.clientName = clientName.trim();
       if (clientDomain !== undefined) updates.clientDomain = clientDomain?.trim().toLowerCase() || null;
@@ -7219,8 +7236,31 @@ Respond in JSON format:
       if (status !== undefined && ["active", "completed", "archived"].includes(status)) {
         updates.status = status;
       }
+      if (notifyOnUpdates !== undefined) updates.notifyOnUpdates = notifyOnUpdates === true;
+      if (analysisType !== undefined && ["company", "product"].includes(analysisType)) {
+        updates.analysisType = analysisType;
+      }
 
       const updated = await storage.updateClientProject(req.params.id, updates);
+
+      if (baselineProduct) {
+        const projectProducts = await storage.getProjectProducts(req.params.id);
+        const baselineEntry = projectProducts.find((pp: { role: string }) => pp.role === "baseline");
+        if (baselineEntry) {
+          const bp = await storage.getProduct(baselineEntry.productId);
+          if (bp && validateResourceContext(bp, ctx)) {
+            const bpUpdates: Record<string, string | null> = {};
+            if (baselineProduct.url !== undefined) bpUpdates.url = baselineProduct.url;
+            if (baselineProduct.linkedInUrl !== undefined) bpUpdates.linkedInUrl = baselineProduct.linkedInUrl;
+            if (baselineProduct.instagramUrl !== undefined) bpUpdates.instagramUrl = baselineProduct.instagramUrl;
+            if (baselineProduct.twitterUrl !== undefined) bpUpdates.twitterUrl = baselineProduct.twitterUrl;
+            if (Object.keys(bpUpdates).length > 0) {
+              await storage.updateProduct(baselineEntry.productId, bpUpdates);
+            }
+          }
+        }
+      }
+
       res.json(updated);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -7437,6 +7477,69 @@ Respond in JSON format:
       }
       console.error("Create product error:", error);
       res.status(500).json({ error: error.message || "Failed to create product" });
+    }
+  });
+
+  app.post("/api/products/from-content-asset", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const bodySchema = z.object({
+        contentAssetId: z.string().min(1, "Content asset ID is required"),
+        projectId: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid request body" });
+      }
+      const { contentAssetId, projectId } = parsed.data;
+
+      const assetConditions = [
+        eq(contentAssets.id, contentAssetId),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      ];
+      if (ctx.marketId) {
+        assetConditions.push(eq(contentAssets.marketId, ctx.marketId));
+      }
+      const [asset] = await db.select().from(contentAssets)
+        .where(and(...assetConditions));
+
+      if (!asset) {
+        return res.status(404).json({ error: "Content asset not found" });
+      }
+
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+
+      const product = await storage.createProduct({
+        name: asset.title,
+        description: asset.description || (asset.aiSummary ? asset.aiSummary.substring(0, 500) : null),
+        url: asset.url || null,
+        companyName: profile?.companyName || null,
+        isBaseline: true,
+        companyProfileId: profile?.id || null,
+        sourceContentAssetId: contentAssetId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        createdBy: ctx.userId,
+      });
+
+      if (projectId) {
+        const project = await storage.getClientProject(projectId);
+        if (project && validateResourceContext(project, ctx)) {
+          await storage.addProductToProject({
+            projectId,
+            productId: product.id,
+            role: "baseline",
+          });
+        }
+      }
+
+      res.status(201).json(product);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Create product from content asset error:", error);
+      res.status(500).json({ error: error.message || "Failed to create product from content asset" });
     }
   });
 
