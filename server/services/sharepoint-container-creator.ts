@@ -63,9 +63,9 @@ export class ContainerCreator {
    * Create a new SharePoint Embedded container for a tenant.
    *
    * Steps:
-   *   1. POST to /storage/fileStorage/containers
-   *   2. Grant the Orbit app owner permissions on the new container
-   *   3. Register the container type in the tenant (required before file ops)
+   *   1. Register the container type in the consuming tenant (required before creating containers)
+   *   2. POST to /storage/fileStorage/containers
+   *   3. Grant the Orbit app owner permissions on the new container
    */
   async createContainer(
     containerName: string,
@@ -81,11 +81,19 @@ export class ContainerCreator {
     try {
       const token = await this.getGraphAccessToken(azureTenantId);
 
+      const regResult = await this.registerContainerTypeInTenant(azureTenantId);
+      console.log("[OrbitContainerCreator] Container type registration:", regResult.success ? "OK" : regResult.message);
+      if (!regResult.success) {
+        console.warn("[OrbitContainerCreator] Container type registration failed (continuing anyway):", regResult.message);
+      }
+
       const payload = {
         displayName: containerName,
         description: description || `Synozur Orbit document storage for ${containerName}`,
         containerTypeId: this.containerTypeId,
       };
+
+      console.log("[OrbitContainerCreator] Creating container with payload:", JSON.stringify(payload));
 
       const response = await fetch(
         `${this.graphBaseUrl}/storage/fileStorage/containers`,
@@ -102,24 +110,36 @@ export class ContainerCreator {
       if (!response.ok) {
         const errorText = await response.text();
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        let errorCode = "";
         try {
           const errData = JSON.parse(errorText);
-          if (errData.error) errorMessage = errData.error.message || errorMessage;
+          if (errData.error) {
+            errorMessage = errData.error.message || errorMessage;
+            errorCode = errData.error.code || "";
+          }
         } catch {
           errorMessage += ` — ${errorText}`;
         }
-        console.error("[OrbitContainerCreator] Container creation failed:", { status: response.status, error: errorText });
+        console.error("[OrbitContainerCreator] Container creation failed:", {
+          status: response.status,
+          errorCode,
+          containerTypeId: this.containerTypeId,
+          tenant: azureTenantId || process.env.ENTRA_TENANT_ID,
+          error: errorText,
+        });
 
         if (response.status === 403) {
-          const hint = "The app registration is missing the 'FileStorageContainer.Selected' application permission " +
-            "in Microsoft Graph, or admin consent has not been granted. " +
-            "Go to Azure Portal > App Registrations > API Permissions, add 'FileStorageContainer.Selected' " +
-            "as an Application permission, then click 'Grant admin consent'.";
-          console.error("[OrbitContainerCreator] Permission hint:", hint);
+          const hint = "This may indicate the container type (ID: " + this.containerTypeId + ") " +
+            "is not properly registered in the Azure app registration under SharePoint Embedded, " +
+            "or the container type registration in the consuming tenant has not completed. " +
+            "Verify: 1) The container type exists in Azure Portal > App Registrations > SharePoint Embedded, " +
+            "2) The container type ID matches ORBIT_SPE_CONTAINER_TYPE_ID, " +
+            "3) FileStorageContainer.Selected application permission has admin consent.";
+          console.error("[OrbitContainerCreator] 403 diagnostic hint:", hint);
           return {
             success: false,
             message: `Container creation failed: ${errorMessage}. ${hint}`,
-            details: { status: response.status, error: errorText, hint },
+            details: { status: response.status, errorCode, error: errorText, hint, containerTypeId: this.containerTypeId },
           };
         }
 
@@ -129,7 +149,6 @@ export class ContainerCreator {
       const container = await response.json() as { id: string; displayName: string };
       console.log("[OrbitContainerCreator] Container created:", container.id, container.displayName);
 
-      // Grant application owner permissions
       const permResult = await this.grantApplicationPermissions(token, container.id);
       if (!permResult.success) {
         console.warn("[OrbitContainerCreator] Permission grant failed:", permResult.message);
@@ -139,12 +158,6 @@ export class ContainerCreator {
           containerId: container.id,
           details: { container, permissionWarning: permResult.message },
         };
-      }
-
-      // Register container type in the consuming tenant (required for file ops)
-      const regResult = await this.registerContainerTypeInTenant(azureTenantId);
-      if (!regResult.success) {
-        console.warn("[OrbitContainerCreator] Container type registration warning:", regResult.message);
       }
 
       return {
@@ -286,6 +299,22 @@ export class ContainerCreator {
     try {
       const token = await this.getGraphAccessToken(azureTenantId);
       const url = `${this.graphBetaUrl}/storage/fileStorage/containerTypeRegistrations/${this.containerTypeId}`;
+      const body = {
+        applicationPermissionGrants: [
+          {
+            appId: clientId,
+            delegatedPermissions: ["full"],
+            applicationPermissions: ["full"],
+          },
+        ],
+      };
+
+      console.log("[OrbitContainerCreator] Registering container type:", {
+        url,
+        containerTypeId: this.containerTypeId,
+        appId: clientId.substring(0, 8) + "...",
+        tenant: azureTenantId || "(default)",
+      });
 
       const response = await fetch(url, {
         method: "PUT",
@@ -293,15 +322,7 @@ export class ContainerCreator {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          applicationPermissionGrants: [
-            {
-              appId: clientId,
-              delegatedPermissions: ["full"],
-              applicationPermissions: ["full"],
-            },
-          ],
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

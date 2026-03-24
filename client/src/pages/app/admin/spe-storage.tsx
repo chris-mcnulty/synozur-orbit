@@ -119,11 +119,11 @@ export default function SpeStoragePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/spe/stats"] });
     },
     onError: (err: Error) => {
-      const isPermission = err.message.toLowerCase().includes("access denied") || err.message.includes("403") || err.message.includes("FileStorageContainer");
+      const isPermission = err.message.toLowerCase().includes("access denied") || err.message.includes("403");
       toast({
         title: "Creation Failed",
         description: isPermission
-          ? "Access denied — the Azure app registration needs the 'FileStorageContainer.Selected' application permission with admin consent granted. Check the server logs for details."
+          ? "Access denied — check that the SPE container type is registered in the app registration and the container type ID matches. See server logs for full details."
           : err.message,
         variant: "destructive",
         duration: isPermission ? 15000 : 5000,
