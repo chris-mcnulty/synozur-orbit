@@ -25,7 +25,6 @@ import {
   AlertCircle,
   Filter,
   CalendarDays,
-  FileDown,
   Copy,
   Package,
   ChevronDown,
@@ -386,11 +385,17 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [postsPerDay, setPostsPerDay] = useState("1");
+
   const schedulePostsMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ time, perDay }: { time: string; perDay: number }) => {
       if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
       const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
       if (activePosts.length === 0) throw new Error("No active posts to schedule");
+
+      const [hours, minutes] = time.split(":").map(Number);
 
       const eligibleDates: Date[] = [];
       const start = new Date(campaign.startDate);
@@ -399,56 +404,39 @@ export default function CampaignDetailPage() {
         const dow = current.getDay();
         const skip = (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
         if (!skip) {
-          eligibleDates.push(new Date(current));
+          const d = new Date(current);
+          d.setHours(hours, minutes, 0, 0);
+          eligibleDates.push(d);
         }
         current = addDays(current, 1);
       }
 
-      const results = await Promise.all(activePosts.map(async (post, i) => {
-        const dateIndex = i % eligibleDates.length;
+      const slots: Date[] = [];
+      for (const date of eligibleDates) {
+        for (let s = 0; s < perDay; s++) {
+          slots.push(date);
+        }
+      }
+
+      await Promise.all(activePosts.map(async (post, i) => {
+        const slotIndex = i % slots.length;
         const r = await fetch(`/api/campaigns/${id}/generated-posts/${post.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ scheduledDate: eligibleDates[dateIndex].toISOString() }),
+          body: JSON.stringify({ scheduledDate: slots[slotIndex].toISOString() }),
         });
         if (!r.ok) throw new Error(`Failed to schedule post ${post.id}`);
         return r.json();
       }));
     },
     onSuccess: () => {
+      setShowScheduleDialog(false);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       toast({ title: "Posts scheduled across campaign timeline" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
-
-  const exportScheduleCSV = () => {
-    const scheduled = posts.filter(p => p.scheduledDate && p.status !== "deleted");
-    if (scheduled.length === 0) {
-      toast({ title: "No scheduled posts to export", variant: "destructive" });
-      return;
-    }
-    const sorted = [...scheduled].sort((a, b) => new Date(a.scheduledDate!).getTime() - new Date(b.scheduledDate!).getTime());
-    const rows = [["Platform", "Scheduled Date", "Status", "Content", "Hashtags"]];
-    sorted.forEach(p => {
-      rows.push([
-        p.platform,
-        format(new Date(p.scheduledDate!), "yyyy-MM-dd"),
-        p.status,
-        `"${(p.editedContent || p.content).replace(/"/g, '""')}"`,
-        p.hashtags?.join(" ") || "",
-      ]);
-    });
-    const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${campaign?.name || "campaign"}-schedule.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   const addAssetsMutation = useMutation({
     mutationFn: async (assetIds: string[]) => {
@@ -702,14 +690,13 @@ export default function CampaignDetailPage() {
               {posts.filter(p => p.status === "approved").length > 0 && (
                 <div className="flex items-center gap-2">
                   <Select value={csvFormat} onValueChange={setCsvFormat}>
-                    <SelectTrigger className="w-36" data-testid="select-csv-format">
+                    <SelectTrigger className="w-40" data-testid="select-csv-format">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="socialpilot">SocialPilot</SelectItem>
                       <SelectItem value="hootsuite">Hootsuite</SelectItem>
-                      <SelectItem value="buffer">Buffer</SelectItem>
-                      <SelectItem value="later">Later</SelectItem>
+                      <SelectItem value="sproutsocial">Sprout Social</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button variant="outline" className="gap-2" onClick={() => exportCsvMutation.mutate()} disabled={exportCsvMutation.isPending} data-testid="button-export-csv-posts">
@@ -727,25 +714,13 @@ export default function CampaignDetailPage() {
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
-                  onClick={() => schedulePostsMutation.mutate()}
+                  onClick={() => setShowScheduleDialog(true)}
                   disabled={schedulePostsMutation.isPending}
-                  title="Distribute approved posts evenly across the campaign date range"
+                  title="Configure and distribute posts across the campaign date range"
                   data-testid="button-schedule-posts"
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
-                </Button>
-              )}
-              {posts.some(p => p.scheduledDate) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={exportScheduleCSV}
-                  data-testid="button-export-csv"
-                >
-                  <FileDown className="w-3.5 h-3.5" />
-                  Export CSV
                 </Button>
               )}
             </div>
@@ -1349,6 +1324,61 @@ export default function CampaignDetailPage() {
               data-testid="button-confirm-delete-campaign"
             >
               {deleteCampaignMutation.isPending ? "Deleting..." : "Delete Campaign"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Posts</DialogTitle>
+            <DialogDescription>
+              Distribute active posts evenly across the campaign date range ({campaign?.startDate ? format(new Date(campaign.startDate), "MMM d") : "?"} — {campaign?.numberOfDays} days).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="schedule-time">Post Time</Label>
+              <Input
+                id="schedule-time"
+                type="time"
+                value={scheduleTime}
+                onChange={e => setScheduleTime(e.target.value)}
+                data-testid="input-schedule-time"
+              />
+              <p className="text-xs text-muted-foreground">All posts will be scheduled at this time of day.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="posts-per-day">Posts Per Day</Label>
+              <Select value={postsPerDay} onValueChange={setPostsPerDay}>
+                <SelectTrigger id="posts-per-day" data-testid="select-posts-per-day">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 post per day</SelectItem>
+                  <SelectItem value="2">2 posts per day</SelectItem>
+                  <SelectItem value="3">3 posts per day</SelectItem>
+                  <SelectItem value="4">4 posts per day</SelectItem>
+                  <SelectItem value="5">5 posts per day</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {(() => {
+                const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected").length;
+                return `${active} active post${active !== 1 ? "s" : ""} will be distributed across eligible days.`;
+              })()}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowScheduleDialog(false)} data-testid="button-cancel-schedule">Cancel</Button>
+            <Button
+              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay) })}
+              disabled={schedulePostsMutation.isPending}
+              data-testid="button-confirm-schedule"
+            >
+              {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
             </Button>
           </div>
         </DialogContent>

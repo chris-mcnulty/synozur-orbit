@@ -1231,54 +1231,122 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(generatedPosts.status, "approved"),
       ));
 
-    const format = (req.query.format as string || "socialpilot").toLowerCase();
+    const accountIds = Array.from(new Set(posts.map(p => p.socialAccountId).filter(Boolean))) as string[];
+    const accountMap = new Map<string, any>();
+    if (accountIds.length) {
+      const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, accountIds));
+      for (const a of accts) accountMap.set(a.id, a);
+    }
+
+    const brandAssetIds = Array.from(new Set(posts.map(p => p.overrideBrandAssetId).filter(Boolean))) as string[];
+    const brandMap = new Map<string, any>();
+    if (brandAssetIds.length) {
+      const assets = await db.select().from(brandAssets).where(inArray(brandAssets.id, brandAssetIds));
+      for (const a of assets) brandMap.set(a.id, a);
+    }
+
+    const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     let lines: string[];
 
-    const fmtDate = (d: Date | null | undefined) => d ? d.toISOString().split("T")[0] : "";
-    const fmtTime = (d: Date | null | undefined) => d ? d.toISOString().split("T")[1]?.substring(0, 5) || "09:00" : "";
-    const fmtDateTime = (d: Date | null | undefined) => d ? d.toISOString().replace("T", " ").substring(0, 16) : "";
+    const escCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
-    switch (format) {
+    const fmtSocialPilotDate = (d: Date | null | undefined) => {
+      if (!d) return "";
+      const dt = new Date(d);
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const hh = String(dt.getHours()).padStart(2, "0");
+      const min = String(dt.getMinutes()).padStart(2, "0");
+      return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+    };
+
+    const fmtHootsuiteDate = (d: Date | null | undefined) => {
+      if (!d) return "";
+      const dt = new Date(d);
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const hh = String(dt.getHours()).padStart(2, "0");
+      const min = String(dt.getMinutes()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    };
+
+    const getPostImageUrl = (post: any): string => {
+      if (post.overrideImageUrl) return post.overrideImageUrl;
+      if (post.overrideBrandAssetId) {
+        const ba = brandMap.get(post.overrideBrandAssetId);
+        if (ba?.fileUrl) return ba.fileUrl;
+      }
+      return "";
+    };
+
+    const buildHashtagLine = (hashtags: string[]): string =>
+      (hashtags || []).map(h => `#${h}`).join(" ");
+
+    const buildTagsSemicolon = (hashtags: string[]): string =>
+      (hashtags || []).join(";");
+
+    const getAccountId = (post: any): string => {
+      if (post.socialAccountId) {
+        const acct = accountMap.get(post.socialAccountId);
+        return acct?.accountId || "";
+      }
+      return "";
+    };
+
+    switch (csvFormat) {
       case "hootsuite": {
-        lines = ["Message,Date,Time,Social Profile"];
+        lines = ["Date,Time,Message,Media URLs"];
         for (const post of posts) {
-          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
           const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
-          lines.push(`"${content}",${fmtDate(sd)},${fmtTime(sd)},${post.platform}`);
+          const baseContent = (post.editedContent ?? post.content);
+          const hashtagLine = buildHashtagLine(post.hashtags as string[]);
+          const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
+          const imageUrl = getPostImageUrl(post);
+          const dateStr = fmtHootsuiteDate(sd);
+          lines.push(`${escCsv(dateStr)},"",${escCsv(fullContent)},${escCsv(imageUrl)}`);
         }
         break;
       }
-      case "buffer": {
-        lines = ["Text,Scheduled At,Profile"];
+      case "sproutsocial": {
+        lines = ["Post Text,Image URL,Scheduled Date/Time,Network,Profile"];
         for (const post of posts) {
-          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
           const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
-          lines.push(`"${content}",${fmtDateTime(sd)},${post.platform}`);
-        }
-        break;
-      }
-      case "later": {
-        lines = ["Caption,Scheduled Date,Platform"];
-        for (const post of posts) {
-          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
-          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
-          lines.push(`"${content}",${fmtDate(sd)},${post.platform}`);
+          const baseContent = (post.editedContent ?? post.content);
+          const hashtagLine = buildHashtagLine(post.hashtags as string[]);
+          const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
+          const imageUrl = getPostImageUrl(post);
+          const dateStr = fmtHootsuiteDate(sd);
+          lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(post.platform)},${escCsv(getAccountId(post))}`);
         }
         break;
       }
       default: {
-        lines = ["message,scheduled_time,account"];
+        lines = ["Post Content,Image URL,Date/Time,Account ID,First Comment,Tags"];
         for (const post of posts) {
-          const content = (post.editedContent ?? post.content).replace(/"/g, '""');
           const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
-          lines.push(`"${content}",${fmtDateTime(sd)},${post.platform}`);
+          const baseContent = (post.editedContent ?? post.content);
+          const hashtagLine = buildHashtagLine(post.hashtags as string[]);
+          const sourceUrl = post.sourceUrl || "";
+          const contentParts = [baseContent];
+          if (hashtagLine) contentParts.push(hashtagLine);
+          if (sourceUrl) contentParts.push(sourceUrl);
+          const fullContent = contentParts.join("\n");
+
+          const imageUrl = getPostImageUrl(post);
+          const dateStr = fmtSocialPilotDate(sd);
+          const platformAccountId = getAccountId(post);
+          const tags = buildTagsSemicolon(post.hashtags as string[]);
+
+          lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},"",${escCsv(tags)}`);
         }
         break;
       }
     }
 
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-posts-${format}.csv"`);
+    res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-${csvFormat}.csv"`);
     res.send(lines.join("\n"));
   });
 
@@ -1766,6 +1834,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
         let postContent = (parsed.content ?? result.text).trim();
         postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
 
+        if (!postContent || postContent.length < 10) {
+          console.warn("[Saturn] Skipping empty/trivial AI variant for campaign", campaignId);
+          continue;
+        }
+
         let hashtags: string[] = (parsed.hashtags ?? [])
           .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
           .filter((h: string) => h.length > 0 && h.length < 50);
@@ -1802,27 +1875,8 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
       }
     }
 
-    // Assign scheduledDate to each post based on campaign timeline
-    const [cam] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
-    let eligibleDates: Date[] = [];
-    if (cam?.startDate && cam?.numberOfDays) {
-      const start = new Date(cam.startDate);
-      let current = new Date(start);
-      while (eligibleDates.length < cam.numberOfDays) {
-        const dow = current.getDay();
-        const skip = (dow === 0 && !cam.includeSunday) || (dow === 6 && !cam.includeSaturday);
-        if (!skip) eligibleDates.push(new Date(current));
-        current = new Date(current.getTime() + 86400000);
-      }
-    }
-
-    const rowsWithSchedule = generatedRows.map((row, i) => ({
-      ...row,
-      scheduledDate: eligibleDates.length > 0 ? eligibleDates[i % eligibleDates.length] : undefined,
-    }));
-
-    if (rowsWithSchedule.length) {
-      await db.insert(generatedPosts).values(rowsWithSchedule);
+    if (generatedRows.length) {
+      await db.insert(generatedPosts).values(generatedRows);
     }
 
     await db.update(scheduledJobRuns)
