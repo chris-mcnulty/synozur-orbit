@@ -35,6 +35,9 @@ import UserGuidePage from "@/pages/app/user-guide";
 import BattleCardsPage from "@/pages/app/battlecards";
 import UsagePage from "@/pages/app/usage";
 import AppAbout from "@/pages/app/about";
+import SupportPage from "@/pages/app/support";
+import AppChangelogPage from "@/pages/app/changelog";
+import AppRoadmapPage from "@/pages/app/roadmap";
 import DataSourcesPage from "@/pages/app/data-sources";
 import CompanyBaseline from "@/pages/app/company-baseline";
 import MarketingPlannerPage from "@/pages/app/marketing-planner";
@@ -109,6 +112,9 @@ function Router() {
       <Route path="/app/executive-summary" component={BaselineSummary} />
       <Route path="/app/products/:id" component={ProductDetail} />
       <Route path="/app/guide" component={UserGuidePage} />
+      <Route path="/app/support" component={SupportPage} />
+      <Route path="/app/changelog" component={AppChangelogPage} />
+      <Route path="/app/roadmap" component={AppRoadmapPage} />
       <Route path="/app/about" component={AppAbout} />
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/battlecards" component={BattleCardsPage} />

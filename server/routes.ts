@@ -11,7 +11,7 @@ import { objectStorageClient } from "./replit_integrations/object_storage/object
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable, contentAssets } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable, contentAssets, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
@@ -15178,6 +15178,254 @@ Only use these timeframe values: ${periods.join(", ")}`;
       res.send(result.buffer);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== SUPPORT TICKET ROUTES ====================
+
+  app.post("/api/support/tickets", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ctx = await getRequestContext(req);
+
+      const createTicketSchema = z.object({
+        subject: z.string().min(1, "Subject is required").max(500),
+        description: z.string().min(1, "Description is required").max(10000),
+        category: z.enum(TICKET_CATEGORIES).default("question"),
+        priority: z.enum(TICKET_PRIORITIES).default("medium"),
+      });
+
+      const parsed = createTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const ticket = await storage.createSupportTicket({
+        userId: user.id,
+        tenantDomain: ctx.tenantDomain,
+        subject: parsed.data.subject,
+        description: parsed.data.description,
+        category: parsed.data.category,
+        priority: parsed.data.priority,
+        status: "open",
+      });
+
+      try {
+        const { sendSupportTicketNotification, sendSupportTicketConfirmation } = await import("./services/email-service");
+        sendSupportTicketNotification(ticket, user).catch(err => console.error("[Support Email] Notification failed:", err));
+        sendSupportTicketConfirmation(ticket, user).catch(err => console.error("[Support Email] Confirmation failed:", err));
+      } catch (err) {
+        console.error("[Support Email] Import failed:", err);
+      }
+
+      res.json(ticket);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/support/tickets", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const tickets = await storage.getSupportTicketsByUser(req.session.userId);
+      res.json(tickets);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/support/tickets/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      if (ticket.userId !== user.id && !hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const replies = await storage.getSupportTicketReplies(ticket.id);
+      const userIds = new Set([ticket.userId, ...replies.map(r => r.userId)]);
+      if (ticket.assignedTo) userIds.add(ticket.assignedTo);
+
+      const userMap: Record<string, { name: string; email: string; role: string }> = {};
+      for (const uid of userIds) {
+        const u = await storage.getUser(uid);
+        if (u) userMap[uid] = { name: u.name, email: u.email, role: u.role };
+      }
+
+      const filteredReplies = hasAdminAccess(user.role) 
+        ? replies 
+        : replies.filter(r => !r.isInternal);
+
+      res.json({ ...ticket, replies: filteredReplies, users: userMap });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/support/tickets/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const isAdmin = hasAdminAccess(user.role);
+      const isOwner = ticket.userId === user.id;
+
+      if (!isAdmin && !isOwner) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updateTicketSchema = z.object({
+        status: z.enum(TICKET_STATUSES).optional(),
+        priority: z.enum(TICKET_PRIORITIES).optional(),
+        category: z.enum(TICKET_CATEGORIES).optional(),
+        subject: z.string().min(1).max(500).optional(),
+        description: z.string().min(1).max(10000).optional(),
+        assignedTo: z.string().nullable().optional(),
+      }).strict();
+
+      const parsed = updateTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const adminFields = new Set(["status", "priority", "assignedTo", "category"]);
+      const ownerFields = new Set(["subject", "description", "status", "priority", "category"]);
+
+      const updateData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(parsed.data)) {
+        if (value === undefined) continue;
+        if (isAdmin && adminFields.has(key)) {
+          updateData[key] = value;
+        } else if (isOwner && ticket.status === "open" && ownerFields.has(key)) {
+          updateData[key] = value;
+        }
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const updated = await storage.updateSupportTicket(ticket.id, updateData);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/support/tickets/:id/replies", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const isAdmin = hasAdminAccess(user.role);
+      if (ticket.userId !== user.id && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const replySchema = z.object({
+        message: z.string().min(1, "Message is required").max(10000),
+        isInternal: z.boolean().default(false),
+      });
+
+      const parsed = replySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      const reply = await storage.createSupportTicketReply({
+        ticketId: ticket.id,
+        userId: user.id,
+        message: parsed.data.message,
+        isInternal: isAdmin ? parsed.data.isInternal : false,
+      });
+
+      res.json(reply);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/support/tickets", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || !hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tickets = user.role === "Global Admin"
+        ? await storage.getAllSupportTickets()
+        : await storage.getSupportTicketsByTenant(user.company);
+
+      const userIds = new Set(tickets.map(t => t.userId));
+      tickets.forEach(t => { if (t.assignedTo) userIds.add(t.assignedTo); });
+      
+      const userMap: Record<string, { name: string; email: string; role: string }> = {};
+      for (const uid of userIds) {
+        const u = await storage.getUser(uid);
+        if (u) userMap[uid] = { name: u.name, email: u.email, role: u.role };
+      }
+
+      const domainUsers = await storage.getUsersByDomain(user.company);
+      const adminUsers = domainUsers
+        .filter(u => u.role === "Global Admin" || u.role === "Domain Admin")
+        .map(u => ({ id: u.id, name: u.name, email: u.email }));
+
+      res.json({ tickets, users: userMap, adminUsers });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== WHAT'S NEW / CHANGELOG API ====================
+
+  app.get("/api/changelog/whats-new", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const { CURRENT_APP_VERSION, WHATS_NEW_SUMMARY, WHATS_NEW_HIGHLIGHTS } = await import("@shared/schema");
+      
+      const showModal = !user.lastDismissedChangelogVersion || user.lastDismissedChangelogVersion !== CURRENT_APP_VERSION;
+
+      res.json({
+        showModal,
+        version: CURRENT_APP_VERSION,
+        summary: WHATS_NEW_SUMMARY,
+        highlights: WHATS_NEW_HIGHLIGHTS,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/changelog/dismiss", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      
+      const { CURRENT_APP_VERSION } = await import("@shared/schema");
+      await storage.updateUser(req.session.userId, { lastDismissedChangelogVersion: CURRENT_APP_VERSION });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

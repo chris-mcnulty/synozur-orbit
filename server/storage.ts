@@ -113,6 +113,12 @@ import {
   organizations,
   type Organization,
   type InsertOrganization,
+  supportTickets,
+  supportTicketReplies,
+  type SupportTicket,
+  type InsertSupportTicket,
+  type SupportTicketReply,
+  type InsertSupportTicketReply,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
@@ -460,6 +466,16 @@ export interface IStorage {
   permanentlyDeleteOrganization(id: string): Promise<void>;
   backfillOrganizations(): Promise<{ created: number; linked: number }>;
   recoverStuckBriefings(): Promise<number>;
+
+  // Support Ticket methods
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTicket(id: string): Promise<SupportTicket | undefined>;
+  getSupportTicketsByUser(userId: string): Promise<SupportTicket[]>;
+  getSupportTicketsByTenant(tenantDomain: string): Promise<SupportTicket[]>;
+  getAllSupportTickets(): Promise<SupportTicket[]>;
+  updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket>;
+  createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply>;
+  getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3191,6 +3207,42 @@ export class DatabaseStorage implements IStorage {
     }
     
     return recovered;
+  }
+
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const [created] = await db.insert(supportTickets).values(ticket).returning();
+    return created;
+  }
+
+  async getSupportTicket(id: string): Promise<SupportTicket | undefined> {
+    const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, id));
+    return ticket || undefined;
+  }
+
+  async getSupportTicketsByUser(userId: string): Promise<SupportTicket[]> {
+    return db.select().from(supportTickets).where(eq(supportTickets.userId, userId)).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async getSupportTicketsByTenant(tenantDomain: string): Promise<SupportTicket[]> {
+    return db.select().from(supportTickets).where(eq(supportTickets.tenantDomain, tenantDomain)).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async getAllSupportTickets(): Promise<SupportTicket[]> {
+    return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  async updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket> {
+    const [updated] = await db.update(supportTickets).set({ ...data, updatedAt: new Date() }).where(eq(supportTickets.id, id)).returning();
+    return updated;
+  }
+
+  async createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply> {
+    const [created] = await db.insert(supportTicketReplies).values(reply).returning();
+    return created;
+  }
+
+  async getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]> {
+    return db.select().from(supportTicketReplies).where(eq(supportTicketReplies.ticketId, ticketId)).orderBy(supportTicketReplies.createdAt);
   }
 }
 

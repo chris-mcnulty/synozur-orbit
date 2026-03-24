@@ -391,6 +391,38 @@ export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
 };
 
 // ============================================
+// SUPPORT TICKET NOTIFICATION EMAIL
+// ============================================
+export const SUPPORT_TICKET_NOTIFICATION_EMAIL = {
+  subject: (ticketNumber: number, subject: string) => `[Orbit Support #${ticketNumber}] ${subject}`,
+  heading: 'New Support Ticket',
+  body: (userName: string, category: string, priority: string, subject: string, description: string) =>
+    `A new support ticket has been submitted by <span class="highlight">${userName}</span>.<br/><br/>
+    <strong>Category:</strong> ${category}<br/>
+    <strong>Priority:</strong> ${priority}<br/>
+    <strong>Subject:</strong> ${subject}<br/><br/>
+    <strong>Description:</strong><br/>${description.substring(0, 1000)}`,
+  buttonText: 'View in Admin',
+  plainText: (userName: string, ticketNumber: number, category: string, priority: string, subject: string, description: string) =>
+    `New support ticket #${ticketNumber} from ${userName}\n\nCategory: ${category}\nPriority: ${priority}\nSubject: ${subject}\n\n${description.substring(0, 1000)}`,
+};
+
+// ============================================
+// SUPPORT TICKET CONFIRMATION EMAIL
+// ============================================
+export const SUPPORT_TICKET_CONFIRMATION_EMAIL = {
+  subject: (ticketNumber: number) => `Your support ticket #${ticketNumber} has been received`,
+  heading: 'We received your request',
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  body: (ticketNumber: number, subject: string) =>
+    `Thank you for contacting Orbit support. Your ticket <span class="highlight">#${ticketNumber}</span> regarding "<strong>${subject}</strong>" has been received and our team will review it shortly.`,
+  closing: 'You can track the status of your ticket and add replies from the Support page in Orbit.',
+  buttonText: 'View My Tickets',
+  plainText: (name: string, ticketNumber: number, subject: string) =>
+    `Hi ${name},\n\nYour support ticket #${ticketNumber} regarding "${subject}" has been received. Our team will review it shortly.\n\nYou can track your ticket from the Support page in Orbit.`,
+};
+
+// ============================================
 // COMPETITOR ALERT EMAIL (FUTURE)
 // ============================================
 export const COMPETITOR_ALERT_EMAIL = {

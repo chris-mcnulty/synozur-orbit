@@ -1,15 +1,13 @@
-import { useState } from "react";
 import { 
   Map, CheckCircle2, Clock, Rocket, Star, Info,
   Shield, BarChart3, Users, Zap, Target, Globe,
-  FileText, ListTodo
+  FileText, ListTodo, ExternalLink
 } from "lucide-react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import AppLayout from "@/components/layout/AppLayout";
-import MarkdownViewer from "@/components/MarkdownViewer";
 
 interface RoadmapItem {
   id: string;
@@ -213,8 +211,6 @@ const getCategoryColor = (category: string) => {
 };
 
 export default function AboutPage() {
-  const [activeTab, setActiveTab] = useState("roadmap");
-
   const allItems = milestones.flatMap(m => m.items);
   const completedCount = allItems.filter(i => i.status === "completed").length;
   const inProgressCount = allItems.filter(i => i.status === "in-progress").length;
@@ -230,142 +226,123 @@ export default function AboutPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold" data-testid="text-page-title">About Orbit</h1>
-              <p className="text-muted-foreground text-sm">Product information, roadmap, and updates</p>
+              <p className="text-muted-foreground text-sm">Product information and development progress</p>
             </div>
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="roadmap" className="flex items-center gap-2" data-testid="tab-roadmap">
-              <Map className="w-4 h-4" />
-              Roadmap
-            </TabsTrigger>
-            <TabsTrigger value="changelog" className="flex items-center gap-2" data-testid="tab-changelog">
-              <FileText className="w-4 h-4" />
-              Changelog
-            </TabsTrigger>
-            <TabsTrigger value="backlog" className="flex items-center gap-2" data-testid="tab-backlog">
-              <ListTodo className="w-4 h-4" />
-              Backlog
-            </TabsTrigger>
-          </TabsList>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Link href="/app/changelog">
+            <Card className="cursor-pointer hover:border-primary/50 transition-colors" data-testid="card-link-changelog">
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <FileText className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Changelog</h3>
+                  <p className="text-sm text-muted-foreground">View release history and updates</p>
+                </div>
+                <ExternalLink className="w-4 h-4 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/app/roadmap">
+            <Card className="cursor-pointer hover:border-primary/50 transition-colors" data-testid="card-link-roadmap">
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <Map className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Roadmap</h3>
+                  <p className="text-sm text-muted-foreground">View product backlog and upcoming features</p>
+                </div>
+                <ExternalLink className="w-4 h-4 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
 
-          <TabsContent value="roadmap" className="mt-6">
-            <div className="flex items-center gap-4 text-sm mb-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span>{completedCount} Completed</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-500" />
-                <span>{inProgressCount} In Progress</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                <span>{plannedCount} Planned</span>
-              </div>
+        <div>
+          <h2 className="text-lg font-semibold mb-4">Development Progress</h2>
+          <div className="flex items-center gap-4 text-sm mb-6">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <span>{completedCount} Completed</span>
             </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500" />
+              <span>{inProgressCount} In Progress</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-yellow-500" />
+              <span>{plannedCount} Planned</span>
+            </div>
+          </div>
 
-            <div className="space-y-8">
-              {milestones.map((milestone, index) => (
-                <div key={milestone.id} className="relative">
-                  {index < milestones.length - 1 && (
-                    <div className="absolute left-6 top-16 bottom-0 w-0.5 bg-border" />
-                  )}
+          <div className="space-y-8">
+            {milestones.map((milestone, index) => (
+              <div key={milestone.id} className="relative">
+                {index < milestones.length - 1 && (
+                  <div className="absolute left-6 top-16 bottom-0 w-0.5 bg-border" />
+                )}
+                
+                <div className="flex items-start gap-4">
+                  <div className={`p-3 rounded-full shrink-0 ${
+                    milestone.progress === 100 
+                      ? "bg-green-500/20 text-green-400" 
+                      : milestone.progress > 0 
+                        ? "bg-blue-500/20 text-blue-400"
+                        : "bg-muted text-muted-foreground"
+                  }`}>
+                    {milestone.progress === 100 ? (
+                      <CheckCircle2 className="h-6 w-6" />
+                    ) : milestone.progress > 0 ? (
+                      <Clock className="h-6 w-6" />
+                    ) : (
+                      <Rocket className="h-6 w-6" />
+                    )}
+                  </div>
                   
-                  <div className="flex items-start gap-4">
-                    <div className={`p-3 rounded-full shrink-0 ${
-                      milestone.progress === 100 
-                        ? "bg-green-500/20 text-green-400" 
-                        : milestone.progress > 0 
-                          ? "bg-blue-500/20 text-blue-400"
-                          : "bg-muted text-muted-foreground"
-                    }`}>
-                      {milestone.progress === 100 ? (
-                        <CheckCircle2 className="h-6 w-6" />
-                      ) : milestone.progress > 0 ? (
-                        <Clock className="h-6 w-6" />
-                      ) : (
-                        <Rocket className="h-6 w-6" />
-                      )}
+                  <div className="flex-1 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-xl font-semibold">{milestone.name}</h2>
+                        <p className="text-sm text-muted-foreground">{milestone.quarter}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground">{milestone.progress}%</span>
+                        <Progress value={milestone.progress} className="w-32 h-2" />
+                      </div>
                     </div>
                     
-                    <div className="flex-1 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h2 className="text-xl font-semibold">{milestone.name}</h2>
-                          <p className="text-sm text-muted-foreground">{milestone.quarter}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-muted-foreground">{milestone.progress}%</span>
-                          <Progress value={milestone.progress} className="w-32 h-2" />
-                        </div>
-                      </div>
-                      
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {milestone.items.map(item => (
-                          <Card key={item.id} className="border-border/50" data-testid={`card-roadmap-${item.id}`}>
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <div className={`p-1.5 rounded ${getCategoryColor(item.category)}`}>
-                                    {item.icon}
-                                  </div>
-                                  <div>
-                                    <h3 className="font-medium text-sm">{item.title}</h3>
-                                    <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
-                                  </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {milestone.items.map(item => (
+                        <Card key={item.id} className="border-border/50" data-testid={`card-roadmap-${item.id}`}>
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`p-1.5 rounded ${getCategoryColor(item.category)}`}>
+                                  {item.icon}
                                 </div>
-                                <Badge variant="outline" className={`shrink-0 text-xs ${getStatusColor(item.status)}`}>
-                                  {getStatusLabel(item.status)}
-                                </Badge>
+                                <div>
+                                  <h3 className="font-medium text-sm">{item.title}</h3>
+                                  <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                                </div>
                               </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
+                              <Badge variant="outline" className={`shrink-0 text-xs ${getStatusColor(item.status)}`}>
+                                {getStatusLabel(item.status)}
+                              </Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="changelog" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Changelog
-                </CardTitle>
-                <CardDescription>
-                  A detailed history of all updates, improvements, and new features.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <MarkdownViewer url="/api/content/changelog.md" maxHeight="600px" />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="backlog" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ListTodo className="w-5 h-5" />
-                  Backlog
-                </CardTitle>
-                <CardDescription>
-                  Features and improvements we're tracking for future releases.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <MarkdownViewer url="/api/content/backlog.md" maxHeight="600px" />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </AppLayout>
   );

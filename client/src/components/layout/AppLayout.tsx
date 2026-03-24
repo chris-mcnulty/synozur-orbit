@@ -39,7 +39,10 @@ import {
   LayoutList,
   AtSign,
   HardDrive,
-  Puzzle
+  Puzzle,
+  TicketIcon,
+  Map,
+  FileText as FileTextIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -59,6 +62,7 @@ import ContextBar from "@/components/layout/ContextBar";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import CommandPalette from "@/components/CommandPalette";
 import SmartSuggestions from "@/components/SmartSuggestions";
+import WhatsNewModal from "@/components/WhatsNewModal";
 import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 import { calculateStaleness } from "@/lib/staleness";
 
@@ -453,7 +457,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       group: "Help",
       items: [
         { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
+        { label: "Support", icon: TicketIcon, href: "/app/support" },
         { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
+        { label: "Changelog", icon: FileTextIcon, href: "/app/changelog" },
+        { label: "Roadmap", icon: Map, href: "/app/roadmap" },
         { label: "About", icon: Info, href: "/app/about" },
       ]
     }
@@ -671,7 +678,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <a href="https://www.synozur.com/services/go-to-market-transformation" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GTM Services</a>
                 <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Privacy Policy</a>
                 <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms of Service</a>
-                <a href="https://www.synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Support</a>
+                <a href="/app/support" className="hover:text-foreground transition-colors">Support</a>
               </div>
             </div>
           </footer>
@@ -704,6 +711,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       />
       
       <SmartSuggestions />
+      <WhatsNewModal />
     </div>
   );
 }

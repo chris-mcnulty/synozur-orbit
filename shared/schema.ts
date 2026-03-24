@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false),
   status: text("status").default("active"), // active, pending_verification, suspended
   weeklyDigestEnabled: boolean("weekly_digest_enabled").default(true), // Opt-in for weekly competitor digest emails
+  lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -1779,6 +1780,68 @@ export const insertGeneratedEmailSchema = createInsertSchema(generatedEmails).om
 export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
+
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketNumber: serial("ticket_number").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  tenantDomain: text("tenant_domain").notNull(),
+  category: text("category").notNull().default("question"),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("open"),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const supportTicketReplies = pgTable("support_ticket_replies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
+  user: one(users, { fields: [supportTickets.userId], references: [users.id] }),
+  assignedUser: one(users, { fields: [supportTickets.assignedTo], references: [users.id] }),
+  replies: many(supportTicketReplies),
+}));
+
+export const supportTicketRepliesRelations = relations(supportTicketReplies, ({ one }) => ({
+  ticket: one(supportTickets, { fields: [supportTicketReplies.ticketId], references: [supportTickets.id] }),
+  user: one(users, { fields: [supportTicketReplies.userId], references: [users.id] }),
+}));
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
+  id: true, ticketNumber: true, createdAt: true, updatedAt: true,
+});
+export type SupportTicket = typeof supportTickets.$inferSelect;
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+
+export const insertSupportTicketReplySchema = createInsertSchema(supportTicketReplies).omit({
+  id: true, createdAt: true,
+});
+export type SupportTicketReply = typeof supportTicketReplies.$inferSelect;
+export type InsertSupportTicketReply = z.infer<typeof insertSupportTicketReplySchema>;
+
+export const TICKET_CATEGORIES = ["question", "bug", "feature_request", "feedback", "account", "billing", "other"] as const;
+export const TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export const TICKET_STATUSES = ["open", "in_progress", "waiting", "resolved", "closed"] as const;
+
+export const CURRENT_APP_VERSION = "1.5.0";
+
+export const WHATS_NEW_HIGHLIGHTS = [
+  { emoji: "🎫", text: "Submit and track support tickets directly in Orbit" },
+  { emoji: "📋", text: "Admin support management with internal notes" },
+  { emoji: "📖", text: "Standalone Changelog and Roadmap pages" },
+  { emoji: "🔔", text: "What's New notifications for product updates" },
+];
+
+export const WHATS_NEW_SUMMARY = "This release introduces a full support system, What's New notifications, and standalone Changelog and Roadmap pages.";
 
 export const DEFAULT_CONTENT_CATEGORIES = [
   "Blog Post", "White Paper", "Case Study", "eBook", "Infographic",

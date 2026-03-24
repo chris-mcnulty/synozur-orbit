@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw, AlertTriangle, ExternalLink } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw, AlertTriangle, ExternalLink, TicketIcon, Send, MessageSquare } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -136,6 +136,235 @@ const GLOBAL_DOC_CATEGORIES = [
   { value: "digital_assets", label: "Digital Assets" },
   { value: "methodology", label: "Methodology" },
 ] as const;
+
+const statusColors: Record<string, string> = {
+  open: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  in_progress: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+  waiting: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  resolved: "bg-green-500/10 text-green-400 border-green-500/30",
+  closed: "bg-muted text-muted-foreground border-muted",
+};
+
+const priorityColors: Record<string, string> = {
+  low: "bg-slate-500/10 text-slate-400 border-slate-500/30",
+  medium: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  high: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  urgent: "bg-red-500/10 text-red-400 border-red-500/30",
+};
+
+function AdminSupportCard() {
+  const queryClient = useQueryClient();
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [replyMessage, setReplyMessage] = useState("");
+  const [isInternal, setIsInternal] = useState(false);
+
+  const { data: supportData, isLoading } = useQuery({
+    queryKey: ["/api/admin/support/tickets"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/support/tickets", { credentials: "include" });
+      if (!res.ok) return { tickets: [], users: {} };
+      return res.json();
+    },
+  });
+
+  const { data: ticketDetail } = useQuery({
+    queryKey: ["/api/support/tickets", selectedTicketId],
+    queryFn: async () => {
+      if (!selectedTicketId) return null;
+      const res = await fetch(`/api/support/tickets/${selectedTicketId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!selectedTicketId,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await fetch(`/api/support/tickets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/support/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", selectedTicketId] });
+    },
+  });
+
+  const replyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/support/tickets/${selectedTicketId}/replies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ message: replyMessage, isInternal }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", selectedTicketId] });
+      setReplyMessage("");
+      setIsInternal(false);
+    },
+  });
+
+  const tickets = supportData?.tickets || [];
+  const users = supportData?.users || {};
+  const adminUsers = supportData?.adminUsers || [];
+
+  return (
+    <Card data-testid="card-admin-support">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TicketIcon className="h-5 w-5 text-primary" />
+          Support Tickets
+        </CardTitle>
+        <CardDescription>
+          Manage support tickets across all tenants
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-4 text-muted-foreground">Loading tickets...</div>
+        ) : tickets.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No support tickets yet</div>
+        ) : selectedTicketId && ticketDetail ? (
+          <div className="space-y-4">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedTicketId(null)} data-testid="button-admin-back-to-list">
+              Back to list
+            </Button>
+            <div className="border border-border rounded-lg p-4">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div>
+                  <h3 className="font-semibold" data-testid="text-admin-ticket-subject">#{ticketDetail.ticketNumber} - {ticketDetail.subject}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    by {ticketDetail.users?.[ticketDetail.userId]?.name} ({ticketDetail.tenantDomain}) - {new Date(ticketDetail.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Select value={ticketDetail.status} onValueChange={(v) => updateMutation.mutate({ id: ticketDetail.id, data: { status: v } })}>
+                    <SelectTrigger className="w-32" data-testid="select-admin-ticket-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="waiting">Waiting</SelectItem>
+                      <SelectItem value="resolved">Resolved</SelectItem>
+                      <SelectItem value="closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={ticketDetail.priority} onValueChange={(v) => updateMutation.mutate({ id: ticketDetail.id, data: { priority: v } })}>
+                    <SelectTrigger className="w-28" data-testid="select-admin-ticket-priority">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={ticketDetail.assignedTo || "_unassigned"} onValueChange={(v) => updateMutation.mutate({ id: ticketDetail.id, data: { assignedTo: v === "_unassigned" ? null : v } })}>
+                    <SelectTrigger className="w-40" data-testid="select-admin-ticket-assignee">
+                      <SelectValue placeholder="Assign to..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_unassigned">Unassigned</SelectItem>
+                      {adminUsers.map((au: any) => (
+                        <SelectItem key={au.id} value={au.id}>{au.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <p className="text-sm whitespace-pre-wrap mb-4">{ticketDetail.description}</p>
+              
+              <div className="space-y-3 mt-4">
+                <h4 className="text-sm font-medium flex items-center gap-1"><MessageSquare size={14} /> Replies</h4>
+                {ticketDetail.replies?.map((reply: any) => (
+                  <div key={reply.id} className={`border rounded-lg p-3 ${reply.isInternal ? "border-yellow-500/30 bg-yellow-500/5" : "border-border"}`} data-testid={`admin-reply-${reply.id}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium">
+                        {ticketDetail.users?.[reply.userId]?.name}
+                        {reply.isInternal && <Badge variant="outline" className="ml-2 text-xs bg-yellow-500/10 text-yellow-400 border-yellow-500/30">Internal</Badge>}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{new Date(reply.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="text-sm">{reply.message}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <Textarea
+                  placeholder="Write a reply..."
+                  value={replyMessage}
+                  onChange={(e) => setReplyMessage(e.target.value)}
+                  rows={3}
+                  data-testid="input-admin-reply"
+                />
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={isInternal} onChange={(e) => setIsInternal(e.target.checked)} />
+                    Internal note (not visible to user)
+                  </label>
+                  <Button
+                    size="sm"
+                    onClick={() => replyMutation.mutate()}
+                    disabled={!replyMessage.trim() || replyMutation.isPending}
+                    data-testid="button-admin-send-reply"
+                  >
+                    <Send size={14} className="mr-1" /> Reply
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Submitter</TableHead>
+                <TableHead>Tenant</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets.map((ticket: any) => (
+                <TableRow
+                  key={ticket.id}
+                  className="cursor-pointer hover:bg-muted/30"
+                  onClick={() => setSelectedTicketId(ticket.id)}
+                  data-testid={`admin-ticket-row-${ticket.id}`}
+                >
+                  <TableCell className="text-muted-foreground">{ticket.ticketNumber}</TableCell>
+                  <TableCell className="font-medium">{ticket.subject}</TableCell>
+                  <TableCell>{users[ticket.userId]?.name || "Unknown"}</TableCell>
+                  <TableCell>{ticket.tenantDomain}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-xs">{ticket.category.replace("_", " ")}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-xs ${priorityColors[ticket.priority] || ""}`}>{ticket.priority}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-xs ${statusColors[ticket.status] || ""}`}>{ticket.status.replace("_", " ")}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{ticket.assignedTo ? (users[ticket.assignedTo]?.name || "Unknown") : "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminPage() {
   const { user: currentUser } = useUser();
@@ -1425,6 +1654,8 @@ export default function AdminPage() {
             )}
           </CardContent>
         </Card>
+
+        <AdminSupportCard />
 
         <Card data-testid="card-ai-usage">
           <CardHeader>

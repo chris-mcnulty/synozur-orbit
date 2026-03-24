@@ -13,6 +13,8 @@ import {
   WEEKLY_DIGEST_EMAIL,
   INTELLIGENCE_BRIEFING_DIGEST_EMAIL,
   COMPETITOR_ALERT_EMAIL,
+  SUPPORT_TICKET_NOTIFICATION_EMAIL,
+  SUPPORT_TICKET_CONFIRMATION_EMAIL,
 } from '../config/email-copy';
 
 let connectionSettings: any;
@@ -931,5 +933,58 @@ export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise
     subject: copy.subject(companyName),
     html: wrapEmailContent(content),
     text
+  });
+}
+
+export async function sendSupportTicketNotification(
+  ticket: { ticketNumber: number; subject: string; description: string; category: string; priority: string },
+  user: { name: string; email: string }
+): Promise<boolean> {
+  const copy = SUPPORT_TICKET_NOTIFICATION_EMAIL;
+  const supportEmail = EMAIL_CONFIG.branding.supportEmail;
+  const adminLink = `${EMAIL_CONFIG.branding.appUrl}/admin`;
+
+  const content = `
+    <h1>${copy.heading}</h1>
+    <p>${copy.body(user.name, ticket.category, ticket.priority, ticket.subject, ticket.description)}</p>
+    <div class="button-container">
+      <a href="${adminLink}" class="button">${copy.buttonText}</a>
+    </div>
+  `;
+
+  const text = copy.plainText(user.name, ticket.ticketNumber, ticket.category, ticket.priority, ticket.subject, ticket.description);
+
+  return sendEmail({
+    to: supportEmail,
+    subject: copy.subject(ticket.ticketNumber, ticket.subject),
+    html: wrapEmailContent(content),
+    text,
+  });
+}
+
+export async function sendSupportTicketConfirmation(
+  ticket: { ticketNumber: number; subject: string },
+  user: { name: string; email: string }
+): Promise<boolean> {
+  const copy = SUPPORT_TICKET_CONFIRMATION_EMAIL;
+  const supportLink = `${EMAIL_CONFIG.branding.appUrl}/app/support`;
+
+  const content = `
+    <h1>${copy.heading}</h1>
+    <p>${copy.greeting(user.name)}</p>
+    <p>${copy.body(ticket.ticketNumber, ticket.subject)}</p>
+    <p>${copy.closing}</p>
+    <div class="button-container">
+      <a href="${supportLink}" class="button">${copy.buttonText}</a>
+    </div>
+  `;
+
+  const text = copy.plainText(user.name, ticket.ticketNumber, ticket.subject);
+
+  return sendEmail({
+    to: user.email,
+    subject: copy.subject(ticket.ticketNumber),
+    html: wrapEmailContent(content),
+    text,
   });
 }
