@@ -1385,31 +1385,33 @@ export function registerSaturnMarketingRoutes(app: Express) {
       "hubspot-marketing": `Generate a RICH, visually compelling HTML email suitable for HubSpot Marketing Email.
 Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
 
+CRITICAL WIDTH CONSTRAINT:
+- The TOTAL email width must NEVER exceed 600px. Every table, td, img, and element must fit within 600px.
+- Do NOT use width values greater than 600 on any element.
+
 REQUIRED HTML STRUCTURE:
-- Wrap everything in an outer <table width="100%" style="background-color: #f4f6f9"> with a centered inner <table width="600" style="max-width:600px"> container
+- Wrap everything in: <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f9"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff">
 - Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
-- Use table-based layout throughout (email clients don't support flexbox/grid)
+- Use table-based layout ONLY (email clients don't support flexbox, grid, or div layouts)
+- All content <td> cells should have style="padding:24px 32px"
 
 REQUIRED SECTIONS (adapt based on content):
-1. **Branded Header Banner**: Dark background with company name in small uppercase letters, a bold headline (h1), and a subheading. Use the brand colors if provided.
-2. **Hero Image**: If the content asset has an image URL, include it as a full-width <img> with width="600" style="display:block;width:100%;max-width:600px;height:auto"
-3. **Opening Paragraph**: Personal greeting and context-setting copy (2-3 paragraphs)
-4. **Key Stats / Data Cards**: If the content contains numbers or stats, present them in side-by-side colored stat cards using a 2-column table layout with rounded corners and background colors
-5. **Numbered Highlights**: Present 3-5 key points as numbered items with circular number badges (dark background, white text) and bold titles with descriptions
-6. **Primary CTA Button**: Styled as [CTA_BUTTON: "Button Text" → URL] placeholder. Make it prominent.
-7. **Secondary Content Block**: If multiple assets provided, add another section with image and bullet points
-8. **Closing Section**: Wrap-up message and secondary CTA
+1. **Branded Header Banner**: Dark background td with company name in small uppercase letters, a bold headline (h1 style, max font-size 26px), and a subheading.
+2. **Hero Image**: If the content asset has an image URL, include it as <img src="URL" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0" alt="...">
+3. **Opening Paragraph**: Personal greeting and 2-3 context-setting paragraphs.
+4. **Key Stats / Data Cards**: If stats exist, use a SINGLE-ROW table with 2-3 <td> cells, each with percentage widths (e.g. width="33%"). Each cell: colored background, border-radius:8px, centered large bold number and label. Do NOT use fixed pixel widths on stat cells.
+5. **Key Points**: Present 3-5 highlights as styled paragraphs with bold titles and descriptions. Use emoji or bullet characters for visual interest.
+6. **Primary CTA Button**: Render as a centered <table> with a single <td bgcolor="BRAND_COLOR" style="border-radius:6px;text-align:center"><a href="URL" style="display:inline-block;padding:14px 32px;color:#ffffff;font-weight:bold;text-decoration:none;font-family:Arial,sans-serif;font-size:16px">Button Text</a></td>. Do NOT use [CTA_BUTTON] placeholders.
+7. **Secondary Content**: If multiple assets, add another section.
+8. **Footer**: Simple single-column footer. Do NOT use multi-column footer layouts — stack footer items vertically.
 
 VISUAL DESIGN RULES:
-- Use <hr> dividers with style="border:none;border-top:1px solid #e8ecf0" between sections
-- Stat cards: colored backgrounds (#f0f6ff blue, #fff7f0 orange, #f0faf0 green), border-radius:8px, large bold numbers
-- Numbered circles: 40x40px, dark background, white text, border-radius:50%
-- Buttons: Use [CTA_BUTTON: "text" → url] syntax for CTAs
-- Typography: font-family:Arial,sans-serif throughout, headings 22-28px, body 15-16px, line-height:1.6-1.7
-- Colors: dark navy (#0a2540) for headings, #333 for body, #555 for secondary, lighter blues for accents
-- Padding: 32-40px horizontal padding in content cells
-- Use company brand colors for the header banner background and accent elements if brand info is provided
-- Include the company logo image if a logo URL is provided (in the header or footer)`,
+- Use <hr> with style="border:none;border-top:1px solid #e8ecf0;margin:24px 0" between sections
+- All buttons must be real HTML <table><tr><td bgcolor><a> buttons, NOT placeholders
+- Typography: font-family:Arial,sans-serif throughout, headings 22-26px, body 15-16px, line-height:1.6
+- Colors: dark navy (#0a2540) for headings, #333 for body, #555 for secondary
+- Use company brand colors for header background and button backgrounds if brand info is provided
+- Include company logo image if a logo URL is provided`,
       "hubspot-1to1": `Generate a personal, conversational email suitable for HubSpot 1:1 Sales Email.
 - Do NOT use any HTML tags.
 - Write as if one person is emailing another directly.
