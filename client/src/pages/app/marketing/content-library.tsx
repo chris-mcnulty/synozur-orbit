@@ -255,14 +255,20 @@ export default function ContentLibraryPage() {
 
   const archiveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/content-assets/${id}`, {
+      const r = await fetch(`/api/content-assets/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ status: "archived" }),
       });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "Content asset archived" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const editMutation = useMutation({
