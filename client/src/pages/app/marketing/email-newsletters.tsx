@@ -541,18 +541,43 @@ export default function EmailNewslettersPage() {
                 </div>
               )}
 
-              {previewEmail.platform === "hubspot-marketing" ? (
-                <div
-                  className="border rounded bg-white text-black text-sm overflow-y-auto"
-                  style={{ maxHeight: "600px" }}
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
-                  data-testid="preview-email-html"
-                />
-              ) : (
-                <pre className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
-                  {previewEmail.textBody || previewEmail.htmlBody}
-                </pre>
-              )}
+              <div className="relative">
+                <div className="absolute top-2 right-2 z-10 flex gap-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs shadow-sm"
+                    onClick={() => {
+                      const content = previewEmail.platform === "hubspot-marketing"
+                        ? previewEmail.htmlBody
+                        : (previewEmail.textBody || previewEmail.htmlBody);
+                      navigator.clipboard.writeText(content);
+                      toast({
+                        title: "Copied",
+                        description: previewEmail.platform === "hubspot-marketing"
+                          ? "HTML copied to clipboard — paste into your email editor"
+                          : "Email body copied to clipboard",
+                      });
+                    }}
+                    data-testid="button-copy-email-body"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {previewEmail.platform === "hubspot-marketing" ? "Copy HTML" : "Copy Text"}
+                  </Button>
+                </div>
+                {previewEmail.platform === "hubspot-marketing" ? (
+                  <div
+                    className="border rounded bg-white text-black text-sm overflow-y-auto"
+                    style={{ maxHeight: "600px" }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
+                    data-testid="preview-email-html"
+                  />
+                ) : (
+                  <pre className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
+                    {previewEmail.textBody || previewEmail.htmlBody}
+                  </pre>
+                )}
+              </div>
 
               {previewEmail.coachingTips && previewEmail.coachingTips.length > 0 && (
                 <Collapsible open={coachingTipsOpen} onOpenChange={setCoachingTipsOpen}>
@@ -614,6 +639,26 @@ export default function EmailNewslettersPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge variant="outline" className="capitalize">{email.status}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={email.platform === "hubspot-marketing" ? "Copy HTML" : "Copy email body"}
+                        onClick={() => {
+                          const content = email.platform === "hubspot-marketing"
+                            ? email.htmlBody
+                            : (email.textBody || email.htmlBody);
+                          navigator.clipboard.writeText(content);
+                          toast({
+                            title: "Copied",
+                            description: email.platform === "hubspot-marketing"
+                              ? "HTML copied to clipboard"
+                              : "Email body copied to clipboard",
+                          });
+                        }}
+                        data-testid={`button-copy-email-${email.id}`}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
