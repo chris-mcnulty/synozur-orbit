@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray, sql, ne } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray, sql, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   contentAssets,
@@ -1258,6 +1258,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const posts = await db.select().from(generatedPosts)
       .where(and(
         eq(generatedPosts.campaignId, campaign.id),
+        notInArray(generatedPosts.status, ["deleted", "rejected"]),
       ));
 
     const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
