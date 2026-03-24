@@ -645,7 +645,8 @@ export default function EmailNewslettersPage() {
                         variant="ghost"
                         size="sm"
                         title={email.platform === "hubspot-marketing" ? "Copy HTML" : "Copy email body"}
-                        onClick={() => {
+                        onClick={e => {
+                          e.stopPropagation();
                           const content = email.platform === "hubspot-marketing"
                             ? email.htmlBody
                             : (email.textBody || email.htmlBody);
@@ -665,7 +666,8 @@ export default function EmailNewslettersPage() {
                         variant="ghost"
                         size="sm"
                         title="Edit email"
-                        onClick={() => {
+                        onClick={e => {
+                          e.stopPropagation();
                           setEditingEmail(email);
                           setEditSubject(email.subject);
                           setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
@@ -679,7 +681,7 @@ export default function EmailNewslettersPage() {
                         size="sm"
                         className="text-destructive"
                         title="Delete email"
-                        onClick={() => setDeleteConfirmId(email.id)}
+                        onClick={e => { e.stopPropagation(); setDeleteConfirmId(email.id); }}
                         data-testid={`button-delete-email-${email.id}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -759,6 +761,87 @@ export default function EmailNewslettersPage() {
                 {deleteEmailMutation.isPending ? "Deleting..." : "Delete"}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!viewingEmail} onOpenChange={v => { if (!v) setViewingEmail(null); }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center justify-between gap-4 pr-8">
+                <div className="min-w-0">
+                  <DialogTitle data-testid="text-view-email-subject">{viewingEmail?.subject}</DialogTitle>
+                  <DialogDescription className="flex items-center gap-2 mt-1">
+                    {viewingEmail?.platform && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {PLATFORM_LABELS[viewingEmail.platform] || viewingEmail.platform}
+                      </Badge>
+                    )}
+                    {viewingEmail?.tone && (
+                      <Badge variant="outline" className="text-[10px] capitalize">{viewingEmail.tone}</Badge>
+                    )}
+                    {viewingEmail?.createdAt && (
+                      <span className="text-xs">{format(new Date(viewingEmail.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
+                    )}
+                  </DialogDescription>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => {
+                      if (!viewingEmail) return;
+                      const content = viewingEmail.platform === "hubspot-marketing"
+                        ? viewingEmail.htmlBody
+                        : (viewingEmail.textBody || viewingEmail.htmlBody);
+                      navigator.clipboard.writeText(content);
+                      toast({
+                        title: "Copied",
+                        description: viewingEmail.platform === "hubspot-marketing"
+                          ? "HTML copied to clipboard"
+                          : "Email body copied to clipboard",
+                      });
+                    }}
+                    data-testid="button-copy-viewed-email"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {viewingEmail?.platform === "hubspot-marketing" ? "Copy HTML" : "Copy Text"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => {
+                      if (!viewingEmail) return;
+                      setEditingEmail(viewingEmail);
+                      setEditSubject(viewingEmail.subject);
+                      setEditBody(viewingEmail.platform === "hubspot-marketing" ? viewingEmail.htmlBody : (viewingEmail.textBody || viewingEmail.htmlBody));
+                      setViewingEmail(null);
+                    }}
+                    data-testid="button-edit-from-view"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit
+                  </Button>
+                </div>
+              </div>
+            </DialogHeader>
+            {viewingEmail && (
+              <div className="mt-2">
+                {viewingEmail.platform === "hubspot-marketing" ? (
+                  <div
+                    className="border rounded bg-white text-black text-sm overflow-y-auto"
+                    style={{ maxHeight: "65vh" }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingEmail.htmlBody) }}
+                    data-testid="view-email-html"
+                  />
+                ) : (
+                  <pre className="border rounded p-4 bg-white text-black text-sm overflow-y-auto whitespace-pre-wrap font-sans" style={{ maxHeight: "65vh" }} data-testid="view-email-text">
+                    {viewingEmail.textBody || viewingEmail.htmlBody}
+                  </pre>
+                )}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
