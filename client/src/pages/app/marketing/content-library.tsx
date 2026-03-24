@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
+  Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2, AlertTriangle,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
   Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText
 } from "lucide-react";
@@ -107,6 +107,20 @@ export default function ContentLibraryPage() {
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
   const [formStep, setFormStep] = useState<"url" | "review">("url");
+  const [duplicateAsset, setDuplicateAsset] = useState<ContentAsset | null>(null);
+
+  const normalizeUrl = (u: string) => {
+    try {
+      const url = new URL(u.trim().toLowerCase());
+      return url.origin + url.pathname.replace(/\/+$/, "");
+    } catch { return u.trim().toLowerCase().replace(/\/+$/, ""); }
+  };
+
+  const checkDuplicateUrl = (url: string): ContentAsset | null => {
+    if (!url.trim()) return null;
+    const norm = normalizeUrl(url);
+    return assets.find(a => a.url && normalizeUrl(a.url) === norm) || null;
+  };
 
   const [form, setForm] = useState({
     title: "", description: "", url: "", content: "", aiSummary: "",
@@ -786,7 +800,7 @@ export default function ContentLibraryPage() {
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-categories">
                 <Settings className="w-4 h-4 mr-1" /> Categories
               </Button>
-              <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
+              <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) { resetForm(); setDuplicateAsset(null); } }}>
                 <DialogTrigger asChild>
                   <Button data-testid="button-add-content-asset"><Plus className="w-4 h-4 mr-2" />Add Content</Button>
                 </DialogTrigger>
@@ -810,12 +824,20 @@ export default function ContentLibraryPage() {
                         <div className="flex gap-2">
                           <Input
                             value={urlInput}
-                            onChange={e => setUrlInput(e.target.value)}
+                            onChange={e => { setUrlInput(e.target.value); setDuplicateAsset(null); }}
                             placeholder="https://example.com/blog-post"
                             data-testid="input-extract-url"
                           />
                           <Button
-                            onClick={() => extractMutation.mutate(urlInput)}
+                            onClick={() => {
+                              const dup = checkDuplicateUrl(urlInput);
+                              if (dup) {
+                                setDuplicateAsset(dup);
+                              } else {
+                                setDuplicateAsset(null);
+                                extractMutation.mutate(urlInput);
+                              }
+                            }}
                             disabled={!urlInput.trim() || extractMutation.isPending}
                             data-testid="button-extract-url"
                           >
@@ -826,6 +848,47 @@ export default function ContentLibraryPage() {
                             )}
                           </Button>
                         </div>
+                        {duplicateAsset && (
+                          <div className="mt-2 border border-yellow-500/50 bg-yellow-500/10 rounded-lg p-3 space-y-2" data-testid="duplicate-url-warning">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+                              <div className="text-sm">
+                                <p className="font-medium text-yellow-500">Duplicate URL detected</p>
+                                <p className="text-muted-foreground mt-0.5">
+                                  This URL already exists as "<span className="font-medium">{duplicateAsset.title}</span>"
+                                  {duplicateAsset.categoryId && categoryName(duplicateAsset.categoryId) && (
+                                    <> in {categoryName(duplicateAsset.categoryId)}</>
+                                  )}.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 ml-6">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setDuplicateAsset(null);
+                                  extractMutation.mutate(urlInput);
+                                }}
+                                data-testid="button-extract-anyway"
+                              >
+                                Extract Anyway
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setDuplicateAsset(null);
+                                  openEditDialog(duplicateAsset);
+                                  setAddOpen(false);
+                                }}
+                                data-testid="button-view-existing"
+                              >
+                                View Existing
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="relative">
