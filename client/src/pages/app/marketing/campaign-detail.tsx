@@ -403,9 +403,20 @@ export default function CampaignDetailPage() {
       if (activePosts.length === 0) throw new Error("No active posts to schedule");
 
       const [hours, minutes] = time.split(":").map(Number);
+      const timeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 
-      const isWeekendExcluded = (date: Date) => {
-        const dow = date.getDay();
+      const toLocalDateStr = (d: Date): string => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      const localToday = new Date();
+      localToday.setHours(0, 0, 0, 0);
+
+      const isWeekendExcluded = (d: Date) => {
+        const dow = d.getDay();
         return (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
       };
 
@@ -417,27 +428,27 @@ export default function CampaignDetailPage() {
         return d;
       };
 
-      const eligibleDates: Date[] = [];
       const campaignStart = new Date(campaign.startDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const start = campaignStart < today ? today : campaignStart;
-      const endDate = addDays(new Date(campaign.startDate), campaign.numberOfDays - 1);
-      const effectiveEnd = endDate < today ? addDays(today, campaign.numberOfDays - 1) : endDate;
+      campaignStart.setHours(0, 0, 0, 0);
+      const start = campaignStart < localToday ? localToday : campaignStart;
+      const origEnd = addDays(campaignStart, campaign.numberOfDays - 1);
+      const effectiveEnd = origEnd < localToday ? addDays(localToday, campaign.numberOfDays - 1) : origEnd;
+
+      const eligibleSlots: string[] = [];
       let current = pushToNextWeekday(new Date(start));
 
       while (current <= effectiveEnd) {
-        const d = new Date(current);
-        d.setHours(hours, minutes, 0, 0);
-        eligibleDates.push(d);
+        const dateStr = toLocalDateStr(current);
+        const isoStr = `${dateStr}T${timeStr}`;
+        eligibleSlots.push(isoStr);
         current = addDays(current, daysBetween);
         current = pushToNextWeekday(current);
       }
 
-      const slots: Date[] = [];
-      for (const date of eligibleDates) {
+      const slots: string[] = [];
+      for (const dateIso of eligibleSlots) {
         for (let s = 0; s < perDay; s++) {
-          slots.push(date);
+          slots.push(dateIso);
         }
       }
 
@@ -447,7 +458,7 @@ export default function CampaignDetailPage() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ scheduledDate: slots[slotIndex].toISOString() }),
+          body: JSON.stringify({ scheduledDate: slots[slotIndex] }),
         });
         if (!r.ok) throw new Error(`Failed to schedule post ${post.id}`);
         return r.json();
@@ -900,7 +911,7 @@ export default function CampaignDetailPage() {
                       <CardContent className="pt-0 space-y-3">
                         {post.scheduledDate && (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
-                            <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy")}
+                            <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
                           </Badge>
                         )}
                         {postImage && (
