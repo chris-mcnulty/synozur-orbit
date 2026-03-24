@@ -1154,15 +1154,25 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!status || !["approved", "rejected"].includes(status)) {
       return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
     }
-    const excludeStatuses = ["deleted", status];
-    const rows = await db.update(generatedPosts)
-      .set({ status, updatedAt: new Date() })
-      .where(and(
-        eq(generatedPosts.campaignId, campaign.id),
-        ...excludeStatuses.map(s => ne(generatedPosts.status, s))
-      ))
-      .returning();
-    res.json({ updated: rows.length });
+    if (status === "rejected") {
+      const rows = await db.delete(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          ne(generatedPosts.status, "approved"),
+        ))
+        .returning();
+      res.json({ updated: rows.length });
+    } else {
+      const rows = await db.update(generatedPosts)
+        .set({ status, updatedAt: new Date() })
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          ne(generatedPosts.status, "deleted"),
+          ne(generatedPosts.status, status),
+        ))
+        .returning();
+      res.json({ updated: rows.length });
+    }
   });
 
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
@@ -1172,6 +1182,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags } = req.body;
+    if (status === "rejected" || status === "deleted") {
+      await db.delete(generatedPosts)
+        .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
+      return res.json({ id: req.params.postId, status });
+    }
     const updateFields: any = { updatedAt: new Date() };
     if (editedContent !== undefined) updateFields.editedContent = editedContent;
     if (status !== undefined) updateFields.status = status;
@@ -1193,8 +1208,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    await db.update(generatedPosts)
-      .set({ status: "deleted", updatedAt: new Date() })
+    await db.delete(generatedPosts)
       .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
     res.status(204).send();
   });
@@ -1212,6 +1226,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
     const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
+
+    await db.delete(generatedPosts)
+      .where(and(
+        eq(generatedPosts.campaignId, campaign.id),
+        inArray(generatedPosts.status, ["deleted", "rejected"]),
+      ));
 
     // Create a job run record
     const [job] = await db.insert(scheduledJobRuns).values({
