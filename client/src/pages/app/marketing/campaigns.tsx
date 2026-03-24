@@ -102,9 +102,9 @@ export default function CampaignsPage() {
   const briefingAction = params.get("briefingAction");
   const recommendationContext = params.get("recommendation");
   const prefillContext = briefingAction
-    ? `Address this intelligence action item: ${decodeURIComponent(briefingAction)}`
+    ? `Address this intelligence action item: ${briefingAction}`
     : recommendationContext
-    ? `Address this strategic recommendation: ${decodeURIComponent(recommendationContext)}`
+    ? `Address this strategic recommendation: ${recommendationContext}`
     : "";
 
   const isInstant = !!preselectedAssetId;
