@@ -1311,7 +1311,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
     switch (csvFormat) {
       case "hootsuite": {
-        lines = ["Date,Time,Message,Media URLs"];
+        lines = ["Date,Time,Message,Media URLs,Social Profile"];
         for (const post of posts) {
           const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           const baseContent = (post.editedContent ?? post.content);
@@ -1319,7 +1319,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
           const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
           const imageUrl = getPostImageUrl(post);
           const { date, time } = fmtHootsuiteDate(sd);
-          lines.push(`${escCsv(date)},${escCsv(time)},${escCsv(fullContent)},${escCsv(imageUrl)}`);
+          const profile = getAccountId(post) || post.platform;
+          lines.push(`${escCsv(date)},${escCsv(time)},${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(profile)}`);
         }
         break;
       }
