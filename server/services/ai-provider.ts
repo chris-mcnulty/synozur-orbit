@@ -12,16 +12,16 @@ export interface AICompletionOptions {
   systemPrompt?: string;
 }
 
-function needsMaxCompletionTokens(model: string): boolean {
+function useMaxTokensLegacy(model: string): boolean {
   const lower = model.toLowerCase();
-  return lower.startsWith("o1") || lower.startsWith("o3") || lower.startsWith("o4") || lower.includes("o1-") || lower.includes("o3-") || lower.includes("o4-");
+  return lower.includes("gpt-3.5") || lower.includes("gpt-4-") || lower === "gpt-4";
 }
 
 function buildTokenParam(model: string, maxTokens: number): { max_tokens?: number; max_completion_tokens?: number } {
-  if (needsMaxCompletionTokens(model)) {
-    return { max_completion_tokens: maxTokens };
+  if (useMaxTokensLegacy(model)) {
+    return { max_tokens: maxTokens };
   }
-  return { max_tokens: maxTokens };
+  return { max_completion_tokens: maxTokens };
 }
 
 export interface AICompletionResult {
