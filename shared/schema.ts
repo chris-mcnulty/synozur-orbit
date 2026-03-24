@@ -1615,6 +1615,7 @@ export const campaigns = pgTable("campaigns", {
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   numberOfDays: integer("number_of_days"),
+  postSeparationDays: integer("post_separation_days").notNull().default(1),
   includeSaturday: boolean("include_saturday").notNull().default(false),
   includeSunday: boolean("include_sunday").notNull().default(false),
   productIds: text("product_ids").array(),

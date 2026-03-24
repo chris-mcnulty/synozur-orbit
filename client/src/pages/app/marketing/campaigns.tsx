@@ -43,6 +43,7 @@ interface Campaign {
   startDate?: string;
   endDate?: string;
   numberOfDays?: number;
+  postSeparationDays?: number;
   includeSaturday?: boolean;
   includeSunday?: boolean;
   productIds?: string[];
@@ -96,16 +97,18 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STEPS = ["Details", "Assets", "Accounts", "Schedule"];
 
-function calculateEndDate(startDate: string, numberOfDays: number, includeSat: boolean, includeSun: boolean): Date {
-  const start = new Date(startDate);
-  let daysAdded = 0;
-  let current = new Date(start);
-  while (daysAdded < numberOfDays) {
-    current = addDays(current, 1);
-    const dow = current.getDay();
-    if (dow === 0 && !includeSun) continue;
-    if (dow === 6 && !includeSat) continue;
-    daysAdded++;
+function nextEligibleDate(d: Date, includeSat: boolean, includeSun: boolean): Date {
+  let r = new Date(d);
+  while ((r.getDay() === 6 && !includeSat) || (r.getDay() === 0 && !includeSun)) {
+    r = addDays(r, 1);
+  }
+  return r;
+}
+
+function calculateEndDate(startDate: string, numberOfDays: number, includeSat: boolean, includeSun: boolean, separationDays: number = 1): Date {
+  let current = nextEligibleDate(new Date(startDate), includeSat, includeSun);
+  for (let i = 1; i < numberOfDays; i++) {
+    current = nextEligibleDate(addDays(current, separationDays), includeSat, includeSun);
   }
   return current;
 }
@@ -137,6 +140,7 @@ export default function CampaignsPage() {
     marketingTaskId: preselectedTaskId,
     startDate: format(new Date(), "yyyy-MM-dd"),
     numberOfDays: 7,
+    postSeparationDays: 1,
     includeSaturday: false,
     includeSunday: false,
   });
@@ -150,7 +154,7 @@ export default function CampaignsPage() {
       intelligenceBriefingId: "",
       marketingTaskId: "",
       startDate: format(new Date(), "yyyy-MM-dd"),
-      numberOfDays: 7, includeSaturday: false, includeSunday: false,
+      numberOfDays: 7, postSeparationDays: 1, includeSaturday: false, includeSunday: false,
     });
     setStep(0);
     setAssetSearch("");
@@ -274,8 +278,8 @@ export default function CampaignsPage() {
 
   const computedEndDate = useMemo(() => {
     if (!form.startDate || !form.numberOfDays) return null;
-    return calculateEndDate(form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday);
-  }, [form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday]);
+    return calculateEndDate(form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday, form.postSeparationDays);
+  }, [form.startDate, form.numberOfDays, form.includeSaturday, form.includeSunday, form.postSeparationDays]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -290,6 +294,7 @@ export default function CampaignsPage() {
           startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
           endDate,
           numberOfDays: form.numberOfDays,
+          postSeparationDays: form.postSeparationDays,
           includeSaturday: form.includeSaturday,
           includeSunday: form.includeSunday,
           assetIds: form.selectedAssetIds,
@@ -629,7 +634,7 @@ export default function CampaignsPage() {
                       />
                     </div>
                     <div>
-                      <Label>Days to Run</Label>
+                      <Label>Number of Posts</Label>
                       <Input
                         type="number"
                         min={1}
@@ -639,6 +644,27 @@ export default function CampaignsPage() {
                         data-testid="input-number-of-days"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <Label>Days Between Posts</Label>
+                    <Select
+                      value={String(form.postSeparationDays)}
+                      onValueChange={v => setForm(f => ({ ...f, postSeparationDays: parseInt(v) }))}
+                    >
+                      <SelectTrigger data-testid="select-post-separation">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Every day (1 day apart)</SelectItem>
+                        <SelectItem value="2">Every 2 days</SelectItem>
+                        <SelectItem value="3">Every 3 days</SelectItem>
+                        <SelectItem value="4">Every 4 days</SelectItem>
+                        <SelectItem value="5">Every 5 days</SelectItem>
+                        <SelectItem value="6">Every 6 days</SelectItem>
+                        <SelectItem value="7">Once a week (7 days apart)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">If a scheduled day falls on a weekend (when excluded), it carries to the next available weekday.</p>
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
@@ -662,7 +688,7 @@ export default function CampaignsPage() {
                     <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm">
-                        End date: <strong>{format(computedEndDate, "MMM d, yyyy")}</strong>
+                        Last post: <strong>{format(computedEndDate, "MMM d, yyyy")}</strong>
                       </span>
                     </div>
                   )}
@@ -670,7 +696,9 @@ export default function CampaignsPage() {
                   <div className="border rounded-lg p-3 bg-muted/30 space-y-1">
                     <p className="text-xs font-medium">Summary</p>
                     <p className="text-xs text-muted-foreground">{form.selectedAssetIds.length} asset(s), {form.selectedSocialIds.length} social account(s)</p>
-                    <p className="text-xs text-muted-foreground">{form.numberOfDays} days, {form.includeSaturday ? "incl." : "excl."} Saturday, {form.includeSunday ? "incl." : "excl."} Sunday</p>
+                    <p className="text-xs text-muted-foreground">
+                      {form.numberOfDays} post{form.numberOfDays !== 1 ? "s" : ""}, every {form.postSeparationDays === 1 ? "day" : `${form.postSeparationDays} days`}, {form.includeSaturday ? "incl." : "excl."} Saturday, {form.includeSunday ? "incl." : "excl."} Sunday
+                    </p>
                   </div>
 
                   <div className="flex gap-2">

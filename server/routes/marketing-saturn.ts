@@ -841,7 +841,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, intelligenceBriefingId: newBriefingId, marketingTaskId: newTaskId } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, postSeparationDays: newSepDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, intelligenceBriefingId: newBriefingId, marketingTaskId: newTaskId } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const validAssetIds: string[] = [];
@@ -879,6 +879,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
           numberOfDays: numberOfDays ?? null,
+          postSeparationDays: newSepDays != null ? Math.max(1, Math.min(7, newSepDays)) : 1,
           includeSaturday: includeSaturday ?? false,
           includeSunday: includeSunday ?? false,
           productIds: Array.isArray(productIds) ? productIds : null,
@@ -920,7 +921,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, intelligenceBriefingId: patchBriefingId, marketingTaskId: patchTaskId } = req.body;
+    const { name, description, status, startDate, endDate, numberOfDays, postSeparationDays: patchSepDays, includeSaturday, includeSunday, productIds, alwaysHashtags, intelligenceBriefingId: patchBriefingId, marketingTaskId: patchTaskId } = req.body;
     const updateData: any = { updatedAt: new Date() };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
@@ -928,6 +929,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
     if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
+    if (patchSepDays !== undefined) updateData.postSeparationDays = Math.max(1, Math.min(7, patchSepDays));
     if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
     if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
     if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
@@ -976,6 +978,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         startDate: source.startDate,
         endDate: source.endDate,
         numberOfDays: source.numberOfDays,
+        postSeparationDays: source.postSeparationDays ?? 1,
         includeSaturday: source.includeSaturday,
         includeSunday: source.includeSunday,
         productIds: source.productIds,
@@ -1908,13 +1911,24 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
     const [cam] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
     let eligibleDates: Date[] = [];
     if (cam?.startDate && cam?.numberOfDays) {
-      const start = new Date(cam.startDate);
-      let current = new Date(start);
-      while (eligibleDates.length < cam.numberOfDays) {
-        const dow = current.getDay();
-        const skip = (dow === 0 && !cam.includeSunday) || (dow === 6 && !cam.includeSaturday);
-        if (!skip) eligibleDates.push(new Date(current));
-        current = new Date(current.getTime() + 86400000);
+      const sep = Math.max(1, Math.min(7, cam.postSeparationDays ?? 1));
+      const incSat = cam.includeSaturday;
+      const incSun = cam.includeSunday;
+
+      // Advance a date forward until it lands on an eligible weekday
+      function nextEligible(d: Date): Date {
+        let r = new Date(d);
+        while ((r.getDay() === 6 && !incSat) || (r.getDay() === 0 && !incSun)) {
+          r = new Date(r.getTime() + 86400000);
+        }
+        return r;
+      }
+
+      let current = nextEligible(new Date(cam.startDate));
+      for (let i = 0; i < cam.numberOfDays; i++) {
+        eligibleDates.push(new Date(current));
+        // Advance by sep calendar days then carry forward past excluded weekends
+        current = nextEligible(new Date(current.getTime() + sep * 86400000));
       }
     }
 
