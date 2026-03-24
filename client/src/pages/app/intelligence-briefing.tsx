@@ -41,6 +41,7 @@ import {
   Activity,
   Users,
   AlertCircle,
+  Lock,
 } from "lucide-react";
 import {
   Dialog,
@@ -188,6 +189,15 @@ export default function IntelligenceBriefingPage() {
   const [refreshSelections, setRefreshSelections] = useState<Record<string, boolean>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isAdmin = user ? hasAdminAccess(user.role) : false;
+
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+  const isAllowed = tenantInfo?.features?.intelligenceBriefings === true;
 
   const handleDownloadPdf = async () => {
     if (!activeBriefingId) return;
@@ -464,6 +474,29 @@ export default function IntelligenceBriefingPage() {
 
   const bd = briefing?.briefingData;
   const isLoading = loadingList || loadingBriefing;
+
+  if (!isAllowed) {
+    return (
+      <AppLayout>
+        <div className="p-6 max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">
+          <Card className="max-w-md text-center" data-testid="card-locked-intelligence-briefings">
+            <CardHeader>
+              <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
+                <Lock className="w-10 h-10 text-primary" />
+              </div>
+              <CardTitle>Intelligence Briefings</CardTitle>
+              <CardDescription>Available on Pro, Enterprise, and Unlimited plans. Get AI-synthesized market intelligence reports with executive summaries and action items.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="w-full" data-testid="button-contact-sales-briefings">
+                <a href="mailto:contactus@synozur.com?subject=Plan Upgrade Inquiry - Intelligence Briefings">Contact Sales</a>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>

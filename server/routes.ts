@@ -14318,6 +14318,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings/source-freshness", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const ctxFilter = toContextFilter(ctx);
 
       const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
@@ -14497,6 +14504,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
       const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit, ctx.marketId);
@@ -14512,6 +14526,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.post("/api/intelligence-briefings/generate", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       if (!hasAdminAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to generate briefings" });
       }
