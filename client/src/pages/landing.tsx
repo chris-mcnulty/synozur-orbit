@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Link } from "wouter";
-import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown } from "lucide-react";
+import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown, Sparkles, Mail, HardDrive, Cpu, Handshake, Activity, Share2, BookOpen, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 
@@ -24,10 +24,11 @@ const platformPillars = [
     icon: CalendarDays,
     title: "Marketing Planner",
     tagline: "Plan with precision",
-    description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations.",
+    description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations—plus direct generation of social posts and email campaigns.",
     features: [
       "AI-suggested marketing activities",
       "Quarterly & annual planning",
+      "Social post & email campaign generation",
       "Activity-based organization",
       "Progress tracking"
     ]
@@ -96,6 +97,27 @@ const capabilities = [
     title: "Share insights across the org",
     description: "Export branded PDF reports for leadership, sales enablement, or board presentations. Track positioning changes over time with assessment snapshots and share intelligence that drives decisions.",
     image: "/images/capabilities/reporting.png"
+  },
+  {
+    id: "social-email",
+    label: "Social & Email",
+    title: "Generate marketing assets in seconds",
+    description: "Create platform-specific social posts for LinkedIn, Twitter/X, and Facebook with tone selection and Saturn-parity content extraction. Generate email newsletters targeting Outlook, Dynamics 365, HubSpot Marketing, or HubSpot 1:1—complete with CTA fields, tone control, and platform-specific coaching tips.",
+    image: "/images/capabilities/social-email.png"
+  },
+  {
+    id: "content-libraries",
+    label: "Content & Brand Libraries",
+    title: "Organize your brand and content assets",
+    description: "Manage content libraries with filtering, grouping, and asset cards. Maintain brand libraries with asset categories, tagging, and CSV export. Keep your positioning docs, brand guidelines, and marketing collateral organized and accessible to the entire team.",
+    image: "/images/capabilities/content-libraries.png"
+  },
+  {
+    id: "ai-flexibility",
+    label: "AI Flexibility",
+    title: "Multi-provider AI with Azure Foundry",
+    description: "Choose the right AI model for every task. Azure AI Foundry brings GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API. Switch providers per-task or set organization-wide defaults.",
+    image: "/images/capabilities/ai-flexibility.png"
   }
 ];
 
@@ -166,6 +188,10 @@ export default function Landing() {
             <div className="flex items-center gap-2">
               <Brain size={16} className="text-primary" />
               <span>Claude AI powered</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Cpu size={16} className="text-primary" />
+              <span>Azure AI Foundry</span>
             </div>
             <div className="flex items-center gap-2">
               <FileText size={16} className="text-primary" />
@@ -258,7 +284,7 @@ export default function Landing() {
                 { step: 1, icon: Radar, title: "Monitor", desc: "Track competitor websites, messaging, and market changes automatically" },
                 { step: 2, icon: Brain, title: "Analyze", desc: "Claude AI identifies positioning gaps and competitive opportunities" },
                 { step: 3, icon: CalendarDays, title: "Plan", desc: "Generate marketing plans with AI-suggested activities and timelines" },
-                { step: 4, icon: Rocket, title: "Execute", desc: "Align product roadmaps and campaigns with market intelligence" }
+                { step: 4, icon: Rocket, title: "Execute", desc: "Generate social posts, email campaigns, and align product roadmaps with market intelligence" }
               ].map((item) => (
                 <div key={item.step} className="text-center relative">
                   <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/25">
@@ -283,8 +309,60 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* What's New */}
+      <section className="py-24 px-6" data-testid="section-whats-new">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">What's New</p>
+          <h2 className="text-3xl font-bold text-center mb-6">Recently shipped capabilities</h2>
+          <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
+            Orbit keeps evolving. Here are the latest features powering your go-to-market teams.
+          </p>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                icon: Share2,
+                title: "Marketing Assets — Social Posts",
+                desc: "AI-generated social content with platform-specific formatting for LinkedIn, Twitter/X, and Facebook. Choose your tone and extract Saturn-parity content automatically."
+              },
+              {
+                icon: Mail,
+                title: "Marketing Assets — Email Newsletters",
+                desc: "Platform-targeted email generation for Outlook, Dynamics 365, HubSpot Marketing, and HubSpot 1:1. Includes tone control, CTA fields, and platform-specific coaching tips."
+              },
+              {
+                icon: HardDrive,
+                title: "SharePoint Embedded Support",
+                desc: "Enterprise data residency via SharePoint Embedded containers through Microsoft Graph API. Keep your sensitive data within your own tenant."
+              },
+              {
+                icon: Cpu,
+                title: "Microsoft Azure AI Foundry",
+                desc: "Multi-model support including GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API."
+              },
+              {
+                icon: Handshake,
+                title: "Consortia ID / Partner Program",
+                desc: "Microsoft Content AI Partner Program membership and consortia-level identification for enterprise customers and partners."
+              },
+              {
+                icon: Activity,
+                title: "Insight Analytics",
+                desc: "AI usage tracking dashboard with tenant-level cost attribution and page-level engagement analytics. Understand how your organization uses AI."
+              }
+            ].map((feature, i) => (
+              <div key={i} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all" data-testid={`card-whats-new-${i}`}>
+                <feature.icon size={28} className="text-primary mb-4" />
+                <h3 className="font-semibold mb-3">{feature.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Capabilities - Tabbed Section */}
-      <section className="py-24 px-6">
+      <section className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Capabilities</p>
           <h2 className="text-3xl font-bold text-center mb-16">Everything you need to compete and win</h2>
@@ -434,7 +512,7 @@ export default function Landing() {
               <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Enterprise Grade</p>
               <h2 className="text-3xl font-bold mb-6">Enterprise-ready by design</h2>
               <p className="text-muted-foreground mb-8">
-                Built for organizations that take security, compliance, and governance seriously. Multi-tenant isolation, SSO, and audit trails come standard.
+                Built for organizations that take security, compliance, and governance seriously. Multi-tenant isolation, SSO, and audit trails come standard—with SharePoint Embedded data residency and Azure AI Foundry for enterprise-grade AI.
               </p>
               <div className="space-y-4">
                 {[
@@ -442,8 +520,11 @@ export default function Landing() {
                   "Microsoft Entra ID SSO",
                   "Role-based access control",
                   "Multi-tenant isolation",
+                  "SharePoint Embedded data residency",
+                  "Azure AI Foundry multi-model support",
                   "Encryption in transit and at rest",
-                  "Complete audit logging"
+                  "Complete audit logging",
+                  "Microsoft Content AI Partner Program"
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
