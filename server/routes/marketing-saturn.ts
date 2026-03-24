@@ -1182,6 +1182,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
+    const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
+
     // Create a job run record
     const [job] = await db.insert(scheduledJobRuns).values({
       id: randomUUID(),
@@ -1198,7 +1200,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(eq(campaigns.id, campaign.id));
 
     // Kick off async generation (fire-and-forget)
-    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id).catch(err => {
+    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds).catch(err => {
       console.error("[Saturn] Post generation error:", err.message);
     });
 
@@ -1863,6 +1865,7 @@ async function generatePostsAsync(
   tenantDomain: string,
   marketId: string,
   jobId: string,
+  brandImageIds: string[] = [],
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
@@ -1903,6 +1906,21 @@ async function generatePostsAsync(
       : [];
 
     const groundingContext = await loadGroundingContext(tenantDomain, marketId);
+
+    let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
+    if (brandImageIds.length > 0) {
+      brandImageAssets = await db.select({
+        id: brandAssets.id,
+        fileUrl: brandAssets.fileUrl,
+        url: brandAssets.url,
+        name: brandAssets.name,
+      }).from(brandAssets).where(
+        and(
+          eq(brandAssets.tenantDomain, tenantDomain),
+          inArray(brandAssets.id, brandImageIds),
+        ),
+      );
+    }
 
     const assetContext = selectedAssets
       .map((a: any) => {
@@ -1961,6 +1979,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
 
       const primaryAssetUrl = selectedAssets.find((a: any) => a.url)?.url || null;
 
+      const cleanedVariants: { content: string; hashtags: string[]; imagePrompt: string }[] = [];
       for (const parsed of variants) {
         let postContent = (parsed.content ?? result.text).trim();
         postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
@@ -1990,19 +2009,49 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
           postContent = postContent.substring(0, 277) + "...";
         }
 
-        generatedRows.push({
-          id: randomUUID(),
-          campaignId,
-          socialAccountId: account.id === "placeholder" ? null : account.id,
-          tenantDomain,
-          platform: account.platform,
-          content: postContent,
-          hashtags,
-          imagePrompt: parsed.imagePrompt ?? "",
-          sourceUrl: primaryAssetUrl,
-          variantGroup: variantGroupId,
-          generationJobId: jobId,
-        } as InsertGeneratedPost);
+        cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
+      }
+
+      if (brandImageAssets.length > 0) {
+        let comboIndex = 0;
+        for (let vi = 0; vi < cleanedVariants.length; vi++) {
+          for (let ii = 0; ii < brandImageAssets.length; ii++) {
+            const v = cleanedVariants[vi];
+            const img = brandImageAssets[ii];
+            generatedRows.push({
+              id: randomUUID(),
+              campaignId,
+              socialAccountId: account.id === "placeholder" ? null : account.id,
+              tenantDomain,
+              platform: account.platform,
+              content: v.content,
+              hashtags: v.hashtags,
+              imagePrompt: v.imagePrompt,
+              sourceUrl: primaryAssetUrl,
+              variantGroup: variantGroupId,
+              generationJobId: jobId,
+              overrideBrandAssetId: img.id,
+            } as InsertGeneratedPost);
+            comboIndex++;
+          }
+        }
+        console.log(`[Saturn] Generated ${comboIndex} text×image combos for ${account.platform} (${cleanedVariants.length} text × ${brandImageAssets.length} images)`);
+      } else {
+        for (const v of cleanedVariants) {
+          generatedRows.push({
+            id: randomUUID(),
+            campaignId,
+            socialAccountId: account.id === "placeholder" ? null : account.id,
+            tenantDomain,
+            platform: account.platform,
+            content: v.content,
+            hashtags: v.hashtags,
+            imagePrompt: v.imagePrompt,
+            sourceUrl: primaryAssetUrl,
+            variantGroup: variantGroupId,
+            generationJobId: jobId,
+          } as InsertGeneratedPost);
+        }
       }
     }
 

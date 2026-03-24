@@ -143,6 +143,8 @@ export default function CampaignDetailPage() {
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
   const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -204,15 +206,19 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (brandImageIds?: string[]) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandImageIds: brandImageIds || [] }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
     onSuccess: () => {
+      setGenerateDialogOpen(false);
+      setSelectedBrandImageIds([]);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
     },
@@ -693,7 +699,7 @@ export default function CampaignDetailPage() {
           <TabsContent value="posts" className="space-y-4">
             <div className="flex items-center gap-3">
               <Button
-                onClick={() => generatePostsMutation.mutate()}
+                onClick={() => setGenerateDialogOpen(true)}
                 disabled={isGenerating || generatePostsMutation.isPending}
                 className="gap-2"
                 data-testid="button-generate-posts"
@@ -1437,6 +1443,82 @@ export default function CampaignDetailPage() {
               data-testid="button-confirm-schedule"
             >
               {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); } else { setGenerateDialogOpen(true); } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generate Social Posts</DialogTitle>
+            <DialogDescription>
+              Optionally select brand images to rotate across your generated posts. Each day and platform will get a unique text + image combination.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Brand Images (optional)</Label>
+              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                Select up to {Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3)} images. More images = more unique combinations per day.
+              </p>
+              {(() => {
+                const imageBrandAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
+                if (imageBrandAssets.length === 0) {
+                  return <p className="text-sm text-muted-foreground text-center py-4">No brand images available. Add images in the Brand Library first.</p>;
+                }
+                const maxImages = Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3);
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    {imageBrandAssets.map(ba => {
+                      const imgUrl = ba.fileUrl || ba.url || "";
+                      const isSelected = selectedBrandImageIds.includes(ba.id);
+                      const atLimit = selectedBrandImageIds.length >= maxImages && !isSelected;
+                      return (
+                        <button
+                          key={ba.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedBrandImageIds(prev => prev.filter(id => id !== ba.id));
+                            } else if (!atLimit) {
+                              setSelectedBrandImageIds(prev => [...prev, ba.id]);
+                            }
+                          }}
+                          disabled={atLimit}
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
+                          data-testid={`brand-image-option-${ba.id}`}
+                        >
+                          <img src={imgUrl} alt={ba.name} className="w-full h-20 object-cover" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                            <span className="text-[10px] text-white truncate block">{ba.name}</span>
+                          </div>
+                          {isSelected && (
+                            <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-3.5 h-3.5 text-white" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {selectedBrandImageIds.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedBrandImageIds.length} image{selectedBrandImageIds.length !== 1 ? "s" : ""} selected — with 3 text variations this gives {selectedBrandImageIds.length * 3} unique text+image combinations per platform.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button
+              onClick={() => generatePostsMutation.mutate(selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined)}
+              disabled={generatePostsMutation.isPending || isGenerating}
+              className="gap-2"
+              data-testid="button-confirm-generate"
+            >
+              {generatePostsMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
             </Button>
           </div>
         </DialogContent>
