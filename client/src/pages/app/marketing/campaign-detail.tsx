@@ -118,6 +118,8 @@ interface BrandAsset {
   name: string;
   fileUrl?: string;
   url?: string;
+  categoryId?: string;
+  categoryName?: string;
 }
 
 export default function CampaignDetailPage() {
@@ -145,6 +147,11 @@ export default function CampaignDetailPage() {
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
+  const [brandCategoryFilter, setBrandCategoryFilter] = useState<string>("all");
+  const [brandPage, setBrandPage] = useState(0);
+  const BRAND_PAGE_SIZE = 12;
+  const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
+  const [pickerPage, setPickerPage] = useState(0);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -1193,7 +1200,7 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Image Override Picker Dialog */}
-      <Dialog open={!!imagePickerPostId} onOpenChange={v => !v && setImagePickerPostId(null)}>
+      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); } }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Choose Image</DialogTitle>
@@ -1220,34 +1227,64 @@ export default function CampaignDetailPage() {
 
             {brandAssets.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in the Brand Library first.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {brandAssets.filter(ba => ba.fileUrl || ba.url).map(ba => (
-                  <button
-                    key={ba.id}
-                    className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
-                    onClick={() => {
-                      if (imagePickerPostId) {
-                        updatePostMutation.mutate({
-                          postId: imagePickerPostId,
-                          overrideImageUrl: ba.fileUrl || ba.url || "",
-                          overrideBrandAssetId: ba.id,
-                        });
-                      }
-                    }}
-                    data-testid={`button-brand-asset-${ba.id}`}
-                  >
-                    <img
-                      src={ba.fileUrl || ba.url || ""}
-                      alt={ba.name}
-                      className="w-full aspect-video object-cover rounded"
-                      onError={e => (e.currentTarget.style.display = "none")}
-                    />
-                    <p className="text-xs mt-1 truncate">{ba.name}</p>
-                  </button>
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              const imageAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
+              const pickerCategories = [...new Set(imageAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
+              const filtered = pickerCategoryFilter === "all" ? imageAssets : imageAssets.filter(ba => ba.categoryName === pickerCategoryFilter);
+              const totalPages = Math.ceil(filtered.length / BRAND_PAGE_SIZE);
+              const paged = filtered.slice(pickerPage * BRAND_PAGE_SIZE, (pickerPage + 1) * BRAND_PAGE_SIZE);
+              return (
+                <div className="space-y-3">
+                  {pickerCategories.length > 1 && (
+                    <Select value={pickerCategoryFilter} onValueChange={v => { setPickerCategoryFilter(v); setPickerPage(0); }}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-picker-category">
+                        <SelectValue placeholder="All categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All categories ({imageAssets.length})</SelectItem>
+                        {pickerCategories.sort().map(cat => (
+                          <SelectItem key={cat} value={cat}>{cat} ({imageAssets.filter(a => a.categoryName === cat).length})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {paged.map(ba => (
+                      <button
+                        key={ba.id}
+                        className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
+                        onClick={() => {
+                          if (imagePickerPostId) {
+                            updatePostMutation.mutate({
+                              postId: imagePickerPostId,
+                              overrideImageUrl: ba.fileUrl || ba.url || "",
+                              overrideBrandAssetId: ba.id,
+                            });
+                          }
+                        }}
+                        data-testid={`button-brand-asset-${ba.id}`}
+                      >
+                        <img
+                          src={ba.fileUrl || ba.url || ""}
+                          alt={ba.name}
+                          className="w-full aspect-video object-cover rounded"
+                          onError={e => (e.currentTarget.style.display = "none")}
+                        />
+                        <p className="text-xs mt-1 truncate">{ba.name}</p>
+                        {ba.categoryName && <p className="text-[10px] text-muted-foreground truncate">{ba.categoryName}</p>}
+                      </button>
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-1">
+                      <Button variant="outline" size="sm" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} data-testid="button-picker-prev">Previous</Button>
+                      <span className="text-xs text-muted-foreground">Page {pickerPage + 1} of {totalPages}</span>
+                      <Button variant="outline" size="sm" disabled={pickerPage >= totalPages - 1} onClick={() => setPickerPage(p => p + 1)} data-testid="button-picker-next">Next</Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -1481,7 +1518,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -1501,38 +1538,69 @@ export default function CampaignDetailPage() {
                   return <p className="text-sm text-muted-foreground text-center py-4">No brand images available. Add images in the Brand Library first.</p>;
                 }
                 const maxImages = Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3);
+                const brandCategories = [...new Set(imageBrandAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
+                const filteredBrand = brandCategoryFilter === "all" ? imageBrandAssets : imageBrandAssets.filter(ba => ba.categoryName === brandCategoryFilter);
+                const brandTotalPages = Math.ceil(filteredBrand.length / BRAND_PAGE_SIZE);
+                const pagedBrand = filteredBrand.slice(brandPage * BRAND_PAGE_SIZE, (brandPage + 1) * BRAND_PAGE_SIZE);
                 return (
-                  <div className="grid grid-cols-3 gap-2">
-                    {imageBrandAssets.map(ba => {
-                      const imgUrl = ba.fileUrl || ba.url || "";
-                      const isSelected = selectedBrandImageIds.includes(ba.id);
-                      const atLimit = selectedBrandImageIds.length >= maxImages && !isSelected;
-                      return (
-                        <button
-                          key={ba.id}
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedBrandImageIds(prev => prev.filter(id => id !== ba.id));
-                            } else if (!atLimit) {
-                              setSelectedBrandImageIds(prev => [...prev, ba.id]);
-                            }
-                          }}
-                          disabled={atLimit}
-                          className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
-                          data-testid={`brand-image-option-${ba.id}`}
-                        >
-                          <img src={imgUrl} alt={ba.name} className="w-full h-20 object-cover" />
-                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
-                            <span className="text-[10px] text-white truncate block">{ba.name}</span>
-                          </div>
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-                              <CheckCircle className="w-3.5 h-3.5 text-white" />
+                  <div className="space-y-3">
+                    {brandCategories.length > 1 && (
+                      <Select value={brandCategoryFilter} onValueChange={v => { setBrandCategoryFilter(v); setBrandPage(0); }}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-brand-category">
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All categories ({imageBrandAssets.length})</SelectItem>
+                          {brandCategories.sort().map(cat => (
+                            <SelectItem key={cat} value={cat}>{cat} ({imageBrandAssets.filter(a => a.categoryName === cat).length})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      {pagedBrand.map(ba => {
+                        const imgUrl = ba.fileUrl || ba.url || "";
+                        const isSelected = selectedBrandImageIds.includes(ba.id);
+                        const atLimit = selectedBrandImageIds.length >= maxImages && !isSelected;
+                        return (
+                          <button
+                            key={ba.id}
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedBrandImageIds(prev => prev.filter(id => id !== ba.id));
+                              } else if (!atLimit) {
+                                setSelectedBrandImageIds(prev => [...prev, ba.id]);
+                              }
+                            }}
+                            disabled={atLimit}
+                            className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
+                            data-testid={`brand-image-option-${ba.id}`}
+                          >
+                            <img src={imgUrl} alt={ba.name} className="w-full h-20 object-cover" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                              <span className="text-[10px] text-white truncate block">{ba.name}</span>
                             </div>
-                          )}
-                        </button>
-                      );
-                    })}
+                            {ba.categoryName && (
+                              <div className="absolute top-1 left-1 bg-black/50 px-1 rounded">
+                                <span className="text-[9px] text-white/80">{ba.categoryName}</span>
+                              </div>
+                            )}
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                                <CheckCircle className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {brandTotalPages > 1 && (
+                      <div className="flex items-center justify-between pt-1">
+                        <Button variant="outline" size="sm" disabled={brandPage === 0} onClick={() => setBrandPage(p => p - 1)} data-testid="button-brand-prev">Previous</Button>
+                        <span className="text-xs text-muted-foreground">Page {brandPage + 1} of {brandTotalPages}</span>
+                        <Button variant="outline" size="sm" disabled={brandPage >= brandTotalPages - 1} onClick={() => setBrandPage(p => p + 1)} data-testid="button-brand-next">Next</Button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1544,7 +1612,7 @@ export default function CampaignDetailPage() {
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate(selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined)}
               disabled={generatePostsMutation.isPending || isGenerating}

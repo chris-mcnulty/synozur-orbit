@@ -621,10 +621,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (status && (status === "active" || status === "archived")) {
       conditions.push(eq(brandAssets.status, status));
     }
-    const rows = await db.select().from(brandAssets)
+    const rows = await db.select({
+        asset: brandAssets,
+        categoryName: brandAssetCategories.name,
+      }).from(brandAssets)
+      .leftJoin(brandAssetCategories, eq(brandAssets.categoryId, brandAssetCategories.id))
       .where(and(...conditions))
       .orderBy(desc(brandAssets.createdAt));
-    res.json(rows);
+    res.json(rows.map(r => ({ ...r.asset, categoryName: r.categoryName })));
   });
 
   app.get("/api/brand-assets/:id", async (req, res) => {
