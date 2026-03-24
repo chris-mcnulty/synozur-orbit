@@ -109,6 +109,20 @@ export class ContainerCreator {
           errorMessage += ` — ${errorText}`;
         }
         console.error("[OrbitContainerCreator] Container creation failed:", { status: response.status, error: errorText });
+
+        if (response.status === 403) {
+          const hint = "The app registration is missing the 'FileStorageContainer.Selected' application permission " +
+            "in Microsoft Graph, or admin consent has not been granted. " +
+            "Go to Azure Portal > App Registrations > API Permissions, add 'FileStorageContainer.Selected' " +
+            "as an Application permission, then click 'Grant admin consent'.";
+          console.error("[OrbitContainerCreator] Permission hint:", hint);
+          return {
+            success: false,
+            message: `Container creation failed: ${errorMessage}. ${hint}`,
+            details: { status: response.status, error: errorText, hint },
+          };
+        }
+
         return { success: false, message: `Container creation failed: ${errorMessage}`, details: { status: response.status, error: errorText } };
       }
 
@@ -322,7 +336,7 @@ export class ContainerCreator {
   private async getGraphAccessToken(azureTenantId?: string): Promise<string> {
     const clientId = process.env.ENTRA_CLIENT_ID;
     const clientSecret = process.env.ENTRA_CLIENT_SECRET;
-    const tenantId = azureTenantId || process.env.ENTRA_TENANT_ID;
+    let tenantId = azureTenantId || process.env.ENTRA_TENANT_ID;
 
     if (!clientId || !clientSecret || !tenantId) {
       throw new Error(
@@ -330,6 +344,16 @@ export class ContainerCreator {
         "Set ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET, and ENTRA_TENANT_ID."
       );
     }
+
+    if (tenantId === "common" || tenantId === "organizations" || tenantId === "consumers") {
+      throw new Error(
+        `[OrbitContainerCreator] ENTRA_TENANT_ID is set to "${tenantId}" which does not support ` +
+        "client credentials flow. SPE operations require a specific Azure AD tenant ID (GUID). " +
+        "Either set ENTRA_TENANT_ID to the tenant GUID or pass azureTenantId explicitly."
+      );
+    }
+
+    console.log("[OrbitContainerCreator] Acquiring token for tenant:", tenantId, "with client:", clientId.substring(0, 8) + "...");
 
     const msalInstance = new msal.ConfidentialClientApplication({
       auth: {
