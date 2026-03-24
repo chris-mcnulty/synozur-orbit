@@ -1789,6 +1789,67 @@ Structure your response using these exact delimiters:
   });
 
   // ══════════════════════════════════════════════════════════
+  // DASHBOARD MARKETING SUMMARY
+  // ══════════════════════════════════════════════════════════
+
+  app.get("/api/marketing/dashboard-summary", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      const ctx = await getRequestContext(req);
+
+      const campaignFilter = ctx.marketId
+        ? and(eq(campaigns.tenantDomain, ctx.tenantDomain), eq(campaigns.marketId, ctx.marketId))
+        : eq(campaigns.tenantDomain, ctx.tenantDomain);
+
+      const allCampaigns = await db.select().from(campaigns).where(campaignFilter);
+
+      const allSummaries = await Promise.all(
+        allCampaigns.map(async (c) => {
+          const posts = await db.select({ id: generatedPosts.id, platform: generatedPosts.platform, scheduledDate: generatedPosts.scheduledDate })
+            .from(generatedPosts)
+            .where(eq(generatedPosts.campaignId, c.id));
+          const platformCounts: Record<string, number> = {};
+          let scheduledCount = 0;
+          for (const p of posts) {
+            platformCounts[p.platform] = (platformCounts[p.platform] || 0) + 1;
+            if (p.scheduledDate) scheduledCount++;
+          }
+          return {
+            id: c.id,
+            name: c.name,
+            status: c.status,
+            startDate: c.startDate,
+            numberOfDays: c.numberOfDays,
+            totalPosts: posts.length,
+            scheduledPosts: scheduledCount,
+            platforms: platformCounts,
+          };
+        })
+      );
+
+      const savedEmails = await db.select({ id: generatedEmails.id, subject: generatedEmails.subject, platform: generatedEmails.platform, label: generatedEmails.label, createdAt: generatedEmails.createdAt })
+        .from(generatedEmails)
+        .where(eq(generatedEmails.tenantDomain, ctx.tenantDomain))
+        .orderBy(desc(generatedEmails.createdAt))
+        .limit(10);
+
+      res.json({
+        campaigns: allSummaries.slice(0, 6),
+        savedEmails: savedEmails,
+        totals: {
+          campaigns: allCampaigns.length,
+          totalPosts: allSummaries.reduce((s, c) => s + c.totalPosts, 0),
+          scheduledPosts: allSummaries.reduce((s, c) => s + c.scheduledPosts, 0),
+          savedEmails: savedEmails.length,
+        },
+      });
+    } catch (err: any) {
+      console.error("[Dashboard Marketing Summary] Error:", err);
+      res.json({ campaigns: [], savedEmails: [], totals: { campaigns: 0, totalPosts: 0, scheduledPosts: 0, savedEmails: 0 } });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════
   // STRATEGIC CONTEXT — surface intelligence summary for UI
   // ══════════════════════════════════════════════════════════
 

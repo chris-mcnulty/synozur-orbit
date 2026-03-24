@@ -12,7 +12,8 @@ import {
   AlertCircle, CheckCircle2, Clock, Lightbulb, FileText, Plus, 
   Globe, Zap, Activity, ChevronRight, Sparkles, BarChart3, Rocket, X, Swords,
   RefreshCw, Loader2, CheckCircle, XCircle, User, Linkedin, Rss, MessageSquare, HelpCircle,
-  ThumbsUp, ThumbsDown, FileSpreadsheet, Lock, Unlock
+  ThumbsUp, ThumbsDown, FileSpreadsheet, Lock, Unlock,
+  Megaphone, Mail, CalendarDays, Hash, Send
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
@@ -217,6 +218,19 @@ export default function Dashboard() {
       return response.json();
     },
     enabled: !!companyProfile?.id,
+  });
+
+  const { data: marketingSummary } = useQuery<{
+    campaigns: { id: string; name: string; status: string; startDate: string | null; numberOfDays: number | null; totalPosts: number; scheduledPosts: number; platforms: Record<string, number> }[];
+    savedEmails: { id: string; subject: string; platform: string; label: string | null; createdAt: string }[];
+    totals: { campaigns: number; totalPosts: number; scheduledPosts: number; savedEmails: number };
+  }>({
+    queryKey: ["/api/marketing/dashboard-summary"],
+    queryFn: async () => {
+      const response = await fetch("/api/marketing/dashboard-summary", { credentials: "include" });
+      if (!response.ok) return { campaigns: [], savedEmails: [], totals: { campaigns: 0, totalPosts: 0, scheduledPosts: 0, savedEmails: 0 } };
+      return response.json();
+    },
   });
 
   const { data: tenantUsers = [] } = useQuery<{ id: string; name: string; email: string }[]>({
@@ -1352,6 +1366,160 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {((marketingSummary?.campaigns?.length || 0) > 0 || (marketingSummary?.savedEmails?.length || 0) > 0) && (
+        <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-350 fill-mode-backwards">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-primary" />
+              Marketing Programs
+            </h2>
+            <div className="flex items-center gap-2">
+              <Link href="/app/marketing/email-newsletters">
+                <Button variant="ghost" size="sm" className="text-xs" data-testid="link-email-newsletters">
+                  <Mail className="w-3.5 h-3.5 mr-1" /> Emails
+                </Button>
+              </Link>
+              <Link href="/app/marketing/campaigns">
+                <Button variant="ghost" size="sm" className="text-xs" data-testid="link-all-campaigns">
+                  View All <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-4 mb-4">
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Megaphone className="w-4 h-4 text-primary" />
+                  <span className="text-xs text-muted-foreground">Campaigns</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="stat-campaigns-count">{marketingSummary?.totals.campaigns || 0}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Hash className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">Social Posts</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="stat-posts-count">{marketingSummary?.totals.totalPosts || 0}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <CalendarDays className="w-4 h-4 text-green-500" />
+                  <span className="text-xs text-muted-foreground">Scheduled</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="stat-scheduled-count">{marketingSummary?.totals.scheduledPosts || 0}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Mail className="w-4 h-4 text-violet-500" />
+                  <span className="text-xs text-muted-foreground">Saved Emails</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="stat-emails-count">{marketingSummary?.totals.savedEmails || 0}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {marketingSummary?.campaigns.slice(0, 3).map((campaign) => {
+              const platformIcons: Record<string, React.ReactNode> = {
+                linkedin: <Linkedin className="w-3 h-3" />,
+                twitter: <span className="text-[10px] font-bold leading-none">𝕏</span>,
+                facebook: <span className="text-[10px] font-bold leading-none">f</span>,
+                instagram: <span className="text-[10px] font-bold leading-none">IG</span>,
+              };
+              return (
+                <Link key={campaign.id} href={`/app/marketing/campaigns/${campaign.id}`}>
+                  <Card className="cursor-pointer hover:border-primary/50 transition-all duration-300 group h-full" data-testid={`campaign-card-${campaign.id}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <Badge variant={campaign.status === "active" ? "default" : "secondary"} className="text-xs capitalize">
+                          {campaign.status}
+                        </Badge>
+                        {campaign.startDate && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <CalendarDays className="w-3 h-3" />
+                            {new Date(campaign.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {campaign.numberOfDays ? ` · ${campaign.numberOfDays}d` : ""}
+                          </span>
+                        )}
+                      </div>
+                      <CardTitle className="text-sm group-hover:text-primary transition-colors line-clamp-1">{campaign.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Send className="w-3 h-3" /> {campaign.totalPosts} post{campaign.totalPosts !== 1 ? "s" : ""}
+                          </span>
+                          {campaign.scheduledPosts > 0 && (
+                            <span className="flex items-center gap-1 text-green-600">
+                              <CalendarDays className="w-3 h-3" /> {campaign.scheduledPosts} scheduled
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {Object.entries(campaign.platforms).map(([platform, count]) => (
+                            <TooltipPrimitive key={platform}>
+                              <TooltipTrigger asChild>
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 h-5">
+                                  {platformIcons[platform] || platform.charAt(0).toUpperCase()}
+                                  <span>{count}</span>
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs capitalize">{platform}: {count} post{count !== 1 ? "s" : ""}</p>
+                              </TooltipContent>
+                            </TooltipPrimitive>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+
+          {(marketingSummary?.savedEmails?.length || 0) > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Mail className="w-4 h-4 text-violet-500" />
+                <h3 className="text-sm font-medium">Recent Emails</h3>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {marketingSummary!.savedEmails.slice(0, 3).map((email) => (
+                  <Link key={email.id} href="/app/marketing/email-newsletters">
+                    <Card className="cursor-pointer hover:border-primary/50 transition-all group" data-testid={`email-card-${email.id}`}>
+                      <CardContent className="pt-3 pb-3 px-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{email.subject}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-[10px] capitalize">{email.platform?.replace(/-/g, " ")}</Badge>
+                              {email.label && <Badge variant="secondary" className="text-[10px]">{email.label}</Badge>}
+                            </div>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {new Date(email.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {activeProjects.length > 0 && (
         <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400 fill-mode-backwards">
