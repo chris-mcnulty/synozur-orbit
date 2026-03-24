@@ -646,41 +646,41 @@ export default function ContentLibraryPage() {
       <CardContent className="pt-0 space-y-2">
         {asset.description && <p className="text-sm text-muted-foreground line-clamp-2">{asset.description}</p>}
         {asset.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2 italic">{asset.aiSummary}</p>}
-        <div className="flex items-center gap-2">
-          {asset.url && (
-            <a
-              href={asset.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-primary hover:underline flex-1 min-w-0"
-              onClick={e => e.stopPropagation()}
-            >
-              <ExternalLink className="w-3 h-3 shrink-0" />
-              <span className="truncate">{asset.url}</span>
-            </a>
-          )}
+        {asset.url && (
+          <a
+            href={asset.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-primary hover:underline min-w-0"
+            onClick={e => e.stopPropagation()}
+          >
+            <ExternalLink className="w-3 h-3 shrink-0" />
+            <span className="truncate">{asset.url}</span>
+          </a>
+        )}
+        <div className="flex flex-wrap items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            className="h-7 text-xs gap-1 px-2"
             onClick={e => { e.stopPropagation(); navigate(`/app/marketing/email-newsletters?assetId=${asset.id}`); }}
             data-testid={`button-generate-email-${asset.id}`}
           >
-            <Mail className="w-3 h-3" /> Generate Email
+            <Mail className="w-3 h-3" /> Email
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            className="h-7 text-xs gap-1 px-2"
             onClick={e => { e.stopPropagation(); navigate(`/app/marketing/campaigns?preselect=${asset.id}`); }}
             data-testid={`button-create-campaign-${asset.id}`}
           >
-            <Megaphone className="w-3 h-3" /> Instant Campaign
+            <Megaphone className="w-3 h-3" /> Campaign
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 text-xs gap-1 opacity-0 group-hover:opacity-100"
+            className="h-7 text-xs gap-1 px-2"
             onClick={e => {
               e.stopPropagation();
               const params = new URLSearchParams({
@@ -693,7 +693,7 @@ export default function ContentLibraryPage() {
             }}
             data-testid={`button-create-product-${asset.id}`}
           >
-            <Package className="w-3 h-3" /> Create Product
+            <Package className="w-3 h-3" /> Product
           </Button>
         </div>
         {asset.tags && (
@@ -1155,14 +1155,14 @@ export default function ContentLibraryPage() {
                   <Tag className="w-3.5 h-3.5" /> {catName}
                   <Badge variant="secondary" className="text-xs">{catAssets.length}</Badge>
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
                   {catAssets.map(renderAssetCard)}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
             {filtered.map(renderAssetCard)}
           </div>
         )}
