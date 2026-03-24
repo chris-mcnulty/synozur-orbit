@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package
+  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -93,7 +93,8 @@ export default function ContentLibraryPage() {
   const [detailAsset, setDetailAsset] = useState<ContentAsset | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
-    title: "", description: "", categoryId: "", productIds: [] as string[],
+    title: "", description: "", url: "", content: "", leadImageUrl: "",
+    categoryId: "", productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
     aiSummary: "",
   });
@@ -244,6 +245,9 @@ export default function ContentLibraryPage() {
         body: JSON.stringify({
           title: data.title,
           description: data.description,
+          url: data.url || null,
+          content: data.content || null,
+          leadImageUrl: data.leadImageUrl || null,
           categoryId: data.categoryId || null,
           productIds: data.productIds.length ? data.productIds : null,
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
@@ -265,6 +269,9 @@ export default function ContentLibraryPage() {
     setEditForm({
       title: asset.title,
       description: asset.description || "",
+      url: asset.url || "",
+      content: asset.content || "",
+      leadImageUrl: asset.leadImageUrl || "",
       categoryId: asset.categoryId || "",
       productIds: asset.productIds || [],
       tags: {
@@ -1157,25 +1164,43 @@ export default function ContentLibraryPage() {
                   </DialogDescription>
                 </DialogHeader>
 
-                {detailAsset.leadImageUrl && (
-                  <div className="relative rounded-lg overflow-hidden bg-muted aspect-video">
-                    <img src={detailAsset.leadImageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = "none")} />
-                    <div className="absolute bottom-2 right-2 flex gap-1">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => saveLeadImageMutation.mutate({ assetId: detailAsset.id, name: `Image from ${detailAsset.title}` })}
-                        disabled={saveLeadImageMutation.isPending}
-                        data-testid="button-save-to-brand"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5 mr-1" />
-                        {saveLeadImageMutation.isPending ? "Saving..." : "Save to Brand Library"}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-4">
+                  <div>
+                    <Label className="flex items-center gap-1 mb-1"><ImageIcon className="w-3.5 h-3.5" /> Lead Image</Label>
+                    {editForm.leadImageUrl ? (
+                      <div className="relative rounded-lg overflow-hidden bg-muted aspect-video">
+                        <img src={editForm.leadImageUrl} alt="" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = "none")} />
+                        <div className="absolute bottom-2 right-2 flex gap-1">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => saveLeadImageMutation.mutate({ assetId: detailAsset.id, name: `Image from ${detailAsset.title}` })}
+                            disabled={saveLeadImageMutation.isPending}
+                            data-testid="button-save-to-brand"
+                          >
+                            <ImageIcon className="w-3.5 h-3.5 mr-1" />
+                            {saveLeadImageMutation.isPending ? "Saving..." : "Save to Brand Library"}
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setEditForm(f => ({ ...f, leadImageUrl: "" }))}
+                            data-testid="button-remove-lead-image"
+                          >
+                            <X className="w-3.5 h-3.5 mr-1" /> Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <Input
+                      value={editForm.leadImageUrl}
+                      onChange={e => setEditForm(f => ({ ...f, leadImageUrl: e.target.value }))}
+                      placeholder="Paste image URL..."
+                      className="mt-1"
+                      data-testid="input-edit-lead-image-url"
+                    />
+                  </div>
+
                   <div>
                     <Label>Title *</Label>
                     <Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} data-testid="input-edit-content-title" />
@@ -1184,6 +1209,28 @@ export default function ContentLibraryPage() {
                     <Label>Description</Label>
                     <Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} data-testid="input-edit-content-description" />
                   </div>
+                  <div>
+                    <Label className="flex items-center gap-1"><Link className="w-3.5 h-3.5" /> Source URL</Label>
+                    <Input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." data-testid="input-edit-content-url" />
+                  </div>
+
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
+                        <FileText className="w-4 h-4 mr-1" /> Full Content / Body Text <ChevronDown className="w-4 h-4 ml-auto" />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-2">
+                      <Textarea
+                        value={editForm.content}
+                        onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                        rows={8}
+                        placeholder="Full article text, blog post body, or other content..."
+                        data-testid="input-edit-content-body"
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
+
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <Label className="flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-primary" /> AI Summary</Label>
@@ -1203,39 +1250,56 @@ export default function ContentLibraryPage() {
                     </div>
                     <Textarea value={editForm.aiSummary} onChange={e => setEditForm(f => ({ ...f, aiSummary: e.target.value }))} rows={6} placeholder={generatingSummary ? "Generating AI summary..." : "Click 'Generate Summary' to create an AI-powered summary for this asset"} data-testid="input-edit-content-ai-summary" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Category</Label>
-                      <Select value={editForm.categoryId || "none"} onValueChange={v => setEditForm(f => ({ ...f, categoryId: v === "none" ? "" : v }))}>
-                        <SelectTrigger data-testid="select-edit-content-category"><SelectValue placeholder="Select" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No category</SelectItem>
-                          {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+
+                  <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+                    <Label className="flex items-center gap-1 text-sm font-medium"><Package className="w-3.5 h-3.5" /> Product & Category</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Category</Label>
+                        <Select value={editForm.categoryId || "none"} onValueChange={v => setEditForm(f => ({ ...f, categoryId: v === "none" ? "" : v }))}>
+                          <SelectTrigger data-testid="select-edit-content-category"><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No category</SelectItem>
+                            {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Linked Products</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-products">
+                              {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                              <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                            {marketProducts.map(p => (
+                              <DropdownMenuCheckboxItem
+                                key={p.id}
+                                checked={editForm.productIds.includes(p.id)}
+                                onCheckedChange={() => toggleEditProduct(p.id)}
+                              >
+                                {p.name}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                    <div>
-                      <Label>Products</Label>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-products">
-                            {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
-                            <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
-                          {marketProducts.map(p => (
-                            <DropdownMenuCheckboxItem
-                              key={p.id}
-                              checked={editForm.productIds.includes(p.id)}
-                              onCheckedChange={() => toggleEditProduct(p.id)}
-                            >
-                              {p.name}
-                            </DropdownMenuCheckboxItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                    {editForm.productIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {editForm.productIds.map(pid => {
+                          const prod = marketProducts.find(p => p.id === pid);
+                          return prod ? (
+                            <Badge key={pid} variant="secondary" className="gap-1">
+                              {prod.name}
+                              <X className="w-3 h-3 cursor-pointer" onClick={() => toggleEditProduct(pid)} />
+                            </Badge>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   <Collapsible>
