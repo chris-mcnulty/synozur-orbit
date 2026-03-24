@@ -1753,7 +1753,7 @@ Structure your response using these exact delimiters:
   // ══════════════════════════════════════════════════════════
 
   app.get("/api/strategic-context/summary", async (req, res) => {
-    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
       const sc = await loadStrategicContext(ctx.tenantDomain, ctx.marketId);
