@@ -33,7 +33,6 @@ import {
   generatedPosts,
   generatedEmails,
   scheduledJobRuns,
-  groundingDocuments,
   products,
   companyProfiles,
   DEFAULT_CONTENT_CATEGORIES,
@@ -1451,15 +1450,7 @@ VISUAL DESIGN RULES:
         )
       : [];
 
-    const groundingDocs = await db.select().from(groundingDocuments)
-      .where(and(
-        eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
-        sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> '["email_generation"]'::jsonb)`,
-      ));
-    const groundingContext = groundingDocs
-      .filter(d => d.extractedText)
-      .map(d => `[${d.name}]\n${d.extractedText}`)
-      .join("\n\n");
+    const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
 
     const [companyProfile] = await db.select().from(companyProfiles)
       .where(and(
@@ -1772,16 +1763,7 @@ async function generatePostsAsync(
         )
       : [];
 
-    // Load marketing grounding docs for AI context (scoped to marketing_content)
-    const groundingDocs = await db.select().from(groundingDocuments)
-      .where(and(
-        eq(groundingDocuments.tenantDomain, tenantDomain),
-        sql`(${groundingDocuments.contexts} IS NULL OR ${groundingDocuments.contexts} @> '["marketing_content"]'::jsonb)`,
-      ));
-    const groundingContext = groundingDocs
-      .filter(d => d.extractedText)
-      .map(d => `[${d.name}]\n${d.extractedText}`)
-      .join("\n\n");
+    const groundingContext = await loadGroundingContext(tenantDomain, marketId);
 
     const assetContext = selectedAssets
       .map((a: any) => {
