@@ -28,6 +28,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "campaigns", label: "Campaigns", description: "Campaign management with asset and social account coordination", category: "marketing" },
   { key: "socialAccounts", label: "Social Accounts", description: "Connect and manage social media accounts for publishing", category: "marketing" },
   { key: "saturnCapture", label: "Saturn Capture Extension", description: "Browser extension for capturing web content into the content library", category: "marketing" },
+  { key: "intelligenceBriefings", label: "Intelligence Briefings", description: "AI-synthesized periodic market intelligence reports with executive summaries", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -71,6 +72,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     campaigns: false,
     socialAccounts: false,
     saturnCapture: false,
+    intelligenceBriefings: false,
   },
   trial: {
     battlecards: true,
@@ -93,6 +95,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     campaigns: false,
     socialAccounts: false,
     saturnCapture: false,
+    intelligenceBriefings: false,
   },
   pro: {
     battlecards: true,
@@ -115,6 +118,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     campaigns: false,
     socialAccounts: false,
     saturnCapture: false,
+    intelligenceBriefings: true,
   },
   enterprise: {
     battlecards: true,
@@ -137,6 +141,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     campaigns: true,
     socialAccounts: true,
     saturnCapture: true,
+    intelligenceBriefings: true,
   },
   unlimited: {
     battlecards: true,
@@ -159,6 +164,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     campaigns: true,
     socialAccounts: true,
     saturnCapture: true,
+    intelligenceBriefings: true,
   },
 };
 
