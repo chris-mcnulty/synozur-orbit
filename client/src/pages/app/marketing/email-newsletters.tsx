@@ -77,12 +77,18 @@ export default function EmailNewslettersPage() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("assetId");
+  const briefingAction = params.get("briefingAction");
+  const recommendationContext = params.get("recommendation");
 
   const [emailPlatform, setEmailPlatform] = useState("outlook");
   const [emailTone, setEmailTone] = useState("professional");
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
-  const [emailInstructions, setEmailInstructions] = useState("");
+  const [emailInstructions, setEmailInstructions] = useState(
+    briefingAction ? `Address this intelligence action item in the email: ${decodeURIComponent(briefingAction)}`
+    : recommendationContext ? `Address this strategic recommendation: ${decodeURIComponent(recommendationContext)}`
+    : ""
+  );
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<PreviewEmail | null>(null);
@@ -108,6 +114,15 @@ export default function EmailNewslettersPage() {
   });
 
   const isAllowed = tenantInfo?.features?.emailNewsletters === true;
+
+  const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
+    queryKey: ["/api/strategic-context/summary"],
+    queryFn: async () => {
+      const r = await fetch("/api/strategic-context/summary", { credentials: "include" });
+      return r.ok ? r.json() : { available: false, sections: {} };
+    },
+    enabled: isAllowed,
+  });
 
   const { data: contentAssets = [] } = useQuery<ContentAsset[]>({
     queryKey: ["/api/content-assets"],
@@ -493,14 +508,33 @@ export default function EmailNewslettersPage() {
                 data-testid="input-email-instructions"
               />
             </div>
-            <Button
-              onClick={handleGenerateEmail}
-              disabled={generatingEmail || selectedAssetIds.length === 0}
-              className="gap-2"
-              data-testid="button-generate-email"
-            >
-              {generatingEmail ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Email</>}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleGenerateEmail}
+                disabled={generatingEmail || selectedAssetIds.length === 0}
+                className="gap-2"
+                data-testid="button-generate-email"
+              >
+                {generatingEmail ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Email</>}
+              </Button>
+              {strategicContext?.available && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="strategic-context-indicator">
+                  <Badge variant="secondary" className="text-[10px] gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Intelligence-enriched
+                  </Badge>
+                  <span className="hidden sm:inline">
+                    {[
+                      strategicContext.sections.messagingFramework && "messaging",
+                      strategicContext.sections.competitiveIntelligence && "competitive intel",
+                      strategicContext.sections.gtmPlan && "GTM plan",
+                      strategicContext.sections.recommendations && "recommendations",
+                      strategicContext.sections.briefingActionItems && "briefing actions",
+                    ].filter(Boolean).join(", ")}
+                  </span>
+                </div>
+              )}
+            </div>
             {selectedAssetIds.length === 0 && activeAssets.length > 0 && (
               <p className="text-xs text-muted-foreground">Select at least one content asset to generate an email.</p>
             )}

@@ -36,6 +36,7 @@ import { AI_FEATURES, AI_MODELS, AI_MODEL_INFO, AI_FEATURE_LABELS, AI_PROVIDERS,
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
 import { validateDocumentUpload } from "./utils/file-validator";
+import { loadStrategicContext, formatStrategicContextForPrompt } from "./services/strategic-context";
 
 // Helper to log AI usage after any AI call
 async function logAiUsage(
@@ -13557,6 +13558,33 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // Mark recommendation as actioned (content created from it)
+  app.post("/api/recommendations/:id/action", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const tenantDomain = user.email.split("@")[1];
+      const recommendation = await storage.getRecommendation(req.params.id);
+      if (!recommendation) return res.status(404).json({ error: "Recommendation not found" });
+      if (recommendation.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { actionType } = req.body;
+      const updated = await storage.updateRecommendation(req.params.id, {
+        status: "accepted",
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Action recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== DATA SOURCES / NEWS ROUTES ====================
 
   app.get("/api/data-sources/news", async (req, res) => {
@@ -14066,11 +14094,15 @@ Generate a comprehensive battlecard in this JSON format:
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       const recommendations = await storage.getRecommendationsByContext(toContextFilter(ctx));
-      
+
       // Get GTM plan (long-form recommendation) if available
       let gtmPlan: any = null;
+      let messagingFramework: any = null;
       if (companyProfile) {
-        gtmPlan = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
+        [gtmPlan, messagingFramework] = await Promise.all([
+          storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id),
+          storage.getLongFormRecommendationByType("messaging_framework", undefined, companyProfile.id),
+        ]);
       }
       
       // Category labels for the prompt
@@ -14135,6 +14167,15 @@ Generate a comprehensive battlecard in this JSON format:
         gtmPlanContext = `\n## Draft GTM Plan (Key Strategic Input)\n${truncatedGtm}\n`;
       }
       
+      // Add messaging framework context
+      let messagingContext = "";
+      if (messagingFramework?.content && messagingFramework.status === "generated") {
+        const truncatedMsg = messagingFramework.content.length > 2000
+          ? messagingFramework.content.substring(0, 2000) + "..."
+          : messagingFramework.content;
+        messagingContext = `\n## Messaging & Positioning Framework\nAlign task messaging and content focus with this framework:\n${truncatedMsg}\n`;
+      }
+
       // Add AI Recommendations context
       let recommendationsContext = "";
       const activeRecs = recommendations.filter((r: any) => r.status !== "dismissed").slice(0, 10);
@@ -14144,7 +14185,7 @@ Generate a comprehensive battlecard in this JSON format:
           recommendationsContext += `- [${r.area}] ${r.title}: ${r.description?.substring(0, 150) || ""}...\n`;
         });
       }
-      
+
       // Add competitor insights if available
       let competitorInsights = "";
       const competitorsWithData = competitors.filter((c: any) => c.strengthsWeaknesses || c.lastAnalysisDate).slice(0, 3);
@@ -14174,6 +14215,7 @@ Generate a comprehensive battlecard in this JSON format:
 ## Company Context
 ${contextInfo}
 ${gtmPlanContext}
+${messagingContext}
 ${recommendationsContext}
 ${competitorInsights}
 ${existingTasksContext}

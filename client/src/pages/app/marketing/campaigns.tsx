@@ -99,6 +99,13 @@ export default function CampaignsPage() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("preselect");
+  const briefingAction = params.get("briefingAction");
+  const recommendationContext = params.get("recommendation");
+  const prefillContext = briefingAction
+    ? `Address this intelligence action item: ${decodeURIComponent(briefingAction)}`
+    : recommendationContext
+    ? `Address this strategic recommendation: ${decodeURIComponent(recommendationContext)}`
+    : "";
 
   const isInstant = !!preselectedAssetId;
   const [addOpen, setAddOpen] = useState(isInstant);
@@ -107,8 +114,8 @@ export default function CampaignsPage() {
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
   const [assetDateRange, setAssetDateRange] = useState<string>("all");
   const [form, setForm] = useState({
-    name: "",
-    description: "",
+    name: prefillContext ? `Campaign: ${(briefingAction || recommendationContext || "").substring(0, 50)}` : "",
+    description: prefillContext,
     selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [] as string[],
     selectedSocialIds: [] as string[],
     selectedProductIds: [] as string[],
