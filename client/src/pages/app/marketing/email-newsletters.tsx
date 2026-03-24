@@ -85,8 +85,8 @@ export default function EmailNewslettersPage() {
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
   const [emailInstructions, setEmailInstructions] = useState(
-    briefingAction ? `Address this intelligence action item in the email: ${decodeURIComponent(briefingAction)}`
-    : recommendationContext ? `Address this strategic recommendation: ${decodeURIComponent(recommendationContext)}`
+    briefingAction ? `Address this intelligence action item in the email: ${briefingAction}`
+    : recommendationContext ? `Address this strategic recommendation: ${recommendationContext}`
     : ""
   );
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
