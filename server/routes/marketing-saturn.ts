@@ -1144,6 +1144,27 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  app.put("/api/campaigns/:campaignId/generated-posts/bulk-status", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    const { status } = req.body;
+    if (!status || !["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
+    }
+    const excludeStatuses = ["deleted", status];
+    const rows = await db.update(generatedPosts)
+      .set({ status, updatedAt: new Date() })
+      .where(and(
+        eq(generatedPosts.campaignId, campaign.id),
+        ...excludeStatuses.map(s => ne(generatedPosts.status, s))
+      ))
+      .returning();
+    res.json({ updated: rows.length });
+  });
+
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     const ctx = await getRequestContext(req);

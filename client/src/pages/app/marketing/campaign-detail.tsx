@@ -262,6 +262,23 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/bulk-status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: (data, status) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${status === "approved" ? "approved" : "rejected"}` });
+    },
+  });
+
   const deletePostMutation = useMutation({
     mutationFn: async (postId: string) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
@@ -803,7 +820,7 @@ export default function CampaignDetailPage() {
             )}
 
             {posts.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Filter className="w-3.5 h-3.5 text-muted-foreground" />
                 <Select value={postFilter} onValueChange={setPostFilter}>
                   <SelectTrigger className="w-36" data-testid="select-post-filter">
@@ -816,6 +833,32 @@ export default function CampaignDetailPage() {
                     <SelectItem value="rejected">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
+                {posts.some(p => p.status !== "approved" && p.status !== "deleted") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-green-600 border-green-200 hover:bg-green-50"
+                    onClick={() => bulkStatusMutation.mutate("approved")}
+                    disabled={bulkStatusMutation.isPending}
+                    data-testid="button-approve-all"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Approve All
+                  </Button>
+                )}
+                {posts.some(p => p.status !== "rejected" && p.status !== "deleted") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
+                    onClick={() => bulkStatusMutation.mutate("rejected")}
+                    disabled={bulkStatusMutation.isPending}
+                    data-testid="button-reject-all"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    Reject All
+                  </Button>
+                )}
               </div>
             )}
 
