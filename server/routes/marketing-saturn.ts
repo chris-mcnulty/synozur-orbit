@@ -1260,11 +1260,24 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(generatedPosts.campaignId, campaign.id),
       ));
 
-    const accountIds = Array.from(new Set(posts.map(p => p.socialAccountId).filter(Boolean))) as string[];
+    const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
+      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+    const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
+    const allAccountIds = Array.from(new Set([
+      ...posts.map(p => p.socialAccountId).filter(Boolean),
+      ...campaignAccountIds,
+    ])) as string[];
     const accountMap = new Map<string, any>();
-    if (accountIds.length) {
-      const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, accountIds));
+    if (allAccountIds.length) {
+      const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, allAccountIds));
       for (const a of accts) accountMap.set(a.id, a);
+    }
+    const platformAccountFallback = new Map<string, string>();
+    for (const link of campaignAccountLinks) {
+      const acct = accountMap.get(link.socialAccountId);
+      if (acct?.accountId && acct.platform && !platformAccountFallback.has(acct.platform)) {
+        platformAccountFallback.set(acct.platform, acct.accountId);
+      }
     }
 
     const brandAssetIds = Array.from(new Set(posts.map(p => p.overrideBrandAssetId).filter(Boolean))) as string[];
@@ -1334,9 +1347,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const getAccountId = (post: any): string => {
       if (post.socialAccountId) {
         const acct = accountMap.get(post.socialAccountId);
-        return acct?.accountId || "";
+        if (acct?.accountId) return acct.accountId;
       }
-      return "";
+      return platformAccountFallback.get(post.platform) || "";
     };
 
     const isTwitterPost = (post: any) => (post.platform || "").toLowerCase() === "twitter";
