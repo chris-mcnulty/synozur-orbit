@@ -6,9 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Brain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useSearch } from "wouter";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +46,16 @@ interface Campaign {
   includeSaturday?: boolean;
   includeSunday?: boolean;
   productIds?: string[];
+  intelligenceBriefingId?: string;
+  marketingTaskId?: string;
+  createdAt: string;
+}
+
+interface IntelligenceBriefingSummary {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  briefingData?: { periodLabel?: string };
   createdAt: string;
 }
 
@@ -99,19 +116,25 @@ export default function CampaignsPage() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("preselect");
+  const preselectedBriefingId = params.get("briefingId") || "";
+  const preselectedTaskId = params.get("taskId") || "";
+  const prefilledName = params.get("name") ? decodeURIComponent(params.get("name")!) : "";
+  const prefilledDescription = params.get("description") ? decodeURIComponent(params.get("description")!) : "";
 
   const isInstant = !!preselectedAssetId;
-  const [addOpen, setAddOpen] = useState(isInstant);
+  const [addOpen, setAddOpen] = useState(isInstant || !!(preselectedBriefingId || preselectedTaskId));
   const [step, setStep] = useState(0);
   const [assetSearch, setAssetSearch] = useState("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
   const [assetDateRange, setAssetDateRange] = useState<string>("all");
   const [form, setForm] = useState({
-    name: "",
-    description: "",
+    name: prefilledName,
+    description: prefilledDescription,
     selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [] as string[],
     selectedSocialIds: [] as string[],
     selectedProductIds: [] as string[],
+    intelligenceBriefingId: preselectedBriefingId,
+    marketingTaskId: preselectedTaskId,
     startDate: format(new Date(), "yyyy-MM-dd"),
     numberOfDays: 7,
     includeSaturday: false,
@@ -124,6 +147,8 @@ export default function CampaignsPage() {
       selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [],
       selectedSocialIds: [],
       selectedProductIds: [],
+      intelligenceBriefingId: "",
+      marketingTaskId: "",
       startDate: format(new Date(), "yyyy-MM-dd"),
       numberOfDays: 7, includeSaturday: false, includeSunday: false,
     });
@@ -227,6 +252,15 @@ export default function CampaignsPage() {
     enabled: isAllowed,
   });
 
+  const { data: briefings = [] } = useQuery<IntelligenceBriefingSummary[]>({
+    queryKey: ["/api/intelligence-briefings"],
+    queryFn: async () => {
+      const r = await fetch("/api/intelligence-briefings?limit=20", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
   const toggleProduct = (id: string) => {
     setForm(f => ({
       ...f,
@@ -261,6 +295,8 @@ export default function CampaignsPage() {
           assetIds: form.selectedAssetIds,
           socialAccountIds: form.selectedSocialIds,
           productIds: form.selectedProductIds,
+          intelligenceBriefingId: form.intelligenceBriefingId || undefined,
+          marketingTaskId: form.marketingTaskId || undefined,
         }),
       });
       if (!r.ok) {
@@ -419,6 +455,29 @@ export default function CampaignsPage() {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1">
+                      <Brain className="w-3.5 h-3.5" /> Market Intelligence
+                      <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Select
+                      value={form.intelligenceBriefingId || "none"}
+                      onValueChange={v => setForm(f => ({ ...f, intelligenceBriefingId: v === "none" ? "" : v }))}
+                    >
+                      <SelectTrigger data-testid="select-briefing">
+                        <SelectValue placeholder="Link a briefing to enrich AI copy..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No briefing</SelectItem>
+                        {briefings.map(b => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.briefingData?.periodLabel || `Briefing ${new Date(b.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">Competitive context will enrich AI-generated posts and emails for this campaign.</p>
                   </div>
                   <Button
                     className="w-full"
@@ -655,9 +714,9 @@ export default function CampaignsPage() {
                   {c.description && <CardDescription className="line-clamp-2">{c.description}</CardDescription>}
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
-                  {c.productIds && c.productIds.length > 0 && (
+                  {(c.productIds?.length || c.intelligenceBriefingId) && (
                     <div className="flex flex-wrap gap-1" data-testid={`campaign-products-${c.id}`}>
-                      {c.productIds.map(pid => {
+                      {c.productIds?.map(pid => {
                         const name = productName(pid);
                         return name ? (
                           <Badge key={pid} variant="outline" className="text-[10px] gap-1">
@@ -665,6 +724,11 @@ export default function CampaignsPage() {
                           </Badge>
                         ) : null;
                       })}
+                      {c.intelligenceBriefingId && (
+                        <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-200">
+                          <Brain className="w-2.5 h-2.5" />Intel
+                        </Badge>
+                      )}
                     </div>
                   )}
                   {c.startDate && (

@@ -21,6 +21,7 @@ import {
   ImageIcon,
   Calendar,
   Eye,
+  Brain,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,6 +72,14 @@ interface PreviewEmail {
   coachingTips?: string[];
 }
 
+interface IntelligenceBriefingSummary {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  briefingData?: { periodLabel?: string };
+  createdAt: string;
+}
+
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -83,6 +92,7 @@ export default function EmailNewslettersPage() {
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
   const [emailInstructions, setEmailInstructions] = useState("");
+  const [emailBriefingId, setEmailBriefingId] = useState("");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [previewEmail, setPreviewEmail] = useState<PreviewEmail | null>(null);
@@ -122,6 +132,15 @@ export default function EmailNewslettersPage() {
     queryKey: ["/api/content-asset-categories"],
     queryFn: async () => {
       const r = await fetch("/api/content-asset-categories", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const { data: briefings = [] } = useQuery<IntelligenceBriefingSummary[]>({
+    queryKey: ["/api/intelligence-briefings"],
+    queryFn: async () => {
+      const r = await fetch("/api/intelligence-briefings?limit=20", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
@@ -239,6 +258,7 @@ export default function EmailNewslettersPage() {
           tone: emailTone,
           callToAction: emailCallToAction || undefined,
           recipientContext: emailRecipientContext || undefined,
+          intelligenceBriefingId: emailBriefingId || undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -482,6 +502,25 @@ export default function EmailNewslettersPage() {
                 placeholder="e.g. IT decision makers at mid-market companies..."
                 data-testid="input-email-recipient-context"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium flex items-center gap-1">
+                <Brain className="w-3.5 h-3.5" /> Market Intelligence <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <Select value={emailBriefingId || "none"} onValueChange={v => setEmailBriefingId(v === "none" ? "" : v)}>
+                <SelectTrigger data-testid="select-email-briefing">
+                  <SelectValue placeholder="Enrich with competitive context..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No briefing</SelectItem>
+                  {briefings.map(b => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.briefingData?.periodLabel || `Briefing ${new Date(b.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Competitive themes and messaging actions will inform the AI-generated email.</p>
             </div>
             <div>
               <label className="text-sm font-medium">Additional Instructions (optional)</label>

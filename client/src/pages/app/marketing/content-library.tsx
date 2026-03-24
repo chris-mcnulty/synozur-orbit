@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText
+  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText, AlertCircle
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -107,6 +107,7 @@ export default function ContentLibraryPage() {
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
   const [formStep, setFormStep] = useState<"url" | "review">("url");
+  const [duplicateUrlAsset, setDuplicateUrlAsset] = useState<ContentAsset | null>(null);
 
   const [form, setForm] = useState({
     title: "", description: "", url: "", content: "", aiSummary: "",
@@ -123,6 +124,7 @@ export default function ContentLibraryPage() {
     setUrlInput("");
     setExtractionResult(null);
     setFormStep("url");
+    setDuplicateUrlAsset(null);
   };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -241,14 +243,19 @@ export default function ContentLibraryPage() {
 
   const archiveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/content-assets/${id}`, {
+      const r = await fetch(`/api/content-assets/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ status: "archived" }),
       });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete asset");
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] }),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const editMutation = useMutation({
@@ -810,7 +817,13 @@ export default function ContentLibraryPage() {
                         <div className="flex gap-2">
                           <Input
                             value={urlInput}
-                            onChange={e => setUrlInput(e.target.value)}
+                            onChange={e => { setUrlInput(e.target.value); setDuplicateUrlAsset(null); }}
+                            onBlur={e => {
+                              const val = e.target.value.trim();
+                              if (!val) return;
+                              const match = assets.find(a => a.url && a.url.trim() === val);
+                              setDuplicateUrlAsset(match ?? null);
+                            }}
                             placeholder="https://example.com/blog-post"
                             data-testid="input-extract-url"
                           />
@@ -826,6 +839,14 @@ export default function ContentLibraryPage() {
                             )}
                           </Button>
                         </div>
+                        {duplicateUrlAsset && (
+                          <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs" data-testid="warning-duplicate-url">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                            <span className="text-amber-800 dark:text-amber-300">
+                              This URL is already saved as <strong>"{duplicateUrlAsset.title}"</strong>. You can still add it as a duplicate if intended.
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="relative">

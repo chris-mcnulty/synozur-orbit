@@ -49,6 +49,8 @@ import {
   type InsertCampaignSocialAccount,
   type InsertGeneratedPost,
   type InsertGeneratedEmail,
+  intelligenceBriefings,
+  marketingTasks,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
@@ -57,6 +59,11 @@ import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Build a market-ID condition that handles both UUID markets and the empty-string fallback */
+function marketIdCondition(column: any, marketId: string) {
+  return marketId ? eq(column, marketId) : sql`(${column} IS NULL OR ${column} = '')`;
+}
 
 async function getTenantPlan(tenantDomain: string): Promise<string> {
   const tenant = await storage.getTenantByDomain(tenantDomain);
@@ -309,7 +316,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssets.id, req.params.id),
         eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
+        marketIdCondition(contentAssets.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -332,7 +339,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(contentAssets.id, req.params.id),
         eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
+        marketIdCondition(contentAssets.marketId, ctx.marketId),
       ));
     res.status(204).send();
   });
@@ -834,7 +841,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, intelligenceBriefingId: newBriefingId, marketingTaskId: newTaskId } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const validAssetIds: string[] = [];
@@ -875,6 +882,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
           includeSaturday: includeSaturday ?? false,
           includeSunday: includeSunday ?? false,
           productIds: Array.isArray(productIds) ? productIds : null,
+          intelligenceBriefingId: newBriefingId || null,
+          marketingTaskId: newTaskId || null,
           createdBy: ctx.userId,
         } as InsertCampaign);
 
@@ -911,7 +920,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags } = req.body;
+    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, intelligenceBriefingId: patchBriefingId, marketingTaskId: patchTaskId } = req.body;
     const updateData: any = { updatedAt: new Date() };
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
@@ -923,6 +932,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
     if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
     if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
+    if (patchBriefingId !== undefined) updateData.intelligenceBriefingId = patchBriefingId || null;
+    if (patchTaskId !== undefined) updateData.marketingTaskId = patchTaskId || null;
     const [row] = await db.update(campaigns)
       .set(updateData)
       .where(and(
@@ -1289,7 +1300,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext } = req.body;
+    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext, intelligenceBriefingId, productIds: reqProductIds } = req.body;
 
     const platformKey = platform || "outlook";
     const toneKey = tone || "professional";
@@ -1413,6 +1424,54 @@ VISUAL DESIGN RULES:
       brandContext += `\nBrand Secondary Color: ${tenantRow.secondaryColor || "#7eb3e0"}`;
     }
 
+    // Load campaign record if provided (for product/briefing/task links)
+    const campaignRecord = campaignId
+      ? (await db.select().from(campaigns).where(eq(campaigns.id, campaignId)))[0]
+      : null;
+
+    // Area 1: Product context — from campaign productIds or explicit productIds in request
+    const emailProductIds: string[] = Array.isArray(reqProductIds) && reqProductIds.length
+      ? reqProductIds
+      : (campaignRecord?.productIds ?? []);
+    const emailLinkedProducts = emailProductIds.length
+      ? await db.select().from(products).where(
+          and(inArray(products.id, emailProductIds), eq(products.tenantDomain, ctx.tenantDomain))
+        )
+      : [];
+    const emailProductContext = emailLinkedProducts.map((p: any) => {
+      const parts = [`Product: ${p.name}`];
+      if (p.description) parts.push(`Description: ${p.description}`);
+      if (p.url) parts.push(`URL: ${p.url}`);
+      return parts.join("\n");
+    }).join("\n\n");
+
+    // Area 2: Briefing context — from explicit param or campaign's linked briefing
+    const emailBriefingId = intelligenceBriefingId || (campaignRecord as any)?.intelligenceBriefingId || null;
+    const emailBriefingRow = emailBriefingId
+      ? (await db.select().from(intelligenceBriefings).where(eq(intelligenceBriefings.id, emailBriefingId)))[0]
+      : null;
+    const ebd = emailBriefingRow?.briefingData as any;
+    const emailBriefingContext = ebd ? [
+      ebd.executiveSummary ? `Market Summary:\n${ebd.executiveSummary}` : "",
+      Array.isArray(ebd.keyThemes) && ebd.keyThemes.some((t: any) => t.significance === "high")
+        ? `Key Market Themes:\n${ebd.keyThemes.filter((t: any) => t.significance === "high").map((t: any) => `- ${t.title}: ${t.description}`).join("\n")}`
+        : "",
+      Array.isArray(ebd.actionItems) && ebd.actionItems.some((a: any) => ["messaging", "content", "marketing"].includes(a.category))
+        ? `Messaging Actions to Execute:\n${ebd.actionItems.filter((a: any) => ["messaging", "content", "marketing"].includes(a.category)).map((a: any) => `- ${a.title}: ${a.description}`).join("\n")}`
+        : "",
+      Array.isArray(ebd.riskAlerts) && ebd.riskAlerts.some((r: any) => ["critical", "warning"].includes(r.severity))
+        ? `Messaging Risks to Avoid:\n${ebd.riskAlerts.filter((r: any) => ["critical", "warning"].includes(r.severity)).map((r: any) => `- ${r.title}: ${r.description}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("\n\n") : "";
+
+    // Area 5: Task context — from campaign's linked marketing task
+    const emailTaskRow = (campaignRecord as any)?.marketingTaskId
+      ? (await db.select().from(marketingTasks).where(eq(marketingTasks.id, (campaignRecord as any).marketingTaskId)))[0]
+      : null;
+    const emailTaskContext = emailTaskRow
+      ? `${(emailTaskRow.priority ?? "Medium")}-priority ${(emailTaskRow.activityGroup ?? "").replace(/_/g, " ")} initiative for ${(emailTaskRow.timeframe ?? "ongoing").replace(/_/g, " ")}.${emailTaskRow.description ? ` ${emailTaskRow.description}` : ""}`
+      : "";
+
     const assetContext = selectedAssets
       .map((a: any) => {
         const parts = [`## ${a.title}`];
@@ -1433,7 +1492,7 @@ ${platformInstruction}
 ## Tone
 ${toneInstruction}
 
-${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets
+${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${emailProductContext ? `## Product Context\n${emailProductContext}\nUse the Product URL as the primary CTA link where relevant.\n\n` : ""}${emailBriefingContext ? `## Competitive Market Context\nUse this to inform differentiation, positioning, and urgency in the email.\n${emailBriefingContext}\n\n` : ""}${emailTaskContext ? `## Campaign Objective\n${emailTaskContext}\n\n` : ""}## Content Assets
 ${assetContext || "(no assets provided)"}
 
 ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}## Response Format
@@ -1711,6 +1770,49 @@ async function generatePostsAsync(
       })
       .join("\n\n");
 
+    // Load linked products for product context (Area 1)
+    const linkedProductIds = campaignRow.productIds ?? [];
+    const linkedProducts = linkedProductIds.length
+      ? await db.select().from(products).where(
+          and(inArray(products.id, linkedProductIds), eq(products.tenantDomain, tenantDomain))
+        )
+      : [];
+    const productContext = linkedProducts.map((p: any) => {
+      const parts = [`Product: ${p.name}`];
+      if (p.description) parts.push(`Description: ${p.description}`);
+      if (p.url) parts.push(`URL: ${p.url}`);
+      if (p.linkedInUrl) parts.push(`LinkedIn Page: ${p.linkedInUrl}`);
+      if (p.instagramUrl) parts.push(`Instagram Page: ${p.instagramUrl}`);
+      if (p.twitterUrl) parts.push(`Twitter/X Page: ${p.twitterUrl}`);
+      return parts.join("\n");
+    }).join("\n\n");
+
+    // Load intelligence briefing context if linked (Area 2)
+    const briefingRow = (campaignRow as any).intelligenceBriefingId
+      ? (await db.select().from(intelligenceBriefings).where(eq(intelligenceBriefings.id, (campaignRow as any).intelligenceBriefingId)))[0]
+      : null;
+    const bd = briefingRow?.briefingData as any;
+    const briefingContext = bd ? [
+      bd.executiveSummary ? `Market Summary:\n${bd.executiveSummary}` : "",
+      Array.isArray(bd.keyThemes) && bd.keyThemes.some((t: any) => t.significance === "high")
+        ? `Key Market Themes:\n${bd.keyThemes.filter((t: any) => t.significance === "high").map((t: any) => `- ${t.title}: ${t.description}`).join("\n")}`
+        : "",
+      Array.isArray(bd.actionItems) && bd.actionItems.some((a: any) => ["messaging", "content", "marketing"].includes(a.category))
+        ? `Messaging Actions to Execute:\n${bd.actionItems.filter((a: any) => ["messaging", "content", "marketing"].includes(a.category)).map((a: any) => `- ${a.title}: ${a.description}`).join("\n")}`
+        : "",
+      Array.isArray(bd.riskAlerts) && bd.riskAlerts.some((r: any) => ["critical", "warning"].includes(r.severity))
+        ? `Messaging Risks to Avoid:\n${bd.riskAlerts.filter((r: any) => ["critical", "warning"].includes(r.severity)).map((r: any) => `- ${r.title}: ${r.description}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("\n\n") : "";
+
+    // Load marketing task context if linked (Area 5)
+    const taskRow = (campaignRow as any).marketingTaskId
+      ? (await db.select().from(marketingTasks).where(eq(marketingTasks.id, (campaignRow as any).marketingTaskId)))[0]
+      : null;
+    const taskContext = taskRow
+      ? `${(taskRow.priority ?? "Medium")}-priority ${(taskRow.activityGroup ?? "").replace(/_/g, " ")} initiative for ${(taskRow.timeframe ?? "ongoing").replace(/_/g, " ")}.${taskRow.description ? ` ${taskRow.description}` : ""}`
+      : "";
+
     const platformTargets = linkedAccounts.length
       ? linkedAccounts
       : [{ id: "placeholder", platform: "linkedin", accountName: "Your Company" }];
@@ -1732,7 +1834,7 @@ IMPORTANT RULES — follow these strictly:
 5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces and the URL. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${productContext ? `## Product Context\n${productContext}\nUse the Product URL as the primary call-to-action link where relevant.\n\n` : ""}${briefingContext ? `## Competitive Market Context\nUse this to inform differentiation, positioning, and urgency in your copy.\n${briefingContext}\n\n` : ""}${taskContext ? `## Campaign Objective\n${taskContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
 
 ## Platform Guidelines
 ${platformGuide}

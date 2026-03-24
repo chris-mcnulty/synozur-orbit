@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown, Megaphone, Mail } from "lucide-react";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1140,8 +1140,8 @@ export default function MarketingPlanDetail() {
                     </div>
                     <div className="flex justify-between pt-4 border-t">
                       <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => {
                             openEditDialog(selectedTask);
@@ -1181,7 +1181,37 @@ export default function MarketingPlanDetail() {
                         </AlertDialogContent>
                         </AlertDialog>
                       </div>
-                      <Button variant="outline" onClick={() => setSelectedTask(null)}>Close</Button>
+                      <div className="flex gap-2">
+                        {["social_media", "content_marketing", "outbound_campaigns", "brand", "digital_marketing", "product_marketing", "email_marketing"].includes(selectedTask.activityGroup) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid="button-create-campaign-from-task"
+                            onClick={() => {
+                              navigate(`/app/marketing/campaigns?taskId=${selectedTask.id}&name=${encodeURIComponent(selectedTask.title)}&description=${encodeURIComponent(selectedTask.description ?? "")}`);
+                              setSelectedTask(null);
+                            }}
+                          >
+                            <Megaphone className="w-4 h-4 mr-2" />
+                            Create Campaign
+                          </Button>
+                        )}
+                        {selectedTask.activityGroup === "email_marketing" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid="button-generate-email-from-task"
+                            onClick={() => {
+                              navigate(`/app/marketing/email-newsletters`);
+                              setSelectedTask(null);
+                            }}
+                          >
+                            <Mail className="w-4 h-4 mr-2" />
+                            Generate Email
+                          </Button>
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => setSelectedTask(null)}>Close</Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1199,6 +1229,37 @@ export default function MarketingPlanDetail() {
           </Card>
         ) : (
           <div className="space-y-6">
+            {(() => {
+              const campaignGroups = ["social_media", "content_marketing", "outbound_campaigns", "brand", "digital_marketing", "product_marketing", "email_marketing"];
+              const readyTasks = filteredTasks.filter(t =>
+                campaignGroups.includes(t.activityGroup) &&
+                ["planned", "in_progress"].includes(t.status)
+              );
+              if (readyTasks.length === 0) return null;
+              const groupCounts = campaignGroups.reduce<Record<string, number>>((acc, g) => {
+                const n = readyTasks.filter(t => t.activityGroup === g).length;
+                if (n > 0) acc[ACTIVITY_CATEGORIES.find(c => c.value === g)?.label ?? g] = n;
+                return acc;
+              }, {});
+              return (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30 text-sm">
+                  <Megaphone className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="text-blue-800 dark:text-blue-300 flex-1">
+                    <strong>{readyTasks.length} task{readyTasks.length !== 1 ? "s" : ""}</strong> ready for campaign execution:{" "}
+                    {Object.entries(groupCounts).map(([label, n]) => `${n} ${label}`).join(", ")}.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300"
+                    onClick={() => navigate("/app/marketing/campaigns")}
+                    data-testid="button-plan-campaign-suggestion"
+                  >
+                    <Megaphone className="w-3 h-3 mr-1" /> Go to Campaigns
+                  </Button>
+                </div>
+              );
+            })()}
             {Object.entries(groupedTasks).map(([category, { label, tasks: categoryTasks }]) => (
               <Card key={category}>
                 <CardHeader className="pb-3">

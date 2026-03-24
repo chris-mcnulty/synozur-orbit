@@ -1619,6 +1619,8 @@ export const campaigns = pgTable("campaigns", {
   includeSunday: boolean("include_sunday").notNull().default(false),
   productIds: text("product_ids").array(),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
+  intelligenceBriefingId: varchar("intelligence_briefing_id").references(() => intelligenceBriefings.id, { onDelete: "set null" }),
+  marketingTaskId: varchar("marketing_task_id").references(() => marketingTasks.id, { onDelete: "set null" }),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1629,6 +1631,14 @@ export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   createdByUser: one(users, {
     fields: [campaigns.createdBy],
     references: [users.id],
+  }),
+  intelligenceBriefing: one(intelligenceBriefings, {
+    fields: [campaigns.intelligenceBriefingId],
+    references: [intelligenceBriefings.id],
+  }),
+  marketingTask: one(marketingTasks, {
+    fields: [campaigns.marketingTaskId],
+    references: [marketingTasks.id],
   }),
   campaignAssets: many(campaignAssets),
   campaignSocialAccounts: many(campaignSocialAccounts),

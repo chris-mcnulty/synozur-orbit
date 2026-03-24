@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
 import {
   Brain,
@@ -176,6 +176,7 @@ export default function IntelligenceBriefingPage() {
   const { user } = useUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const search = useSearch();
   const idFromUrl = new URLSearchParams(search).get("id");
   const [selectedBriefingId, setSelectedBriefingId] = useState<string | null>(idFromUrl);
@@ -863,6 +864,7 @@ export default function IntelligenceBriefingPage() {
                 <div className="space-y-2">
                   {bd.actionItems.map((item, i) => {
                     const urg = urgencyConfig[item.urgency] || urgencyConfig.watch;
+                    const isCampaignable = ["messaging", "content", "marketing"].includes(item.category);
                     return (
                       <Card key={i} data-testid={`card-action-${i}`}>
                         <CardContent className="flex items-start gap-3 pt-4 pb-4 px-4">
@@ -879,6 +881,21 @@ export default function IntelligenceBriefingPage() {
                                 {item.relatedCompetitors.map((c, ci) => (
                                   <span key={ci} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{c}</span>
                                 ))}
+                              </div>
+                            )}
+                            {isCampaignable && briefing && (
+                              <div className="mt-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1"
+                                  data-testid={`button-create-campaign-action-${i}`}
+                                  onClick={() => navigate(
+                                    `/app/marketing/campaigns?briefingId=${briefing.id}&name=${encodeURIComponent(item.title)}&description=${encodeURIComponent(item.description)}`
+                                  )}
+                                >
+                                  <Plus className="w-3 h-3" /> Create Campaign
+                                </Button>
                               </div>
                             )}
                           </div>
