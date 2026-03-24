@@ -205,15 +205,24 @@ export async function loadStrategicContext(
   const tenantId = tenant?.id || "";
   const ctx: ContextFilter = { tenantId, tenantDomain, marketId: marketId || "", isDefaultMarket: !marketId };
 
-  const [messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations] =
-    await Promise.all([
-      loadMessagingFramework(ctx),
-      loadCompetitiveIntelligence(ctx),
-      loadGtmPlanSummary(ctx),
-      loadBriefingActionItems(tenantDomain, marketId),
-      loadRecommendations(ctx),
-    ]);
+  const results = await Promise.allSettled([
+    loadMessagingFramework(ctx),
+    loadCompetitiveIntelligence(ctx),
+    loadGtmPlanSummary(ctx),
+    loadBriefingActionItems(tenantDomain, marketId),
+    loadRecommendations(ctx),
+  ]);
 
+  const messagingFramework =
+    results[0].status === "fulfilled" ? results[0].value : "";
+  const competitiveIntelligence =
+    results[1].status === "fulfilled" ? results[1].value : "";
+  const gtmPlanSummary =
+    results[2].status === "fulfilled" ? results[2].value : "";
+  const briefingActionItems =
+    results[3].status === "fulfilled" ? results[3].value : "";
+  const recommendations =
+    results[4].status === "fulfilled" ? results[4].value : "";
   return { messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations };
 }
 
