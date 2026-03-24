@@ -13574,8 +13574,13 @@ Generate a comprehensive battlecard in this JSON format:
       }
 
       const { actionType } = req.body;
+      if (actionType !== undefined && typeof actionType !== "string") {
+        return res.status(400).json({ error: "Invalid actionType; expected a string if provided." });
+      }
+
       const updated = await storage.updateRecommendation(req.params.id, {
         status: "accepted",
+        acceptedAt: new Date(),
       });
       res.json(updated);
     } catch (error: any) {
