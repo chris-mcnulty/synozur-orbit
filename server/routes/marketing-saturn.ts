@@ -1339,14 +1339,41 @@ export function registerSaturnMarketingRoutes(app: Express) {
       return "";
     };
 
+    const isTwitterPost = (post: any) => (post.platform || "").toLowerCase() === "twitter";
+    const TWITTER_CHAR_LIMIT = 280;
+
+    const buildTwitterContent = (baseContent: string, hashtags: string[], sourceUrl?: string): string => {
+      const hashtagLine = buildHashtagLine(hashtags);
+      const urlPart = sourceUrl || "";
+      const parts = [baseContent];
+      if (hashtagLine) parts.push(hashtagLine);
+      if (urlPart) parts.push(urlPart);
+      let full = parts.join("\n");
+      if (full.length <= TWITTER_CHAR_LIMIT) return full;
+
+      const suffix = [hashtagLine, urlPart].filter(Boolean).join("\n");
+      const suffixLen = suffix ? suffix.length + 1 : 0;
+      const maxText = TWITTER_CHAR_LIMIT - suffixLen;
+      if (maxText > 20) {
+        const truncated = baseContent.substring(0, maxText - 1).replace(/\s+\S*$/, "") + "…";
+        return [truncated, ...(suffix ? [suffix] : [])].join("\n");
+      }
+      return full.substring(0, TWITTER_CHAR_LIMIT - 1) + "…";
+    };
+
+    const now = new Date();
+
     switch (csvFormat) {
       case "hootsuite": {
         lines = ["Date,Time,Message,Media URLs,Social Profile"];
         for (const post of posts) {
-          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
           const hashtagLine = buildHashtagLine(post.hashtags as string[]);
-          const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
+          const fullContent = isTwitterPost(post)
+            ? buildTwitterContent(baseContent, post.hashtags as string[])
+            : (hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent);
           const imageUrl = getPostImageUrl(post);
           const { date, time } = fmtHootsuiteDate(sd);
           const profile = getAccountId(post) || post.platform;
@@ -1357,10 +1384,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
       case "sproutsocial": {
         lines = ["Post Text,Image URL,Scheduled Date/Time,Network,Profile"];
         for (const post of posts) {
-          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
           const hashtagLine = buildHashtagLine(post.hashtags as string[]);
-          const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
+          const fullContent = isTwitterPost(post)
+            ? buildTwitterContent(baseContent, post.hashtags as string[])
+            : (hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent);
           const imageUrl = getPostImageUrl(post);
           const dateStr = fmtSproutDate(sd);
           lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(post.platform)},${escCsv(getAccountId(post))}`);
@@ -1370,14 +1400,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
       default: {
         lines = ["Post Content,Image URL,Date/Time,Account ID,First Comment,Tags"];
         for (const post of posts) {
-          const sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
           const hashtagLine = buildHashtagLine(post.hashtags as string[]);
           const sourceUrl = post.sourceUrl || "";
-          const contentParts = [baseContent];
-          if (hashtagLine) contentParts.push(hashtagLine);
-          if (sourceUrl) contentParts.push(sourceUrl);
-          const fullContent = contentParts.join("\n");
+
+          let fullContent: string;
+          if (isTwitterPost(post)) {
+            fullContent = buildTwitterContent(baseContent, post.hashtags as string[], sourceUrl);
+          } else {
+            const contentParts = [baseContent];
+            if (hashtagLine) contentParts.push(hashtagLine);
+            if (sourceUrl) contentParts.push(sourceUrl);
+            fullContent = contentParts.join("\n");
+          }
 
           const imageUrl = getPostImageUrl(post);
           const dateStr = fmtSocialPilotDate(sd);
@@ -2089,7 +2126,7 @@ IMPORTANT RULES — follow these strictly:
 2. Each content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>"). If multiple assets are provided, include the most relevant URL.
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including ALL spaces, punctuation, and the URL. This is a HARD TECHNICAL LIMIT enforced by the Twitter API — posts over 280 characters WILL be rejected. Aim for 200-250 characters to leave room. Write extremely concise copy. One short sentence + URL is ideal." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
@@ -2143,20 +2180,32 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
           }
         }
 
-        if (account.platform === "twitter" && postContent.length > 280) {
-          const urlMatch = postContent.match(/https?:\/\/\S+/);
-          if (urlMatch) {
-            const url = urlMatch[0];
-            const textWithoutUrl = postContent.replace(url, "").trim();
-            const maxTextLen = 280 - url.length - 2;
-            if (maxTextLen > 20) {
-              const truncated = textWithoutUrl.substring(0, maxTextLen - 3).replace(/\s+\S*$/, "") + "…";
-              postContent = truncated + " " + url;
+        if (account.platform === "twitter") {
+          const hashtagLine = hashtags.map(h => `#${h}`).join(" ");
+          const totalLen = postContent.length + (hashtagLine ? hashtagLine.length + 1 : 0);
+          if (totalLen > 280) {
+            const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
+            const maxContentLen = 280 - reserveForHashtags;
+            if (maxContentLen > 20) {
+              const urlMatch = postContent.match(/https?:\/\/\S+/);
+              if (urlMatch) {
+                const url = urlMatch[0];
+                const textWithoutUrl = postContent.replace(url, "").trim();
+                const maxTextLen = maxContentLen - url.length - 2;
+                if (maxTextLen > 20) {
+                  const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
+                  postContent = truncated + " " + url;
+                } else {
+                  postContent = postContent.substring(0, maxContentLen - 1) + "…";
+                }
+              } else {
+                postContent = postContent.substring(0, maxContentLen - 1) + "…";
+              }
             } else {
-              postContent = postContent.substring(0, 277) + "…";
+              const combined = hashtagLine ? `${postContent}\n${hashtagLine}` : postContent;
+              postContent = combined.substring(0, 279) + "…";
+              hashtags = [];
             }
-          } else {
-            postContent = postContent.substring(0, 277) + "…";
           }
         }
 
@@ -2224,7 +2273,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
 function getPlatformGuide(platform: string): string {
   const guides: Record<string, string> = {
     linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability.",
-    twitter: "HARD LIMIT: 280 characters maximum including spaces. Count every character. Concise and punchy. Conversational. One key message only. Do NOT exceed 280 characters.",
+    twitter: "HARD LIMIT: 280 characters TOTAL for content + hashtags combined. Keep post body under 200 characters to leave room for hashtags. Count every character. One concise sentence + URL only. Do NOT write long-form content.",
     instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line.",
     facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA.",
   };
