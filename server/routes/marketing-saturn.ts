@@ -1250,26 +1250,40 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
     const escCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const fmtSocialPilotDate = (d: Date | null | undefined) => {
       if (!d) return "";
       const dt = new Date(d);
-      const yyyy = dt.getFullYear();
-      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const mon = MONTHS[dt.getMonth()];
       const dd = String(dt.getDate()).padStart(2, "0");
-      const hh = String(dt.getHours()).padStart(2, "0");
+      const yyyy = dt.getFullYear();
+      let hh = dt.getHours();
       const min = String(dt.getMinutes()).padStart(2, "0");
-      return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+      const ampm = hh >= 12 ? "PM" : "AM";
+      hh = hh % 12 || 12;
+      return `${mon} ${dd}, ${yyyy} ${String(hh).padStart(2, "0")}:${min} ${ampm}`;
     };
 
     const fmtHootsuiteDate = (d: Date | null | undefined) => {
-      if (!d) return "";
+      if (!d) return { date: "", time: "" };
       const dt = new Date(d);
-      const yyyy = dt.getFullYear();
       const mm = String(dt.getMonth() + 1).padStart(2, "0");
       const dd = String(dt.getDate()).padStart(2, "0");
+      const yyyy = dt.getFullYear();
       const hh = String(dt.getHours()).padStart(2, "0");
       const min = String(dt.getMinutes()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+      return { date: `${mm}/${dd}/${yyyy}`, time: `${hh}:${min}` };
+    };
+
+    const fmtSproutDate = (d: Date | null | undefined) => {
+      if (!d) return "";
+      const dt = new Date(d);
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const yyyy = dt.getFullYear();
+      const hh = String(dt.getHours()).padStart(2, "0");
+      const min = String(dt.getMinutes()).padStart(2, "0");
+      return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
     };
 
     const getPostImageUrl = (post: any): string => {
@@ -1304,8 +1318,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
           const hashtagLine = buildHashtagLine(post.hashtags as string[]);
           const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
           const imageUrl = getPostImageUrl(post);
-          const dateStr = fmtHootsuiteDate(sd);
-          lines.push(`${escCsv(dateStr)},"",${escCsv(fullContent)},${escCsv(imageUrl)}`);
+          const { date, time } = fmtHootsuiteDate(sd);
+          lines.push(`${escCsv(date)},${escCsv(time)},${escCsv(fullContent)},${escCsv(imageUrl)}`);
         }
         break;
       }
@@ -1317,7 +1331,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           const hashtagLine = buildHashtagLine(post.hashtags as string[]);
           const fullContent = hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent;
           const imageUrl = getPostImageUrl(post);
-          const dateStr = fmtHootsuiteDate(sd);
+          const dateStr = fmtSproutDate(sd);
           lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(post.platform)},${escCsv(getAccountId(post))}`);
         }
         break;
