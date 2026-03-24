@@ -29,6 +29,7 @@ import {
   Copy,
   Package,
   ChevronDown,
+  ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -108,6 +109,7 @@ interface GeneratedPost {
   variantGroup?: string;
   overrideImageUrl?: string;
   overrideBrandAssetId?: string;
+  sourceUrl?: string;
   scheduledDate?: string;
 }
 
@@ -934,6 +936,18 @@ export default function CampaignDetailPage() {
                           </div>
                         ) : (
                           <p className="text-sm whitespace-pre-wrap">{post.editedContent ?? post.content}</p>
+                        )}
+                        {post.sourceUrl && (
+                          <a
+                            href={post.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+                            data-testid={`link-source-${post.id}`}
+                          >
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{post.sourceUrl}</span>
+                          </a>
                         )}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {editingPostHashtags === post.id ? (

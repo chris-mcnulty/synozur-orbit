@@ -1704,6 +1704,7 @@ export const generatedPosts = pgTable("generated_posts", {
   content: text("content").notNull(), // Generated post copy
   hashtags: jsonb("hashtags").$type<string[]>().default([]),
   imagePrompt: text("image_prompt"), // Suggested image generation prompt
+  sourceUrl: text("source_url"),
   overrideImageUrl: text("override_image_url"),
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),

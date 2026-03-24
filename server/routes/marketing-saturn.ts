@@ -1726,10 +1726,10 @@ async function generatePostsAsync(
 
 IMPORTANT RULES — follow these strictly:
 1. Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate "About Us", social sharing button text, comment sections. Only use the actual article substance and key messages.
-2. Do NOT include any URLs or links in the post content — the user will add their own links when publishing.
+2. Each content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>"). If multiple assets are provided, include the most relevant URL.
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" ? "Twitter/X posts MUST be under 280 characters total including spaces and the URL. Count carefully. Keep it punchy and concise." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
 ${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
@@ -1740,7 +1740,7 @@ ${platformGuide}
 Each variant should take a different angle, tone, or hook while staying on-brand and on-message.
 
 Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANTS_PER_ACCOUNT} objects, each with:
-- "content": string (the post body — no URLs, no inline hashtags)
+- "content": string (the post body — include the source asset URL naturally, no inline hashtags)
 - "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
 
@@ -1760,9 +1760,10 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
         variants = [{ content: result.text, hashtags: [], imagePrompt: "" }];
       }
 
+      const primaryAssetUrl = selectedAssets.find((a: any) => a.url)?.url || null;
+
       for (const parsed of variants) {
         let postContent = (parsed.content ?? result.text).trim();
-        postContent = postContent.replace(/https?:\/\/[^\s)]+/g, "").trim();
         postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
 
         let hashtags: string[] = (parsed.hashtags ?? [])
@@ -1794,6 +1795,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
           content: postContent,
           hashtags,
           imagePrompt: parsed.imagePrompt ?? "",
+          sourceUrl: primaryAssetUrl,
           variantGroup: variantGroupId,
           generationJobId: jobId,
         } as InsertGeneratedPost);
