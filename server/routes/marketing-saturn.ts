@@ -1232,7 +1232,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const posts = await db.select().from(generatedPosts)
       .where(and(
         eq(generatedPosts.campaignId, campaign.id),
-        eq(generatedPosts.status, "approved"),
       ));
 
     const accountIds = Array.from(new Set(posts.map(p => p.socialAccountId).filter(Boolean))) as string[];
