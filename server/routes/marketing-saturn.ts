@@ -1386,13 +1386,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
 Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
 
 REQUIRED HTML STRUCTURE:
-- Wrap everything in an outer <table width="100%" style="background-color: #f4f6f9"> with a centered inner <table width="620"> container
+- Wrap everything in an outer <table width="100%" style="background-color: #f4f6f9"> with a centered inner <table width="600" style="max-width:600px"> container
 - Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
 - Use table-based layout throughout (email clients don't support flexbox/grid)
 
 REQUIRED SECTIONS (adapt based on content):
 1. **Branded Header Banner**: Dark background with company name in small uppercase letters, a bold headline (h1), and a subheading. Use the brand colors if provided.
-2. **Hero Image**: If the content asset has an image URL, include it as a full-width <img> with width="620" style="display:block;width:100%;height:auto"
+2. **Hero Image**: If the content asset has an image URL, include it as a full-width <img> with width="600" style="display:block;width:100%;max-width:600px;height:auto"
 3. **Opening Paragraph**: Personal greeting and context-setting copy (2-3 paragraphs)
 4. **Key Stats / Data Cards**: If the content contains numbers or stats, present them in side-by-side colored stat cards using a 2-column table layout with rounded corners and background colors
 5. **Numbered Highlights**: Present 3-5 key points as numbered items with circular number badges (dark background, white text) and bold titles with descriptions
@@ -1547,6 +1547,24 @@ Structure your response using these exact delimiters:
         .replace(/```html\s*/gi, "")
         .replace(/```\s*$/gm, "")
         .trim();
+
+      emailBody = emailBody.replace(
+        /\[CTA_BUTTON:\s*"([^"]+)"\s*(?:→|->|—>)\s*([^\]\s]+)\s*\]/gi,
+        (_, text, url) => `<table cellpadding="0" cellspacing="0" border="0" style="margin:24px auto;"><tr><td align="center" bgcolor="#0a2540" style="border-radius:6px;"><a href="${url}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">${text}</a></td></tr></table>`
+      );
+
+      emailBody = emailBody.replace(
+        /width\s*=\s*"(6[2-9]\d|[7-9]\d{2}|\d{4,})"/gi,
+        'width="600"'
+      );
+      emailBody = emailBody.replace(
+        /max-width:\s*(6[2-9]\d|[7-9]\d{2}|\d{4,})px/gi,
+        'max-width:600px'
+      );
+      emailBody = emailBody.replace(
+        /width:\s*(6[2-9]\d|[7-9]\d{2}|\d{4,})px/gi,
+        'width:600px'
+      );
     }
 
     const coachingTipsMap: Record<string, string[]> = {
