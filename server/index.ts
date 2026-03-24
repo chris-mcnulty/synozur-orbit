@@ -111,6 +111,44 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Run startup migrations for tables/columns that may not exist in production yet
+  try {
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_dismissed_changelog_version VARCHAR(50)`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        ticket_number INTEGER NOT NULL,
+        tenant_id VARCHAR NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        category TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        description TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        status TEXT NOT NULL DEFAULT 'open',
+        assigned_to VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        metadata JSONB,
+        application_source TEXT NOT NULL DEFAULT 'Orbit',
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now(),
+        resolved_at TIMESTAMP,
+        resolved_by VARCHAR REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS support_ticket_replies (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        ticket_id VARCHAR NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        message TEXT NOT NULL,
+        is_internal BOOLEAN DEFAULT false,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    log("Startup migrations completed");
+  } catch (err) {
+    console.error("[Startup] Migration error:", err);
+  }
+
   await registerRoutes(httpServer, app);
   
   // Seed default service plans if none exist
