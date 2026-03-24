@@ -102,6 +102,7 @@ export default function ContentLibraryPage() {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkQueuedCount, setBulkQueuedCount] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const [showBrandImagePicker, setShowBrandImagePicker] = useState(false);
 
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -159,6 +160,20 @@ export default function ContentLibraryPage() {
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
+  });
+
+  interface BrandAsset { id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null; }
+  const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
+    queryKey: ["/api/brand-assets"],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && showBrandImagePicker,
+  });
+  const brandImages = brandAssets.filter(ba => {
+    const url = ba.fileUrl || ba.url || "";
+    return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
   });
 
   useEffect(() => {
@@ -1153,7 +1168,7 @@ export default function ContentLibraryPage() {
         )}
 
         {/* Edit Asset Dialog */}
-        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) setDetailAsset(null); }}>
+        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) { setDetailAsset(null); setShowBrandImagePicker(false); } }}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             {detailAsset && (
               <>
@@ -1192,13 +1207,57 @@ export default function ContentLibraryPage() {
                         </div>
                       </div>
                     ) : null}
-                    <Input
-                      value={editForm.leadImageUrl}
-                      onChange={e => setEditForm(f => ({ ...f, leadImageUrl: e.target.value }))}
-                      placeholder="Paste image URL..."
-                      className="mt-1"
-                      data-testid="input-edit-lead-image-url"
-                    />
+                    <div className="flex gap-2 mt-1">
+                      <Input
+                        value={editForm.leadImageUrl}
+                        onChange={e => setEditForm(f => ({ ...f, leadImageUrl: e.target.value }))}
+                        placeholder="Paste image URL..."
+                        className="flex-1"
+                        data-testid="input-edit-lead-image-url"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1"
+                        onClick={() => setShowBrandImagePicker(!showBrandImagePicker)}
+                        data-testid="button-pick-brand-image"
+                      >
+                        <Library className="w-3.5 h-3.5" />
+                        {showBrandImagePicker ? "Hide" : "Brand Library"}
+                      </Button>
+                    </div>
+                    {showBrandImagePicker && (
+                      <div className="border rounded-lg p-3 mt-2 bg-muted/30 space-y-2">
+                        <Label className="text-xs text-muted-foreground">Select an image from Brand Library</Label>
+                        {brandImages.length > 0 ? (
+                          <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                            {brandImages.map(ba => {
+                              const imgUrl = ba.fileUrl || ba.url || "";
+                              return (
+                                <button
+                                  key={ba.id}
+                                  type="button"
+                                  className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-white"
+                                  onClick={() => {
+                                    setEditForm(f => ({ ...f, leadImageUrl: imgUrl }));
+                                    setShowBrandImagePicker(false);
+                                  }}
+                                  data-testid={`button-brand-image-${ba.id}`}
+                                >
+                                  <img src={imgUrl} alt={ba.name} className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = "none")} />
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                                    <p className="text-[9px] text-white truncate">{ba.name}</p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No images found in Brand Library.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -1338,7 +1397,7 @@ export default function ContentLibraryPage() {
                     </CollapsibleContent>
                   </Collapsible>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       className="flex-1 gap-2"
@@ -1362,6 +1421,24 @@ export default function ContentLibraryPage() {
                       data-testid="button-create-campaign-from-detail"
                     >
                       <Megaphone className="w-4 h-4" /> Instant Campaign
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2"
+                      onClick={() => {
+                        setEditOpen(false);
+                        setDetailAsset(null);
+                        const params = new URLSearchParams({
+                          fromAsset: detailAsset.id,
+                          name: detailAsset.title,
+                          ...(detailAsset.description ? { description: detailAsset.description } : {}),
+                          ...(detailAsset.url ? { url: detailAsset.url } : {}),
+                        });
+                        navigate(`/app/products?${params.toString()}`);
+                      }}
+                      data-testid="button-create-product-from-detail"
+                    >
+                      <Package className="w-4 h-4" /> Create Product
                     </Button>
                     <Button
                       className="flex-1"
