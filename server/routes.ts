@@ -14318,6 +14318,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings/source-freshness", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const ctxFilter = toContextFilter(ctx);
 
       const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
@@ -14403,6 +14410,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings/latest", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const briefing = await storage.getLatestBriefingForTenant(ctx.tenantDomain, ctx.marketId);
       if (!briefing) {
         return res.status(404).json({ error: "No briefings found" });
@@ -14419,6 +14433,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings/:id", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const briefing = await storage.getIntelligenceBriefing(req.params.id);
       if (!briefing) {
         return res.status(404).json({ error: "Briefing not found" });
@@ -14438,6 +14459,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings/:id/pdf", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const briefingId = req.params.id;
 
       const briefing = await storage.getIntelligenceBriefing(briefingId);
@@ -14497,6 +14525,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.get("/api/intelligence-briefings", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
       const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit, ctx.marketId);
@@ -14514,6 +14549,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const ctx = await getRequestContext(req);
       if (!hasAdminAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to generate briefings" });
+      }
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
       }
       const ALLOWED_PERIODS = [7, 14, 30];
       const rawPeriod = req.body.periodDays ? parseInt(req.body.periodDays, 10) : 7;
@@ -14587,6 +14629,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
       if (!hasAdminAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to delete briefings" });
       }
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const briefing = await storage.getIntelligenceBriefing(req.params.id);
       if (!briefing) {
         return res.status(404).json({ error: "Briefing not found" });
@@ -14608,6 +14657,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
   app.post("/api/intelligence-briefings/:id/share", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefing");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
       const briefingId = req.params.id;
       const { emails } = req.body;
 
