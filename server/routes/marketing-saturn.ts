@@ -1288,19 +1288,25 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
 
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
+    const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);
     let lines: string[];
 
     const escCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
+    const toClientTime = (d: Date): Date => {
+      const utcMs = d.getTime();
+      return new Date(utcMs - clientTzOffset * 60000);
+    };
+
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const fmtSocialPilotDate = (d: Date | null | undefined) => {
       if (!d) return "";
-      const dt = new Date(d);
-      const mon = MONTHS[dt.getMonth()];
-      const dd = String(dt.getDate()).padStart(2, "0");
-      const yyyy = dt.getFullYear();
-      let hh = dt.getHours();
-      const min = String(dt.getMinutes()).padStart(2, "0");
+      const dt = toClientTime(new Date(d));
+      const mon = MONTHS[dt.getUTCMonth()];
+      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      const yyyy = dt.getUTCFullYear();
+      let hh = dt.getUTCHours();
+      const min = String(dt.getUTCMinutes()).padStart(2, "0");
       const ampm = hh >= 12 ? "PM" : "AM";
       hh = hh % 12 || 12;
       return `${mon} ${dd}, ${yyyy} ${String(hh).padStart(2, "0")}:${min} ${ampm}`;
@@ -1308,23 +1314,23 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
     const fmtHootsuiteDate = (d: Date | null | undefined) => {
       if (!d) return { date: "", time: "" };
-      const dt = new Date(d);
-      const mm = String(dt.getMonth() + 1).padStart(2, "0");
-      const dd = String(dt.getDate()).padStart(2, "0");
-      const yyyy = dt.getFullYear();
-      const hh = String(dt.getHours()).padStart(2, "0");
-      const min = String(dt.getMinutes()).padStart(2, "0");
+      const dt = toClientTime(new Date(d));
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      const yyyy = dt.getUTCFullYear();
+      const hh = String(dt.getUTCHours()).padStart(2, "0");
+      const min = String(dt.getUTCMinutes()).padStart(2, "0");
       return { date: `${mm}/${dd}/${yyyy}`, time: `${hh}:${min}` };
     };
 
     const fmtSproutDate = (d: Date | null | undefined) => {
       if (!d) return "";
-      const dt = new Date(d);
-      const mm = String(dt.getMonth() + 1).padStart(2, "0");
-      const dd = String(dt.getDate()).padStart(2, "0");
-      const yyyy = dt.getFullYear();
-      const hh = String(dt.getHours()).padStart(2, "0");
-      const min = String(dt.getMinutes()).padStart(2, "0");
+      const dt = toClientTime(new Date(d));
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      const yyyy = dt.getUTCFullYear();
+      const hh = String(dt.getUTCHours()).padStart(2, "0");
+      const min = String(dt.getUTCMinutes()).padStart(2, "0");
       return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
     };
 

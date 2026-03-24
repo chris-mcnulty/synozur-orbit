@@ -437,6 +437,12 @@ export default function CampaignDetailPage() {
       const [hours, minutes] = time.split(":").map(Number);
       const timeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 
+      const tzOffset = new Date().getTimezoneOffset();
+      const tzSign = tzOffset <= 0 ? "+" : "-";
+      const tzHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(2, "0");
+      const tzMins = String(Math.abs(tzOffset) % 60).padStart(2, "0");
+      const tzSuffix = `${tzSign}${tzHours}:${tzMins}`;
+
       const toLocalDateStr = (d: Date): string => {
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -471,7 +477,7 @@ export default function CampaignDetailPage() {
 
       while (current <= effectiveEnd) {
         const dateStr = toLocalDateStr(current);
-        const isoStr = `${dateStr}T${timeStr}`;
+        const isoStr = `${dateStr}T${timeStr}${tzSuffix}`;
         eligibleSlots.push(isoStr);
         current = addDays(current, daysBetween);
         current = pushToNextWeekday(current);
@@ -560,7 +566,8 @@ export default function CampaignDetailPage() {
 
   const exportCsvMutation = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}`, {
+      const tzOffset = new Date().getTimezoneOffset();
+      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}`, {
         method: "POST",
         credentials: "include",
       });
