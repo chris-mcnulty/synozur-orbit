@@ -149,6 +149,31 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE analysis ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
     await pgPool.query(`ALTER TABLE battlecards ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
     await pgPool.query(`ALTER TABLE long_form_recommendations ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_audio_url TEXT`);
+    await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_status TEXT DEFAULT 'none'`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS briefing_subscriptions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        frequency TEXT NOT NULL DEFAULT 'weekly',
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_briefing_configs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        frequency TEXT NOT NULL DEFAULT 'weekly',
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
