@@ -95,8 +95,10 @@ export class ContainerCreator {
 
       console.log("[OrbitContainerCreator] Creating container with payload:", JSON.stringify(payload));
 
+      const createUrl = `${this.graphBetaUrl}/storage/fileStorage/containers`;
+      console.log("[OrbitContainerCreator] POST", createUrl);
       const response = await fetch(
-        `${this.graphBaseUrl}/storage/fileStorage/containers`,
+        createUrl,
         {
           method: "POST",
           headers: {
