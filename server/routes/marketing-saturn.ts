@@ -1498,17 +1498,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
 Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
 
 CRITICAL WIDTH CONSTRAINT — STRICT 600px MAXIMUM:
-- The outer wrapper table is width="600". Every child element must fit INSIDE 600px.
-- Content <td> cells have 32px left + 32px right padding, so inner content max width = 536px.
-- Hero images must be exactly: <img src="URL" width="600" style="display:block;width:600px;max-width:600px;height:auto;border:0" alt="...">
+- The outer wrapper table is width="600" with style="max-width:600px;table-layout:fixed". Every child element must fit INSIDE 600px.
+- Content text <td> cells have 32px left + 32px right padding, so text content max width = 536px.
+- IMPORTANT: Full-width elements like hero images and header banners must be in their OWN <tr><td> with ZERO padding (style="padding:0"). The image inside uses width="100%" style="display:block;width:100%;max-width:600px;height:auto;border:0". NEVER put a 600px image inside a <td> that has padding — that makes the row wider than 600px.
 - Do NOT use width values greater than 600 on ANY element (table, td, img, div, or inline style).
 - Stat card tables inside a padded td must use percentage widths (width="33%"), NEVER pixel widths.
 
 REQUIRED HTML STRUCTURE:
-- Wrap everything in: <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;background-color:#ffffff;margin:0 auto">
+- Wrap everything in: <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;table-layout:fixed;background-color:#ffffff;margin:0 auto">
 - Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
 - Use table-based layout ONLY (email clients don't support flexbox, grid, or div layouts)
-- All content <td> cells should have style="padding:24px 32px"
+- Text content <td> cells should have style="padding:24px 32px"
+- Image/banner <td> cells should have style="padding:0" with the image at width="100%"
 
 REQUIRED SECTIONS (adapt based on content):
 1. **Branded Header Banner**: Use the Brand Primary Color as the header background-color. Include company logo as a small image and company name in small uppercase white text, a bold headline (h1 style, max font-size 26px, color:#ffffff), and a subheading in white/light text.
@@ -1689,15 +1690,37 @@ Structure your response using these exact delimiters:
       );
 
       emailBody = emailBody.replace(
-        /<img([^>]*?)width\s*=\s*"(\d+)"([^>]*?)>/gi,
-        (match, before, w, after) => {
-          const num = parseInt(w, 10);
-          if (num > 600) {
-            return `<img${before}width="600"${after}>`.replace(/width:\s*\d+px/gi, 'width:600px').replace(/max-width:\s*\d+px/gi, 'max-width:600px');
+        /<img([^>]*)>/gi,
+        (match, attrs) => {
+          let result = match;
+          result = result.replace(/width\s*=\s*"(\d+)"/i, (m: string, w: string) => {
+            return parseInt(w, 10) > 536 ? 'width="600"' : m;
+          });
+          if (!/style\s*=/i.test(result)) {
+            result = result.replace(/<img/i, '<img style="max-width:600px;height:auto;display:block"');
+          } else {
+            result = result.replace(/style\s*=\s*"/i, 'style="max-width:600px;');
+          }
+          return result;
+        }
+      );
+
+      emailBody = emailBody.replace(
+        /<table([^>]*?)>/gi,
+        (match, attrs) => {
+          if (/width\s*=\s*"600"/i.test(attrs)) {
+            if (!/style/i.test(attrs)) {
+              return `<table${attrs} style="max-width:600px;table-layout:fixed">`;
+            }
+            return match.replace(/style\s*=\s*"/i, 'style="max-width:600px;table-layout:fixed;');
           }
           return match;
         }
       );
+
+      if (!emailBody.includes('table-layout:fixed')) {
+        emailBody = `<div style="max-width:600px;margin:0 auto;overflow:hidden">${emailBody}</div>`;
+      }
     }
 
     const coachingTipsMap: Record<string, string[]> = {
