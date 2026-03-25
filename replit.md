@@ -6,6 +6,21 @@ Orbit is an AI-driven go-to-market intelligence platform designed to centralize 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Reference Projects
+
+### Constellation - Synozur Compliance & Document Platform
+- **Repository**: `chris-mcnulty/synozur-scdp` (GitHub — accessible via installed GitHub integration)
+- **Purpose**: Synozur's compliance/document management platform with working SPE integration
+- **Use As Reference For**: SharePoint Embedded file operations, Graph API patterns, Azure AD integration
+- **Key file**: `server/services/graph-client.ts` — the working SPE implementation
+
+### Orion - Synozur Maturity Model Platform
+- **Repository**: https://github.com/chris-mcnulty/synozur-maturitymodeler
+- **Purpose**: Digital maturity modeling AI platform by Synozur
+- **Use As Reference For**: UI/UX patterns, feature implementations, admin dashboards, AI usage tracking
+- **Note**: When building new features, check Orion for existing patterns to maintain consistency across Synozur platforms.
+- **Public GTM Assessment**: https://orion.synozur.com/gtm - Open Go-to-Market Maturity Assessment available for use in outbound emails, page footers, and marketing materials as a lead generation resource.
+
 ## System Architecture
 
 ### Frontend
@@ -23,7 +38,7 @@ Preferred communication style: Simple, everyday language.
 - **API Design**: RESTful JSON API (`/api/` prefix)
 - **Session Management**: Express-session (cookie-based)
 - **Password Hashing**: bcrypt
-- **Build System**: Custom esbuild script.
+- **Build System**: Custom esbuild script for server, Vite for client.
 - **Storage Abstraction**: Drizzle ORM for PostgreSQL.
 
 ### Database
@@ -36,7 +51,9 @@ Preferred communication style: Simple, everyday language.
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`, supporting Microsoft Entra ID (OAuth 2.0) and planned Google SSO, with email/password as a fallback.
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
-- **Provisioning**: Automatic domain-based role assignment for new users; manual assignment for Global Admin and Consultant roles. Consultant role provides cross-tenant read access.
+- **Provisioning**: First user from a new domain auto-promoted to Domain Admin. Subsequent users get Standard User. Global Admin and Consultant are privileged roles requiring manual assignment.
+- **Consultant Role**: Privileged cross-tenant read role for Synozur platform staff. Can only be assigned by Global Admin, never auto-provisioned during signup.
+- **SSO Enhancement**: Azure Tenant ID auto-populated from `tid` token claim on first SSO login.
 
 ### Core Features
 - **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
@@ -114,3 +131,43 @@ Preferred communication style: Simple, everyday language.
 - `AZURE_FOUNDRY_OPENAI_ENDPOINT`
 - `AZURE_FOUNDRY_API_KEY`
 - `ORBIT_SPE_CONTAINER_TYPE_ID`
+
+## Standing Orders
+
+### Changelog & Backlog Maintenance
+After completing significant features or bug fixes, update the following files:
+
+1. **changelog.md** - Add entries under `[Unreleased]` section:
+   - Group by: Added, Changed, Fixed, Security, Deprecated, Removed
+   - Write from user perspective, not technical details
+   - Include date when releasing versions
+
+2. **backlog.md** - Update feature status:
+   - Mark completed items with `[x]`
+   - Update status descriptions for partial progress
+   - Add new items under appropriate priority level
+   - Move items between priorities as needed
+
+3. **Sync to public folder** - After updates, copy files:
+   ```bash
+   cp changelog.md public/changelog.md && cp backlog.md public/backlog.md
+   ```
+   This ensures the About page viewers show current content.
+
+## Backlog
+
+### High Priority
+- **Input safety validation**: Pre-validate all user-entered URLs and uploaded data before crawling or processing. Check for malicious URLs, SSRF attempts, private IP ranges, and unsafe file content to protect the platform from security threats.
+
+### Standard Priority
+- **Competitor document uploads**: Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence, similar to company grounding documents
+- **Protect manual research in Regenerate All**: Add source === "manual" check to full regeneration service to prevent overwriting manually entered competitor research
+- **Headless browser crawling**: Replace HTTP-based crawling with Puppeteer headless browser to bypass bot detection, handle JavaScript-rendered content, and improve crawl success rate for protected sites
+- **Consolidated action items**: Dashboard view showing all action items across baseline and projects for a tenant, with ability to assign to users, close, dismiss, or add comments
+- **Wire AI usage logging**: Connect logAiUsage() calls to all AI service entry points (competitor analysis, battlecard generation, executive summaries, etc.) to populate the usage tracking dashboard
+- **reCAPTCHA for signups**: Add Google reCAPTCHA to new account signup form to prevent bot registrations
+- **Google SSO**: Add Google OAuth as alternative to Microsoft Entra ID
+- **Per-tenant branding**: Custom logos and colors per tenant
+- **Active social/blog monitoring**: Scheduled monitoring of competitor social media accounts and blog posts with configurable check intervals, change detection, and AI-summarized diffs highlighting what changed
+- **Visual competitor assets**: Screenshot capture and visual analysis
+- **Domain blocklist**: Prevent signups from specific email domains
