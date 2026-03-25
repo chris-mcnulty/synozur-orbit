@@ -2141,16 +2141,14 @@ async function generatePostsAsync(
       );
     }
 
-    const assetContext = selectedAssets
-      .map((a: any) => {
-        const parts = [`## ${a.title}`];
-        if (a.url) parts.push(`URL: ${a.url}`);
-        if (a.aiSummary) parts.push(`### AI Summary\n${a.aiSummary}`);
-        if (a.content) parts.push(`### Content\n${a.content}`);
-        else if (a.description) parts.push(`### Description\n${a.description}`);
-        return parts.join("\n");
-      })
-      .join("\n\n");
+    const buildAssetContext = (asset: any): string => {
+      const parts = [`## ${asset.title}`];
+      if (asset.url) parts.push(`URL: ${asset.url}`);
+      if (asset.aiSummary) parts.push(`### AI Summary\n${asset.aiSummary}`);
+      if (asset.content) parts.push(`### Content\n${asset.content}`);
+      else if (asset.description) parts.push(`### Description\n${asset.description}`);
+      return parts.join("\n");
+    };
 
     const platformTargets = linkedAccounts.length
       ? linkedAccounts
@@ -2158,110 +2156,133 @@ async function generatePostsAsync(
 
     const generatedRows: InsertGeneratedPost[] = [];
 
-    const VARIANTS_PER_ACCOUNT = 3;
+    const assetGroups = selectedAssets.length > 0
+      ? selectedAssets.map(a => ({ assets: [a], context: buildAssetContext(a), url: a.url || null }))
+      : [{ assets: [], context: "(no specific assets provided — draw from your knowledge of best practices)", url: null }];
 
-    for (const account of platformTargets) {
-      const platformGuide = getPlatformGuide(account.platform);
-      const variantGroupId = randomUUID();
-      const prompt = `You are an expert B2B social media copywriter. Generate ${VARIANTS_PER_ACCOUNT} variant ${account.platform} posts for the account "${account.accountName}" based on the following content.
+    const VARIANTS_PER_COMBO = selectedAssets.length > 3 ? 1 : selectedAssets.length > 1 ? 2 : 3;
+
+    for (const assetGroup of assetGroups) {
+      for (const account of platformTargets) {
+        const platformGuide = getPlatformGuide(account.platform);
+        const variantGroupId = randomUUID();
+        const prompt = `You are an expert B2B social media copywriter. Generate ${VARIANTS_PER_COMBO} variant ${account.platform} post${VARIANTS_PER_COMBO > 1 ? "s" : ""} for the account "${account.accountName}" based on the following content.
 
 IMPORTANT RULES — follow these strictly:
 1. Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate "About Us", social sharing button text, comment sections. Only use the actual article substance and key messages.
-2. Each content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>"). If multiple assets are provided, include the most relevant URL.
+2. The content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>").
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets\n${assetContext || "(no specific assets provided — draw from your knowledge of best practices)"}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Asset\n${assetGroup.context}
 
 ## Platform Guidelines
 ${platformGuide}
 
-Each variant should take a different angle, tone, or hook while staying on-brand and on-message.
+${VARIANTS_PER_COMBO > 1 ? "Each variant should take a different angle, tone, or hook while staying on-brand and on-message." : "Write one compelling post that captures the key message while staying on-brand."}
 
-Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANTS_PER_ACCOUNT} objects, each with:
+Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANTS_PER_COMBO} object${VARIANTS_PER_COMBO > 1 ? "s" : ""}, each with:
 - "content": string (the post body — include the source asset URL naturally, no inline hashtags)
 - "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
 
-      const result = await completeForFeature("marketing_tasks", prompt);
+        const result = await completeForFeature("marketing_tasks", prompt);
 
-      let variants: any[] = [];
-      try {
-        variants = extractJsonVariants(result.text);
-      } catch (e) {
-        console.error("[Saturn] All JSON extraction strategies failed for campaign", campaignId);
-        console.error("[Saturn] Raw AI response:", result.text);
-        variants = buildFallbackVariants(result.text);
-      }
-
-      const primaryAssetUrl = selectedAssets.find((a: any) => a.url)?.url || null;
-
-      const cleanedVariants: { content: string; hashtags: string[]; imagePrompt: string }[] = [];
-      for (const parsed of variants) {
-        let postContent = (parsed.content ?? result.text).trim();
-        postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
-
-        if (!postContent || postContent.length < 10) {
-          console.warn("[Saturn] Skipping empty/trivial AI variant for campaign", campaignId);
-          continue;
+        let variants: any[] = [];
+        try {
+          variants = extractJsonVariants(result.text);
+        } catch (e) {
+          console.error("[Saturn] All JSON extraction strategies failed for campaign", campaignId);
+          console.error("[Saturn] Raw AI response:", result.text);
+          variants = buildFallbackVariants(result.text);
         }
 
-        let hashtags: string[] = (parsed.hashtags ?? [])
-          .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
-          .filter((h: string) => h.length > 0 && h.length < 50);
+        const cleanedVariants: { content: string; hashtags: string[]; imagePrompt: string }[] = [];
+        for (const parsed of variants) {
+          let postContent = (parsed.content ?? result.text).trim();
+          postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
 
-        const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
-          .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
-          .filter((h: string) => h.length > 0);
-        if (campaignAlwaysHashtags.length > 0) {
-          const existing = new Set(hashtags.map(h => h.toLowerCase()));
-          for (const ah of campaignAlwaysHashtags) {
-            if (!existing.has(ah.toLowerCase())) {
-              hashtags.push(ah);
+          if (!postContent || postContent.length < 10) {
+            console.warn("[Saturn] Skipping empty/trivial AI variant for campaign", campaignId);
+            continue;
+          }
+
+          let hashtags: string[] = (parsed.hashtags ?? [])
+            .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+            .filter((h: string) => h.length > 0 && h.length < 50);
+
+          const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
+            .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+            .filter((h: string) => h.length > 0);
+          if (campaignAlwaysHashtags.length > 0) {
+            const existing = new Set(hashtags.map(h => h.toLowerCase()));
+            for (const ah of campaignAlwaysHashtags) {
+              if (!existing.has(ah.toLowerCase())) {
+                hashtags.push(ah);
+              }
             }
           }
-        }
 
-        if (account.platform === "twitter") {
-          const hashtagLine = hashtags.map(h => `#${h}`).join(" ");
-          const totalLen = postContent.length + (hashtagLine ? hashtagLine.length + 1 : 0);
-          if (totalLen > 280) {
-            const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
-            const maxContentLen = 280 - reserveForHashtags;
-            if (maxContentLen > 20) {
-              const urlMatch = postContent.match(/https?:\/\/\S+/);
-              if (urlMatch) {
-                const url = urlMatch[0];
-                const textWithoutUrl = postContent.replace(url, "").trim();
-                const maxTextLen = maxContentLen - url.length - 2;
-                if (maxTextLen > 20) {
-                  const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
-                  postContent = truncated + " " + url;
+          if (account.platform === "twitter") {
+            const hashtagLine = hashtags.map(h => `#${h}`).join(" ");
+            const totalLen = postContent.length + (hashtagLine ? hashtagLine.length + 1 : 0);
+            if (totalLen > 280) {
+              const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
+              const maxContentLen = 280 - reserveForHashtags;
+              if (maxContentLen > 20) {
+                const urlMatch = postContent.match(/https?:\/\/\S+/);
+                if (urlMatch) {
+                  const url = urlMatch[0];
+                  const textWithoutUrl = postContent.replace(url, "").trim();
+                  const maxTextLen = maxContentLen - url.length - 2;
+                  if (maxTextLen > 20) {
+                    const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
+                    postContent = truncated + " " + url;
+                  } else {
+                    postContent = postContent.substring(0, maxContentLen - 1) + "…";
+                  }
                 } else {
                   postContent = postContent.substring(0, maxContentLen - 1) + "…";
                 }
               } else {
-                postContent = postContent.substring(0, maxContentLen - 1) + "…";
+                const combined = hashtagLine ? `${postContent}\n${hashtagLine}` : postContent;
+                postContent = combined.substring(0, 279) + "…";
+                hashtags = [];
               }
-            } else {
-              const combined = hashtagLine ? `${postContent}\n${hashtagLine}` : postContent;
-              postContent = combined.substring(0, 279) + "…";
-              hashtags = [];
             }
           }
+
+          cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
         }
 
-        cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
-      }
-
-      if (brandImageAssets.length > 0) {
-        let comboIndex = 0;
-        for (let vi = 0; vi < cleanedVariants.length; vi++) {
-          for (let ii = 0; ii < brandImageAssets.length; ii++) {
-            const v = cleanedVariants[vi];
-            const img = brandImageAssets[ii];
+        if (brandImageAssets.length > 0) {
+          let comboIndex = 0;
+          for (let vi = 0; vi < cleanedVariants.length; vi++) {
+            for (let ii = 0; ii < brandImageAssets.length; ii++) {
+              const v = cleanedVariants[vi];
+              const img = brandImageAssets[ii];
+              generatedRows.push({
+                id: randomUUID(),
+                campaignId,
+                socialAccountId: account.id === "placeholder" ? null : account.id,
+                tenantDomain,
+                platform: account.platform,
+                content: v.content,
+                hashtags: v.hashtags,
+                imagePrompt: v.imagePrompt,
+                sourceUrl: assetGroup.url,
+                variantGroup: variantGroupId,
+                generationJobId: jobId,
+                overrideBrandAssetId: img.id,
+              } as InsertGeneratedPost);
+              comboIndex++;
+            }
+          }
+          console.log(`[Saturn] Generated ${comboIndex} text x image combos for ${account.platform} asset "${assetGroup.assets[0]?.title || 'general'}"`);
+        } else {
+          for (const v of cleanedVariants) {
             generatedRows.push({
               id: randomUUID(),
               campaignId,
@@ -2271,31 +2292,14 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
               content: v.content,
               hashtags: v.hashtags,
               imagePrompt: v.imagePrompt,
-              sourceUrl: primaryAssetUrl,
+              sourceUrl: assetGroup.url,
               variantGroup: variantGroupId,
               generationJobId: jobId,
-              overrideBrandAssetId: img.id,
             } as InsertGeneratedPost);
-            comboIndex++;
           }
         }
-        console.log(`[Saturn] Generated ${comboIndex} text×image combos for ${account.platform} (${cleanedVariants.length} text × ${brandImageAssets.length} images)`);
-      } else {
-        for (const v of cleanedVariants) {
-          generatedRows.push({
-            id: randomUUID(),
-            campaignId,
-            socialAccountId: account.id === "placeholder" ? null : account.id,
-            tenantDomain,
-            platform: account.platform,
-            content: v.content,
-            hashtags: v.hashtags,
-            imagePrompt: v.imagePrompt,
-            sourceUrl: primaryAssetUrl,
-            variantGroup: variantGroupId,
-            generationJobId: jobId,
-          } as InsertGeneratedPost);
-        }
+
+        console.log(`[Saturn] Completed asset "${assetGroup.assets[0]?.title || 'general'}" for ${account.platform}: ${cleanedVariants.length} variants`);
       }
     }
 
