@@ -152,6 +152,19 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_audio_url TEXT`);
     await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_status TEXT DEFAULT 'none'`);
     await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS gap_dismissals (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        gap_identifier TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'dismissed',
+        reason TEXT,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        dismissed_by VARCHAR REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS briefing_subscriptions (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
         tenant_domain TEXT NOT NULL,
