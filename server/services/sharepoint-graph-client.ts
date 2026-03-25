@@ -47,7 +47,6 @@ interface DownloadResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 const GRAPH_BETA_URL = "https://graph.microsoft.com/beta";
 const MAX_SIMPLE_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MB — use resumable above this
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB hard limit
@@ -238,7 +237,7 @@ export class GraphClient {
 
     const data = await this.withRetry(() =>
       this.request<FileStorageContainer>(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}`
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}`
       )
     );
 
@@ -312,7 +311,7 @@ export class GraphClient {
     if (buffer.length <= MAX_SIMPLE_UPLOAD_BYTES) {
       driveItem = await this.withRetry(() =>
         this.request<DriveItemWithMetadata>(
-          `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedFolder}/${encodedName}:/content`,
+          `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedFolder}/${encodedName}:/content`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/octet-stream" },
@@ -351,7 +350,7 @@ export class GraphClient {
 
     const sessionData = await this.withRetry(() =>
       this.request<{ uploadUrl: string }>(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedFolder}/${encodedName}:/createUploadSession`,
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedFolder}/${encodedName}:/createUploadSession`,
         {
           method: "POST",
           body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }),
@@ -402,7 +401,7 @@ export class GraphClient {
   async downloadFile(containerId: string, itemId: string): Promise<DownloadResult> {
     const item = await this.withRetry(() =>
       this.request<DriveItemWithMetadata>(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`
       )
     );
 
@@ -413,7 +412,7 @@ export class GraphClient {
     // Prefer the pre-auth download URL when available to avoid a second token round-trip
     const downloadUrl =
       item["@microsoft.graph.downloadUrl"] ||
-      `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/content`;
+      `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/content`;
 
     const buffer = await this.withRetry(async () => {
       const r = await fetch(downloadUrl);
@@ -435,7 +434,7 @@ export class GraphClient {
   async deleteFile(containerId: string, itemId: string): Promise<void> {
     await this.withRetry(() =>
       this.request<void>(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`,
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`,
         { method: "DELETE" }
       )
     );
@@ -456,8 +455,8 @@ export class GraphClient {
 
     const baseUrl =
       clean === "/"
-        ? `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root/children?$expand=listItem($expand=fields)&$top=200`
-        : `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encoded}:/children?$expand=listItem($expand=fields)&$top=200`;
+        ? `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root/children?$expand=listItem($expand=fields)&$top=200`
+        : `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encoded}:/children?$expand=listItem($expand=fields)&$top=200`;
 
     const items: DriveItemWithMetadata[] = [];
     let nextUrl: string | undefined = baseUrl;
@@ -487,7 +486,7 @@ export class GraphClient {
   async getItem(containerId: string, itemId: string): Promise<DriveItemWithMetadata> {
     return this.withRetry(() =>
       this.request<DriveItemWithMetadata>(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}?$expand=listItem($expand=fields)`
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}?$expand=listItem($expand=fields)`
       )
     );
   }
@@ -516,7 +515,7 @@ export class GraphClient {
           .map((s) => encodeURIComponent(s))
           .join("/");
         await this.request(
-          `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedCurrent}`
+          `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedCurrent}`
         );
         // Folder already exists — continue
       } catch (err) {
@@ -533,8 +532,8 @@ export class GraphClient {
 
         const createUrl =
           parentPath === "/"
-            ? `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root/children`
-            : `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedParent}:/children`;
+            ? `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root/children`
+            : `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedParent}:/children`;
 
         await this.withRetry(() =>
           this.request(createUrl, {
@@ -566,7 +565,7 @@ export class GraphClient {
   ): Promise<void> {
     await this.withRetry(() =>
       this.request(
-        `${GRAPH_BASE_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listItem/fields`,
+        `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listItem/fields`,
         {
           method: "PATCH",
           body: JSON.stringify(fields),
@@ -586,7 +585,7 @@ export class GraphClient {
       try {
         await this.withRetry(() =>
           this.request(
-            `${GRAPH_BASE_URL}/sites/${siteId}/lists/${containerId}/columns`,
+            `${GRAPH_BETA_URL}/sites/${siteId}/lists/${containerId}/columns`,
             {
               method: "POST",
               body: JSON.stringify(col),
