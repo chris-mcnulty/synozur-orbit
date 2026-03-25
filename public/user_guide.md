@@ -11,10 +11,20 @@
 8. [Battlecards & Reports](#battlecards--reports)
 9. [Client Projects](#client-projects)
 10. [Marketing Planner](#marketing-planner)
-11. [Team Management](#team-management)
-12. [Settings & Configuration](#settings--configuration)
-13. [Administrator Guide](#administrator-guide)
-14. [Troubleshooting & FAQs](#troubleshooting--faqs)
+11. [Content Library](#content-library)
+12. [Brand Library](#brand-library)
+13. [Social Campaigns](#social-campaigns)
+14. [Email Newsletters](#email-newsletters)
+15. [Intelligence Briefings](#intelligence-briefings)
+16. [Action Items](#action-items)
+17. [Intelligence Health](#intelligence-health)
+18. [Support Tickets](#support-tickets)
+19. [Saturn Capture Browser Extension](#saturn-capture-browser-extension)
+20. [What's New & Changelog](#whats-new--changelog)
+21. [Team Management](#team-management)
+22. [Settings & Configuration](#settings--configuration)
+23. [Administrator Guide](#administrator-guide)
+24. [Troubleshooting & FAQs](#troubleshooting--faqs)
 
 ---
 
@@ -35,9 +45,15 @@ Synozur Orbit is an AI-powered go-to-market intelligence platform designed to he
 - **Strategic Recommendations**: Receive AI-generated insights for messaging, positioning, and go-to-market strategy
 - **Sales Enablement**: Generate battlecards to prepare your sales team for competitive conversations
 - **Marketing Planning**: Create and manage marketing plans with AI-suggested activities (Enterprise)
+- **Content Library**: Centralized repository for marketing content assets with AI summarization (Enterprise)
+- **Brand Library**: Curated library for approved brand visuals and marketing images (Enterprise)
+- **Social Campaigns**: AI-powered social post generation across multiple platforms (Enterprise)
+- **Email Newsletters**: AI-generated email content with platform-specific formatting (Enterprise)
+- **Intelligence Briefings**: AI-synthesized market intelligence reports with podcast audio summaries
 - **Project Management**: Organize complex multi-competitor, multi-product analyses
 - **Professional Reporting**: Export branded PDF reports for stakeholders
 - **Change Monitoring**: Automatic detection of competitor website updates, social media activity, and blog posts
+- **Intelligence Health**: Dashboard tracking data freshness across all sources and artifacts
 
 ### Who Should Use Orbit?
 
@@ -81,6 +97,8 @@ New organizations automatically receive a **60-day trial** of the Enterprise pla
 - Full access to all Enterprise features
 - Unlimited competitors and analyses
 - Marketing Planner access
+- Content Library and Brand Library access
+- Social Campaigns and Email Newsletters
 - Team collaboration features
 
 **Trial Reminders:**
@@ -232,6 +250,11 @@ The Overview page (located at `/app`) is your home page and central dashboard wh
 - Recent activity count
 - Open recommendations
 - Active projects
+
+**Intelligence Health Card:**
+- Overall health percentage showing data freshness across all sources
+- Quick indicator of how current your competitive intelligence is
+- Link to the full Intelligence Health page for details
 
 **Onboarding Checklist:**
 - Guided steps for new users
@@ -797,6 +820,10 @@ For projects, you can generate all content sections with a single click:
 - Professional formatting
 - Dark mode optimized design
 
+**Data Currency Badges:**
+- Reports list shows how current the underlying data is
+- Helps you decide when to regenerate reports with fresh data
+
 **Report Access:**
 - Baseline reports: All users
 - Project reports: Project owner or Global Admin only
@@ -920,7 +947,7 @@ The Marketing Planner (Enterprise plan only) transforms competitive insights int
 - **Timeframe Selection**: Choose quarterly (Q1-Q4), half-year (H1/H2), or annual planning periods
 - **Activity Categories**: 19 marketing activity types organized into logical groups
 - **Task Management**: Create, assign, and track marketing tasks with priority levels
-- **AI Suggestions**: Get AI-generated task recommendations based on competitive intelligence (coming soon)
+- **AI Suggestions**: Get AI-generated task recommendations based on competitive intelligence
 
 ### Accessing Marketing Planner
 
@@ -998,12 +1025,602 @@ Marketing tasks are organized into 19 activity categories across 5 groups:
 - Change status, priority, or reassign to different timeframes
 - Add due dates and assignees
 
+### Matrix View
+
+The Matrix View provides a visual overview of your marketing plan organized in a table format:
+- **Rows**: Activity categories (19 categories)
+- **Columns**: Time periods (Steady State, Q1, Q2, Q3, Q4, Future)
+- **Cells**: Task counts and quick-add buttons
+- Matches the Synozur marketing plan format for consistency
+
+### AI Task Suggestions
+
+Get AI-generated task recommendations informed by your competitive intelligence:
+
+**How It Works:**
+1. Open a marketing plan
+2. Click "Generate Suggestions"
+3. AI analyzes your GTM Plan, Recommendations, and Competitor Insights
+4. Suggested tasks appear with "Suggested" status
+5. Review and accept relevant suggestions
+6. Dismiss suggestions that don't fit
+
 ### Multi-Market Support
 
 For Enterprise tenants with multi-market enabled:
 - Each market has its own set of marketing plans
 - Plans are scoped to the currently active market
 - Switch markets using the market selector to see different plans
+
+---
+
+## Content Library
+
+### Overview
+
+The Content Library (Enterprise plan) is a centralized repository for all your marketing content assets — articles, blog posts, whitepapers, case studies, product briefs, and more. It provides AI-powered summarization and serves as the foundation for Social Campaigns and Email Newsletters.
+
+**Access:** Navigate to Marketing > Content Library in the left navigation.
+
+### Adding Content Assets
+
+**From a URL:**
+1. Click "Add Asset" or "Add from URL"
+2. Paste the content URL (blog post, article, product page)
+3. Orbit automatically extracts:
+   - Title and description
+   - Lead image
+   - Content text for AI summarization
+4. Review and edit the extracted information
+5. Click "Save"
+
+**Manual Entry:**
+1. Click "Add Asset"
+2. Fill in title, description, and URL manually
+3. Click "Save"
+
+### AI Summarization
+
+Content assets can be automatically summarized using AI to provide context for future content generation:
+
+**Individual Summary:**
+- Click the "Summarize" button on any asset
+- AI generates a concise summary of the content
+
+**Bulk Summarization:**
+- Select multiple assets or use "Summarize All"
+- AI processes all selected assets in batch
+
+**Why Summarize?**
+- Summaries are used as grounding context when generating social posts and emails
+- Better summaries lead to more relevant and accurate AI-generated content
+
+### Organizing Content
+
+**Categories:**
+- Assign custom categories (Blog Post, White Paper, Case Study, eBook, etc.)
+- Create your own categories as needed
+
+**Tagging:**
+- **Product Tags**: Link assets to specific products
+- **Season Tags**: Mark content for seasonal relevance (Q1, Holiday, Summer, etc.)
+- **Topic Tags**: Classify by topic (AI, Security, Cloud, etc.)
+
+**Archive:**
+- Archive outdated content to keep your active library focused
+- Archived assets remain accessible but are hidden from default views
+
+### CSV Import/Export
+
+**Import:**
+- Bulk-add content assets from a CSV file
+- Map columns to asset fields
+
+**Export:**
+- Download your content library as CSV for external use or backup
+
+---
+
+## Brand Library
+
+### Overview
+
+The Brand Library (Enterprise plan) is your curated collection of approved brand visuals — logos, icons, hero images, banners, and marketing graphics. Brand assets are used in Social Campaigns to attach images to generated posts.
+
+**Access:** Navigate to Marketing > Brand Library in the left navigation.
+
+### Adding Brand Assets
+
+**Upload Files:**
+1. Click "Add Asset" or "Upload"
+2. Select image files from your computer
+3. Files are uploaded to secure cloud storage
+4. Add title, description, and categorization
+
+**Save from Content Library:**
+- When viewing a content asset's lead image, click "Save to Brand Library"
+- The image is copied to your Brand Library for reuse
+
+### Organizing Brand Assets
+
+**Categories:**
+- Logo, Icon, Hero Image, Banner, Social Media Graphic, Product Screenshot, etc.
+- Create custom categories as needed
+
+**Product Linking:**
+- Associate brand assets with specific products
+- Helps filter relevant images when creating campaigns
+
+---
+
+## Social Campaigns
+
+### Overview
+
+Social Campaigns (Enterprise plan) let you create coordinated social media content across multiple platforms using AI. Campaigns pull from your Content Library and Brand Library to generate platform-specific posts that are enriched with your competitive intelligence and strategic messaging.
+
+**Access:** Navigate to Marketing > Campaigns in the left navigation.
+
+### Creating a Campaign
+
+The Campaign Wizard guides you through four steps:
+
+**Step 1: Details**
+- Campaign name and description
+- Start and end dates
+- Number of posting days
+- Weekend posting preference (include/exclude)
+
+**Step 2: Assets**
+- Select content assets from your Content Library
+- These are the source materials AI will use to generate posts
+- Each asset's URL, summary, and content provide context
+
+**Step 3: Accounts**
+- Select which social accounts to target (LinkedIn, X/Twitter, Facebook, Instagram)
+- Posts are tailored to each platform's style and character limits
+
+**Step 4: Schedule**
+- Review the auto-generated posting schedule
+- Orbit calculates dates based on your campaign window, posting days, and weekend preferences
+
+### Generating Posts
+
+After creating a campaign:
+
+1. Click "Generate Posts"
+2. AI creates platform-specific posts for each content asset and social account combination
+3. Posts are enriched with:
+   - Your GTM Plan and Messaging Framework
+   - Competitive insights and positioning
+   - Relevant hashtags from content sources
+4. Generation scales automatically:
+   - 1 asset: 3 variants per platform
+   - 2-3 assets: 2 variants per platform
+   - 4+ assets: 1 variant per platform
+
+### Managing Posts
+
+**Review:**
+- View all generated posts organized by platform
+- Each post shows the target platform, content, and associated source asset
+
+**Edit:**
+- Click any post to edit the content
+- Adjust messaging, hashtags, or tone as needed
+
+**Approve/Reject:**
+- Approve posts ready for publishing
+- Reject posts that don't meet standards (rejected posts are removed)
+
+**Image Association:**
+- Posts automatically inherit the lead image from their source content asset
+- Override with a brand asset from your Brand Library if desired
+
+### CSV Export
+
+Export your approved posts for use in social media scheduling tools:
+
+1. Click "Export CSV"
+2. If any posts lack scheduled dates, a warning dialog appears
+3. Choose to proceed or go back to set schedules
+4. CSV downloads in a format compatible with SocialPilot and similar tools
+5. Includes: post content, platform, scheduled date/time, image URL
+
+### Post Scheduling
+
+Posts are scheduled based on your campaign configuration:
+- Dates are distributed across your campaign window
+- Weekend posts are included or excluded based on your preference
+- Times can be adjusted after generation
+
+---
+
+## Email Newsletters
+
+### Overview
+
+Email Newsletters (Enterprise plan) let you generate professional marketing emails using AI. The tool creates platform-specific formatted emails based on your Content Library assets and strategic context.
+
+**Access:** Navigate to Marketing > Email Newsletters in the left navigation.
+
+### Generating an Email
+
+1. **Select Content Assets**: Choose one or more assets from your Content Library as source material
+2. **Choose Platform**: Select the email platform format:
+   - **Outlook**: Standard business email formatting
+   - **HubSpot Marketing**: Optimized for HubSpot marketing email templates
+   - **HubSpot 1:1**: Personalized format for individual outreach
+   - **Dynamics 365**: Formatted for Microsoft Dynamics email campaigns
+3. **Set Tone**: Choose the email tone:
+   - **Professional**: Formal business communication
+   - **Friendly**: Warm, approachable tone
+   - **Urgent**: Time-sensitive, action-oriented
+4. **Configure CTA**: Define your call-to-action (e.g., "Schedule a demo", "Download the guide")
+5. **Click "Generate"**
+
+### What You Get
+
+- **Email Body**: Full formatted email content ready to paste into your email platform
+- **Subject Line Suggestions**: AI-generated subject line options
+- **Coaching Tips**: Recommendations for improving email performance
+- **Strategic Grounding**: Content informed by your GTM Plan and Messaging Framework
+
+### Saving Drafts
+
+- Generated emails can be saved with a custom label
+- Access saved drafts from the Email Newsletters page
+- Edit and refine drafts before sending
+
+---
+
+## Intelligence Briefings
+
+### Overview
+
+Intelligence Briefings (available on all paid plans) are AI-synthesized market intelligence reports that consolidate competitor signals, news, and market movements into an executive-ready summary. They provide a periodic snapshot of your competitive landscape.
+
+**Access:** Navigate to Insights > Intelligence Briefings in the left navigation (route: `/app/intelligence`).
+
+### Generating a Briefing
+
+1. Navigate to the Intelligence Briefings page
+2. Click "Generate New Briefing"
+3. AI analyzes data from the past 7 days (default):
+   - Competitor website changes
+   - Social media activity
+   - News articles (via GNews)
+   - Blog post updates
+   - Analysis findings
+4. Wait for generation (typically 1-2 minutes)
+
+### Briefing Contents
+
+**Executive Summary:**
+- High-level strategic overview of the market direction
+- Key takeaways for leadership
+
+**Key Themes:**
+- Strategic themes identified across competitor activities
+- Examples: "Enterprise Pivot", "AI-First Messaging", "Pricing War"
+
+**Competitor Movements:**
+- Specific actions taken by each competitor
+- Website changes, product launches, messaging shifts
+
+**Action Items:**
+- Prioritized recommendations (Immediate, This Week, This Month)
+- Concrete steps your team should take in response
+
+**Risk Alerts:**
+- Severity-based alerts for competitive threats
+- Immediate attention items highlighted
+
+**Signal Digest:**
+- Quantitative breakdown of detected market signals by type and impact
+
+### Podcast Audio Summaries
+
+Intelligence Briefings can be converted into podcast-style audio summaries (Pro/Enterprise/Unlimited plans):
+
+**Generating a Podcast:**
+1. Open an existing briefing
+2. Click "Generate Podcast"
+3. AI creates a conversational two-host script
+4. Audio is generated using AI text-to-speech (two distinct voices)
+5. Wait for generation (typically 2-3 minutes)
+
+**Listening:**
+- Play directly in the browser using the built-in audio player
+- Download as MP3 for listening on the go
+- Share the audio file with team members
+
+**Format:**
+- Two-host conversational style for engaging listening
+- Covers the key themes, competitor movements, and action items
+- Typically 5-10 minutes in length
+
+### PDF Export
+
+Download any briefing as a formatted PDF:
+1. Open the briefing
+2. Click "Download PDF"
+3. Branded report with executive summary, themes, and action items
+
+### Email Sharing
+
+Share briefing highlights with team members:
+1. Open the briefing
+2. Click "Share"
+3. Enter recipient email addresses
+4. Recipients receive a branded email with key findings
+
+### Subscriptions (Enterprise/Unlimited)
+
+Set up automated weekly briefing delivery:
+
+**For Individual Users:**
+1. Navigate to Settings or the Intelligence Briefings page
+2. Toggle "Subscribe to Weekly Briefings"
+3. You'll receive briefings via email every week
+
+**For Organization (Admin):**
+1. Navigate to Settings > Organization
+2. Enable "Scheduled Weekly Briefings"
+3. Orbit automatically generates a new briefing each week
+4. All subscribed users receive it via email
+5. Includes executive summary and key themes in the email
+
+**Data Source Freshness:**
+- Briefings check the freshness of underlying data before generation
+- If data is stale, the briefing notes which sources need refreshing
+
+---
+
+## Action Items
+
+### Overview
+
+The Action Items page (`/app/action-items`) provides a consolidated view of all actionable recommendations across your competitive intelligence. It aggregates items from three sources into a single, filterable dashboard.
+
+### Sources of Action Items
+
+**Competitive Intelligence:**
+- AI-generated recommendations from competitor analysis
+- Messaging improvements, positioning opportunities, strategic moves
+
+**Product Roadmap:**
+- Feature suggestions from product analysis
+- Product positioning recommendations
+- Competitive feature gap identification
+
+**Gap Analysis:**
+- Specific gaps identified between your positioning and competitors
+- Opportunities for differentiation
+- Areas where competitors are ahead
+
+### Viewing Action Items
+
+**Summary Statistics:**
+- Total action items across all sources
+- High impact items count
+- Priority (starred) items count
+- Breakdown by source type
+
+**Status Tabs:**
+- **Active**: Current items requiring attention
+- **Accepted**: Items you've decided to act on
+- **Dismissed**: Items you've reviewed and set aside
+
+### Working with Action Items
+
+**Accepting Items:**
+- Click "Accept" on any item to mark it for action
+- Accepted items move to the Accepted tab
+- Timestamp recorded for tracking
+
+**Dismissing Items:**
+- Click "Dismiss" on any item
+- A dialog prompts you for a reason:
+  - Not relevant to our strategy
+  - Already addressed
+  - Duplicate
+  - Other (free-text)
+- Dismissed items are tracked with reason and timestamp
+- Gap analysis items won't reappear if dismissed (deduplication)
+
+**Starring Items:**
+- Star high-priority items for quick access
+- Starred items appear at the top of the list
+
+### Bulk Operations
+
+Select multiple items using checkboxes:
+1. Check the items you want to update
+2. A bulk action toolbar appears
+3. Choose "Accept All" or "Dismiss All"
+4. For bulk dismiss, enter a reason that applies to all selected items
+
+### Filtering and Search
+
+**Filter by Source:**
+- Competitive Intel
+- Product Roadmap
+- Gap Analysis
+
+**Filter by Impact:**
+- High
+- Medium
+- Low
+
+**Search:**
+- Full-text search across titles, descriptions, and product names
+- Results update in real-time as you type
+
+### CSV Export
+
+Export your action items for use in project management or digital visioning tools:
+1. Click "Export CSV"
+2. Download includes title, description, category, source, and status
+3. Compatible with Mural, Miro, and other planning tools
+
+---
+
+## Intelligence Health
+
+### Overview
+
+The Intelligence Health page (formerly "Refresh Center") provides a comprehensive view of how current your competitive intelligence data is. It helps you identify stale data that needs refreshing and provides quick actions to update specific sources.
+
+**Access:** Navigate to Insights > Intelligence Health in the left navigation.
+
+### Health Score
+
+The Intelligence Health percentage represents the overall freshness of your competitive data:
+- Calculated from all tracked sources (websites, social, news) and generated artifacts (analysis, battlecards, GTM plans)
+- Higher percentage = more current data
+- Displayed on the Overview page as a quick indicator
+
+### Freshness Categories
+
+Data is categorized into three freshness levels:
+- **Fresh** (green): Updated within the last 24 hours
+- **Aging** (yellow): Updated within the last 7 days
+- **Stale** (red): Not updated in more than 7 days
+
+### Needs Attention Card
+
+The Intelligence Health page highlights items that need your attention:
+- **Stale Sources**: Competitor websites, social profiles, or news that haven't been refreshed recently
+- **Outdated Artifacts**: Analysis, battlecards, or strategic plans built from old data
+- **Contextual Actions**: Each stale item includes a button to refresh that specific data source
+
+### Data Freshness Banners
+
+Several pages display "Built from data as of" banners showing when the underlying data was last updated:
+- **Analysis Page**: Shows when competitor analysis was last run
+- **Battlecards**: Shows when battlecard data was last generated
+- **GTM Plan**: Shows when the go-to-market plan was last built
+- **Messaging Framework**: Shows when messaging analysis was last updated
+
+Each banner includes an inline "Rebuild" button to regenerate the artifact with fresh data.
+
+### Data Currency Badges
+
+On the Reports page, each report shows a Data Currency badge indicating how current the data used to generate it was. This helps you decide when to regenerate reports.
+
+### Quick Actions
+
+The Intelligence Health page provides one-click refresh operations:
+- **Refresh Baseline**: Update your company's competitive data
+- **Refresh All Websites**: Re-crawl all tracked competitor websites
+- **Refresh All Social**: Update all social media monitoring data
+- **View Job Queue**: See active and pending background jobs
+
+---
+
+## Support Tickets
+
+### Overview
+
+The Support Ticket system lets you report issues, request features, or ask questions directly within Orbit. Your tickets are tracked and managed by the Synozur support team.
+
+**Access:** Navigate to Support in the left navigation, or click the Help icon.
+
+### Submitting a Ticket
+
+1. Navigate to the Support page (`/app/support`)
+2. Click "New Ticket"
+3. Fill in the form:
+   - **Subject**: Brief description of your issue or request
+   - **Description**: Detailed explanation with steps to reproduce (for bugs)
+   - **Category**: Bug, Feature Request, Question, or Feedback
+   - **Priority**: Low, Medium, High, or Urgent
+4. Click "Submit"
+
+### Tracking Tickets
+
+**Your Tickets:**
+- View all tickets you've submitted
+- See current status (Open, In Progress, Waiting, Resolved, Closed)
+- Track response times
+
+**Ticket Discussion:**
+- Reply to support team messages
+- Add additional context or screenshots
+- Receive email notifications when support responds
+
+### Admin Ticket Management
+
+Domain Admins and Global Admins can manage support tickets:
+- View all tickets from their organization
+- Assign tickets to team members
+- Add internal notes (not visible to the submitter)
+- Update ticket status and priority
+
+---
+
+## Saturn Capture Browser Extension
+
+### Overview
+
+Saturn Capture is a browser extension that lets you save web content directly to your Orbit Content Library while browsing. Instead of copying URLs and manually creating assets, you can capture content with one click.
+
+### Installation
+
+1. Navigate to Marketing > Browser Extension in the left navigation
+2. Click "Download Extension"
+3. A `.zip` file downloads to your computer
+4. Open your browser's extension management page:
+   - **Chrome**: `chrome://extensions`
+   - **Edge**: `edge://extensions`
+   - **Brave**: `brave://extensions`
+5. Enable "Developer mode"
+6. Click "Load unpacked"
+7. Select the unzipped extension folder
+
+### Using Saturn Capture
+
+1. Navigate to any web page you want to capture
+2. Click the Saturn Capture extension icon in your browser toolbar
+3. The extension captures:
+   - Page URL
+   - Page title
+   - Page content
+4. Content is saved directly to your Orbit Content Library
+5. No separate login required — uses your existing Orbit session
+
+### Compatibility
+
+- Works with Chrome, Edge, Brave, and other Chromium-based browsers
+- Requires an active Orbit session (must be logged in)
+- Enterprise plan required for Content Library access
+
+---
+
+## What's New & Changelog
+
+### What's New Modal
+
+When Orbit is updated with new features, you'll see a "What's New" notification:
+- A badge appears on the notification icon in the header
+- Click to see highlights of what's new in the latest version
+- Dismiss to acknowledge you've seen the update
+- Only appears once per version
+
+### Changelog Page
+
+View the full history of Orbit changes:
+1. Navigate to the Changelog page from the navigation menu
+2. Browse all versions with detailed change notes
+3. Changes are organized by: Added, Changed, Fixed, Removed
+
+### Roadmap Page
+
+See what's planned for future Orbit releases:
+1. Navigate to the Roadmap page from the navigation menu
+2. View the product backlog with feature status
+3. Track which features are completed, in progress, or planned
 
 ---
 
@@ -1097,6 +1714,11 @@ For Enterprise tenants with multi-market enabled:
 2. Toggle between Dark Mode and Light Mode
 3. Preference is saved automatically
 
+**Briefing Subscriptions:**
+1. Navigate to Settings page
+2. Toggle "Subscribe to Weekly Intelligence Briefings" on or off
+3. When enabled, you'll receive weekly briefing emails
+
 **Note:** For SSO users (Microsoft Entra ID), password change is not available. Manage passwords through your organization's SSO provider.
 
 ### Organization Settings (Domain Admin Only)
@@ -1117,6 +1739,12 @@ For Enterprise tenants with multi-market enabled:
    - **Disabled**: No automatic monitoring
 2. Enable/disable social media monitoring (Pro/Enterprise)
 3. Click "Save Changes"
+
+**Scheduled Briefings (Enterprise/Unlimited):**
+1. Navigate to Settings > Organization
+2. Toggle "Scheduled Weekly Briefings"
+3. When enabled, a new intelligence briefing is auto-generated weekly
+4. Subscribed users receive it via email
 
 **Note:** Social monitoring is a premium feature requiring Pro or Enterprise plan.
 
@@ -1169,6 +1797,7 @@ As a Domain Admin, you're responsible for:
    - Configuring monitoring frequencies
    - Enabling SSO (if desired)
    - Monitoring plan usage
+   - Configuring scheduled briefings
 
 3. **Usage Monitoring**
    - Track competitor count vs. limit
@@ -1277,23 +1906,6 @@ The AI Usage Tracker provides comprehensive monitoring of AI API usage across al
 - **Tenant Attribution**: Which organization made the request
 - **Timestamp**: When the request occurred
 
-**Database Tracking:**
-- All AI API calls are logged to database
-- Tracks provider, model, tokens, and costs
-- Enables historical analysis and billing
-
-**Use Cases:**
-- Monitor platform-wide AI costs
-- Identify high-usage tenants for billing
-- Detect unusual usage patterns
-- Plan infrastructure and budget
-- Optimize AI model selection
-
-**Scheduled Updates:**
-- Data refreshes in real-time as requests occur
-- Charts update automatically
-- Historical data retained for analysis
-
 ### Plan Management
 
 **Understanding Plans:**
@@ -1305,7 +1917,7 @@ The AI Usage Tracker provides comprehensive monitoring of AI API usage across al
 - 2 Standard Users
 - No social monitoring
 - No team collaboration
-- 14-day trial period (future feature)
+- 60-day trial period
 
 **Free Plan:**
 - 1 competitor
@@ -1322,6 +1934,7 @@ The AI Usage Tracker provides comprehensive monitoring of AI API usage across al
 - Client projects
 - Team collaboration (configurable limits)
 - Basic branding
+- Intelligence Briefing Podcasts
 
 **Enterprise Plan:**
 - Everything in Pro
@@ -1331,6 +1944,12 @@ The AI Usage Tracker provides comprehensive monitoring of AI API usage across al
 - Tenant-level SSO
 - Dedicated support
 - Custom integrations
+- Marketing Planner
+- Content Library & Brand Library
+- Social Campaigns & Email Newsletters
+- Scheduled Intelligence Briefings
+- Intelligence Briefing Email Subscriptions
+- Product Management
 
 **Upgrading Plans:**
 - Contact Synozur sales team
@@ -1352,7 +1971,7 @@ The AI Usage Tracker provides comprehensive monitoring of AI API usage across al
 - Review activity log for unusual patterns
 - Track competitor changes
 - Monitor team member actions
-- Identify stale data
+- Identify stale data via Intelligence Health
 
 **Usage Optimization:**
 - Remove inactive competitors
@@ -1428,6 +2047,24 @@ A:
 **Q: Can I delete and re-run an analysis?**
 A: Analyses count against your monthly limit when run. Deleting and re-running will use additional credits. Edit your analysis or wait for the monthly reset.
 
+### Marketing Features Issues
+
+**Q: I can't access the Content Library or Brand Library.**
+A: These features require an Enterprise plan. Check your plan on the Settings page or contact your Domain Admin about upgrading.
+
+**Q: Social post generation isn't working.**
+A: 
+1. Ensure you have at least one content asset in your Content Library
+2. Verify you have at least one social account configured
+3. Check that your campaign has assets and accounts linked
+4. AI generation requires an active Enterprise plan
+
+**Q: My exported CSV doesn't include scheduled dates.**
+A: Posts must be scheduled before export. Go back to the campaign, set the schedule, and then export again. The export guard will warn you about unscheduled posts.
+
+**Q: Intelligence Briefing podcast generation failed.**
+A: Podcast generation requires an active Pro or Enterprise plan and a completed briefing. Try regenerating the briefing first, then generate the podcast.
+
 ### Project Issues
 
 **Q: I can't create projects. The option is grayed out.**
@@ -1487,6 +2124,7 @@ A:
 2. Clear browser cache
 3. Check activity log to confirm when last update occurred
 4. Run "Quick Refresh" on competitors to update data
+5. Check the Intelligence Health page to see data freshness status
 
 ### Data & Privacy Questions
 
@@ -1509,6 +2147,7 @@ A:
 A: 
 - Individual reports can be exported as PDF
 - Projects can be exported as Markdown or Word
+- Content Library and Action Items can be exported as CSV
 - Full data export API is planned for future release
 - Contact support for bulk data requests
 
@@ -1522,7 +2161,7 @@ A:
 ### Feature Requests & Support
 
 **Q: I have an idea for a new feature. Where do I submit it?**
-A: Contact Synozur support with your feature request. Common requests are tracked in the product backlog.
+A: Use the in-app Support Ticket system — select "Feature Request" as the category. You can also contact Synozur support directly.
 
 **Q: Is there a mobile app?**
 A: Not currently. Orbit is a web application optimized for desktop browsers. Mobile app is planned for future release.
@@ -1532,6 +2171,7 @@ A: HubSpot integration is planned. Other CRM integrations (Salesforce, etc.) are
 
 **Q: How do I get support?**
 A: 
+- **In-App Support**: Submit a support ticket from the Support page
 - **Standard Support**: Email support@synozur.com
 - **Enterprise Support**: Dedicated support contact provided
 - **In-App Help**: Look for help icons throughout the application
@@ -1566,15 +2206,23 @@ A: No, analysis credits reset monthly and do not roll over. Upgrade to Pro/Enter
 
 ### Glossary
 
+**Action Item**: A recommendation, gap, or feature suggestion surfaced from AI analysis that requires team attention.
+
 **Analysis**: AI-powered competitive intelligence assessment of a competitor's positioning, messaging, and strategy.
 
 **Battlecard**: Sales enablement document providing competitive comparison, objection handling, and talk tracks.
+
+**Brand Library**: Curated collection of approved brand visuals and marketing images (Enterprise).
+
+**Campaign**: A coordinated set of social media posts linked to content assets and social accounts (Enterprise).
 
 **Company Profile**: Your organization's baseline information used for competitive comparisons.
 
 **Competitor**: An organization you're tracking for competitive intelligence.
 
 **Consultant**: Read-only role for Synozur staff with cross-tenant access.
+
+**Content Library**: Centralized repository for marketing content assets with AI summarization (Enterprise).
 
 **Domain Admin**: Organization administrator with team management and settings access.
 
@@ -1583,6 +2231,10 @@ A: No, analysis credits reset monthly and do not roll over. Upgrade to Pro/Enter
 **Grounding Document**: Internal documents (PDFs, Word files) providing context to AI for more accurate analysis.
 
 **GTM Plan**: Go-to-market strategy document generated for projects.
+
+**Intelligence Briefing**: AI-synthesized periodic market intelligence report summarizing competitive signals.
+
+**Intelligence Health**: Dashboard showing the freshness and currency of all competitive data sources.
 
 **Project**: Organized collection of competitors and analysis for a specific initiative or client.
 
@@ -1594,7 +2246,9 @@ A: No, analysis credits reset monthly and do not roll over. Upgrade to Pro/Enter
 
 ### Keyboard Shortcuts
 
-- **Ctrl+K / Cmd+K**: Open command palette (if available)
+- **Ctrl+K / Cmd+K**: Open command palette
+- **Ctrl+Shift+R**: Open Intelligence Health page
+- **Ctrl+Shift+A**: Open Analysis page
 - **Ctrl+R / Cmd+R**: Refresh page
 - **Esc**: Close dialogs and modals
 
@@ -1621,11 +2275,13 @@ A: No, analysis credits reset monthly and do not roll over. Upgrade to Pro/Enter
 ### Getting Help
 
 **Documentation:**
-- This User Guide (user_guide.MD)
+- This User Guide (user_guide.md)
 - In-app tooltips and help icons
 - Changelog (changelog.md) for new features
+- Roadmap (backlog.md) for planned features
 
 **Support Channels:**
+- In-App: Support Ticket system (Support page)
 - Email: support@synozur.com
 - Enterprise customers: Dedicated support contact
 - Sales inquiries: sales@synozur.com
@@ -1646,12 +2302,14 @@ Synozur Orbit empowers your team with AI-driven competitive intelligence, enabli
 2. Add your top 3 competitors
 3. Run your first full analysis
 4. Generate your first battlecard
-5. Invite your team members
+5. Explore the Content Library and create a campaign (Enterprise)
+6. Set up Intelligence Briefing subscriptions
+7. Invite your team members
 
-**Need Help?** Contact Synozur support at support@synozur.com
+**Need Help?** Submit a support ticket from the Support page or contact Synozur support at support@synozur.com
 
 ---
 
-*Document Version: 1.1*  
-*Last Updated: January 2026*  
+*Document Version: 2.0*  
+*Last Updated: March 2026*  
 *For the latest updates, see changelog.md*

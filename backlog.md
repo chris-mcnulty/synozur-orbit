@@ -63,13 +63,13 @@
 - [ ] Alert emails for significant changes (backlogged for future)
 **Effort**: Medium - CORE FUNCTIONALITY COMPLETED
 
-### 2.2 Dark/Light Mode Toggle
-**Status**: Dark mode default, no toggle
+### 2.2 Dark/Light Mode Toggle ✅
+**Status**: Implemented
 **Spec Requirement**: "Dark Mode and Light Mode toggle"
 - [x] User preference toggle in settings
 - [x] Persist preference in user record or localStorage
 - [x] CSS variable switching for theme
-**Effort**: Low
+**Effort**: Low - COMPLETED
 
 ### 2.3 Tenant Admin Features ✅
 **Status**: Implemented
@@ -94,7 +94,7 @@
 
 ## Priority 3: Nice to Have (Can Ship Without)
 
-### 3.1 Orbit Promotional Landing Page
+### 3.1 Orbit Promotional Landing Page ✅
 **Status**: Redesigned with expanded platform positioning
 **Spec Requirement**: "Promotional homepage with screenshots, 'Start Free Trial' CTA"
 - [x] Three Pillars section (Competitive Intelligence, Marketing Planner, Product Management)
@@ -183,14 +183,95 @@
 - [x] Keyboard Shortcuts (Ctrl+Shift+R for Refresh Center, Ctrl+Shift+A for Analysis, Cmd/Ctrl+K for Command Palette)
 - [ ] Onboarding Tutorial (interactive guide) - Deferred to post-MVP
 
-**Achieved Impact**:
-- Unified refresh operations in dedicated Refresh Center
-- Proactive notifications prevent stale data going unnoticed
-- Power user keyboard shortcuts accelerate workflows
-- All three phases implemented and tested
-
 **Effort**: Completed
-**Priority**: Completed
+
+### 3.9 Marketing Content Library ✅
+**Status**: Implemented (March 2026)
+**Spec Requirement**: Enterprise-gated content asset management
+- [x] Content asset CRUD with title, URL, description, and metadata
+- [x] URL auto-extraction with AI-generated summaries
+- [x] Lead image capture from source URLs
+- [x] Customizable categories, product tagging, season tagging, topic tagging
+- [x] Bulk AI summarization
+- [x] CSV import/export
+- [x] Archive workflow
+**Effort**: High - COMPLETED
+
+### 3.10 Marketing Brand Library ✅
+**Status**: Implemented (March 2026)
+**Spec Requirement**: Enterprise-gated brand asset management
+- [x] Brand asset CRUD with file upload to object storage
+- [x] Product cross-linking and customizable categories
+- [x] Save lead images from Content Library to Brand Library
+**Effort**: Medium - COMPLETED
+
+### 3.11 Social Campaigns ✅
+**Status**: Implemented (March 2026)
+**Spec Requirement**: Social-only campaigns for content distribution
+- [x] Campaign wizard (Details → Assets → Accounts → Schedule)
+- [x] AI-powered post generation across multiple platforms
+- [x] Per-asset post generation with correct image resolution
+- [x] Intelligent scheduling with weekend preferences
+- [x] Post review, approve/reject workflow
+- [x] CSV export with SocialPilot format and schedule guard
+- [x] Automatic hashtag merging
+**Effort**: High - COMPLETED
+
+### 3.12 Email Newsletters ✅
+**Status**: Implemented (March 2026)
+**Spec Requirement**: AI-powered email generation from content assets
+- [x] Platform-specific formatting (Outlook, HubSpot, Dynamics 365)
+- [x] Tone and CTA customization
+- [x] Subject line coaching and AI suggestions
+- [x] Save/label generated email drafts
+- [x] Strategic context grounding
+**Effort**: Medium - COMPLETED
+
+### 3.13 Intelligence Briefing Podcasts ✅
+**Status**: Implemented (March 2026)
+- [x] Two-host conversational audio summaries using OpenAI TTS
+- [x] In-browser playback and MP3 download
+- [x] Audio stored in object storage
+**Effort**: Medium - COMPLETED
+
+### 3.14 Intelligence Briefing Subscriptions ✅
+**Status**: Implemented (March 2026)
+- [x] Per-user email subscription management
+- [x] Admin-configurable scheduled weekly briefing generation
+- [x] Automated weekly digest job with SendGrid email delivery
+**Effort**: Medium - COMPLETED
+
+### 3.15 Intelligence Freshness UX ✅
+**Status**: Implemented (March 2026)
+- [x] Intelligence Health dashboard with health percentage score
+- [x] "Needs Attention" card for stale sources and artifacts
+- [x] "Built from data as of" banners with inline rebuild buttons
+- [x] Data Currency badges on Reports list
+- [x] Refresh Center renamed to Intelligence Health, relocated to Insights
+**Effort**: Medium - COMPLETED
+
+### 3.16 Action Item Lifecycle Management ✅
+**Status**: Implemented (March 2026)
+- [x] Dismiss with reason dialog
+- [x] Bulk accept and bulk dismiss via multi-select toolbar
+- [x] Status tabs (Active, Accepted, Dismissed)
+- [x] Gap analysis deduplication for dismissed items
+**Effort**: Medium - COMPLETED
+
+### 3.17 Support Ticket System ✅
+**Status**: Implemented (March 2026)
+- [x] User ticket submission with category and priority
+- [x] Threaded discussion with support staff
+- [x] Admin management with internal notes and assignment
+- [x] Email notifications for new tickets and updates
+**Effort**: Medium - COMPLETED
+
+### 3.18 SEO Optimization ✅
+**Status**: Implemented (March 2026)
+- [x] Semantic HTML improvements
+- [x] Open Graph and Twitter Card meta tags
+- [x] Structured page titles and descriptions
+**Effort**: Low - COMPLETED
 
 ---
 
@@ -310,7 +391,6 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 
 #### Product Competitive Position Summaries ✅
 **Status**: Implemented
-When products are attached to a baseline company, generate and display 2-3 sentence competitive position summaries:
 - [x] Add `competitivePositionSummary` field to products schema
 - [x] Generate summary during full regeneration (rebuild all) process (step 8)
 - [x] Display product summaries on Overview page (not just product names)
@@ -331,7 +411,6 @@ When products are attached to a baseline company, generate and display 2-3 sente
 
 #### Editable GTM Plan ✅
 **Status**: Implemented
-The draft GTM plan is the primary strategic input for Marketing Planner task generation. Users can edit it directly:
 - [x] View GTM plan in editable markdown editor (inline edit mode toggle)
 - [x] Edit content directly with save/cancel controls
 - [x] Track version history of GTM plan changes (up to 10 versions retained)
@@ -344,52 +423,6 @@ The draft GTM plan is the primary strategic input for Marketing Planner task gen
 #### Microsoft Planner Integration
 **Status**: Planned (not implemented)
 Sync marketing plan tasks bidirectionally with Microsoft Planner for execution tracking in Teams.
-
-**Architecture** (based on Constellation patterns):
-1. **Authentication Layer** (`server/services/planner-graph-client.ts`)
-   - Client credentials flow (app-only authentication)
-   - Token caching with automatic refresh
-   - Support system credentials (`PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, `PLANNER_CLIENT_SECRET`)
-   - Optional BYOA (Bring Your Own App) for tenant-specific credentials
-
-2. **Planner Service** (`server/services/planner-service.ts`)
-   - List Microsoft 365 groups (Teams) user belongs to
-   - Create/list Planner plans within a group
-   - Create buckets for task organization (by quarter or activity category)
-   - CRUD operations on Planner tasks with assignments
-
-3. **Data Model Updates**:
-   - [ ] Add `microsoftTeamId` to marketing plans (target Team for sync)
-   - [ ] Add `plannerPlanId` to marketing plans (linked Planner plan)
-   - [ ] Add `plannerTaskId` to marketing tasks (already exists, needs implementation)
-   - [ ] Add `plannerBucketId` for bucket mapping
-
-4. **UI Components**:
-   - [ ] "Connect to Planner" button on marketing plan detail page
-   - [ ] Team/Group selector dropdown (paginated with search)
-   - [ ] Channel selector for where to pin the Planner tab
-   - [ ] Sync status indicator (last synced, sync errors)
-   - [ ] Manual "Sync Now" button
-
-5. **Sync Logic**:
-   - [ ] One-way push: Orbit → Planner (initial implementation)
-   - [ ] Map task status: `accepted`/`in_progress` → 50%, `completed` → 100%
-   - [ ] Map priority: High/Medium/Low
-   - [ ] Sync due dates and descriptions
-   - [ ] Create buckets by quarter (Steady State, Q1, Q2, Q3, Q4, Future)
-   - [ ] Handle task deletions (mark removed vs delete in Planner)
-
-6. **Future: Bidirectional Sync**:
-   - [ ] Webhook or polling for Planner changes
-   - [ ] Update Orbit task status when completed in Planner
-   - [ ] Conflict resolution strategy (last-write-wins or prompt user)
-
-**Azure AD Permissions Required**:
-- `Group.Read.All` - List groups/teams
-- `Tasks.ReadWrite` - Create/update Planner tasks
-- `TeamsTab.Create` - Pin Planner tab to Teams channel
-- `Channel.ReadBasic.All` - List channels in a Team
-
 **Reference**: Constellation (`server/services/planner-service.ts`, `planner-graph-client.ts`)
 **Effort**: High
 **Dependencies**: Tenant must have Microsoft Entra ID configured with admin consent
@@ -404,7 +437,6 @@ Allow users to upload documents about competitors (whitepapers, case studies, sa
 
 #### Headless Browser Crawling ✅
 **Status**: Implemented (January 2026)
-Replace HTTP-based crawling with Puppeteer headless browser:
 - [x] Bypass bot detection (stealth mode with anti-fingerprinting)
 - [x] Handle JavaScript-rendered content (waits for networkidle2)
 - [x] Improve crawl success rate for protected sites
@@ -413,7 +445,7 @@ Replace HTTP-based crawling with Puppeteer headless browser:
 **Effort**: Medium - COMPLETED
 
 #### Consolidated Action Items ✅
-**Status**: Implemented (Phase 1)
+**Status**: Implemented (Phase 2 Complete)
 Dashboard view showing all action items across baseline and projects for a tenant:
 - [x] Aggregate view of all recommendations, feature recommendations, and gap analysis items
 - [x] Filter by source (Competitive Intel, Product Roadmap, Gap Analysis), impact, and status
@@ -423,9 +455,12 @@ Dashboard view showing all action items across baseline and projects for a tenan
 - [x] Expandable detail cards with opportunity info
 - [x] Export to CSV
 - [x] Summary stats (total, high impact, priorities, by source)
+- [x] Dismiss with reason dialog
+- [x] Bulk accept and bulk dismiss via multi-select toolbar
+- [x] Gap analysis deduplication for dismissed items
 - [ ] Ability to assign to users (future phase)
 - [ ] Comments on action items (future phase)
-**Effort**: Medium - Phase 1 COMPLETED
+**Effort**: High - Phase 2 COMPLETED
 
 #### Wire AI Usage Logging
 **Status**: Not implemented
@@ -452,7 +487,7 @@ Connect logAiUsage() calls to all AI service entry points:
 - [ ] Custom colors per tenant
 **Effort**: Medium
 
-#### Active Social/Blog Monitoring
+#### Active Social/Blog Monitoring ✅
 **Status**: Substantially implemented
 Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] Manual blog URL input for competitors and baseline company
@@ -460,9 +495,9 @@ Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] New post detection with activity log entries
 - [x] Web crawler auto-discovery of blog/insights/news pages
 - [x] SSRF protection on all URL inputs
-- [ ] Configurable check intervals (uses tenant-level frequency settings)
 - [x] Change detection for website content
 - [x] AI-summarized diffs highlighting what changed
+- [ ] Configurable check intervals (uses tenant-level frequency settings)
 **Effort**: Medium - CORE FUNCTIONALITY COMPLETED
 
 #### Domain Blocklist
@@ -484,11 +519,11 @@ Deep LinkedIn post content tracking (beyond basic profile metrics):
 ## Known Issues / Bug Fixes
 
 ### PDF Full Analysis Report Improvements
-**Status**: Backlogged (Reported January 2026)
+**Status**: Partially Fixed (March 2026)
 **Priority**: Medium
 Several issues identified in the Full Analysis Report PDF generation:
-- [ ] **Key Themes Section**: Currently displays "Based on profile" placeholder repeatedly instead of actual extracted themes from analysis data
-- [ ] **Messaging Comparison**: Shows generic "Competitor" text instead of actual competitor names - needs to pull competitor name from the data
+- [x] **Key Themes Section**: Fixed - no longer displays "Based on profile" placeholder
+- [x] **Messaging Comparison**: Fixed - shows "Market Positioning" header instead of generic "Competitor" text
 - [ ] **Active Products Section**: Needs more high-level findings content about product analysis results rather than minimal summary
 - [ ] **Messaging Framework Formatting**: Should use proper markdown/HTML formatting instead of raw verbatim quotes - improve visual presentation
 - [ ] **GTM Plan Missing**: The generated GTM Plan is not included in the full report - should be added as a section when available

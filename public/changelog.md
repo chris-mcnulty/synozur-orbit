@@ -9,73 +9,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.0.0] - 2026-03-25
+
 ### Added
-- Service Plan Feature Gating
-  - Centralized plan policy service defining feature access for Free, Trial, Pro, and Enterprise tiers
-  - Backend enforcement of competitor count limits and monthly analysis generation quotas
-  - Feature-level gating on battlecards, PDF reports, GTM plans, messaging frameworks, and client projects
-  - Enhanced tenant info API returning plan features, current usage, and remaining quotas
-  - Frontend upgrade prompts with contact-to-upgrade flow for locked features
-  - Competitor and analysis limit badges showing remaining quota
-  - Sidebar lock indicators for features unavailable on current plan
-- Editable GTM Plan & Messaging Framework
-  - Inline edit mode with markdown editor for both GTM Plan and Messaging Framework tabs
-  - Edit/Cancel/Save controls with immediate content updates
-  - Automatic version history tracking (up to 10 previous versions retained)
-  - Version history dialog with timestamps and content previews
-  - Restore any previous version directly into the editor
-  - Last manual edit timestamp displayed when content has been user-edited
-- Product Competitive Position Summaries
-  - AI-generated 2-3 sentence competitive position analysis for each product
-  - Integrated into full regeneration as step 8 (auto-generates for all baseline products)
-  - Single-product and batch generation endpoints
-  - Manual edit capability with direct save
-  - Summaries displayed on product detail page and dashboard overview
-  - Included in branded PDF reports
-- GTM Plan & Messaging Framework toggle in standard PDF reports
-  - Reports page now has a checkbox to include strategic plans in any baseline report
-  - Previously only available via the Full Analysis Report endpoint
-- Consolidated Action Items Dashboard (`/app/action-items`)
-  - Unified view aggregating recommendations, product feature suggestions, and gap analysis items
-  - Filter by source (Competitive Intel, Product Roadmap, Gap Analysis), impact level, and status
-  - Search across all action items with real-time filtering
-  - Accept/dismiss/star actions with expandable detail cards
-  - CSV export for digital visioning tools (Mural, Miro)
-  - Summary statistics cards showing totals, high impact items, priorities, and source breakdown
-  - Replaced "Recommendations" in sidebar navigation with "Action Items"
+
+- **Marketing Content Library** (Enterprise)
+  - Central repository for marketing content assets (articles, blogs, whitepapers, case studies)
+  - URL auto-extraction with AI-generated summaries and lead image capture
+  - Customizable categories, product tagging, season tagging, and topic tagging
+  - Bulk AI summarization for grounding future content generation
+  - CSV import/export for bulk asset management
+  - Archive workflow for retired content
+
+- **Marketing Brand Library** (Enterprise)
+  - Curated library for approved brand visuals, logos, icons, and marketing images
+  - Direct file upload to object storage
+  - Product cross-linking and customizable categories
+  - Lead images from Content Library can be saved directly to Brand Library
+
+- **Social Campaigns** (Enterprise)
+  - Campaign wizard: Details → Assets → Accounts → Schedule
+  - AI-powered social post generation across LinkedIn, X/Twitter, Facebook, and Instagram
+  - Intelligence-enriched generation using GTM Plan, Messaging Framework, and competitive insights
+  - Per-asset post generation with correct source URL and lead image resolution
+  - Intelligent scheduling with configurable campaign dates, posting days, and weekend preferences
+  - Post review, edit, approve/reject workflow
+  - CSV export with SocialPilot-compatible format and schedule guard warning for unscheduled posts
+  - Automatic hashtag merging from multiple content sources
+  - Scaling: 3 variants per combo (1 asset), 2 (2-3 assets), 1 (4+ assets)
+
+- **Email Newsletters** (Enterprise)
+  - AI-powered email generation from Content Library assets
+  - Platform-specific formatting: Outlook, HubSpot Marketing, HubSpot 1:1, Dynamics 365
+  - Tone customization (Professional, Friendly, Urgent) and CTA configuration
+  - Subject line coaching and AI-generated suggestions
+  - Strategic context grounding from GTM Plan and Messaging Framework
+  - Save and label generated email drafts
+
+- **Social Accounts Management**
+  - Link social media profiles (LinkedIn, X, Facebook, Instagram) with account names
+  - Platform-specific targeting for AI content generation
+
+- **Saturn Capture Browser Extension**
+  - Chromium-based extension for capturing web content directly into Content Library
+  - Full page and asset capture using existing Orbit session authentication
+  - Download and install from in-app instructions page
+  - Captured assets flagged with `captured_via_extension` source
+
+- **Intelligence Briefing Podcasts** (Pro/Enterprise/Unlimited)
+  - AI-generated podcast-style audio summaries of intelligence briefings
+  - Two-host conversational format using OpenAI TTS (echo and nova voices)
+  - In-browser playback and MP3 download
+  - Audio stored in Replit Object Storage
+
+- **Intelligence Briefing Subscriptions** (Enterprise/Unlimited)
+  - Per-user email subscription management for weekly briefings
+  - Domain Admin configuration for organization-wide scheduled briefing generation
+  - Automated weekly digest job generates briefings and emails subscribers via SendGrid
+  - Branded email templates with executive summary and key themes
+
+- **Intelligence Freshness UX**
+  - Intelligence Health dashboard replacing Refresh Center (moved from System to Insights nav group)
+  - Health percentage score computed from source/artifact freshness
+  - "Needs Attention" card surfacing stale sources and outdated artifacts with contextual refresh actions
+  - "Built from data as of" banners on Analysis, Battlecards, GTM Plan, and Messaging Framework pages with inline rebuild buttons
+  - Data Currency badges on Reports list
+  - Staleness utilities: `checkArtifactFreshness`, `computeIntelligenceHealth`, `formatShortDate`
+
+- **Action Item Lifecycle Management**
+  - Dismiss with reason dialog (Not relevant, Already addressed, Duplicate, Other)
+  - Bulk accept and bulk dismiss via multi-select toolbar
+  - Status tabs: Active, Accepted, Dismissed
+  - Dismissed items tracked with reason and timestamp for audit
+  - Gap analysis deduplication prevents dismissed items from reappearing
+
+- **SEO Optimization**
+  - Semantic HTML improvements (headings, landmarks, ARIA labels)
+  - Open Graph and Twitter Card meta tag updates
+  - Structured page titles and descriptions
+
+- **CSV Export Schedule Guard**
+  - Warning dialog before exporting campaign posts that have no scheduled dates
+  - Prevents exporting unscheduled posts to social media scheduling tools
+
+- **News Monitoring Integration**
+  - GNews API integration for competitor and baseline company news
+  - News items included in intelligence briefings
+  - Enhanced change detection with structured AI analysis categorizing changes by type and significance
+
+- **Support Ticket System** (v1.5.0)
+  - Submit and track support tickets with category, priority, and status
+  - Threaded discussion with support staff
+  - Admin ticket management with internal notes and assignment
+  - Email notifications for new tickets and status updates
+
+- **What's New & Changelog Pages** (v1.5.0)
+  - In-app What's New modal with version highlights
+  - Standalone Changelog and Roadmap pages accessible from navigation
+
+- **Canonical Organization Layer**
+  - Centralizes public company data in the `organizations` table
+  - URL normalization and ref-counted lifecycle
+
+- **Centralized Job Queue**
+  - Priority-based, concurrency-limited queue for heavy background tasks
+  - PDF generation, crawls, monitors, and analysis all routed through unified queue
+
+- **PDF Browser Pool**
+  - Singleton Chromium instance for efficient PDF generation
+  - Shared across report generation and battlecard PDF exports
+
+### Changed
+- Refresh Center renamed to "Intelligence Health" and relocated from System nav group to Insights group
+- Action Items page replaces "Recommendations" in sidebar navigation
+- Post image resolution now matches by `sourceUrl` to correct content asset `leadImageUrl`
+- Backend CSV export uses `contentAssetByUrl` map for accurate image URLs
+- `CURRENT_APP_VERSION` bumped to `"2.0.0"`
 
 ### Fixed
+- Post generation: `getPostImage()` now matches by `sourceUrl` instead of always returning first asset's image
+- CSV export: `getPostImageUrl` fixed with `contentAssetByUrl` map for correct per-post images
+- HubSpot email width rendering issues resolved
 - PDF Report: Theme cards no longer show "Based on profile" placeholder text
-- PDF Report: Messaging comparison shows "Market Positioning" header instead of overly long audience text when competitor names unavailable
-- PDF Report: Numbered lists now properly wrapped in ordered list tags
+- PDF Report: Messaging comparison shows "Market Positioning" header when competitor names unavailable
+- PDF Report: Numbered lists properly wrapped in ordered list tags
 - PDF Report: Added h4 heading support in markdown-to-HTML conversion
 - PDF Report: Resolved LSP type errors for faviconUrl, talkingPoints, and companyProfile fields
 
-- UX Optimization Phase 3: Refresh Center & Smart Suggestions
-  - Dedicated Refresh Center page (`/app/refresh-center`) for managing all data refresh operations
-  - Quick action cards: Refresh Baseline, Refresh All Websites, Refresh All Social, View Job Queue
-  - Three tabs: Active Jobs (live status), Job History (past refreshes), Scheduled (monitoring schedule)
-  - Smart Suggestions with proactive toast notifications when data becomes stale (>7 days old)
-  - Dismissals stored in localStorage for 1 hour to prevent notification fatigue
-  - Keyboard shortcuts: Ctrl+Shift+R (Refresh Center), Ctrl+Shift+A (Analysis), Cmd/Ctrl+K (Command Palette)
-- UX Optimization Phase 2: Batch Operations & Command Palette
-  - Command Palette (Cmd/Ctrl+K) for quick navigation across the application
-  - Batch operations on Competitors page: select multiple competitors for bulk refresh
-  - Recent Jobs Panel showing latest crawl activity with status indicators
-  - Refresh Strategy Dialog for advanced scheduling options
-- UX Optimization Phase 1: Staleness Indicators & Refresh Controls
-  - Global refresh status indicator in header showing overall data freshness
-  - Data staleness dots throughout the UI (🟢 fresh <2 days, 🟡 aging 2-7 days, 🔴 stale >7 days)
-  - Consolidated refresh dropdown in header for quick access to common refresh actions
-  - Contextual tooltips explaining refresh options and data age
-- Company Profile fields for competitors (headquarters, founded year, revenue, funding raised)
-  - View and edit company profile data on the Competitor Detail page (Overview tab)
-  - Manual AI Research prompt now requests company profile information
-  - Company profile fields auto-extracted when pasting AI research results
-  - "Company Snapshot" section in battlecard PDFs displays profile data when available
-- Enhanced scheduled job tracking with individual entity-level run details
-  - Job history "Details" column shows results summary (pages crawled, word count, social platforms)
-  - Each competitor/baseline/product crawl creates individual job run record with results
+---
+
+## [1.5.0] - 2026-03-01
+
+### Added
+- Support Ticket System with user submission, admin management, and email notifications
+- What's New notification modal with version tracking
+- Standalone Changelog and Roadmap pages
+- Consolidated Action Items Dashboard (`/app/action-items`) aggregating recommendations, product features, and gap analysis
+- Action Items: filter by source, impact, status; search, accept/dismiss/star; CSV export
+- Service Plan Feature Gating with centralized plan policy service
+- Editable GTM Plan & Messaging Framework with version history
+- Product Competitive Position Summaries with AI generation and manual editing
+- GTM Plan & Messaging Framework toggle in standard PDF reports
+
+### Fixed
+- UX Optimization Phases 1-3: Refresh Center, Command Palette, staleness indicators, batch operations, keyboard shortcuts
+- Company Profile fields for competitors with AI auto-extraction
+- Enhanced scheduled job tracking with entity-level run details
 
 ---
 
@@ -97,65 +178,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated pricing preview with 60-day trial messaging
   - Added GTM Maturity Assessment link (https://orion.synozur.com/gtm)
 - Organization Filter for User Management - Global Admins can now filter users by organization
-  - Filter dropdown appears in Team Members section when logged in as Global Admin
-  - Filter by any accessible tenant organization
-  - User count updates dynamically based on selected filter
-- Auto-Promotion for First Domain User - Self-service account creation now automatically promotes the first user from a new email domain to Domain Admin role
-  - Enables immediate configuration of organization settings without waiting for manual role assignment
-  - Subsequent users from the same domain receive Standard User role
-- One-Click Full Report Generation - Generate all project content with a single click
-  - "Generate Full Report" button in project header orchestrates all 5 AI content sections in parallel
-  - Creates Gap Analysis, Strategic Recommendations, Competitive Summary, GTM Plan, and Messaging Framework
-  - Also calculates competitor scores automatically
-  - Progress indicator shows during generation (~1 minute)
-  - Results card displays success/failure count for each section
-  - Auto-downloads comprehensive markdown export when all sections complete successfully
-  - All project tabs refresh automatically after generation
-- Battlecard Export Options - Share and use battle cards outside of Orbit
-  - Copy to clipboard with formatted text (emojis, sections, ready to paste)
-  - Download as PDF with Synozur branding (purple gradients, professional layout)
-  - Download as text file for use in Word, PowerPoint, or any document
-  - Works for both company-level battlecards and product-level (project) battlecards
+- Auto-Promotion for First Domain User to Domain Admin role
+- One-Click Full Report Generation for projects
+- Battlecard Export Options (clipboard, PDF, text file)
 - 60-Day Trial System with automated reminder emails
-  - New tenants automatically start with a 60-day trial period
-  - Reminder emails at key milestones: day 7, 30, 46 (14 left), 53 (7 left), 57 (3 left), 59 (1 left), and day 60 (expired)
-  - Final 14 days emails include contact information (contactus@synozur.com) for establishing a client relationship
-  - Automatic plan reversion to Free tier when trial expires (1 competitor, 1 analysis limit)
-  - Scheduled job runs every 6 hours to check and send trial reminders
-- AI Usage Tracker - Global Admin dashboard to monitor AI API usage across all tenants
-  - Statistics cards showing total requests, estimated costs, average daily usage, and most-used operations
-  - Daily usage bar chart (last 14 days) and pie chart showing usage by operation type
-  - Recent activity table with operation details, model names, and tenant attribution
-  - Database table for tracking all AI API calls (provider, model, tokens, costs)
-- Blog/RSS Feed Monitoring for Manual Competitors - Add direct links to competitor blogs or RSS feeds
-  - New "Add Blog/RSS Feed" option in competitor dropdown menu
-  - Test blog URLs before saving to verify they can be parsed
-  - Supports RSS feeds, Atom feeds, and direct blog page HTML parsing
-  - Detects new blog posts and creates activity entries when competitors publish
-  - Useful for companies that block web crawlers but have accessible blogs
-- Blog URL Field for Baseline Company - Track your own company's blog activity
-  - New blog URL input field in Company Baseline settings with RSS icon
-  - SSRF protection validates blog URLs before saving (blocks private IPs, internal domains)
-  - Blog monitoring function updates baseline Orbit Score (blog activity = 20% of Innovation Score)
-  - Activity feed tracks new blog posts from baseline company
-- Enhanced Blog Discovery in Web Crawler
-  - Now detects `/insight` and `/insights` pages as blog content (common for B2B companies)
-  - Prioritizes blog → insights → news → articles (fallback order)
-  - Improves content discovery for professional services and consulting firms
+- AI Usage Tracker - Global Admin dashboard
+- Blog/RSS Feed Monitoring for competitors and baseline company
+- Enhanced Blog Discovery in Web Crawler (insights/insights pages)
 - Backlog.md file with comprehensive MVP feature tracking
 
 ### Fixed
-- "Regenerate All" now preserves manual research - competitors with manually entered research (source === "manual") are no longer overwritten during full regeneration, protecting hand-entered data for companies that block web crawlers
+- "Regenerate All" now preserves manual research for competitors with manually entered data
 
 ### Changed
 - Separated Company Baseline and Competitors screens into distinct pages
-  - Company Baseline page now focused on your company profile, analysis, and grounding documents
-  - Competitors page now focused on competitor tracking with minimal baseline reference
-  - Clear visual distinction with different layouts and purposes
-- Unified Overview page - consolidated Command Center and Overview into a single, visually rich dashboard at `/app`
+- Unified Overview page consolidated from Command Center and Overview
 - Overview is now the home page hero when logging in
-- Added "Rebuild All" button to Overview for admins to refresh all competitive intelligence
-- Enhanced AI Insights section with action item assignment, accept, and dismiss controls
+- Added "Rebuild All" button to Overview for admins
+- Enhanced AI Insights section with action item assignment
 
 ---
 
@@ -165,7 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Authentication & Security
 - Microsoft Entra ID SSO integration using @azure/msal-node with OAuth 2.0 flow
-- SSO users linked via `entraId` field with `authProvider: "entra"` 
+- SSO users linked via `entraId` field with `authProvider: "entra"`
 - Password login blocked for SSO-authenticated users
 - Session-based authentication with express-session
 - Role-based access control (Global Admin, Domain Admin, Standard User)

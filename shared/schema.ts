@@ -1897,16 +1897,18 @@ export const TICKET_CATEGORIES = ["question", "bug", "feature_request", "feedbac
 export const TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export const TICKET_STATUSES = ["open", "in_progress", "waiting", "resolved", "closed"] as const;
 
-export const CURRENT_APP_VERSION = "1.5.0";
+export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [
-  { emoji: "🎫", text: "Submit and track support tickets directly in Orbit" },
-  { emoji: "📋", text: "Admin support management with internal notes" },
-  { emoji: "📖", text: "Standalone Changelog and Roadmap pages" },
-  { emoji: "🔔", text: "What's New notifications for product updates" },
+  { emoji: "📚", text: "Content Library & Brand Library for managing marketing assets" },
+  { emoji: "📣", text: "Social Campaigns with AI-powered post generation and CSV export" },
+  { emoji: "✉️", text: "Email Newsletter generator with platform-specific formatting" },
+  { emoji: "🎙️", text: "Intelligence Briefing podcasts and scheduled email subscriptions" },
+  { emoji: "✅", text: "Action Item lifecycle management with bulk operations" },
+  { emoji: "🩺", text: "Intelligence Health dashboard with data freshness tracking" },
 ];
 
-export const WHATS_NEW_SUMMARY = "This release introduces a full support system, What's New notifications, and standalone Changelog and Roadmap pages.";
+export const WHATS_NEW_SUMMARY = "Orbit 2.0 introduces a full marketing content suite — Content & Brand Libraries, Social Campaigns with AI post generation, and Email Newsletters. Intelligence Briefings now include podcast audio summaries and scheduled email subscriptions. Action Items support bulk accept/dismiss with reasons, and a new Intelligence Health dashboard tracks data freshness across all sources.";
 
 export const DEFAULT_CONTENT_CATEGORIES = [
   "Blog Post", "White Paper", "Case Study", "eBook", "Infographic",
