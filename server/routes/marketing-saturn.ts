@@ -1312,6 +1312,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
       for (const a of assets) brandMap.set(a.id, a);
     }
 
+    const sourceUrls = Array.from(new Set(posts.map(p => p.sourceUrl).filter(Boolean))) as string[];
+    const contentAssetByUrl = new Map<string, any>();
+    if (sourceUrls.length) {
+      const cas = await db.select().from(contentAssets)
+        .where(and(eq(contentAssets.tenantDomain, ctx.tenantDomain), inArray(contentAssets.url, sourceUrls)));
+      for (const ca of cas) if (ca.url) contentAssetByUrl.set(ca.url, ca);
+    }
+
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);
     let lines: string[];
@@ -1365,6 +1373,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
         const ba = brandMap.get(post.overrideBrandAssetId);
         if (ba?.fileUrl) return ba.fileUrl;
         if (ba?.url) return ba.url;
+      }
+      if (post.sourceUrl) {
+        const ca = contentAssetByUrl.get(post.sourceUrl);
+        if (ca?.leadImageUrl) return ca.leadImageUrl;
       }
       return "";
     };

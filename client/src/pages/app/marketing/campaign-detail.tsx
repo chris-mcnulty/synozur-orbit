@@ -89,6 +89,7 @@ interface ContentAsset {
   id: string;
   title: string;
   description?: string;
+  url?: string;
   leadImageUrl?: string;
 }
 
@@ -609,6 +610,15 @@ export default function CampaignDetailPage() {
     if (post.overrideBrandAssetId) {
       const ba = brandAssets.find(b => b.id === post.overrideBrandAssetId);
       if (ba) return ba.fileUrl || ba.url || null;
+    }
+    if (post.sourceUrl) {
+      const linkedAssetList = campaign?.assets || [];
+      for (const ca of linkedAssetList) {
+        const asset = allAssets.find(a => a.id === ca.assetId);
+        if (asset?.url && asset.url === post.sourceUrl && asset.leadImageUrl) {
+          return asset.leadImageUrl;
+        }
+      }
     }
     const firstAsset = campaign?.assets?.[0];
     if (firstAsset) {
