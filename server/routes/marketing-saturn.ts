@@ -1718,8 +1718,29 @@ Structure your response using these exact delimiters:
         }
       );
 
-      if (!emailBody.includes('table-layout:fixed')) {
-        emailBody = `<div style="max-width:600px;margin:0 auto;overflow:hidden">${emailBody}</div>`;
+      emailBody = emailBody.replace(
+        /<img(?![^>]*width\s*=)([^>]*?)>/gi,
+        (match, attrs) => {
+          return `<img${attrs} width="600" style="display:block;max-width:100%;height:auto">`;
+        }
+      );
+
+      emailBody = emailBody.replace(
+        /min-width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
+        'min-width:600px'
+      );
+
+      emailBody = emailBody.replace(
+        /(<table[^>]*?)width\s*:\s*auto([^>]*?>)/gi,
+        '$1width:600px$2'
+      );
+
+      const styleBlock = `<style>table { max-width: 600px !important; } img { max-width: 100% !important; height: auto !important; }</style>`;
+      emailBody = styleBlock + emailBody;
+
+      const hasOuterWrapper = /^(<style>[^<]*<\/style>)?\s*<table[^>]*width\s*=\s*"600"/i.test(emailBody);
+      if (!hasOuterWrapper) {
+        emailBody = `<table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;margin:0 auto;table-layout:fixed;overflow:hidden"><tr><td>${emailBody}</td></tr></table>`;
       }
     }
 
