@@ -93,9 +93,16 @@ Preferred communication style: Simple, everyday language.
 - **URL Validation**: SSRF protection, private IP blocking, protocol validation.
 - **File Validation**: Magic bytes verification, dangerous content pattern scanning, size limits.
 
+### SharePoint Embedded (SPE) Architecture
+- **Reference codebase**: `chris-mcnulty/synozur-scdp` (Constellation) on GitHub — accessible via installed GitHub integration.
+- **Key file**: `server/services/graph-client.ts` in Constellation contains the working SPE implementation.
+- **URL pattern**: File operations MUST resolve the container's drive ID first (`GET /v1.0/storage/fileStorage/containers/{id}/drive`), then use `/drives/{driveId}/...` for ALL file ops. Do NOT use `/storage/fileStorage/containers/{id}/drive/root:...` — that pattern returns 400 errors.
+- **API version**: Use `v1.0` for file operations, `beta` only for container type registration.
+- **Drive ID caching**: Cached for 5 minutes to avoid repeated resolution calls.
+
 ### Third-Party APIs
-- **GNews API**: For news monitoring.
-- **Microsoft Graph API**: For Entra ID user provisioning.
+- **GNews API**: For news monitoring. Do NOT use Bing News Search API.
+- **Microsoft Graph API**: For Entra ID user provisioning and SPE file storage.
 - **SendGrid**: For email sharing of intelligence briefings.
 
 ### Environment Variables
