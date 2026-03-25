@@ -15400,7 +15400,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const resolvedAzureTenantId = azureTenantId || targetTenant.entraTenantId || undefined;
 
       const { containerCreator } = await import("./services/sharepoint-container-creator.js");
-      const result = await containerCreator.createContainer(containerName, description, resolvedAzureTenantId);
+      const result = await containerCreator.createContainer(containerName, description, resolvedAzureTenantId, user.email);
 
       if (result.success && result.containerId) {
         const isProduction = process.env.REPLIT_DEPLOYMENT === "1" || process.env.NODE_ENV === "production";

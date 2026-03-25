@@ -70,7 +70,8 @@ export class ContainerCreator {
   async createContainer(
     containerName: string,
     description?: string,
-    azureTenantId?: string
+    azureTenantId?: string,
+    ownerUserPrincipalName?: string
   ): Promise<ContainerCreationResult> {
     console.log(
       "[OrbitContainerCreator] Creating container:",
@@ -151,7 +152,7 @@ export class ContainerCreator {
       const container = await response.json() as { id: string; displayName: string };
       console.log("[OrbitContainerCreator] Container created:", container.id, container.displayName);
 
-      const permResult = await this.grantApplicationPermissions(token, container.id);
+      const permResult = await this.grantApplicationPermissions(token, container.id, ownerUserPrincipalName);
       if (!permResult.success) {
         console.warn("[OrbitContainerCreator] Permission grant failed:", permResult.message);
         return {
@@ -247,11 +248,16 @@ export class ContainerCreator {
 
   private async grantApplicationPermissions(
     accessToken: string,
-    containerId: string
+    containerId: string,
+    ownerUserPrincipalName?: string
   ): Promise<{ success: boolean; message: string }> {
     const clientId = process.env.ENTRA_CLIENT_ID;
     if (!clientId) {
       return { success: false, message: "ENTRA_CLIENT_ID not set" };
+    }
+
+    if (!ownerUserPrincipalName) {
+      return { success: false, message: "ownerUserPrincipalName is required to grant container permissions. Pass the admin user's email when creating the container." };
     }
 
     try {
@@ -266,9 +272,8 @@ export class ContainerCreator {
           body: JSON.stringify({
             roles: ["owner"],
             grantedToV2: {
-              application: {
-                id: clientId,
-                displayName: "Synozur Orbit",
+              user: {
+                userPrincipalName: ownerUserPrincipalName,
               },
             },
           }),
@@ -280,7 +285,8 @@ export class ContainerCreator {
         return { success: false, message: `Permission grant failed: HTTP ${response.status} — ${errorText}` };
       }
 
-      return { success: true, message: "Application owner permissions granted" };
+      console.log("[OrbitContainerCreator] Owner permission granted to:", ownerUserPrincipalName);
+      return { success: true, message: `Owner permissions granted to ${ownerUserPrincipalName}` };
     } catch (err) {
       return { success: false, message: err instanceof Error ? err.message : "Unknown error" };
     }
