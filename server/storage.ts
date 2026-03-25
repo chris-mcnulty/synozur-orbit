@@ -125,6 +125,9 @@ import {
   type InsertSupportTicket,
   type SupportTicketReply,
   type InsertSupportTicketReply,
+  gapDismissals,
+  type GapDismissal,
+  type InsertGapDismissal,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
@@ -491,6 +494,13 @@ export interface IStorage {
   updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket>;
   createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply>;
   getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]>;
+
+  // Gap Dismissal methods
+  getGapDismissal(id: string): Promise<GapDismissal | undefined>;
+  getGapDismissalsByContext(ctx: ContextFilter): Promise<GapDismissal[]>;
+  getGapDismissalByDedupeKey(dedupeKey: string, tenantDomain: string, marketId?: string | null): Promise<GapDismissal | undefined>;
+  createGapDismissal(dismissal: InsertGapDismissal): Promise<GapDismissal>;
+  updateGapDismissal(id: string, data: Partial<GapDismissal>): Promise<GapDismissal>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3335,6 +3345,46 @@ export class DatabaseStorage implements IStorage {
 
   async getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]> {
     return db.select().from(supportTicketReplies).where(eq(supportTicketReplies.ticketId, ticketId)).orderBy(supportTicketReplies.createdAt);
+  }
+
+  async getGapDismissal(id: string): Promise<GapDismissal | undefined> {
+    const [result] = await db.select().from(gapDismissals).where(eq(gapDismissals.id, id));
+    return result || undefined;
+  }
+
+  async getGapDismissalsByContext(ctx: ContextFilter): Promise<GapDismissal[]> {
+    const marketCondition = ctx.marketId
+      ? eq(gapDismissals.marketId, ctx.marketId)
+      : isNull(gapDismissals.marketId);
+    return db.select().from(gapDismissals)
+      .where(and(
+        eq(gapDismissals.tenantDomain, ctx.tenantDomain),
+        marketCondition
+      ))
+      .orderBy(desc(gapDismissals.createdAt));
+  }
+
+  async getGapDismissalByDedupeKey(dedupeKey: string, tenantDomain: string, marketId?: string | null): Promise<GapDismissal | undefined> {
+    const marketCondition = marketId
+      ? eq(gapDismissals.marketId, marketId)
+      : isNull(gapDismissals.marketId);
+    const [result] = await db.select().from(gapDismissals)
+      .where(and(
+        eq(gapDismissals.dedupeKey, dedupeKey),
+        eq(gapDismissals.tenantDomain, tenantDomain),
+        marketCondition
+      ));
+    return result || undefined;
+  }
+
+  async createGapDismissal(dismissal: InsertGapDismissal): Promise<GapDismissal> {
+    const [created] = await db.insert(gapDismissals).values(dismissal).returning();
+    return created;
+  }
+
+  async updateGapDismissal(id: string, data: Partial<GapDismissal>): Promise<GapDismissal> {
+    const [updated] = await db.update(gapDismissals).set(data).where(eq(gapDismissals.id, id)).returning();
+    return updated;
   }
 }
 

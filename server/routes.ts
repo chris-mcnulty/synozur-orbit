@@ -2174,12 +2174,19 @@ Return ONLY the JSON object, no other text.`;
       // Get baseline analysis from company profile if available
       const baselineAnalysis = companyProfile?.analysisData as CompetitorAnalysis | undefined;
 
+      // Fetch dismissed gaps to avoid regenerating them
+      const dismissedGapRecords = await storage.getGapDismissalsByContext(toContextFilter(ctx));
+      const dismissedGapsForAI = dismissedGapRecords
+        .filter(d => d.status === "dismissed")
+        .map(d => ({ title: d.gapIdentifier, reason: d.reason }));
+
       // Generate gap analysis with baseline and grounding context
       const gaps = await generateGapAnalysis(
         ourPositioning, 
         analyses,
         baselineAnalysis,
-        groundingContext || undefined
+        groundingContext || undefined,
+        dismissedGapsForAI.length > 0 ? dismissedGapsForAI : undefined
       );
 
       // Fetch existing recommendations to avoid regenerating dismissed or duplicates (context-scoped)
@@ -2706,14 +2713,17 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const ctx = await getRequestContext(req);
       const contextFilter = toContextFilter(ctx);
 
-      const [recommendations, featureRecs, latestAnalysis, allProducts] = await Promise.all([
+      const [recommendations, featureRecs, latestAnalysis, allProducts, gapDismissalsList] = await Promise.all([
         storage.getRecommendationsByContext(contextFilter),
         storage.getFeatureRecommendationsByContext(contextFilter),
         storage.getLatestAnalysisByContext(contextFilter),
         storage.getProductsByContext(contextFilter),
+        storage.getGapDismissalsByContext(contextFilter),
       ]);
 
       const productMap = new Map(allProducts.map(p => [p.id, p.name]));
+      const dismissedGapKeys = new Set(gapDismissalsList.filter(d => d.status === "dismissed").map(d => d.dedupeKey));
+      const acceptedGapKeys = new Map(gapDismissalsList.filter(d => d.status === "accepted").map(d => [d.dedupeKey, d]));
 
       const actionItems: any[] = [];
 
@@ -2761,14 +2771,39 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const gaps = Array.isArray(latestAnalysis?.gaps) ? latestAnalysis.gaps : [];
       for (const gap of gaps as any[]) {
         if (gap.status === "dismissed") continue;
+        const gapId = gap.id || `gap-${gap.area || gap.title || "unknown"}`;
+        const gapTitle = gap.area || gap.title || gap.name || "Gap Identified";
+        const dedupeKey = `${gapTitle.toLowerCase().replace(/[^a-z0-9]/g, "")}_gap`;
+        if (dismissedGapKeys.has(dedupeKey)) {
+          actionItems.push({
+            id: gapId,
+            type: "gap",
+            title: gapTitle,
+            description: gap.observation || gap.description || gap.details || "",
+            area: "Gap Analysis",
+            impact: gap.impact || "Medium",
+            status: "dismissed",
+            isPriority: gap.impact === "High",
+            thumbsUp: 0,
+            thumbsDown: 0,
+            source: "Gap Analysis",
+            sourceId: null,
+            productName: null,
+            opportunity: gap.opportunity || gap.recommendation || "",
+            assignedTo: null,
+            createdAt: latestAnalysis?.createdAt || null,
+          });
+          continue;
+        }
+        const acceptedEntry = acceptedGapKeys.get(dedupeKey);
         actionItems.push({
-          id: gap.id || `gap-${gap.area || gap.title || "unknown"}`,
+          id: gapId,
           type: "gap",
-          title: gap.area || gap.title || gap.name || "Gap Identified",
+          title: gapTitle,
           description: gap.observation || gap.description || gap.details || "",
           area: "Gap Analysis",
           impact: gap.impact || "Medium",
-          status: gap.status || "pending",
+          status: acceptedEntry ? "accepted" : (gap.status || "pending"),
           isPriority: gap.impact === "High",
           thumbsUp: 0,
           thumbsDown: 0,
@@ -2796,6 +2831,150 @@ Return ONLY valid JSON, no markdown or explanation.`;
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/gap-items/:id/dismiss", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const contextFilter = toContextFilter(ctx);
+      const { reason } = req.body || {};
+      const gapIdentifier = req.params.id;
+      const { title } = req.body || {};
+      const gapTitle = title || gapIdentifier;
+      const dedupeKey = `${gapTitle.toLowerCase().replace(/[^a-z0-9]/g, "")}_gap`;
+
+      const existing = await storage.getGapDismissalByDedupeKey(dedupeKey, ctx.tenantDomain, contextFilter.marketId);
+      if (existing) {
+        const updated = await storage.updateGapDismissal(existing.id, {
+          status: "dismissed",
+          reason: reason || "not_relevant",
+        });
+        return res.json(updated);
+      }
+
+      const dismissal = await storage.createGapDismissal({
+        gapIdentifier,
+        dedupeKey,
+        status: "dismissed",
+        reason: reason || "not_relevant",
+        tenantDomain: ctx.tenantDomain,
+        marketId: contextFilter.marketId || null,
+        dismissedBy: ctx.userId,
+      });
+      res.json(dismissal);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/gap-items/:id/accept", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const contextFilter = toContextFilter(ctx);
+      const gapIdentifier = req.params.id;
+      const { title } = req.body || {};
+      const gapTitle = title || gapIdentifier;
+      const dedupeKey = `${gapTitle.toLowerCase().replace(/[^a-z0-9]/g, "")}_gap`;
+
+      const existing = await storage.getGapDismissalByDedupeKey(dedupeKey, ctx.tenantDomain, contextFilter.marketId);
+      if (existing) {
+        const updated = await storage.updateGapDismissal(existing.id, {
+          status: "accepted",
+        });
+        return res.json(updated);
+      }
+
+      const record = await storage.createGapDismissal({
+        gapIdentifier,
+        dedupeKey,
+        status: "accepted",
+        reason: null,
+        tenantDomain: ctx.tenantDomain,
+        marketId: contextFilter.marketId || null,
+        dismissedBy: ctx.userId,
+      });
+      res.json(record);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/action-items/bulk-update", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const contextFilter = toContextFilter(ctx);
+      const { items, action } = req.body;
+      if (!Array.isArray(items) || !["accept", "dismiss"].includes(action)) {
+        return res.status(400).json({ error: "Invalid request: items array and action (accept/dismiss) required" });
+      }
+
+      const reason = req.body.reason || "not_relevant";
+      const results: any[] = [];
+
+      for (const item of items) {
+        const { id, type, title, sourceId } = item;
+        try {
+          if (type === "recommendation") {
+            const rec = await storage.getRecommendation(id);
+            if (!rec || (rec.tenantDomain !== ctx.tenantDomain)) {
+              results.push({ id, success: false, error: "Not found or access denied" });
+              continue;
+            }
+            if (action === "dismiss") {
+              const dedupeKey = `${rec.title.toLowerCase().replace(/[^a-z0-9]/g, "")}_${rec.area.toLowerCase()}`;
+              await storage.updateRecommendation(id, {
+                status: "dismissed",
+                dismissedAt: new Date(),
+                dismissedReason: reason,
+                dismissedBy: ctx.userId,
+                dedupeKey,
+              });
+            } else {
+              await storage.updateRecommendation(id, { status: "accepted", acceptedAt: new Date() });
+            }
+            results.push({ id, success: true });
+          } else if (type === "feature_recommendation" && sourceId) {
+            const rec = await storage.getFeatureRecommendation(id);
+            if (!rec || rec.tenantDomain !== ctx.tenantDomain) {
+              results.push({ id, success: false, error: "Not found or access denied" });
+              continue;
+            }
+            await storage.updateFeatureRecommendation(id, { status: action === "dismiss" ? "dismissed" : "accepted" });
+            results.push({ id, success: true });
+          } else if (type === "gap") {
+            const gapTitle = title || id;
+            const dedupeKey = `${gapTitle.toLowerCase().replace(/[^a-z0-9]/g, "")}_gap`;
+            const existing = await storage.getGapDismissalByDedupeKey(dedupeKey, ctx.tenantDomain, contextFilter.marketId);
+            if (existing) {
+              await storage.updateGapDismissal(existing.id, {
+                status: action === "dismiss" ? "dismissed" : "accepted",
+                reason: action === "dismiss" ? reason : null,
+              });
+            } else {
+              await storage.createGapDismissal({
+                gapIdentifier: id,
+                dedupeKey,
+                status: action === "dismiss" ? "dismissed" : "accepted",
+                reason: action === "dismiss" ? reason : null,
+                tenantDomain: ctx.tenantDomain,
+                marketId: contextFilter.marketId || null,
+                dismissedBy: ctx.userId,
+              });
+            }
+            results.push({ id, success: true });
+          }
+        } catch (err: any) {
+          results.push({ id, success: false, error: err.message });
+        }
+      }
+
+      res.json({ results, updated: results.filter(r => r.success).length });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
     }
   });
@@ -8463,12 +8642,20 @@ Provide analysis in this JSON format:
         }
       }
       
+      // Fetch existing feature recommendations for dedup context
+      const existingFeatureRecs = await storage.getFeatureRecommendationsByProduct(req.params.productId);
+      const existingForRoadmapAI = existingFeatureRecs.map(r => ({
+        title: r.title,
+        status: r.status,
+      }));
+
       // Generate recommendations using AI
       const recommendations = await generateRoadmapRecommendations(
         product.name,
         product.description || "",
         featuresContext,
-        competitorData
+        competitorData,
+        existingForRoadmapAI.length > 0 ? existingForRoadmapAI : undefined
       );
       
       // Save recommendations to database

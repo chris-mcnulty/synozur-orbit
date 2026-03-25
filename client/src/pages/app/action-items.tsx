@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+} from "@/components/ui/alert-dialog";
 import {
   Lightbulb,
   Target,
@@ -44,6 +53,16 @@ interface ActionItem {
   assignedTo: string | null;
   createdAt: string | null;
 }
+
+type DismissTarget = { mode: "single"; item: ActionItem } | { mode: "bulk" };
+
+const DISMISS_REASONS = [
+  { value: "not_relevant", label: "Not relevant to our strategy" },
+  { value: "already_done", label: "Already addressed" },
+  { value: "duplicate", label: "Duplicate of another item" },
+  { value: "low_priority", label: "Too low priority right now" },
+  { value: "other", label: "Other" },
+];
 
 function ImpactBadge({ impact }: { impact: string }) {
   const colors: Record<string, string> = {
@@ -92,6 +111,10 @@ export default function ActionItems() {
   const [filterImpact, setFilterImpact] = useState("all");
   const [filterStatus, setFilterStatus] = useState("active");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
+  const [dismissTarget, setDismissTarget] = useState<DismissTarget | null>(null);
+  const [dismissReason, setDismissReason] = useState("not_relevant");
 
   const { data: actionItems = [], isLoading } = useQuery<ActionItem[]>({
     queryKey: ["/api/action-items"],
@@ -103,14 +126,14 @@ export default function ActionItems() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ item, newStatus }: { item: ActionItem; newStatus: string }) => {
+    mutationFn: async ({ item, newStatus, reason }: { item: ActionItem; newStatus: string; reason?: string }) => {
       if (item.type === "recommendation") {
         const endpoint = newStatus === "dismissed"
           ? `/api/recommendations/${item.id}/hide`
           : `/api/recommendations/${item.id}`;
         const method = newStatus === "dismissed" ? "POST" : "PATCH";
         const body = newStatus === "dismissed"
-          ? { reason: "not_relevant" }
+          ? { reason: reason || "not_relevant" }
           : { status: newStatus };
         const response = await fetch(endpoint, {
           method,
@@ -120,12 +143,25 @@ export default function ActionItems() {
         });
         if (!response.ok) throw new Error("Failed to update status");
         return response.json();
-      } else if (item.type === "feature_recommendation" && item.sourceId) {
+      } else if (item.type === "feature_recommendation") {
+        if (!item.sourceId) throw new Error("Feature recommendation missing product reference");
         const response = await fetch(`/api/products/${item.sourceId}/recommendations/${item.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ status: newStatus }),
+        });
+        if (!response.ok) throw new Error("Failed to update status");
+        return response.json();
+      } else if (item.type === "gap") {
+        const endpoint = newStatus === "dismissed"
+          ? `/api/gap-items/${encodeURIComponent(item.id)}/dismiss`
+          : `/api/gap-items/${encodeURIComponent(item.id)}/accept`;
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title: item.title, reason: reason || "not_relevant" }),
         });
         if (!response.ok) throw new Error("Failed to update status");
         return response.json();
@@ -135,6 +171,32 @@ export default function ActionItems() {
       queryClient.invalidateQueries({ queryKey: ["/api/action-items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
       toast({ title: "Status updated" });
+    },
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async ({ action, reason }: { action: "accept" | "dismiss"; reason?: string }) => {
+      const selectedActionItems = actionItems.filter(item => selectedItems.has(item.id));
+      const items = selectedActionItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        sourceId: item.sourceId,
+      }));
+      const response = await fetch("/api/action-items/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ items, action, reason: reason || "not_relevant" }),
+      });
+      if (!response.ok) throw new Error("Failed to bulk update");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/action-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      setSelectedItems(new Set());
+      toast({ title: `${data.updated} items updated` });
     },
   });
 
@@ -162,6 +224,32 @@ export default function ActionItems() {
     });
   };
 
+  const toggleSelected = (id: string) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openDismissDialog = useCallback((target: DismissTarget) => {
+    setDismissTarget(target);
+    setDismissReason("not_relevant");
+    setDismissDialogOpen(true);
+  }, []);
+
+  const handleDismissConfirm = useCallback(() => {
+    if (!dismissTarget) return;
+    if (dismissTarget.mode === "single") {
+      updateStatusMutation.mutate({ item: dismissTarget.item, newStatus: "dismissed", reason: dismissReason });
+    } else {
+      bulkUpdateMutation.mutate({ action: "dismiss", reason: dismissReason });
+    }
+    setDismissDialogOpen(false);
+    setDismissTarget(null);
+  }, [dismissTarget, dismissReason, updateStatusMutation, bulkUpdateMutation]);
+
   const filteredItems = useMemo(() => {
     return actionItems.filter(item => {
       if (filterSource !== "all" && item.source !== filterSource) return false;
@@ -181,6 +269,16 @@ export default function ActionItems() {
       return true;
     });
   }, [actionItems, filterSource, filterImpact, filterStatus, searchQuery]);
+
+  const allFilteredSelected = filteredItems.length > 0 && filteredItems.every(item => selectedItems.has(item.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(filteredItems.map(item => item.id)));
+    }
+  };
 
   const stats = useMemo(() => {
     const active = actionItems.filter(i => i.status !== "dismissed" && i.status !== "hidden");
@@ -204,6 +302,10 @@ export default function ActionItems() {
     }));
     exportToCSV(items, "action-items");
     toast({ title: "Exported", description: `${items.length} action items exported to CSV` });
+  };
+
+  const isItemActionable = (item: ActionItem) => {
+    return item.status !== "dismissed" && item.status !== "hidden";
   };
 
   if (isLoading) {
@@ -304,6 +406,43 @@ export default function ActionItems() {
         </Tabs>
       </div>
 
+      {selectedItems.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-muted/50 border border-border/50 rounded-lg" data-testid="bulk-toolbar">
+          <span className="text-sm font-medium" data-testid="text-selected-count">{selectedItems.size} selected</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => bulkUpdateMutation.mutate({ action: "accept" })}
+            disabled={bulkUpdateMutation.isPending}
+            data-testid="button-bulk-accept"
+          >
+            <CheckCircle2 className="w-3 h-3 mr-1" />
+            Accept All
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => openDismissDialog({ mode: "bulk" })}
+            disabled={bulkUpdateMutation.isPending}
+            data-testid="button-bulk-dismiss"
+          >
+            <XCircle className="w-3 h-3 mr-1" />
+            Dismiss All
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => setSelectedItems(new Set())}
+            data-testid="button-clear-selection"
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+
       {filteredItems.length === 0 ? (
         <Card className="p-8 text-center" data-testid="card-empty-state">
           <BarChart2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -316,17 +455,31 @@ export default function ActionItems() {
         </Card>
       ) : (
         <div className="space-y-3" data-testid="list-action-items">
+          <div className="flex items-center gap-2 px-1">
+            <Checkbox
+              checked={allFilteredSelected}
+              onCheckedChange={toggleSelectAll}
+              data-testid="checkbox-select-all"
+            />
+            <span className="text-xs text-muted-foreground">Select all</span>
+          </div>
           {filteredItems.map((item) => {
             const isExpanded = expandedItems.has(item.id);
+            const isSelected = selectedItems.has(item.id);
             return (
               <Card
                 key={item.id}
-                className={`border-border/50 transition-all ${item.isPriority ? "border-l-2 border-l-amber-500" : ""}`}
+                className={`border-border/50 transition-all ${item.isPriority ? "border-l-2 border-l-amber-500" : ""} ${isSelected ? "ring-1 ring-primary/50" : ""}`}
                 data-testid={`card-action-item-${item.id}`}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className="mt-1">
+                    <div className="mt-1 flex items-center gap-2">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelected(item.id)}
+                        data-testid={`checkbox-item-${item.id}`}
+                      />
                       <StatusIcon status={item.status} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -373,7 +526,7 @@ export default function ActionItems() {
                             </div>
                           )}
                           <div className="flex items-center gap-2">
-                            {item.type === "recommendation" && item.status !== "dismissed" && item.status !== "hidden" && (
+                            {isItemActionable(item) && (
                               <>
                                 <Button
                                   variant="outline"
@@ -389,47 +542,25 @@ export default function ActionItems() {
                                   variant="outline"
                                   size="sm"
                                   className="text-xs h-7"
-                                  onClick={() => updateStatusMutation.mutate({ item, newStatus: "dismissed" })}
+                                  onClick={() => openDismissDialog({ mode: "single", item })}
                                   data-testid={`button-dismiss-${item.id}`}
                                 >
                                   <XCircle className="w-3 h-3 mr-1" />
                                   Dismiss
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-xs h-7"
-                                  onClick={() => priorityMutation.mutate(item.id)}
-                                  data-testid={`button-priority-${item.id}`}
-                                >
-                                  <Star className={`w-3 h-3 mr-1 ${item.isPriority ? "fill-amber-400 text-amber-400" : ""}`} />
-                                  {item.isPriority ? "Unstar" : "Star"}
                                 </Button>
                               </>
                             )}
-                            {item.type === "feature_recommendation" && item.status !== "dismissed" && (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-xs h-7"
-                                  onClick={() => updateStatusMutation.mutate({ item, newStatus: "accepted" })}
-                                  data-testid={`button-accept-${item.id}`}
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Accept
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-xs h-7"
-                                  onClick={() => updateStatusMutation.mutate({ item, newStatus: "dismissed" })}
-                                  data-testid={`button-dismiss-${item.id}`}
-                                >
-                                  <XCircle className="w-3 h-3 mr-1" />
-                                  Dismiss
-                                </Button>
-                              </>
+                            {item.type === "recommendation" && isItemActionable(item) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={() => priorityMutation.mutate(item.id)}
+                                data-testid={`button-priority-${item.id}`}
+                              >
+                                <Star className={`w-3 h-3 mr-1 ${item.isPriority ? "fill-amber-400 text-amber-400" : ""}`} />
+                                {item.isPriority ? "Unstar" : "Star"}
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -453,6 +584,57 @@ export default function ActionItems() {
       <div className="mt-4 text-xs text-muted-foreground text-center">
         Showing {filteredItems.length} of {actionItems.length} action items
       </div>
+
+      <AlertDialog open={dismissDialogOpen} onOpenChange={setDismissDialogOpen}>
+        <AlertDialogContent data-testid="dialog-dismiss-reason">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {dismissTarget?.mode === "bulk"
+                ? `Dismiss ${selectedItems.size} items`
+                : "Dismiss item"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {dismissTarget?.mode === "single" && (
+                <span className="block mb-2 font-medium text-foreground">
+                  {dismissTarget.item.title}
+                </span>
+              )}
+              Select a reason for dismissing. This helps improve future recommendations.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <Select value={dismissReason} onValueChange={setDismissReason}>
+              <SelectTrigger className="w-full" data-testid="select-dismiss-reason">
+                <SelectValue placeholder="Select a reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {DISMISS_REASONS.map(r => (
+                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDismissDialogOpen(false);
+                setDismissTarget(null);
+              }}
+              data-testid="button-dismiss-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDismissConfirm}
+              data-testid="button-dismiss-confirm"
+            >
+              Dismiss
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

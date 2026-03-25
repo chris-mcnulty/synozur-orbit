@@ -213,7 +213,8 @@ export async function generateGapAnalysis(
   ourPositioning: string,
   competitorAnalyses: CompetitorAnalysis[],
   baselineAnalysis?: CompetitorAnalysis,
-  groundingContext?: string
+  groundingContext?: string,
+  dismissedGaps?: { title: string; reason: string | null }[]
 ): Promise<GapAnalysis[]> {
   let baselineSection = "";
   if (baselineAnalysis) {
@@ -231,6 +232,14 @@ ${groundingContext.slice(0, 6000)}
 `;
   }
 
+  let dismissedGapsSection = "";
+  if (dismissedGaps && dismissedGaps.length > 0) {
+    dismissedGapsSection = `
+
+PREVIOUSLY DISMISSED GAPS (DO NOT regenerate these or similar):
+${dismissedGaps.map(g => `- "${g.title}" (Reason: ${g.reason || "user dismissed"})`).join("\n")}`;
+  }
+
   const prompt = `Based on our company analysis, positioning documents, and competitor analyses, identify gaps in our market strategy.
 
 Our Positioning Statement: ${ourPositioning}
@@ -238,6 +247,7 @@ ${baselineSection}
 ${groundingSection}
 Competitor Analyses:
 ${JSON.stringify(competitorAnalyses, null, 2)}
+${dismissedGapsSection}
 
 Compare our baseline company against competitors. Consider:
 1. Messaging and positioning differences
@@ -245,6 +255,8 @@ Compare our baseline company against competitors. Consider:
 3. Value proposition gaps
 4. Feature or capability gaps
 5. Content and thought leadership gaps
+
+IMPORTANT: DO NOT generate gaps that are similar to previously dismissed ones. Focus on NEW, unique gaps not already covered.
 
 Please identify 3-5 key gaps and return as a JSON array:
 [
@@ -417,7 +429,8 @@ export async function generateRoadmapRecommendations(
   productName: string,
   productDescription: string,
   existingFeatures: { name: string; status: string; category: string | null }[],
-  competitorData: { name: string; analysis: string }[]
+  competitorData: { name: string; analysis: string }[],
+  existingRecommendations?: { title: string; status: string }[]
 ): Promise<RoadmapRecommendation[]> {
   const featuresContext = existingFeatures.length > 0
     ? existingFeatures.map(f => `- ${f.name} (${f.status}${f.category ? `, ${f.category}` : ""})`).join("\n")
@@ -426,6 +439,20 @@ export async function generateRoadmapRecommendations(
   const competitorContext = competitorData.length > 0
     ? competitorData.map(c => `Competitor: ${c.name}\nAnalysis: ${c.analysis}`).join("\n\n")
     : "No competitor analysis available yet.";
+
+  let existingRecsContext = "";
+  if (existingRecommendations && existingRecommendations.length > 0) {
+    const dismissed = existingRecommendations.filter(r => r.status === "dismissed");
+    const active = existingRecommendations.filter(r => r.status !== "dismissed");
+    if (dismissed.length > 0) {
+      existingRecsContext += `\n\nPREVIOUSLY DISMISSED ROADMAP RECOMMENDATIONS (DO NOT regenerate these or similar):
+${dismissed.map(r => `- "${r.title}"`).join("\n")}`;
+    }
+    if (active.length > 0) {
+      existingRecsContext += `\n\nEXISTING ACTIVE ROADMAP RECOMMENDATIONS (avoid duplicates):
+${active.map(r => `- "${r.title}"`).join("\n")}`;
+    }
+  }
 
   const prompt = `You are a product strategy advisor. Based on competitive intelligence, suggest roadmap recommendations for the following product.
 
@@ -437,12 +464,18 @@ ${featuresContext}
 
 COMPETITIVE INTELLIGENCE:
 ${competitorContext.slice(0, 10000)}
+${existingRecsContext}
 
 Analyze the competitive landscape and suggest 3-5 roadmap recommendations. Each recommendation should be one of these types:
 - "gap": Feature gaps where competitors have capabilities the product lacks
 - "opportunity": Market opportunities to differentiate from competitors
 - "priority": Suggestions to reprioritize existing planned features
 - "risk": Risks if certain features are not addressed
+
+IMPORTANT RULES:
+1. DO NOT generate recommendations that are similar to dismissed ones
+2. DO NOT duplicate existing active recommendations
+3. Focus on NEW, unique insights not already covered
 
 Return a JSON array with recommendations in this format:
 [

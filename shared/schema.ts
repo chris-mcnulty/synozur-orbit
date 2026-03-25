@@ -646,6 +646,23 @@ export const insertFeatureRecommendationSchema = createInsertSchema(featureRecom
   createdAt: true,
 });
 
+export const gapDismissals = pgTable("gap_dismissals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  gapIdentifier: text("gap_identifier").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  status: text("status").notNull().default("dismissed"),
+  reason: text("reason"),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  dismissedBy: varchar("dismissed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertGapDismissalSchema = createInsertSchema(gapDismissals).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertBattlecardSchema = createInsertSchema(battlecards).omit({
   id: true,
   createdAt: true,
@@ -710,6 +727,8 @@ export type InsertProductBattlecard = z.infer<typeof insertProductBattlecardSche
 export type ProductBattlecard = typeof productBattlecards.$inferSelect;
 export type InsertLongFormRecommendation = z.infer<typeof insertLongFormRecommendationSchema>;
 export type LongFormRecommendation = typeof longFormRecommendations.$inferSelect;
+export type InsertGapDismissal = z.infer<typeof insertGapDismissalSchema>;
+export type GapDismissal = typeof gapDismissals.$inferSelect;
 
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {
