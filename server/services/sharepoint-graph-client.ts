@@ -515,7 +515,7 @@ export class GraphClient {
           .map((s) => encodeURIComponent(s))
           .join("/");
         await this.request(
-          `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedCurrent}`
+          `${GRAPH_BETA_URL}/storage/fileStorage/containers/${containerId}/drive/root:${encodedCurrent}:/`
         );
         // Folder already exists — continue
       } catch (err) {
