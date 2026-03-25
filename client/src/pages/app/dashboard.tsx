@@ -23,6 +23,9 @@ import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import RecentJobsPanel from "@/components/RecentJobsPanel";
+import { NeedsAttentionCard } from "@/components/SmartSuggestions";
+import { computeIntelligenceHealth, checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import { calculateStaleness } from "@/lib/staleness";
 
 const hasAdminAccess = (role: string) => 
   role === "Global Admin" || role === "Domain Admin";
@@ -231,6 +234,26 @@ export default function Dashboard() {
       if (!response.ok) return { campaigns: [], savedEmails: [], totals: { campaigns: 0, totalPosts: 0, scheduledPosts: 0, savedEmails: 0 } };
       return response.json();
     },
+  });
+
+  const { data: gtmPlan } = useQuery({
+    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryFn: async () => {
+      const response = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!companyProfile,
+  });
+
+  const { data: messagingFramework } = useQuery({
+    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryFn: async () => {
+      const response = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!companyProfile,
   });
 
   const { data: tenantUsers = [] } = useQuery<{ id: string; name: string; email: string }[]>({
@@ -826,6 +849,71 @@ export default function Dashboard() {
           </Card>
         </Link>
       </div>
+
+      {(() => {
+        const sourceDateItems = [
+          ...(companyProfile?.lastCrawledAt ? [{ label: "Baseline", date: companyProfile.lastCrawledAt }] : []),
+          ...competitors.map((c: any) => ({ label: c.name + " (website)", date: c.lastCrawledAt })),
+          ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => ({ label: c.name + " (social)", date: c.socialLastFetchedAt })),
+        ];
+        const allSourceDates = sourceDateItems.map(s => s.date).filter(Boolean);
+        const artifactItems = [
+          ...(analysis?.createdAt ? [{ label: "Analysis", generatedAt: analysis.generatedFromDataAsOf || analysis.createdAt, sourceDates: allSourceDates }] : []),
+          ...(battleCards.length > 0 ? [{ label: "Battle Cards", generatedAt: new Date(battleCards.reduce((oldest: number, bc: any) => {
+            const d = new Date(bc.generatedFromDataAsOf || bc.lastGeneratedAt || bc.createdAt).getTime();
+            return d < oldest ? d : oldest;
+          }, Infinity)).toISOString(), sourceDates: allSourceDates }] : []),
+          ...(gtmPlan?.lastGeneratedAt ? [{ label: "GTM Plan", generatedAt: gtmPlan.generatedFromDataAsOf || gtmPlan.lastGeneratedAt, sourceDates: allSourceDates }] : []),
+          ...(messagingFramework?.lastGeneratedAt ? [{ label: "Messaging Framework", generatedAt: messagingFramework.generatedFromDataAsOf || messagingFramework.lastGeneratedAt, sourceDates: allSourceDates }] : []),
+        ];
+        const health = computeIntelligenceHealth(sourceDateItems, artifactItems.map(a => ({
+          ...a, generatedAt: typeof a.generatedAt === 'number' ? new Date(a.generatedAt).toISOString() : a.generatedAt
+        })));
+        const hasData = sourceDateItems.length > 0;
+
+        if (!hasData) return null;
+
+        const statusColor = health.status === "healthy" ? "text-green-500" : health.status === "attention" ? "text-amber-500" : "text-red-500";
+        const statusBg = health.status === "healthy" ? "bg-green-500/10" : health.status === "attention" ? "bg-amber-500/10" : "bg-red-500/10";
+        const statusLabel = health.status === "healthy" ? "All Fresh" : health.status === "attention" ? "Needs Attention" : "Action Required";
+
+        return (
+          <div className="grid gap-4 lg:grid-cols-3 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150 fill-mode-backwards">
+            <Link href="/app/refresh-center">
+              <Card className="cursor-pointer hover:border-primary/50 transition-all group h-full" data-testid="card-intelligence-health">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <RefreshCw className={`w-4 h-4 ${statusColor}`} />
+                      Intelligence Health
+                    </CardTitle>
+                    <Badge variant="secondary" className={`text-xs ${statusBg} ${statusColor} border-0`}>{statusLabel}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="text-2xl font-bold group-hover:text-primary transition-colors">{health.healthPercent}%</div>
+                    <div className="flex-1">
+                      <Progress value={health.healthPercent} className="h-2" />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{health.freshSources} fresh</span>
+                    {health.agingSources > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />{health.agingSources} aging</span>}
+                    {health.staleSources > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{health.staleSources} stale</span>}
+                  </div>
+                  {health.staleArtifacts.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-2">{health.staleArtifacts.length} artifact{health.staleArtifacts.length > 1 ? 's' : ''} behind source data</p>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
+            <div className="lg:col-span-2">
+              <NeedsAttentionCard />
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid gap-4 lg:grid-cols-3 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200 fill-mode-backwards">
         <Card className="lg:col-span-2 hover:border-primary/20 transition-colors duration-300">

@@ -6,10 +6,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, Loader2, RefreshCw, Sparkles, ChevronRight, Download, FileText, Pencil, X, Save, History, Clock, RotateCcw } from "lucide-react";
+import { MessageCircle, Loader2, RefreshCw, Sparkles, ChevronRight, Download, FileText, Pencil, X, Save, History, Clock, RotateCcw, AlertTriangle } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 
 type LongFormRecommendation = {
   id: string;
@@ -45,6 +46,15 @@ export default function MessagingFrameworkPage() {
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const { data: competitors = [] } = useQuery({
+    queryKey: ["/api/competitors"],
+    queryFn: async () => {
+      const response = await fetch("/api/competitors", { credentials: "include" });
+      if (!response.ok) return [];
       return response.json();
     },
   });
@@ -121,6 +131,31 @@ export default function MessagingFrameworkPage() {
         </h1>
         <p className="text-muted-foreground">AI-generated messaging framework based on competitive gaps and your baseline positioning.</p>
       </div>
+
+      {(() => {
+        if (!messagingFramework?.lastGeneratedAt) return null;
+        const sourceDates = [
+          ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
+          ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
+          ...competitors.filter((c: any) => c.socialLastFetchedAt).map((c: any) => c.socialLastFetchedAt),
+        ];
+        const freshness = checkArtifactFreshness(messagingFramework.generatedFromDataAsOf || messagingFramework.lastGeneratedAt, sourceDates);
+        if (!freshness.isStale) return null;
+        return (
+          <Card className="mb-4 border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/10" data-testid="banner-stale-messaging">
+            <CardContent className="py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Built from data as of <strong>{formatShortDate(messagingFramework.generatedFromDataAsOf || messagingFramework.lastGeneratedAt)}</strong> — {freshness.label}</span>
+              </div>
+              <Button variant="outline" size="sm" className="shrink-0 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => generateMessagingFramework.mutate()} disabled={generateMessagingFramework.isPending} data-testid="btn-rebuild-messaging">
+                {generateMessagingFramework.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Rebuild with Latest Data
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <FeatureGate feature="Messaging Framework" requiredPlan="Trial" isAllowed={messagingAllowed} description="Generate AI-powered messaging frameworks based on competitive gaps. Upgrade to Trial or higher to access this feature.">
         <Card>

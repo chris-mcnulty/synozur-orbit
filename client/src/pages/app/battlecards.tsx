@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import { AlertTriangle } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -323,6 +325,48 @@ export default function BattleCardsPage() {
             </Dialog>
           )}
         </div>
+
+        {battleCards.length > 0 && (() => {
+          const sourceDates = [
+            ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
+            ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
+            ...competitors.filter((c: any) => c.socialLastFetchedAt).map((c: any) => c.socialLastFetchedAt),
+          ];
+          const oldestCard = battleCards.reduce((oldest: BattleCardData, bc: BattleCardData) => {
+            const d = new Date(bc.lastGeneratedAt || bc.createdAt).getTime();
+            const o = new Date(oldest.lastGeneratedAt || oldest.createdAt).getTime();
+            return d < o ? bc : oldest;
+          }, battleCards[0]);
+          const freshness = checkArtifactFreshness(oldestCard?.generatedFromDataAsOf || oldestCard?.lastGeneratedAt || oldestCard?.createdAt, sourceDates);
+          if (!freshness.isStale) return null;
+          return (
+            <Card className="border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/10" data-testid="banner-stale-battlecards">
+              <CardContent className="py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    Built from data as of <strong>{formatShortDate(oldestCard?.generatedFromDataAsOf || oldestCard?.lastGeneratedAt || oldestCard?.createdAt)}</strong> — {freshness.label}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={async () => {
+                    for (const bc of battleCards) {
+                      handleGenerate(bc.competitorId);
+                    }
+                  }}
+                  disabled={!!generatingFor}
+                  data-testid="btn-rebuild-battlecards"
+                >
+                  {generatingFor ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  Rebuild All Cards
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {competitors.length === 0 ? (
           <Card className="border-dashed">

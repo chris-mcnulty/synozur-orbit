@@ -145,6 +145,10 @@ app.use((req, res, next) => {
         created_at TIMESTAMP NOT NULL DEFAULT now()
       )
     `);
+    await pgPool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE analysis ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE battlecards ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE long_form_recommendations ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

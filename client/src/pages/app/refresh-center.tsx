@@ -26,9 +26,13 @@ import {
   AlertCircle,
   Square,
   Ban,
+  FileText,
+  BarChart2,
+  Rocket,
+  MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getFullStalenessInfo } from "@/lib/staleness";
+import { checkArtifactFreshness, formatShortDate, getFullStalenessInfo } from "@/lib/staleness";
 import StalenessDot from "@/components/ui/StalenessDot";
 
 interface QuickAction {
@@ -99,6 +103,42 @@ export default function RefreshCenter() {
     },
     refetchInterval: 3000,
     enabled: isGlobalAdmin,
+  });
+
+  const { data: analysis } = useQuery({
+    queryKey: ["/api/analysis"],
+    queryFn: async () => {
+      const res = await fetch("/api/analysis", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const { data: battleCards = [] } = useQuery({
+    queryKey: ["/api/battlecards"],
+    queryFn: async () => {
+      const res = await fetch("/api/battlecards", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: gtmPlan } = useQuery({
+    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryFn: async () => {
+      const res = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const { data: messagingFramework } = useQuery({
+    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryFn: async () => {
+      const res = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
   });
 
   const setActionLoading = (id: string, loading: boolean) => {
@@ -382,12 +422,12 @@ export default function RefreshCenter() {
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
               <RefreshCw className="w-6 h-6" />
-              Refresh Center
+              Intelligence Health
             </h1>
             <p className="text-muted-foreground mt-1">
-              Manage all your data refresh operations in one place
+              Monitor data freshness and manage refresh operations
             </p>
           </div>
           <Button 
@@ -594,6 +634,64 @@ export default function RefreshCenter() {
             )}
           </Card>
         )}
+
+        <Card data-testid="card-artifact-freshness">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Target className="w-4 h-4" />
+              Artifact Freshness
+            </CardTitle>
+            <CardDescription>How current your generated intelligence artifacts are relative to source data</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const allSourceDates = [
+                companyProfile?.lastCrawledAt,
+                ...competitors.map((c: any) => c.lastCrawledAt),
+                ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => c.socialLastFetchedAt),
+              ].filter(Boolean);
+
+              const artifacts = [
+                { icon: <BarChart2 className="w-4 h-4" />, label: "Competitive Analysis", date: analysis?.generatedFromDataAsOf || analysis?.createdAt, link: "/app/analysis" },
+                { icon: <FileText className="w-4 h-4" />, label: "Battle Cards", date: battleCards.length > 0 ? new Date(Math.min(...battleCards.map((bc: any) => new Date(bc.generatedFromDataAsOf || bc.lastGeneratedAt || bc.createdAt).getTime()))).toISOString() : null, link: "/app/battlecards" },
+                { icon: <Rocket className="w-4 h-4" />, label: "GTM Plan", date: gtmPlan?.generatedFromDataAsOf || gtmPlan?.lastGeneratedAt, link: "/app/marketing/gtm-plan" },
+                { icon: <MessageCircle className="w-4 h-4" />, label: "Messaging Framework", date: messagingFramework?.generatedFromDataAsOf || messagingFramework?.lastGeneratedAt, link: "/app/marketing/messaging-framework" },
+              ];
+
+              return (
+                <div className="space-y-3">
+                  {artifacts.map((a, idx) => {
+                    const freshness = a.date ? checkArtifactFreshness(a.date, allSourceDates) : null;
+                    return (
+                      <div key={idx} className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors" data-testid={`artifact-freshness-${idx}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={cn("p-1.5 rounded", freshness?.isStale ? "bg-amber-500/10 text-amber-600" : a.date ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground")}>
+                            {a.icon}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium">{a.label}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {a.date ? `Generated ${formatShortDate(a.date)}` : "Not yet generated"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {freshness?.isStale ? (
+                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50">{freshness.label}</Badge>
+                          ) : a.date ? (
+                            <Badge variant="outline" className="text-xs text-green-600 border-green-200 bg-green-50/50">Current</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">Pending</Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="active" className="space-y-4">
           <TabsList>

@@ -318,6 +318,16 @@ async function runRegenerationInBackground(
       };
     }).filter(m => m.competitorMessage);
 
+    const refreshedCompetitors = await storage.getCompetitorsByContext(contextFilter);
+    const refreshedProfile = await storage.getCompanyProfileByContext(contextFilter);
+    const sourceTimestamps: number[] = [];
+    if (refreshedProfile?.lastCrawledAt) sourceTimestamps.push(new Date(refreshedProfile.lastCrawledAt).getTime());
+    for (const rc of refreshedCompetitors) {
+      if (rc.lastCrawledAt) sourceTimestamps.push(new Date(rc.lastCrawledAt).getTime());
+      if ((rc as any).socialLastFetchedAt) sourceTimestamps.push(new Date((rc as any).socialLastFetchedAt).getTime());
+    }
+    const sourceDataAsOf = sourceTimestamps.length > 0 ? new Date(Math.max(...sourceTimestamps)) : null;
+
     await storage.createAnalysis({
       userId: userId,
       tenantDomain,
@@ -325,6 +335,7 @@ async function runRegenerationInBackground(
       themes: competitorThemes,
       messaging: messagingComparisons,
       gaps: gaps,
+      generatedFromDataAsOf: sourceDataAsOf,
     });
 
     progress.currentStep = "Generating battlecards";
@@ -386,6 +397,7 @@ Return ONLY valid JSON.`;
               talkTracks: battlecardContent.talkTracks,
               quickStats: battlecardContent.quickStats,
               lastGeneratedAt: new Date(),
+              generatedFromDataAsOf: sourceDataAsOf,
             });
           } else {
             await storage.createBattlecard({
@@ -399,6 +411,7 @@ Return ONLY valid JSON.`;
               objections: battlecardContent.objections,
               talkTracks: battlecardContent.talkTracks,
               quickStats: battlecardContent.quickStats,
+              generatedFromDataAsOf: sourceDataAsOf,
             });
           }
           results.battlecardsGenerated++;
@@ -510,6 +523,7 @@ Make this practical and actionable for the team.`;
             content: gtmContent,
             status: "generated",
             lastGeneratedAt: new Date(),
+            generatedFromDataAsOf: sourceDataAsOf,
             generatedBy: userId,
           });
         } else {
@@ -521,6 +535,7 @@ Make this practical and actionable for the team.`;
             content: gtmContent,
             status: "generated",
             generatedBy: userId,
+            generatedFromDataAsOf: sourceDataAsOf,
           });
         }
         results.gtmPlanGenerated = true;
@@ -592,6 +607,7 @@ Make this practical and ready to use in marketing materials.`;
             content: messagingContent,
             status: "generated",
             lastGeneratedAt: new Date(),
+            generatedFromDataAsOf: sourceDataAsOf,
             generatedBy: userId,
           });
         } else {
@@ -603,6 +619,7 @@ Make this practical and ready to use in marketing materials.`;
             content: messagingContent,
             status: "generated",
             generatedBy: userId,
+            generatedFromDataAsOf: sourceDataAsOf,
           });
         }
         results.messagingFrameworkGenerated = true;

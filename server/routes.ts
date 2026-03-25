@@ -93,6 +93,19 @@ function toContextFilter(ctx: RequestContext): ContextFilter {
   };
 }
 
+async function computeLatestSourceDataTimestamp(ctx: RequestContext): Promise<Date | null> {
+  const ctxFilter = toContextFilter(ctx);
+  const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
+  const competitors = await storage.getCompetitorsByContext(ctxFilter);
+  const dates: number[] = [];
+  if (companyProfile?.lastCrawledAt) dates.push(new Date(companyProfile.lastCrawledAt).getTime());
+  for (const c of competitors) {
+    if (c.lastCrawledAt) dates.push(new Date(c.lastCrawledAt).getTime());
+    if ((c as any).socialLastFetchedAt) dates.push(new Date((c as any).socialLastFetchedAt).getTime());
+  }
+  return dates.length > 0 ? new Date(Math.max(...dates)) : null;
+}
+
 // Helper to validate resource belongs to current context
 function validateResourceContext(
   resource: { tenantDomain?: string | null; marketId?: string | null },
@@ -2256,6 +2269,7 @@ Return ONLY the JSON object, no other text.`;
         };
       });
 
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
       const savedAnalysis = await storage.createAnalysis({
         userId: user.id,
         tenantDomain,
@@ -2263,6 +2277,7 @@ Return ONLY the JSON object, no other text.`;
         themes: themesForSave,
         messaging: messagingForSave,
         gaps: gaps,
+        generatedFromDataAsOf: sourceDataAsOf,
       });
 
       res.json({ success: true, analysis: savedAnalysis, recommendations, analyzedCount: analyses.length });
@@ -3071,6 +3086,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
       }
 
       const user = await storage.getUser(ctx.userId);
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
       const reportData = {
         name: name || `Report - ${new Date().toLocaleDateString()}`,
         date: new Date().toLocaleDateString(),
@@ -3083,6 +3099,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
         createdBy: ctx.userId,
+        generatedFromDataAsOf: sourceDataAsOf,
       };
 
       const parsed = insertReportSchema.safeParse(reportData);
@@ -3366,11 +3383,13 @@ Return ONLY valid JSON, no markdown or explanations.`;
       // Check if battle card already exists for this competitor
       const existing = await storage.getBattlecardByCompetitor(competitorId);
       
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
       let battlecard;
       if (existing) {
         battlecard = await storage.updateBattlecard(existing.id, {
           ...battlecardContent,
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
           updatedAt: new Date(),
         });
       } else {
@@ -3381,6 +3400,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
           ...battlecardContent,
           status: "published",
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
           createdBy: ctx.userId,
         });
       }
@@ -10812,6 +10832,7 @@ Make this practical and actionable for the team.`;
       const content = completion.choices[0]?.message?.content || "";
 
       const existing = await storage.getLongFormRecommendationByType("gtm_plan", undefined, companyProfile.id);
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
 
       if (existing) {
         const updated = await storage.updateLongFormRecommendation(existing.id, {
@@ -10819,6 +10840,7 @@ Make this practical and actionable for the team.`;
           savedPrompts,
           status: "generated",
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
           generatedBy: ctx.userId,
         });
         res.json(updated);
@@ -10833,6 +10855,7 @@ Make this practical and actionable for the team.`;
           status: "generated",
           generatedBy: ctx.userId,
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
         });
         res.json(created);
       }
@@ -10974,6 +10997,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
       const content = message.content[0].type === "text" ? message.content[0].text : "";
 
       const existing = await storage.getLongFormRecommendationByType("messaging_framework", undefined, companyProfile.id);
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
 
       if (existing) {
         const updated = await storage.updateLongFormRecommendation(existing.id, {
@@ -10981,6 +11005,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           savedPrompts,
           status: "generated",
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
           generatedBy: ctx.userId,
         });
         res.json(updated);
@@ -10995,6 +11020,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
           status: "generated",
           generatedBy: ctx.userId,
           lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
         });
         res.json(created);
       }

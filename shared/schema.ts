@@ -439,6 +439,7 @@ export const reports = pgTable("reports", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
   createdBy: varchar("created_by").references(() => users.id),
   fileUrl: text("file_url"),
+  generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -450,6 +451,7 @@ export const analysis = pgTable("analysis", {
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),
+  generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -468,6 +470,7 @@ export const battlecards = pgTable("battlecards", {
   customNotes: text("custom_notes"), // Free-form notes
   status: text("status").notNull().default("draft"), // draft, published
   lastGeneratedAt: timestamp("last_generated_at"),
+  generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -511,6 +514,7 @@ export const longFormRecommendations = pgTable("long_form_recommendations", {
   // Status tracking
   status: text("status").notNull().default("not_generated"), // not_generated, generating, generated
   lastGeneratedAt: timestamp("last_generated_at"),
+  generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   generatedBy: varchar("generated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

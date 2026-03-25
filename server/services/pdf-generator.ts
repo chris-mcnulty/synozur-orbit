@@ -64,6 +64,7 @@ interface IntelligenceBriefingPdfData {
   periodStart: Date;
   periodEnd: Date;
   generatedAt: Date;
+  dataAsOf?: Date;
   briefingData: any; // BriefingData from shared/schema or intelligence-briefing-service
   signalCount: number;
   competitorCount: number;
@@ -1926,6 +1927,10 @@ function generateIntelligenceBriefingHtml(data: IntelligenceBriefingPdfData): st
         <div class="stat-value">${data.briefingData.newsArticles?.length || 0}</div>
         <div class="stat-label">News Articles</div>
       </div>
+      ${data.dataAsOf ? `<div class="stat-card">
+        <div class="stat-value" style="font-size: 14px;">${format(data.dataAsOf, "MMM d, yyyy")}</div>
+        <div class="stat-label">Source Data As Of</div>
+      </div>` : ""}
     </div>
 
     <div class="section">
@@ -2068,6 +2073,15 @@ export async function generateIntelligenceBriefingPdf(
     marketId: briefing.marketId || undefined,
   });
 
+  const competitors = await storage.getCompetitorsByContext({ tenantDomain, marketId: briefing.marketId || undefined });
+  const sourceDates: number[] = [];
+  if (companyProfile?.lastCrawledAt) sourceDates.push(new Date(companyProfile.lastCrawledAt).getTime());
+  for (const c of competitors) {
+    if (c.lastCrawledAt) sourceDates.push(new Date(c.lastCrawledAt).getTime());
+    if ((c as any).socialLastFetchedAt) sourceDates.push(new Date((c as any).socialLastFetchedAt).getTime());
+  }
+  const dataAsOf = sourceDates.length > 0 ? new Date(Math.max(...sourceDates)) : undefined;
+
   const data: IntelligenceBriefingPdfData = {
     companyName: marketName || companyProfile?.companyName || tenant.name || tenantDomain,
     tenantDomain,
@@ -2075,6 +2089,7 @@ export async function generateIntelligenceBriefingPdf(
     periodStart: new Date(briefing.periodStart),
     periodEnd: new Date(briefing.periodEnd),
     generatedAt: new Date(briefing.createdAt),
+    dataAsOf,
     briefingData: briefing.briefingData,
     signalCount: briefing.signalCount,
     competitorCount: briefing.competitorCount,

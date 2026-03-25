@@ -412,6 +412,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
         { label: "Data Sources", icon: Database, href: "/app/data-sources" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
+        { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
       ]
     },
@@ -440,7 +441,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     {
       group: "System",
       items: [
-        { label: "Refresh Center", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "User Management", icon: Users, href: "/app/users" },
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },

@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { getTimeAgo, calculateStaleness, checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import { RefreshCw } from "lucide-react";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type ReportSections = {
@@ -105,6 +107,33 @@ export default function Reports() {
   });
 
   const pdfReportsAllowed = tenantInfo?.features?.pdfReports !== false;
+
+  const { data: companyProfile } = useQuery({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const response = await fetch("/api/company-profile", { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const { data: competitors = [] as any[] } = useQuery({
+    queryKey: ["/api/competitors"],
+    queryFn: async () => {
+      const response = await fetch("/api/competitors", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const latestSourceDate = (() => {
+    const dates = [
+      companyProfile?.lastCrawledAt,
+      ...competitors.map((c: any) => c.lastCrawledAt),
+      ...competitors.map((c: any) => c.socialLastFetchedAt),
+    ].filter(Boolean).map((d: string) => new Date(d).getTime());
+    return dates.length > 0 ? new Date(Math.max(...dates)).toISOString() : null;
+  })();
 
   const deleteReportMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -588,8 +617,20 @@ export default function Reports() {
                   </Badge>
                 </div>
                 <CardTitle className="text-base line-clamp-1">{report.name}</CardTitle>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock size={12} /> {report.date || new Date(report.createdAt).toLocaleDateString()}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1"><Clock size={12} /> {report.date || new Date(report.createdAt).toLocaleDateString()}</span>
+                  {(() => {
+                    const freshness = latestSourceDate
+                      ? checkArtifactFreshness(report.generatedFromDataAsOf || report.createdAt, [latestSourceDate])
+                      : null;
+                    if (freshness?.isStale) {
+                      return <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50" data-testid={`badge-currency-${report.id}`}>{freshness.label}</Badge>;
+                    }
+                    const level = calculateStaleness(report.createdAt);
+                    if (level === "fresh") return <Badge variant="outline" className="text-xs text-green-600 border-green-200 bg-green-50/50" data-testid={`badge-currency-${report.id}`}>Current</Badge>;
+                    const age = getTimeAgo(report.createdAt);
+                    return <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50" data-testid={`badge-currency-${report.id}`}>{age} old</Badge>;
+                  })()}
                   {report.marketName && (
                     <>
                       <span>•</span>
@@ -613,6 +654,21 @@ export default function Reports() {
                   data-testid={`button-download-${report.id}`}
                 >
                   <Download className="w-4 h-4 mr-2" /> Download
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-primary"
+                  onClick={() => {
+                    setReportName(report.name);
+                    setScope(report.scope || "baseline");
+                    if (report.projectId) setSelectedProjectId(report.projectId);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  data-testid={`button-regenerate-${report.id}`}
+                  title="Regenerate this report with latest data"
+                >
+                  <RefreshCw className="w-4 h-4" />
                 </Button>
                 {isAdmin && (
                   <Button 

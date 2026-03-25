@@ -14,7 +14,7 @@ import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, Chevron
 import { PlanLimitBadge } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
-import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
+import { calculateStaleness, getTimeAgo, getStalenessInfo, checkArtifactFreshness, formatShortDate, type StalenessLevel } from "@/lib/staleness";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import SharedSourceFreshnessRow, { type SourceFreshnessItem, type SourceFreshnessData } from "@/components/SourceFreshnessRow";
@@ -77,6 +77,13 @@ export default function Analysis() {
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
   const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
+  const [selectiveRegenOpen, setSelectiveRegenOpen] = useState(false);
+  const [regenSelections, setRegenSelections] = useState<Record<string, boolean>>({
+    analysis: true,
+    battlecards: false,
+    gtm: false,
+    messaging: false,
+  });
   const [gapCategoryFilter, setGapCategoryFilter] = useState<string>("all");
   const [isFreshnessDialogOpen, setIsFreshnessDialogOpen] = useState(false);
   const [pendingAnalysisMode, setPendingAnalysisMode] = useState<AnalysisMode>("full");
@@ -402,25 +409,39 @@ export default function Analysis() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-          <Button
-            variant="outline"
-            disabled={fullRegenerationMutation.isPending || !hasCompetitors || !companyProfile}
-            onClick={() => setRegenerateAllWarningOpen(true)}
-            data-testid="button-regenerate-all"
-            className="gap-2"
-          >
-            {fullRegenerationMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4" />
-                Regenerate All
-              </>
-            )}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={fullRegenerationMutation.isPending || !hasCompetitors || !companyProfile}
+                data-testid="button-regenerate-all"
+                className="gap-2"
+              >
+                {fullRegenerationMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-4 w-4" />
+                    Rebuild Artifacts
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => setSelectiveRegenOpen(true)} className="cursor-pointer" data-testid="regen-selective">
+                <Check className="w-4 h-4 mr-2 text-primary" />
+                Choose Artifacts to Rebuild...
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setRegenerateAllWarningOpen(true)} className="cursor-pointer" data-testid="regen-all">
+                <RotateCcw className="w-4 h-4 mr-2 text-destructive" />
+                Regenerate Everything
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -455,6 +476,89 @@ export default function Analysis() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={selectiveRegenOpen} onOpenChange={setSelectiveRegenOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-primary" />
+              Select Artifacts to Rebuild
+            </DialogTitle>
+            <DialogDescription>
+              Choose which downstream artifacts to regenerate using the latest source data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {[
+              { key: "analysis", label: "Competitive Analysis", desc: "Themes, messaging & gap analysis" },
+              { key: "battlecards", label: "Battle Cards", desc: "Per-competitor sales battle cards" },
+              { key: "gtm", label: "GTM Plan", desc: "Go-to-market strategy & recommendations" },
+              { key: "messaging", label: "Messaging Framework", desc: "Positioning & messaging guide" },
+            ].map(item => (
+              <label key={item.key} className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`regen-check-${item.key}`}>
+                <Checkbox
+                  checked={regenSelections[item.key]}
+                  onCheckedChange={(checked) => setRegenSelections(prev => ({ ...prev, [item.key]: !!checked }))}
+                />
+                <div>
+                  <div className="font-medium text-sm">{item.label}</div>
+                  <div className="text-xs text-muted-foreground">{item.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectiveRegenOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!Object.values(regenSelections).some(Boolean)}
+              data-testid="button-selective-regen-confirm"
+              onClick={async () => {
+                setSelectiveRegenOpen(false);
+                const selected = regenSelections;
+                try {
+                  if (selected.analysis) {
+                    const res = await fetch("/api/analysis/generate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({ analysisType: "full" }),
+                    });
+                    if (!res.ok) throw new Error("Analysis generation failed");
+                  }
+                  if (selected.battlecards && competitors.length > 0) {
+                    for (const c of competitors) {
+                      await fetch(`/api/battlecards/generate/${c.id}`, {
+                        method: "POST",
+                        credentials: "include",
+                      });
+                    }
+                  }
+                  if (selected.gtm) {
+                    await fetch("/api/baseline/recommendations/gtm_plan/generate", {
+                      method: "POST",
+                      credentials: "include",
+                    });
+                  }
+                  if (selected.messaging) {
+                    await fetch("/api/baseline/recommendations/messaging_framework/generate", {
+                      method: "POST",
+                      credentials: "include",
+                    });
+                  }
+                  const names = Object.entries(selected).filter(([,v]) => v).map(([k]) => k);
+                  toast.success(`Rebuilding ${names.length} artifact${names.length > 1 ? 's' : ''}. This may take a few minutes.`);
+                  queryClient.invalidateQueries({ queryKey: ["/api/analysis"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+                } catch (e: any) {
+                  toast.error(e.message || "Failed to start regeneration");
+                }
+              }}
+            >
+              Rebuild Selected
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isGenerating && (
         <Card className="mb-6 p-6 border-primary/50 bg-primary/5">
@@ -531,6 +635,45 @@ export default function Analysis() {
           )}
         </Card>
       ) : hasData && (
+        <>
+        {(() => {
+          const sourceDates = [
+            ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
+            ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
+            ...competitors.filter((c: any) => c.socialLastFetchedAt).map((c: any) => c.socialLastFetchedAt),
+          ];
+          const freshness = checkArtifactFreshness(analysis?.generatedFromDataAsOf || analysis?.createdAt, sourceDates);
+          if (!freshness.isStale) return null;
+          return (
+            <Card className="mb-4 border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/10" data-testid="banner-stale-analysis">
+              <CardContent className="py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Built from data as of <strong>{formatShortDate(analysis?.generatedFromDataAsOf || analysis?.createdAt)}</strong> — {freshness.label}</span>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="shrink-0 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-rebuild-analysis">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Rebuild with Latest Data
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => runAnalysis("quick")} className="cursor-pointer" data-testid="rebuild-quick">
+                      <Zap className="w-4 h-4 mr-2 text-yellow-500" />
+                      Quick Refresh
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => runAnalysis("full")} className="cursor-pointer" data-testid="rebuild-full">
+                      <Globe className="w-4 h-4 mr-2 text-blue-500" />
+                      Full Analysis
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </CardContent>
+            </Card>
+          );
+        })()}
         <Tabs defaultValue="themes" className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg flex-wrap">
             <TabsTrigger value="themes" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Key Themes</TabsTrigger>
@@ -1042,6 +1185,7 @@ export default function Analysis() {
             </div>
           </TabsContent>
         </Tabs>
+        </>
       )}
       <Dialog open={isFreshnessDialogOpen} onOpenChange={setIsFreshnessDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-analysis-freshness">

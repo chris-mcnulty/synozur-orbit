@@ -107,3 +107,93 @@ export function getFullStalenessInfo(lastUpdated: string | Date | null | undefin
     lastUpdated,
   };
 }
+
+export interface ArtifactFreshness {
+  isStale: boolean;
+  artifactDate: Date | null;
+  latestSourceDate: Date | null;
+  daysBehind: number;
+  label: string;
+}
+
+export function checkArtifactFreshness(
+  artifactGeneratedAt: string | Date | null | undefined,
+  sourceDates: (string | Date | null | undefined)[]
+): ArtifactFreshness {
+  if (!artifactGeneratedAt) {
+    return { isStale: false, artifactDate: null, latestSourceDate: null, daysBehind: 0, label: "Not yet generated" };
+  }
+
+  const artifactDate = new Date(artifactGeneratedAt);
+  const validSourceDates = sourceDates
+    .filter((d): d is string | Date => !!d)
+    .map(d => new Date(d));
+
+  if (validSourceDates.length === 0) {
+    return { isStale: false, artifactDate, latestSourceDate: null, daysBehind: 0, label: "Up to date" };
+  }
+
+  const latestSourceDate = new Date(Math.max(...validSourceDates.map(d => d.getTime())));
+  const daysBehind = Math.floor((latestSourceDate.getTime() - artifactDate.getTime()) / (1000 * 60 * 60 * 24));
+  const isStale = latestSourceDate.getTime() > artifactDate.getTime();
+
+  let label = "Up to date";
+  if (isStale) {
+    if (daysBehind === 0) label = "Source data updated today";
+    else if (daysBehind === 1) label = "1 day behind source data";
+    else label = `${daysBehind} days behind source data`;
+  }
+
+  return { isStale, artifactDate, latestSourceDate, daysBehind, label };
+}
+
+export function formatShortDate(date: string | Date | null | undefined): string {
+  if (!date) return "Never";
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export type IntelligenceHealthStatus = "healthy" | "attention" | "critical";
+
+export interface IntelligenceHealthSummary {
+  status: IntelligenceHealthStatus;
+  totalSources: number;
+  freshSources: number;
+  staleSources: number;
+  agingSources: number;
+  staleArtifacts: string[];
+  healthPercent: number;
+}
+
+export function computeIntelligenceHealth(
+  sourceDates: { label: string; date: string | Date | null | undefined }[],
+  artifacts: { label: string; generatedAt: string | Date | null | undefined; sourceDates: (string | Date | null | undefined)[] }[]
+): IntelligenceHealthSummary {
+  let freshSources = 0;
+  let staleSources = 0;
+  let agingSources = 0;
+
+  for (const src of sourceDates) {
+    const level = calculateStaleness(src.date);
+    if (level === "fresh") freshSources++;
+    else if (level === "stale" || level === "never") staleSources++;
+    else agingSources++;
+  }
+
+  const staleArtifacts: string[] = [];
+  for (const art of artifacts) {
+    const freshness = checkArtifactFreshness(art.generatedAt, art.sourceDates);
+    if (freshness.isStale) staleArtifacts.push(art.label);
+  }
+
+  const totalSources = sourceDates.length;
+  const healthPercent = totalSources > 0
+    ? Math.round(((freshSources + agingSources * 0.5) / totalSources) * 100)
+    : 100;
+
+  let status: IntelligenceHealthStatus = "healthy";
+  if (staleSources > 0 || staleArtifacts.length > 0) status = "attention";
+  if (staleSources > totalSources / 2 || staleArtifacts.length > 2) status = "critical";
+
+  return { status, totalSources, freshSources, staleSources, agingSources, staleArtifacts, healthPercent };
+}
