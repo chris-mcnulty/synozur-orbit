@@ -176,8 +176,10 @@ export default function BrandLibraryPage() {
         method: "DELETE",
         credentials: "include",
       });
-      if (!r.ok) throw new Error((await r.json()).error);
-      return r.json();
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Delete failed" }));
+        throw new Error(err.error);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
