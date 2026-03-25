@@ -15350,14 +15350,14 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const { sharepointFileStorage } = await import("./services/sharepoint-file-storage.js");
       const ctx = await getRequestContext(req);
       const tenantRow = await storage.getTenantByDomain(ctx.tenantDomain);
-      const { containerId } = await sharepointFileStorage.getContainerForTenant(tenantRow?.id);
+      const { containerId, azureTenantId } = await sharepointFileStorage.getContainerForTenant(tenantRow?.id);
 
       if (!containerId) {
         return res.json({ configured: false, message: "No SPE container configured. Set ORBIT_SPE_CONTAINER_ID_DEV / ORBIT_SPE_CONTAINER_ID_PROD." });
       }
 
       const { containerCreator } = await import("./services/sharepoint-container-creator.js");
-      const info = await containerCreator.getContainerInfo(containerId);
+      const info = await containerCreator.getContainerInfo(containerId, azureTenantId);
       res.json({ configured: true, containerId: containerId.substring(0, 20) + "…", ...info });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -20,7 +20,7 @@
 
 import { db } from "../db.js";
 import { groundingDocuments, globalGroundingDocuments, tenants } from "@shared/schema";
-import { eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { sharepointFileStorage } from "./sharepoint-file-storage.js";
 import type { StoredOrbitFile } from "./sharepoint-file-storage.js";
 
@@ -93,7 +93,7 @@ export class OrphanedFileManager {
     const startedAt = Date.now();
 
     // 1. Collect all known speFileIds from the database (once, upfront)
-    const knownIds = await this.loadKnownSpeFileIds();
+    const knownIds = await this.loadAllKnownSpeFileIds();
     const now = new Date();
     const safeAgeMs = SAFE_AGE_HOURS * 60 * 60 * 1000;
 
@@ -318,36 +318,25 @@ export class OrphanedFileManager {
 
   /**
    * Build a Set of all speFileIds currently tracked in the database.
-   * Queries both grounding_documents and global_grounding_documents tables.
+   * Queries both grounding_documents and global_grounding_documents tables
+   * across all containers.
    */
-  private async loadKnownSpeFileIds(containerId: string): Promise<Set<string>> {
+  private async loadAllKnownSpeFileIds(): Promise<Set<string>> {
     const ids = new Set<string>();
 
-    // Tenant grounding documents — scoped to this container
     const tenantDocs = await db
       .select({ speFileId: groundingDocuments.speFileId })
       .from(groundingDocuments)
-      .where(
-        and(
-          isNotNull(groundingDocuments.speFileId),
-          eq(groundingDocuments.speContainerId, containerId)
-        )
-      );
+      .where(isNotNull(groundingDocuments.speFileId));
 
     for (const row of tenantDocs) {
       if (row.speFileId) ids.add(row.speFileId);
     }
 
-    // Global grounding documents — scoped to this container
     const globalDocs = await db
       .select({ speFileId: globalGroundingDocuments.speFileId })
       .from(globalGroundingDocuments)
-      .where(
-        and(
-          isNotNull(globalGroundingDocuments.speFileId),
-          eq(globalGroundingDocuments.speContainerId, containerId)
-        )
-      );
+      .where(isNotNull(globalGroundingDocuments.speFileId));
 
     for (const row of globalDocs) {
       if (row.speFileId) ids.add(row.speFileId);
