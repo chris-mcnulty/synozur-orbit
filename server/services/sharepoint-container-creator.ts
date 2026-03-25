@@ -81,7 +81,11 @@ export class ContainerCreator {
     try {
       const token = await this.getGraphAccessToken(azureTenantId);
 
-      console.log("[OrbitContainerCreator] Skipping beta container type registration (assumed pre-registered via PowerShell/Admin Center)");
+      const regResult = await this.registerContainerTypeInTenant(azureTenantId);
+      console.log("[OrbitContainerCreator] Container type registration:", regResult.success ? "OK" : regResult.message);
+      if (!regResult.success) {
+        console.warn("[OrbitContainerCreator] Container type registration failed (continuing anyway):", regResult.message);
+      }
 
       const payload = {
         displayName: containerName,
