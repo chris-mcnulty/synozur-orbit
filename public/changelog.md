@@ -99,16 +99,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - News items included in intelligence briefings
   - Enhanced change detection with structured AI analysis categorizing changes by type and significance
 
-- **Support Ticket System** (v1.5.0)
-  - Submit and track support tickets with category, priority, and status
-  - Threaded discussion with support staff
-  - Admin ticket management with internal notes and assignment
-  - Email notifications for new tickets and status updates
-
-- **What's New & Changelog Pages** (v1.5.0)
-  - In-app What's New modal with version highlights
-  - Standalone Changelog and Roadmap pages accessible from navigation
-
 - **Canonical Organization Layer**
   - Centralizes public company data in the `organizations` table
   - URL normalization and ref-counted lifecycle
