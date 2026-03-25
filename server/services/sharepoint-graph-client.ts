@@ -76,6 +76,7 @@ export class GraphClient {
 
   // Container/drive ID cache
   private containerCache = new Map<string, { data: FileStorageContainer; expiresAt: number }>();
+  private driveIdCache = new Map<string, { driveId: string; expiresAt: number }>();
 
   constructor(azureTenantId?: string) {
     this.azureTenantId = azureTenantId;
