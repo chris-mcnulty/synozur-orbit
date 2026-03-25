@@ -1259,7 +1259,7 @@ export default function ContentLibraryPage() {
                         )}
                         <div className="min-w-0">
                           <button
-                            onClick={() => { setDetailAsset(asset); setEditOpen(true); }}
+                            onClick={() => openEditDialog(asset)}
                             className="text-sm font-medium hover:text-primary transition-colors truncate block max-w-[280px] text-left"
                             data-testid={`link-asset-title-${asset.id}`}
                           >
@@ -1304,7 +1304,7 @@ export default function ContentLibraryPage() {
                             <RefreshCw className="w-3 h-3 mr-1" /> Extract
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setDetailAsset(asset); setEditOpen(true); }} data-testid={`button-view-${asset.id}`}>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditDialog(asset)} data-testid={`button-view-${asset.id}`}>
                           View
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(asset.id)} data-testid={`button-delete-table-${asset.id}`}>
