@@ -233,8 +233,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
       eq(contentAssets.marketId, ctx.marketId),
     ];
     const status = req.query.status as string | undefined;
-    if (status && (status === "active" || status === "archived")) {
-      conditions.push(eq(contentAssets.status, status));
+    if (status === "archived") {
+      conditions.push(eq(contentAssets.status, "archived"));
+    } else {
+      conditions.push(ne(contentAssets.status, "archived"));
     }
     const rows = await db.select().from(contentAssets)
       .where(and(...conditions))
@@ -618,8 +620,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
       eq(brandAssets.marketId, ctx.marketId),
     ];
     const status = req.query.status as string | undefined;
-    if (status && (status === "active" || status === "archived")) {
-      conditions.push(eq(brandAssets.status, status));
+    if (status === "archived") {
+      conditions.push(eq(brandAssets.status, "archived"));
+    } else {
+      conditions.push(ne(brandAssets.status, "archived"));
     }
     const rows = await db.select({
         asset: brandAssets,
