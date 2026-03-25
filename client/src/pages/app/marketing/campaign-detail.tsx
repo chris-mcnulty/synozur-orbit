@@ -41,6 +41,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -564,6 +574,20 @@ export default function CampaignDetailPage() {
   });
 
   const [csvFormat, setCsvFormat] = useState<string>("socialpilot");
+  const [showExportWarning, setShowExportWarning] = useState(false);
+
+  const hasUnscheduledPosts = () => {
+    const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+    return activePosts.some(p => !p.scheduledDate);
+  };
+
+  const handleExportClick = () => {
+    if (hasUnscheduledPosts()) {
+      setShowExportWarning(true);
+    } else {
+      exportCsvMutation.mutate();
+    }
+  };
 
   const exportCsvMutation = useMutation({
     mutationFn: async () => {
@@ -600,10 +624,17 @@ export default function CampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       if (curr === "completed") {
         toast({ title: "Posts generated", description: "Your AI-generated posts are ready for review." });
+        const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+        const unscheduled = activePosts.filter(p => !p.scheduledDate);
+        if (unscheduled.length > 0) {
+          setTimeout(() => {
+            toast({ title: "Schedule your posts", description: "Posts don't have dates yet. Use the Schedule Posts button before exporting to CSV." });
+          }, 2000);
+        }
       }
     }
     prevJobStatus.current = curr;
-  }, [jobStatus?.status, id, queryClient, toast]);
+  }, [jobStatus?.status, id, queryClient, toast, posts]);
 
   const getPostImage = (post: GeneratedPost): string | null => {
     if (post.overrideImageUrl) return post.overrideImageUrl;
@@ -788,7 +819,7 @@ export default function CampaignDetailPage() {
                       <SelectItem value="sproutsocial">Sprout Social</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" className="gap-2" onClick={() => exportCsvMutation.mutate()} disabled={exportCsvMutation.isPending} data-testid="button-export-csv-posts">
+                  <Button variant="outline" className="gap-2" onClick={handleExportClick} disabled={exportCsvMutation.isPending} data-testid="button-export-csv-posts">
                     <Download className="w-4 h-4" />Export CSV
                   </Button>
                 </div>
@@ -798,20 +829,30 @@ export default function CampaignDetailPage() {
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               )}
-              {posts.length > 0 && campaign?.startDate && campaign?.numberOfDays && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setShowScheduleDialog(true)}
-                  disabled={schedulePostsMutation.isPending}
-                  title="Configure and distribute posts across the campaign date range"
-                  data-testid="button-schedule-posts"
-                >
-                  <CalendarDays className="w-3.5 h-3.5" />
-                  {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
-                </Button>
-              )}
+              {posts.length > 0 && campaign?.startDate && campaign?.numberOfDays && (() => {
+                const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+                const unscheduledCount = activePosts.filter(p => !p.scheduledDate).length;
+                const needsScheduling = unscheduledCount > 0 && jobStatus?.status === "completed";
+                return (
+                  <Button
+                    variant={needsScheduling ? "default" : "outline"}
+                    size="sm"
+                    className={`gap-1.5 ${needsScheduling ? "animate-pulse" : ""}`}
+                    onClick={() => setShowScheduleDialog(true)}
+                    disabled={schedulePostsMutation.isPending}
+                    title={needsScheduling ? `${unscheduledCount} post${unscheduledCount !== 1 ? "s" : ""} not yet scheduled — schedule before exporting` : "Configure and distribute posts across the campaign date range"}
+                    data-testid="button-schedule-posts"
+                  >
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
+                    {needsScheduling && (
+                      <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full bg-white text-primary" data-testid="badge-unscheduled-count">
+                        {unscheduledCount}
+                      </span>
+                    )}
+                  </Button>
+                );
+              })()}
             </div>
 
             {isGenerating && (
@@ -1684,6 +1725,27 @@ export default function CampaignDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={showExportWarning} onOpenChange={setShowExportWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-export-warning-title">Unscheduled Posts Detected</AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-export-warning-description">
+              {(() => {
+                const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+                const unscheduledCount = activePosts.filter(p => !p.scheduledDate).length;
+                const allUnscheduled = unscheduledCount === activePosts.length;
+                return allUnscheduled
+                  ? "None of your posts have a scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with tools like SocialPilot that require dates."
+                  : `${unscheduledCount} of ${activePosts.length} posts have no scheduled date. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with tools like SocialPilot that require dates.`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-export">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => exportCsvMutation.mutate()} data-testid="button-export-anyway">Export Anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
