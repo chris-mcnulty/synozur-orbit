@@ -5,9 +5,10 @@ import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitor
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
-import { sendWeeklyDigestEmail } from "./email-service";
+import { sendWeeklyDigestEmail, sendScheduledBriefingEmail } from "./email-service";
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
+import { checkFeatureAccessAsync } from "./plan-policy";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -1135,12 +1136,165 @@ export async function sendDigestNowForUser(userId: string): Promise<{ success: b
   }
 }
 
+async function runScheduledBriefingJob(): Promise<void> {
+  if (jobStatus.scheduledBriefing?.isRunning) {
+    console.log("[Scheduled Job] Scheduled briefing already running, skipping...");
+    return;
+  }
+
+  if (!jobStatus.scheduledBriefing) {
+    jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+  }
+  jobStatus.scheduledBriefing.isRunning = true;
+  console.log("[Scheduled Job] Starting scheduled briefing job...");
+
+  const jobRun = await storage.createScheduledJobRun({
+    jobType: "scheduledBriefing",
+    status: "running",
+    startedAt: new Date(),
+  });
+
+  try {
+    const baseUrl = getBaseUrl();
+    const enabledConfigs = await storage.getEnabledScheduledBriefingConfigs();
+    if (enabledConfigs.length === 0) {
+      console.log("[Scheduled Briefing] No enabled scheduled briefing configs found, skipping.");
+      await storage.updateScheduledJobRun(jobRun.id, {
+        status: "completed",
+        completedAt: new Date(),
+        result: { generatedCount: 0, emailsSent: 0, errorCount: 0, skipped: "no_configs" },
+      });
+      return;
+    }
+
+    let generatedCount = 0;
+    let emailsSent = 0;
+    let errorCount = 0;
+
+    const configsByTenant = new Map<string, typeof enabledConfigs>();
+    for (const config of enabledConfigs) {
+      if (!configsByTenant.has(config.tenantDomain)) configsByTenant.set(config.tenantDomain, []);
+      configsByTenant.get(config.tenantDomain)!.push(config);
+    }
+
+    for (const [tenantDomain, configs] of Array.from(configsByTenant.entries())) {
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      if (!tenant || tenant.status !== "active") continue;
+
+      const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
+      if (!featureCheck.allowed) continue;
+
+      const podcastCheck = await checkFeatureAccessAsync(tenant.plan, "podcastBriefings");
+
+      for (const config of configs) {
+        const marketId = config.marketId || undefined;
+
+        const subscribers = await storage.getEnabledBriefingSubscribers(tenantDomain, marketId);
+        if (subscribers.length === 0) {
+          console.log(`[Scheduled Briefing] No subscribers for ${tenantDomain} market=${marketId}, skipping.`);
+          continue;
+        }
+
+        console.log(`[Scheduled Briefing] Processing ${tenantDomain} market=${marketId}: ${subscribers.length} subscribers`);
+
+        try {
+          const briefing = await generateBriefing(tenantDomain, 7, marketId);
+          if (!briefing || !briefing.briefingData) {
+            console.warn(`[Scheduled Briefing] No briefing data for ${tenantDomain} market=${marketId}`);
+            continue;
+          }
+          generatedCount++;
+
+          const briefingData = briefing.briefingData as BriefingData;
+          let podcastUrl: string | undefined;
+
+          if (podcastCheck.allowed) {
+            try {
+              const { generatePodcastAudio } = await import("./podcast-audio-generator");
+              podcastUrl = await generatePodcastAudio(briefing.id, briefingData);
+              console.log(`[Scheduled Briefing] Podcast generated for ${tenantDomain} market=${marketId}`);
+            } catch (podcastErr) {
+              console.error(`[Scheduled Briefing] Podcast generation failed for ${tenantDomain} market=${marketId}:`, podcastErr);
+            }
+          }
+
+          for (const sub of subscribers) {
+            try {
+              const user = await storage.getUser(sub.userId);
+              if (!user || !user.email) continue;
+
+              const sent = await sendScheduledBriefingEmail(
+                user.email,
+                user.name,
+                tenant.name,
+                {
+                  executiveSummary: briefingData.executiveSummary,
+                  actionItems: briefingData.actionItems || [],
+                  riskAlerts: briefingData.riskAlerts || [],
+                  briefingId: briefing.id,
+                  periodLabel: briefingData.periodLabel,
+                  podcastUrl,
+                },
+                baseUrl,
+              );
+              if (sent) emailsSent++;
+            } catch (emailErr) {
+              console.error(`[Scheduled Briefing] Email failed for user ${sub.userId}:`, emailErr);
+              errorCount++;
+            }
+          }
+        } catch (tenantErr) {
+          console.error(`[Scheduled Briefing] Failed for ${tenantDomain} market=${marketId}:`, tenantErr);
+          errorCount++;
+        }
+      }
+    }
+
+    console.log(`[Scheduled Briefing] Job completed: ${generatedCount} briefings, ${emailsSent} emails, ${errorCount} errors`);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: "completed",
+      completedAt: new Date(),
+      result: { generatedCount, emailsSent, errorCount },
+    });
+  } catch (error) {
+    console.error("[Scheduled Briefing] Job failed:", error);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: "failed",
+      completedAt: new Date(),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    jobStatus.scheduledBriefing.isRunning = false;
+    jobStatus.scheduledBriefing.lastRun = new Date();
+  }
+}
+
+async function checkAndRunScheduledBriefing(): Promise<void> {
+  try {
+    const recentRuns = await storage.getScheduledJobRunsByType("scheduledBriefing");
+    const lastCompleted = recentRuns.find((r: { status: string; completedAt: Date | null }) => r.status === "completed");
+
+    if (lastCompleted?.completedAt) {
+      const elapsed = Date.now() - new Date(lastCompleted.completedAt).getTime();
+      if (elapsed < WEEKLY_DIGEST_INTERVAL_MS) {
+        return;
+      }
+    }
+
+    console.log("[Scheduled Job] Scheduled briefing is overdue, triggering now...");
+    await runScheduledBriefingJob();
+  } catch (err) {
+    console.error("[Scheduled Job] Error checking scheduled briefing:", err);
+  }
+}
+
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
 let productMonitorInterval: NodeJS.Timeout | null = null;
 let trialReminderInterval: NodeJS.Timeout | null = null;
 let weeklyDigestInterval: NodeJS.Timeout | null = null;
+let scheduledBriefingInterval: NodeJS.Timeout | null = null;
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
@@ -1151,6 +1305,9 @@ export function startScheduledJobs(): void {
   if (productMonitorInterval) clearInterval(productMonitorInterval);
   if (trialReminderInterval) clearInterval(trialReminderInterval);
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
+  if (scheduledBriefingInterval) clearInterval(scheduledBriefingInterval);
+
+  jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
 
   // Set up recurring intervals
   websiteCrawlInterval = setInterval(() => {
@@ -1175,6 +1332,10 @@ export function startScheduledJobs(): void {
 
   weeklyDigestInterval = setInterval(() => {
     checkAndRunWeeklyDigest();
+  }, 60 * 60 * 1000);
+
+  scheduledBriefingInterval = setInterval(() => {
+    checkAndRunScheduledBriefing();
   }, 60 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
@@ -1221,7 +1382,12 @@ export function startScheduledJobs(): void {
     checkAndRunWeeklyDigest();
   }, 20 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last)");
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Checking if scheduled briefing is overdue...");
+    checkAndRunScheduledBriefing();
+  }, 25 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
@@ -1249,6 +1415,10 @@ export function stopScheduledJobs(): void {
   if (weeklyDigestInterval) {
     clearInterval(weeklyDigestInterval);
     weeklyDigestInterval = null;
+  }
+  if (scheduledBriefingInterval) {
+    clearInterval(scheduledBriefingInterval);
+    scheduledBriefingInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }

@@ -110,6 +110,12 @@ import {
   intelligenceBriefings,
   type IntelligenceBriefing,
   type InsertIntelligenceBriefing,
+  briefingSubscriptions,
+  type BriefingSubscription,
+  type InsertBriefingSubscription,
+  scheduledBriefingConfigs,
+  type ScheduledBriefingConfig,
+  type InsertScheduledBriefingConfig,
   organizations,
   type Organization,
   type InsertOrganization,
@@ -441,6 +447,15 @@ export interface IStorage {
   getLatestBriefingForTenant(tenantDomain: string, marketId?: string): Promise<IntelligenceBriefing | undefined>;
   updateIntelligenceBriefing(id: string, updates: Partial<InsertIntelligenceBriefing>): Promise<IntelligenceBriefing>;
   deleteIntelligenceBriefing(id: string): Promise<void>;
+
+  // Briefing Subscription methods
+  getBriefingSubscription(userId: string, tenantDomain: string, marketId?: string): Promise<BriefingSubscription | undefined>;
+  getBriefingSubscriptionsByTenant(tenantDomain: string, marketId?: string): Promise<BriefingSubscription[]>;
+  upsertBriefingSubscription(data: InsertBriefingSubscription): Promise<BriefingSubscription>;
+  getEnabledBriefingSubscribers(tenantDomain: string, marketId?: string): Promise<BriefingSubscription[]>;
+  getScheduledBriefingConfig(tenantDomain: string, marketId?: string): Promise<ScheduledBriefingConfig | undefined>;
+  upsertScheduledBriefingConfig(data: InsertScheduledBriefingConfig): Promise<ScheduledBriefingConfig>;
+  getEnabledScheduledBriefingConfigs(): Promise<ScheduledBriefingConfig[]>;
 
   // Service Plan methods
   getServicePlan(id: string): Promise<ServicePlan | undefined>;
@@ -2825,6 +2840,83 @@ export class DatabaseStorage implements IStorage {
 
   async deleteIntelligenceBriefing(id: string): Promise<void> {
     await db.delete(intelligenceBriefings).where(eq(intelligenceBriefings.id, id));
+  }
+
+  // Briefing Subscription methods
+  async getBriefingSubscription(userId: string, tenantDomain: string, marketId?: string): Promise<BriefingSubscription | undefined> {
+    const conditions = [
+      eq(briefingSubscriptions.userId, userId),
+      eq(briefingSubscriptions.tenantDomain, tenantDomain),
+    ];
+    if (marketId) {
+      conditions.push(eq(briefingSubscriptions.marketId, marketId));
+    } else {
+      conditions.push(isNull(briefingSubscriptions.marketId));
+    }
+    const [sub] = await db.select().from(briefingSubscriptions).where(and(...conditions));
+    return sub || undefined;
+  }
+
+  async getBriefingSubscriptionsByTenant(tenantDomain: string, marketId?: string): Promise<BriefingSubscription[]> {
+    const conditions = [eq(briefingSubscriptions.tenantDomain, tenantDomain)];
+    if (marketId) {
+      conditions.push(eq(briefingSubscriptions.marketId, marketId));
+    }
+    return db.select().from(briefingSubscriptions).where(and(...conditions));
+  }
+
+  async upsertBriefingSubscription(data: InsertBriefingSubscription): Promise<BriefingSubscription> {
+    const existing = await this.getBriefingSubscription(data.userId, data.tenantDomain, data.marketId || undefined);
+    if (existing) {
+      const [updated] = await db.update(briefingSubscriptions)
+        .set({ enabled: data.enabled, frequency: data.frequency || "weekly", updatedAt: new Date() })
+        .where(eq(briefingSubscriptions.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(briefingSubscriptions).values(data).returning();
+    return created;
+  }
+
+  async getEnabledBriefingSubscribers(tenantDomain: string, marketId?: string): Promise<BriefingSubscription[]> {
+    const conditions = [
+      eq(briefingSubscriptions.tenantDomain, tenantDomain),
+      eq(briefingSubscriptions.enabled, true),
+    ];
+    if (marketId) {
+      conditions.push(eq(briefingSubscriptions.marketId, marketId));
+    } else {
+      conditions.push(isNull(briefingSubscriptions.marketId));
+    }
+    return db.select().from(briefingSubscriptions).where(and(...conditions));
+  }
+
+  async getScheduledBriefingConfig(tenantDomain: string, marketId?: string): Promise<ScheduledBriefingConfig | undefined> {
+    const conditions = [eq(scheduledBriefingConfigs.tenantDomain, tenantDomain)];
+    if (marketId) {
+      conditions.push(eq(scheduledBriefingConfigs.marketId, marketId));
+    } else {
+      conditions.push(isNull(scheduledBriefingConfigs.marketId));
+    }
+    const [config] = await db.select().from(scheduledBriefingConfigs).where(and(...conditions));
+    return config || undefined;
+  }
+
+  async upsertScheduledBriefingConfig(data: InsertScheduledBriefingConfig): Promise<ScheduledBriefingConfig> {
+    const existing = await this.getScheduledBriefingConfig(data.tenantDomain, data.marketId || undefined);
+    if (existing) {
+      const [updated] = await db.update(scheduledBriefingConfigs)
+        .set({ enabled: data.enabled, frequency: data.frequency || "weekly", updatedAt: new Date() })
+        .where(eq(scheduledBriefingConfigs.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(scheduledBriefingConfigs).values(data).returning();
+    return created;
+  }
+
+  async getEnabledScheduledBriefingConfigs(): Promise<ScheduledBriefingConfig[]> {
+    return db.select().from(scheduledBriefingConfigs).where(eq(scheduledBriefingConfigs.enabled, true));
   }
 
   // Service Plan methods

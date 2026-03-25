@@ -423,6 +423,38 @@ export const SUPPORT_TICKET_CONFIRMATION_EMAIL = {
 };
 
 // ============================================
+// SCHEDULED BRIEFING PODCAST EMAIL
+// ============================================
+export const SCHEDULED_BRIEFING_EMAIL = {
+  subject: (companyName: string, periodLabel?: string) => periodLabel ? `Your Weekly Intelligence Briefing & Podcast - ${companyName} (${periodLabel})` : `Your Weekly Intelligence Briefing & Podcast - ${companyName}`,
+  heading: 'Your Weekly Intelligence Briefing',
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  intro: `Your scheduled weekly intelligence briefing is ready. Here are the highlights:`,
+  executiveSummaryHeading: 'Executive Summary',
+  actionItemsHeading: 'Top Action Items',
+  actionItemUrgencyLabels: {
+    immediate: '🔴 Immediate',
+    this_week: '🟡 This Week',
+    this_month: '🔵 This Month',
+    watch: '⚪ Watch',
+  } as Record<string, string>,
+  riskAlertsHeading: 'Risk Alerts',
+  riskSeverityLabels: {
+    critical: '🚨 Critical',
+    warning: '⚠️ Warning',
+    watch: '👁️ Watch',
+  } as Record<string, string>,
+  podcastHeading: 'Listen to the Podcast',
+  podcastDescription: 'Catch up on this week\'s competitive intelligence in our podcast-style audio briefing. Perfect for your commute or while multitasking.',
+  podcastButtonText: 'Listen to Podcast',
+  viewBriefingButtonText: 'View Full Briefing',
+  unsubscribeText: 'Manage your briefing subscription preferences',
+  footerMessage: `You're receiving this email because you subscribed to weekly intelligence briefing updates.`,
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, podcastLink: string, settingsLink: string, periodLabel?: string) =>
+    `Hi ${name},\n\nYour Weekly Intelligence Briefing for ${companyName}${periodLabel ? ` (${periodLabel})` : ''}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nListen to podcast: ${podcastLink}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe, update your preferences: ${settingsLink}`,
+};
+
+// ============================================
 // COMPETITOR ALERT EMAIL (FUTURE)
 // ============================================
 export const COMPETITOR_ALERT_EMAIL = {

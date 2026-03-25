@@ -29,6 +29,8 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "socialAccounts", label: "Social Accounts", description: "Connect and manage social media accounts for publishing", category: "marketing" },
   { key: "saturnCapture", label: "Saturn Capture Extension", description: "Browser extension for capturing web content into the content library", category: "marketing" },
   { key: "intelligenceBriefings", label: "Intelligence Briefings", description: "AI-synthesized periodic market intelligence reports with executive summaries", category: "intelligence" },
+  { key: "podcastBriefings", label: "Podcast Briefings", description: "AI-generated podcast-style audio summaries of intelligence briefings", category: "intelligence" },
+  { key: "scheduledBriefingUpdates", label: "Scheduled Briefing Updates", description: "Automatic weekly briefing generation with email delivery", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -73,6 +75,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     socialAccounts: false,
     saturnCapture: false,
     intelligenceBriefings: false,
+    podcastBriefings: false,
+    scheduledBriefingUpdates: false,
   },
   trial: {
     battlecards: true,
@@ -96,6 +100,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     socialAccounts: false,
     saturnCapture: false,
     intelligenceBriefings: false,
+    podcastBriefings: false,
+    scheduledBriefingUpdates: false,
   },
   pro: {
     battlecards: true,
@@ -119,6 +125,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     socialAccounts: false,
     saturnCapture: false,
     intelligenceBriefings: true,
+    podcastBriefings: true,
+    scheduledBriefingUpdates: false,
   },
   enterprise: {
     battlecards: true,
@@ -142,6 +150,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     socialAccounts: true,
     saturnCapture: true,
     intelligenceBriefings: true,
+    podcastBriefings: true,
+    scheduledBriefingUpdates: true,
   },
   unlimited: {
     battlecards: true,
@@ -165,6 +175,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     socialAccounts: true,
     saturnCapture: true,
     intelligenceBriefings: true,
+    podcastBriefings: true,
+    scheduledBriefingUpdates: true,
   },
 };
 

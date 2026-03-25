@@ -42,6 +42,13 @@ import {
   Users,
   AlertCircle,
   Lock,
+  Headphones,
+  Play,
+  Pause,
+  Volume2,
+  Bell,
+  BellOff,
+  Mic,
 } from "lucide-react";
 import {
   Dialog,
@@ -132,6 +139,8 @@ interface IntelligenceBriefing {
   signalCount: number;
   competitorCount: number;
   createdAt: string;
+  podcastStatus?: string;
+  podcastAudioUrl?: string;
 }
 
 type SourceFreshnessItem = SharedSourceFreshnessItem;
@@ -203,6 +212,9 @@ export default function IntelligenceBriefingPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isAdmin = user ? hasAdminAccess(user.role) : false;
 
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
@@ -211,6 +223,8 @@ export default function IntelligenceBriefingPage() {
     },
   });
   const isAllowed = tenantInfo?.features?.intelligenceBriefings === true;
+  const podcastAllowed = tenantInfo?.features?.podcastBriefings === true;
+  const scheduledUpdatesAllowed = tenantInfo?.features?.scheduledBriefingUpdates === true;
 
   const handleDownloadPdf = async () => {
     if (!activeBriefingId) return;
@@ -397,6 +411,152 @@ export default function IntelligenceBriefingPage() {
     },
   });
 
+  const podcastGenerateMutation = useMutation({
+    mutationFn: async (briefingId: string) => {
+      const res = await fetch(`/api/intelligence-briefings/${briefingId}/podcast`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to generate podcast");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Generating Podcast", description: "Your podcast is being generated. This may take a few minutes." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Podcast Generation Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: podcastStatus, refetch: refetchPodcastStatus } = useQuery<{ podcastStatus: string; podcastAudioUrl: string | null }>({
+    queryKey: ["/api/intelligence-briefings", activeBriefingId, "podcast-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/intelligence-briefings/${activeBriefingId}/podcast-status`, { credentials: "include" });
+      if (!res.ok) return { podcastStatus: "none", podcastAudioUrl: null };
+      return res.json();
+    },
+    enabled: !!activeBriefingId && podcastAllowed,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.podcastStatus === "generating") return 5000;
+      return false;
+    },
+  });
+
+  const { data: subscription } = useQuery<{ enabled: boolean; frequency: string; id?: string }>({
+    queryKey: ["/api/briefing-subscriptions"],
+    queryFn: async () => {
+      const res = await fetch("/api/briefing-subscriptions", { credentials: "include" });
+      if (!res.ok) return { enabled: false, frequency: "weekly" };
+      return res.json();
+    },
+    enabled: scheduledUpdatesAllowed,
+  });
+
+  const { data: scheduledConfig } = useQuery<{ enabled: boolean; frequency: string; id?: string }>({
+    queryKey: ["/api/scheduled-briefing-config"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduled-briefing-config", { credentials: "include" });
+      if (!res.ok) return { enabled: false, frequency: "weekly" };
+      return res.json();
+    },
+    enabled: scheduledUpdatesAllowed && isAdmin,
+  });
+
+  const scheduledConfigMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/scheduled-briefing-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled, frequency: "weekly" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update config");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduled-briefing-config"] });
+      toast({
+        title: data.enabled ? "Scheduled Updates Enabled" : "Scheduled Updates Disabled",
+        description: data.enabled
+          ? "Weekly intelligence briefings will be auto-generated for this market."
+          : "Automatic weekly briefing generation has been turned off.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const subscriptionMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/briefing-subscriptions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled, frequency: "weekly" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update subscription");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/briefing-subscriptions"] });
+      toast({
+        title: data.enabled ? "Subscribed" : "Unsubscribed",
+        description: data.enabled
+          ? "You'll receive weekly intelligence briefing emails."
+          : "You've been unsubscribed from weekly briefing emails.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleTogglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleDownloadAudio = async () => {
+    if (!activeBriefingId) return;
+    try {
+      const response = await fetch(`/api/intelligence-briefings/${activeBriefingId}/podcast-audio`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to download audio");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const dateStr = briefing ? new Date(briefing.periodEnd).toISOString().split("T")[0] : "export";
+      a.download = `Intelligence_Briefing_Podcast_${dateStr}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({ title: "Success", description: "Your podcast is downloading" });
+    } catch (error: any) {
+      toast({ title: "Download Failed", description: error.message, variant: "destructive" });
+    }
+  };
+
   const { data: freshness, refetch: refetchFreshness } = useQuery<SourceFreshnessData>({
     queryKey: ["/api/intelligence-briefings/source-freshness"],
     queryFn: async () => {
@@ -524,6 +684,56 @@ export default function IntelligenceBriefingPage() {
               AI-synthesized market intelligence from your competitive signals
             </p>
           </div>
+
+          {scheduledUpdatesAllowed && (
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={scheduledConfig?.enabled ? "default" : "outline"}
+                        size="sm"
+                        className="h-9 gap-2"
+                        onClick={() => scheduledConfigMutation.mutate(!scheduledConfig?.enabled)}
+                        disabled={scheduledConfigMutation.isPending}
+                        data-testid="button-toggle-scheduled-config"
+                      >
+                        {scheduledConfigMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Calendar className="w-4 h-4" />
+                        )}
+                        {scheduledConfig?.enabled ? "Auto-Gen On" : "Auto-Gen Off"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {scheduledConfig?.enabled
+                        ? "Weekly briefings are auto-generated for subscribers. Click to disable."
+                        : "Enable weekly auto-generation of briefings for this market."}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              <Button
+                variant={subscription?.enabled ? "default" : "outline"}
+                size="sm"
+                className="h-9 gap-2"
+                onClick={() => subscriptionMutation.mutate(!subscription?.enabled)}
+                disabled={subscriptionMutation.isPending}
+                data-testid="button-toggle-subscription"
+              >
+                {subscriptionMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : subscription?.enabled ? (
+                  <Bell className="w-4 h-4" />
+                ) : (
+                  <BellOff className="w-4 h-4" />
+                )}
+                {subscription?.enabled ? "Subscribed" : "Subscribe Weekly"}
+              </Button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             {briefings.length > 1 && (
@@ -800,6 +1010,122 @@ export default function IntelligenceBriefingPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {podcastAllowed && (
+              <Card data-testid="card-podcast-player">
+                <CardContent className="pt-4 pb-4 px-4">
+                  {podcastStatus?.podcastStatus === "ready" && podcastStatus.podcastAudioUrl ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-primary/10 rounded-full">
+                            <Headphones className="w-4 h-4 text-primary" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-semibold">Podcast Briefing</h3>
+                            <p className="text-xs text-muted-foreground">Two-host conversational summary</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={handleDownloadAudio}
+                            data-testid="button-download-podcast"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-9 p-0 rounded-full shrink-0"
+                          onClick={handleTogglePlay}
+                          data-testid="button-play-podcast"
+                        >
+                          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                        </Button>
+                        <div className="flex-1">
+                          <audio
+                            ref={audioRef}
+                            src={podcastStatus.podcastAudioUrl}
+                            onEnded={() => setIsPlaying(false)}
+                            onPause={() => setIsPlaying(false)}
+                            onPlay={() => setIsPlaying(true)}
+                            className="w-full h-8"
+                            controls
+                            controlsList="nodownload"
+                            style={{ filter: "invert(0.8) hue-rotate(180deg)", height: "32px" }}
+                            data-testid="audio-podcast-player"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : podcastStatus?.podcastStatus === "generating" ? (
+                    <div className="flex items-center gap-3 py-2">
+                      <div className="p-2 bg-primary/10 rounded-full">
+                        <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold">Generating Podcast</h3>
+                        <p className="text-xs text-muted-foreground">Converting your briefing into an audio podcast. This may take a few minutes...</p>
+                      </div>
+                    </div>
+                  ) : podcastStatus?.podcastStatus === "failed" ? (
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-destructive/10 rounded-full">
+                          <AlertCircle className="w-4 h-4 text-destructive" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold">Podcast Generation Failed</h3>
+                          <p className="text-xs text-muted-foreground">Something went wrong. You can try again.</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { podcastGenerateMutation.mutate(activeBriefingId!); refetchPodcastStatus(); }}
+                        disabled={podcastGenerateMutation.isPending}
+                        data-testid="button-retry-podcast"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-muted rounded-full">
+                          <Mic className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold">Podcast Briefing</h3>
+                          <p className="text-xs text-muted-foreground">Generate an AI podcast summary of this briefing</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { podcastGenerateMutation.mutate(activeBriefingId!); setTimeout(() => refetchPodcastStatus(), 1000); }}
+                        disabled={podcastGenerateMutation.isPending}
+                        data-testid="button-generate-podcast"
+                      >
+                        {podcastGenerateMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <Headphones className="w-3.5 h-3.5 mr-1.5" />
+                        )}
+                        Generate Podcast
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {bd.keyThemes.length > 0 && (
               <div>

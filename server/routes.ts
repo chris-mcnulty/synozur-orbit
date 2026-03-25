@@ -14762,6 +14762,215 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  // ==================== PODCAST & SUBSCRIPTION ROUTES ====================
+
+  app.post("/api/intelligence-briefings/:id/podcast", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "podcastBriefings");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (briefing.status !== "published" || !briefing.briefingData) {
+        return res.status(400).json({ error: "Briefing must be published before generating podcast" });
+      }
+      const currentStatus = briefing.podcastStatus;
+      if (currentStatus === "generating") {
+        return res.status(409).json({ error: "Podcast is already being generated" });
+      }
+
+      res.json({ status: "generating", briefingId: briefing.id });
+
+      (async () => {
+        try {
+          const { generatePodcastAudio } = await import("./services/podcast-audio-generator");
+          await generatePodcastAudio(briefing.id, briefing.briefingData as import("./services/intelligence-briefing-service").BriefingData);
+          console.log(`[Podcast] Generation complete for briefing ${briefing.id}`);
+        } catch (error: any) {
+          console.error(`[Podcast] Background generation failed for briefing ${briefing.id}:`, error);
+        }
+      })();
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/intelligence-briefings/:id/podcast-status", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      res.json({
+        podcastStatus: briefing.podcastStatus || "none",
+        podcastAudioUrl: briefing.podcastAudioUrl || null,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/intelligence-briefings/:id/podcast-audio", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) {
+        return res.status(404).json({ error: "Briefing not found" });
+      }
+      if (briefing.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (briefing.podcastStatus !== "ready") {
+        return res.status(404).json({ error: "Podcast audio not available" });
+      }
+
+      const { getPodcastAudioBuffer } = await import("./services/podcast-audio-generator");
+      const buffer = await getPodcastAudioBuffer(briefing.id);
+      if (!buffer) {
+        return res.status(404).json({ error: "Audio file not found" });
+      }
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", buffer.length);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.send(buffer);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/briefing-subscriptions", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
+      const subscription = await storage.getBriefingSubscription(ctx.userId, ctx.tenantDomain, ctx.marketId);
+      res.json(subscription || { enabled: false, frequency: "weekly" });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/briefing-subscriptions", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
+      const { enabled, frequency } = req.body;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+      const validFrequencies = ["weekly"];
+      const freq = validFrequencies.includes(frequency) ? frequency : "weekly";
+
+      const subscription = await storage.upsertBriefingSubscription({
+        tenantDomain: ctx.tenantDomain,
+        userId: ctx.userId,
+        marketId: ctx.marketId,
+        enabled,
+        frequency: freq,
+      });
+      res.json(subscription);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/scheduled-briefing-config", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
+      const config = await storage.getScheduledBriefingConfig(ctx.tenantDomain, ctx.marketId);
+      res.json(config || { enabled: false, frequency: "weekly" });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/scheduled-briefing-config", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required to configure scheduled briefings" });
+      }
+      const tenant = await storage.getTenant(ctx.tenantId);
+      if (tenant) {
+        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
+        if (!featureCheck.allowed) {
+          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+        }
+      }
+      const { enabled, frequency } = req.body;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+      const validFrequencies = ["weekly"];
+      const freq = validFrequencies.includes(frequency) ? frequency : "weekly";
+
+      const config = await storage.upsertScheduledBriefingConfig({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        enabled,
+        frequency: freq,
+      });
+      res.json(config);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== ADMIN: JOB QUEUE STATUS ====================
 
   app.get("/api/admin/queue-status", async (req, res) => {

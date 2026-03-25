@@ -31,7 +31,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas.
-- **Key Tables**: `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, `organizations`, `supportTickets`, `supportTicketReplies`.
+- **Key Tables**: `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, `briefingSubscriptions`, `organizations`, `supportTickets`, `supportTicketReplies`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`, supporting Microsoft Entra ID (OAuth 2.0) and planned Google SSO, with email/password as a fallback.
@@ -45,7 +45,7 @@ Preferred communication style: Simple, everyday language.
 - **AI Analysis**: Competitive website analysis, AI-guided recommendations (RAG), gap analysis.
 - **Web Crawling Service**: Multi-page crawling, social media discovery, blog post detection, scheduled background jobs.
 - **Competitor Intelligence Dashboard**: Provides insights from AI-summarized website changes, social signals, and activity logs.
-- **Intelligence Briefings**: AI-synthesized periodic market intelligence reports, with configurable periods, executive summaries, and action items. Supports branded PDF export and email sharing. Includes data source freshness checks.
+- **Intelligence Briefings**: AI-synthesized periodic market intelligence reports, with configurable periods, executive summaries, and action items. Supports branded PDF export and email sharing. Includes data source freshness checks. Features podcast-style audio summaries (two-host conversational format using OpenAI TTS with echo/nova voices), scheduled weekly auto-generation for enterprise/unlimited tenants, and per-user email subscription management. Plan gating: podcast generation for pro/enterprise/unlimited; scheduled updates and email subscriptions for enterprise/unlimited only.
 - **News Monitoring**: Integration with GNews API for competitor and baseline company news, included in intelligence briefings.
 - **Enhanced Change Detection**: Website monitoring with structured AI analysis categorizing changes by type and significance.
 - **Campaigns (Social)**: Containers for content assets, social accounts, and generated social posts, with automatic hashtag merging.

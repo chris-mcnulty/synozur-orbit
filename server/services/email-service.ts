@@ -15,6 +15,7 @@ import {
   COMPETITOR_ALERT_EMAIL,
   SUPPORT_TICKET_NOTIFICATION_EMAIL,
   SUPPORT_TICKET_CONFIRMATION_EMAIL,
+  SCHEDULED_BRIEFING_EMAIL,
 } from '../config/email-copy';
 
 let connectionSettings: any;
@@ -984,6 +985,118 @@ export async function sendSupportTicketConfirmation(
   return sendEmail({
     to: user.email,
     subject: copy.subject(ticket.ticketNumber),
+    html: wrapEmailContent(content),
+    text,
+  });
+}
+
+export async function sendScheduledBriefingEmail(
+  email: string,
+  recipientName: string,
+  companyName: string,
+  briefingData: {
+    executiveSummary: string;
+    actionItems: Array<{ title: string; description: string; urgency: string }>;
+    riskAlerts: Array<{ title: string; description: string; severity: string }>;
+    briefingId: string;
+    periodLabel?: string;
+    podcastUrl?: string;
+  },
+  baseUrl: string,
+): Promise<boolean> {
+  const copy = SCHEDULED_BRIEFING_EMAIL;
+  const briefingLink = `${baseUrl}/app/intelligence?id=${briefingData.briefingId}`;
+  const settingsLink = `${baseUrl}/app/intelligence`;
+  const podcastLink = briefingData.podcastUrl
+    ? `${baseUrl}${briefingData.podcastUrl}`
+    : briefingLink;
+
+  const summaryExcerpt = briefingData.executiveSummary.length > 500
+    ? briefingData.executiveSummary.substring(0, 500) + "..."
+    : briefingData.executiveSummary;
+
+  const topActions = briefingData.actionItems.slice(0, 3);
+  const actionItemsHtml = topActions.map(item => {
+    const urgencyLabel = copy.actionItemUrgencyLabels[item.urgency] || item.urgency;
+    return `
+      <div class="feature">
+        <div class="feature-title">${urgencyLabel} ${item.title}</div>
+        <p class="feature-desc">${item.description}</p>
+      </div>
+    `;
+  }).join("");
+
+  const riskAlertsHtml = briefingData.riskAlerts.slice(0, 3).map(risk => {
+    const severityLabel = copy.riskSeverityLabels[risk.severity] || risk.severity;
+    return `
+      <div class="feature" style="border-color: ${risk.severity === 'critical' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(129, 15, 251, 0.15)'};">
+        <div class="feature-title">${severityLabel} ${risk.title}</div>
+        <p class="feature-desc">${risk.description}</p>
+      </div>
+    `;
+  }).join("");
+
+  const podcastSection = briefingData.podcastUrl ? `
+    <div class="divider"></div>
+    <h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 0 0 12px 0;">🎙️ ${copy.podcastHeading}</h2>
+    <p>${copy.podcastDescription}</p>
+    <div class="button-container">
+      <a href="${podcastLink}" class="button">${copy.podcastButtonText}</a>
+    </div>
+  ` : "";
+
+  const actionItemsText = topActions.map(item => `- [${item.urgency}] ${item.title}: ${item.description}`).join("\n");
+
+  const content = `
+    <h1>${copy.heading}</h1>
+    <p>${copy.greeting(recipientName)}</p>
+    <p>${copy.intro}</p>
+    
+    <div class="divider"></div>
+    
+    <h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 0 0 12px 0;">${copy.executiveSummaryHeading}</h2>
+    <p>${summaryExcerpt}</p>
+    
+    ${topActions.length > 0 ? `
+      <div class="divider"></div>
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 0 0 12px 0;">${copy.actionItemsHeading}</h2>
+      <div class="feature-list">${actionItemsHtml}</div>
+    ` : ""}
+    
+    ${riskAlertsHtml ? `
+      <div class="divider"></div>
+      <h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 0 0 12px 0;">${copy.riskAlertsHeading}</h2>
+      <div class="feature-list">${riskAlertsHtml}</div>
+    ` : ""}
+    
+    ${podcastSection}
+    
+    <div class="divider"></div>
+    
+    <div class="button-container">
+      <a href="${briefingLink}" class="button">${copy.viewBriefingButtonText}</a>
+    </div>
+    
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      ${copy.footerMessage}<br/>
+      <a href="${settingsLink}" class="link" style="font-size: 12px;">${copy.unsubscribeText}</a>
+    </p>
+  `;
+
+  const text = copy.plainText(
+    recipientName,
+    companyName,
+    briefingData.executiveSummary,
+    actionItemsText,
+    briefingLink,
+    podcastLink,
+    settingsLink,
+    briefingData.periodLabel,
+  );
+
+  return sendEmail({
+    to: email,
+    subject: copy.subject(companyName, briefingData.periodLabel),
     html: wrapEmailContent(content),
     text,
   });

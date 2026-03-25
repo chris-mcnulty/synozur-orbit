@@ -1399,6 +1399,8 @@ export const intelligenceBriefings = pgTable("intelligence_briefings", {
   briefingData: jsonb("briefing_data"), // Full AI-synthesized briefing: narrative, signals, themes, action items
   signalCount: integer("signal_count").notNull().default(0),
   competitorCount: integer("competitor_count").notNull().default(0),
+  podcastAudioUrl: text("podcast_audio_url"),
+  podcastStatus: text("podcast_status").default("none"), // none, generating, ready, failed
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -1409,6 +1411,46 @@ export const insertIntelligenceBriefingSchema = createInsertSchema(intelligenceB
 
 export type IntelligenceBriefing = typeof intelligenceBriefings.$inferSelect;
 export type InsertIntelligenceBriefing = z.infer<typeof insertIntelligenceBriefingSchema>;
+
+// Briefing Subscriptions - per-user email subscription preferences for weekly briefings
+export const briefingSubscriptions = pgTable("briefing_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  enabled: boolean("enabled").notNull().default(true),
+  frequency: text("frequency").notNull().default("weekly"), // weekly
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBriefingSubscriptionSchema = createInsertSchema(briefingSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type BriefingSubscription = typeof briefingSubscriptions.$inferSelect;
+export type InsertBriefingSubscription = z.infer<typeof insertBriefingSubscriptionSchema>;
+
+export const scheduledBriefingConfigs = pgTable("scheduled_briefing_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  enabled: boolean("enabled").notNull().default(false),
+  frequency: text("frequency").notNull().default("weekly"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertScheduledBriefingConfigSchema = createInsertSchema(scheduledBriefingConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type ScheduledBriefingConfig = typeof scheduledBriefingConfigs.$inferSelect;
+export type InsertScheduledBriefingConfig = z.infer<typeof insertScheduledBriefingConfigSchema>;
 
 // Scheduled Job Runs - Track background job execution history
 export const scheduledJobRuns = pgTable("scheduled_job_runs", {
