@@ -1,5 +1,6 @@
 import React from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import SEOHead from "@/components/SEOHead";
 import { FileText, Map, ListTodo } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -8,6 +9,11 @@ import MarkdownViewer from "@/components/MarkdownViewer";
 export default function About() {
   return (
     <PublicLayout>
+      <SEOHead
+        title="About Orbit"
+        description="Learn about Orbit, the AI-driven competitive intelligence platform from The Synozur Alliance. Changelog, backlog, and product roadmap."
+        path="/about"
+      />
       <section className="py-16 px-6">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">

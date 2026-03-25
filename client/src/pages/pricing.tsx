@@ -1,5 +1,6 @@
 import React from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
 import { ArrowRight, Check, Minus } from "lucide-react";
 import { usePageTracking } from "@/hooks/use-page-tracking";
@@ -165,6 +166,11 @@ export default function Pricing() {
 
   return (
     <PublicLayout>
+      <SEOHead
+        title="Pricing"
+        description="Simple, transparent pricing for Orbit. Start with a 60-day free trial. Plans for individuals, teams, and enterprises. No credit card required."
+        path="/pricing"
+      />
       <section className="py-24 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">

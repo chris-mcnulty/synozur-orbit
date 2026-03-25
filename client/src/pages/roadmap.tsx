@@ -1,5 +1,6 @@
 import React from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
 import { ArrowLeft, CheckCircle2, Clock, Circle, Rocket, Calendar, Target } from "lucide-react";
 
@@ -152,6 +153,11 @@ function getStatusColor(status: Status) {
 export default function Roadmap() {
   return (
     <PublicLayout>
+      <SEOHead
+        title="Product Roadmap"
+        description="See what's coming next for Orbit. Completed features, in-progress work, and planned capabilities for the GTM intelligence platform."
+        path="/roadmap"
+      />
       <section className="py-16 px-6">
         <div className="max-w-4xl mx-auto">
           <Link href="/about" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-2 mb-8">

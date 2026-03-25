@@ -1,9 +1,52 @@
 import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown, Sparkles, Mail, HardDrive, Cpu, Handshake, Activity, Share2, BookOpen, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
+
+const landingJsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "The Synozur Alliance",
+    "url": "https://www.synozur.com",
+    "logo": "/brand/synozur-horizontal.png",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "email": "contactus@synozur.com",
+      "contactType": "sales"
+    }
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Orbit",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "AI-powered go-to-market intelligence platform that unifies competitive intelligence, marketing planning, and product management.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "60-day free trial with full access"
+    },
+    "author": {
+      "@type": "Organization",
+      "name": "The Synozur Alliance"
+    },
+    "featureList": [
+      "AI-powered competitive analysis",
+      "Competitive battlecards",
+      "Marketing planning",
+      "Product roadmap management",
+      "PDF report generation",
+      "Microsoft Entra SSO",
+      "Multi-tenant architecture"
+    ]
+  }
+];
 
 const platformPillars = [
   {
@@ -130,8 +173,15 @@ export default function Landing() {
 
   return (
     <PublicLayout>
+      <SEOHead
+        title="Orbit — AI-Powered Go-to-Market Intelligence Platform | Synozur"
+        description="Orbit unifies competitive intelligence, marketing planning, and product management. AI-powered analysis, battlecards, and GTM planning for teams that compete to win."
+        path="/"
+        jsonLd={landingJsonLd}
+      />
+      <article>
       {/* Hero Section */}
-      <section className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
+      <section aria-label="Hero" className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
         <div 
           className="absolute inset-0 z-0 select-none bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/images/hero-background.png')" }}
@@ -141,7 +191,7 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto text-center relative z-10">
           <img 
             src="/brand/orbit-logo-white.png" 
-            alt="Orbit" 
+            alt="Orbit — Go-to-Market Intelligence Platform by Synozur" 
             className="h-48 md:h-60 mx-auto mb-4 object-contain -mt-8"
           />
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
@@ -202,7 +252,7 @@ export default function Landing() {
       </section>
 
       {/* Platform Pillars - The Big Three */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section aria-label="Platform Pillars" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">The Platform</p>
           <h2 className="text-3xl font-bold text-center mb-6">Three pillars of GTM excellence</h2>
@@ -255,7 +305,7 @@ export default function Landing() {
       </section>
 
       {/* Built on Synozur Framework */}
-      <section className="py-16 px-6">
+      <section aria-label="Built on Synozur Framework" className="py-16 px-6">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-lg text-muted-foreground leading-relaxed">
             <span className="font-semibold text-foreground">Built on proven GTM methodology.</span>{" "}
@@ -270,7 +320,7 @@ export default function Landing() {
       </section>
 
       {/* How It Works - The Flow */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section aria-label="How It Works" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">How It Works</p>
           <h2 className="text-3xl font-bold text-center mb-16">Intelligence that flows into action</h2>
@@ -362,7 +412,7 @@ export default function Landing() {
       </section>
 
       {/* Capabilities - Tabbed Section */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section id="capabilities" aria-label="Capabilities" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Capabilities</p>
           <h2 className="text-3xl font-bold text-center mb-16">Everything you need to compete and win</h2>
@@ -399,7 +449,7 @@ export default function Landing() {
       </section>
 
       {/* Three Outcomes */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section aria-label="Outcomes" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Outcomes</p>
           <h2 className="text-3xl font-bold text-center mb-16">What you'll achieve</h2>
@@ -433,7 +483,7 @@ export default function Landing() {
       </section>
 
       {/* Who It's For */}
-      <section className="py-24 px-6">
+      <section aria-label="Who It's For" className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Who It's For</p>
           <h2 className="text-3xl font-bold text-center mb-16">Built for the entire GTM team</h2>
@@ -472,7 +522,7 @@ export default function Landing() {
       </section>
 
       {/* How Orbit is Different */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section aria-label="Why Orbit" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Why Orbit</p>
           <h2 className="text-3xl font-bold text-center mb-4">Not another dashboard. A decision engine.</h2>
@@ -505,7 +555,7 @@ export default function Landing() {
       </section>
 
       {/* Enterprise Ready */}
-      <section className="py-24 px-6">
+      <section aria-label="Enterprise Grade" className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
@@ -554,7 +604,7 @@ export default function Landing() {
       </section>
 
       {/* Export & Portability */}
-      <section className="py-24 px-6">
+      <section aria-label="Export and Portability" className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Export & Portability</p>
@@ -600,7 +650,7 @@ export default function Landing() {
       </section>
 
       {/* Pricing Preview */}
-      <section className="py-24 px-6 bg-card/30 border-y border-border">
+      <section aria-label="Pricing Preview" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Get Started</p>
           <h2 className="text-3xl font-bold mb-6">Start with a 60-day free trial</h2>
@@ -642,7 +692,7 @@ export default function Landing() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 px-6 relative overflow-hidden">
+      <section aria-label="Call to Action" className="py-24 px-6 relative overflow-hidden">
         <div 
           className="absolute inset-0 opacity-30"
           style={{
@@ -663,6 +713,7 @@ export default function Landing() {
           <p className="text-sm text-muted-foreground mt-4">No credit card required. Full access for 60 days.</p>
         </div>
       </section>
+      </article>
     </PublicLayout>
   );
 }

@@ -4,6 +4,7 @@ import connectPgSimple from "connect-pg-simple";
 import fileUpload from "express-fileupload";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
+import { registerSEORoutes, crawlerPrerender } from "./seo";
 import { createServer } from "http";
 import { startScheduledJobs } from "./services/scheduled-jobs";
 import { storage } from "./storage";
@@ -148,6 +149,10 @@ app.use((req, res, next) => {
   } catch (err) {
     console.error("[Startup] Migration error:", err);
   }
+
+  registerSEORoutes(app);
+
+  app.use(crawlerPrerender);
 
   await registerRoutes(httpServer, app);
   

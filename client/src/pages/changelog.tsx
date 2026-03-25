@@ -1,5 +1,6 @@
 import React from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
 import { ArrowLeft, CheckCircle2, Plus, Sparkles, Wrench, AlertTriangle, Shield } from "lucide-react";
 
@@ -97,6 +98,11 @@ function getTypeColor(type: string) {
 export default function Changelog() {
   return (
     <PublicLayout>
+      <SEOHead
+        title="Changelog"
+        description="See the latest updates, improvements, and new features shipped in Orbit. A complete history of platform changes."
+        path="/changelog"
+      />
       <section className="py-16 px-6">
         <div className="max-w-4xl mx-auto">
           <Link href="/about" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-2 mb-8">
