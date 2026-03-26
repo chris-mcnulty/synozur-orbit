@@ -292,6 +292,7 @@ export default function PersonasPage() {
         throw new Error(err.error || "Failed to extract persona");
       }
       const extracted = await res.json();
+      if (extracted.error) throw new Error(extracted.error);
       setFormData({
         name: extracted.name || "",
         role: extracted.role || "",

@@ -529,5 +529,32 @@ export async function completeForFeature(
     ...options,
     maxTokens: options?.maxTokens ?? resolved.maxTokens ?? 8192,
   };
+
+  const MAX_RETRIES = 2;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await resolved.provider.complete(resolved.model, userPrompt, opts);
+    } catch (err: any) {
+      const is429 = err?.status === 429 || err?.statusCode === 429 ||
+        (err?.message && /429|rate.?limit|too many requests|high demand/i.test(err.message));
+      if (is429 && attempt < MAX_RETRIES) {
+        const delay = Math.min(2000 * Math.pow(2, attempt), 8000);
+        console.warn(`[ai-provider] 429 rate limit on attempt ${attempt + 1} for ${feature}, retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+
+        if (attempt === MAX_RETRIES - 1 && resolved.providerKey !== AI_PROVIDERS.REPLIT_ANTHROPIC) {
+          const fallback = providers[AI_PROVIDERS.REPLIT_ANTHROPIC];
+          if (fallback?.isAvailable()) {
+            console.warn(`[ai-provider] Falling back to Replit Anthropic for ${feature}`);
+            try {
+              return await fallback.complete("claude-sonnet-4-5", userPrompt, opts);
+            } catch { /* fall through to final retry with original provider */ }
+          }
+        }
+        continue;
+      }
+      throw err;
+    }
+  }
   return resolved.provider.complete(resolved.model, userPrompt, opts);
 }
