@@ -21,6 +21,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { documentExtractionService } from "./services/document-extraction";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
+import { formatPersonaContextForPrompt } from "./services/strategic-context";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "./services/social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "./services/website-monitoring";
 import { crawlCompetitorWebsite, getCombinedContent } from "./services/web-crawler";
@@ -9269,6 +9270,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
+      // Load personas for context
+      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
+
       // Build context for AI
       let productContext = "";
       if (baselineProduct) {
@@ -9286,10 +9291,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
 Project: ${project.name}
 Client: ${project.clientName}
 ${productContext}
-
+${personaContext ? `\n${personaContext}\n` : ""}
 User Guidance:
-- Target Roles/Personas: ${targetRoles || "Not specified - suggest appropriate targets"}
-- Distribution Channels: ${distributionChannels || "Not specified - recommend optimal channels"}
+- Target Roles/Personas: ${targetRoles || "Not specified - use the buyer personas above if available, otherwise suggest appropriate targets"}
+- Distribution Channels: ${distributionChannels || "Not specified - recommend optimal channels based on persona preferred channels if available"}
 - Custom Guidance: ${customGuidance || "None"}
 - Budget Considerations: ${budget || "Not specified"}
 - Timeline: ${timeline || "Not specified"}
@@ -9407,6 +9412,10 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
       const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
+      // Load personas for context
+      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
+
       let productContext = "";
       if (baselineProduct) {
         productContext += `\n\nOur Product: ${baselineProduct.product.name}\nDescription: ${baselineProduct.product.description || "N/A"}\nCompany: ${baselineProduct.product.companyName || "N/A"}`;
@@ -9423,10 +9432,10 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
 Project: ${project.name}
 Client: ${project.clientName}
 ${productContext}
-
+${personaContext ? `\n${personaContext}\n` : ""}
 User Guidance:
-- Target Audience: ${targetAudience || "Not specified - identify appropriate audiences"}
-- Tone of Voice: ${toneOfVoice || "Not specified - recommend appropriate tone"}
+- Target Audience: ${targetAudience || "Not specified - use the buyer personas above if available, otherwise identify appropriate audiences"}
+- Tone of Voice: ${toneOfVoice || "Not specified - recommend appropriate tone based on persona preferences if available"}
 - Key Messages to Emphasize: ${keyMessages || "Not specified"}
 - Custom Guidance: ${customGuidance || "None"}
 
@@ -9553,6 +9562,10 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
         return res.status(400).json({ error: "No baseline product set. Please add a baseline product first." });
       }
 
+      // Load personas for context
+      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
+
       // Get product features for context
       const features = await storage.getProductFeaturesByProduct(baselineProduct.productId);
       const releasedFeatures = features.filter((f: { status: string }) => f.status === "released");
@@ -9594,10 +9607,10 @@ URL: ${baselineProduct.product.url || "N/A"}`;
 
 ${productContext}
 ${competitiveContext}
-
+${personaContext ? `\n${personaContext}\n` : ""}
 User Guidance:
-- Target Audience: ${targetAudience || "Not specified - suggest appropriate audience"}
-- Key Benefits to Highlight: ${keyBenefits || "Not specified - identify top benefits"}
+- Target Audience: ${targetAudience || "Not specified - use the buyer personas above if available, otherwise suggest appropriate audience"}
+- Key Benefits to Highlight: ${keyBenefits || "Not specified - identify top benefits that address persona pain points if available"}
 - Tone of Voice: ${toneOfVoice || "Professional and compelling"}
 - Custom Guidance: ${customGuidance || "None"}
 

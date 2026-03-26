@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Persona text ingestion**: Paste text from CRM records, research reports, strategy documents, meeting notes, or any source — AI extracts a structured persona with name, role, industry, pain points, goals, objections, and preferred channels. Available via "Import from Text" button on the Personas page.
 
+### Changed
+
+- **GTM Plan generation**: Now automatically pulls buyer personas to tailor market targeting, distribution channels, and buyer segment strategies.
+- **Messaging Framework generation**: Now automatically pulls buyer personas to tailor audience segments, messaging pillars, and tone guidance.
+- **Product One Sheet generation**: Now automatically pulls buyer personas to tailor challenge/solution framing, benefits, and audience targeting.
+
 ---
 
 ## [2.0.0] - 2026-03-25
