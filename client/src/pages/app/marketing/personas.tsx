@@ -404,28 +404,28 @@ export default function PersonasPage() {
         <div className="h-1 w-full bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 rounded-full mb-6" />
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-              <UserCircle className="h-8 w-8 text-purple-500" />
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
+              <UserCircle className="h-7 w-7 sm:h-8 sm:w-8 text-purple-500 shrink-0" />
               Personas & ICP Builder
             </h1>
-            <p className="text-muted-foreground">Define buyer personas and ideal customer profiles to make AI content more targeted.</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Define buyer personas and ideal customer profiles to make AI content more targeted.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleCsvExport} disabled={personas.length === 0} data-testid="button-export-csv">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={personas.length === 0} data-testid="button-export-csv">
+              <Download className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Export CSV</span>
             </Button>
-            <Button variant="outline" onClick={() => setIngestDialogOpen(true)} data-testid="button-import-text">
-              <ClipboardPaste className="h-4 w-4 mr-2" />
-              Import from Text
+            <Button variant="outline" size="sm" onClick={() => setIngestDialogOpen(true)} data-testid="button-import-text">
+              <ClipboardPaste className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Import from Text</span>
             </Button>
-            <Button variant="outline" onClick={handleAiGenerate} disabled={aiGenerating} data-testid="button-ai-generate">
-              {aiGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              AI Suggest
+            <Button variant="outline" size="sm" onClick={handleAiGenerate} disabled={aiGenerating} data-testid="button-ai-generate">
+              {aiGenerating ? <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 sm:mr-2" />}
+              <span className="hidden sm:inline">AI Suggest</span>
             </Button>
-            <Button onClick={handleCreate} data-testid="button-create-persona">
-              <Plus className="h-4 w-4 mr-2" />
-              New Persona
+            <Button size="sm" onClick={handleCreate} data-testid="button-create-persona">
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">New Persona</span>
             </Button>
           </div>
         </div>
@@ -462,27 +462,27 @@ export default function PersonasPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {personas.map(persona => (
-            <Card key={persona.id} className="group relative" data-testid={`card-persona-${persona.id}`}>
+            <Card key={persona.id} className="group relative overflow-hidden" data-testid={`card-persona-${persona.id}`}>
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
                       <UserCircle className="h-6 w-6 text-purple-500" />
                     </div>
-                    <div>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        {persona.name}
+                    <div className="min-w-0">
+                      <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                        <span className="truncate">{persona.name}</span>
                         {persona.isIcp && (
-                          <Badge variant="default" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                          <Badge variant="default" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30 shrink-0">
                             <Star className="h-3 w-3 mr-1" />
                             ICP
                           </Badge>
                         )}
                       </CardTitle>
-                      {persona.role && <CardDescription className="text-sm">{persona.role}</CardDescription>}
+                      {persona.role && <CardDescription className="text-sm truncate">{persona.role}</CardDescription>}
                     </div>
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(persona)} data-testid={`button-edit-${persona.id}`}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -502,15 +502,15 @@ export default function PersonasPage() {
                 {(persona.industry || persona.companySize) && (
                   <div className="flex flex-wrap gap-2">
                     {persona.industry && (
-                      <Badge variant="outline" className="gap-1 text-xs">
-                        <Building2 className="h-3 w-3" />
-                        {persona.industry}
+                      <Badge variant="outline" className="gap-1 text-xs max-w-full">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{persona.industry}</span>
                       </Badge>
                     )}
                     {persona.companySize && (
-                      <Badge variant="outline" className="gap-1 text-xs">
-                        <Briefcase className="h-3 w-3" />
-                        {persona.companySize}
+                      <Badge variant="outline" className="gap-1 text-xs max-w-full">
+                        <Briefcase className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{persona.companySize}</span>
                       </Badge>
                     )}
                   </div>
@@ -523,10 +523,10 @@ export default function PersonasPage() {
                     </span>
                     <div className="flex flex-wrap gap-1">
                       {persona.painPoints.slice(0, 3).map((p, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">{p}</Badge>
+                        <Badge key={i} variant="secondary" className="text-xs max-w-full"><span className="truncate">{p}</span></Badge>
                       ))}
                       {persona.painPoints.length > 3 && (
-                        <Badge variant="secondary" className="text-xs">+{persona.painPoints.length - 3}</Badge>
+                        <Badge variant="secondary" className="text-xs shrink-0">+{persona.painPoints.length - 3}</Badge>
                       )}
                     </div>
                   </div>
@@ -537,10 +537,10 @@ export default function PersonasPage() {
                     <span className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">Goals</span>
                     <div className="flex flex-wrap gap-1">
                       {persona.goals.slice(0, 3).map((g, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs bg-green-500/10 text-green-600 border-green-500/20">{g}</Badge>
+                        <Badge key={i} variant="secondary" className="text-xs bg-green-500/10 text-green-600 border-green-500/20 max-w-full"><span className="truncate">{g}</span></Badge>
                       ))}
                       {persona.goals.length > 3 && (
-                        <Badge variant="secondary" className="text-xs">+{persona.goals.length - 3}</Badge>
+                        <Badge variant="secondary" className="text-xs shrink-0">+{persona.goals.length - 3}</Badge>
                       )}
                     </div>
                   </div>
