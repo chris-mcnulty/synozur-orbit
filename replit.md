@@ -40,6 +40,8 @@ Preferred communication style: Simple, everyday language.
 - **Password Hashing**: bcrypt
 - **Build System**: Custom esbuild script for server, Vite for client.
 - **Storage Abstraction**: Drizzle ORM for PostgreSQL.
+- **Route Organization**: Domain-focused modules under `server/routes/`, each exporting a `register*Routes(app)` function. The orchestrator `server/routes.ts` imports and registers all modules. Shared utilities live in `server/routes/helpers.ts`.
+  - Modules: auth, competitors, battlecards, notifications-activity, reports-analysis, admin, consultant-plans, client-projects, products, intelligence, executive-regen, tenant-admin, operations, analytics-data, platform, marketing-saturn
 
 ### Database
 - **ORM**: Drizzle ORM (PostgreSQL dialect)
