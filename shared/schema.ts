@@ -1897,6 +1897,32 @@ export const TICKET_CATEGORIES = ["question", "bug", "feature_request", "feedbac
 export const TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export const TICKET_STATUSES = ["open", "in_progress", "waiting", "resolved", "closed"] as const;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Notification Centre
+// Persistent in-app notifications for job completions, competitor changes,
+// data freshness warnings, and other system events.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  type: text("type").notNull(), // "job_complete" | "job_failed" | "competitor_change" | "freshness_warning" | "trial"
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  link: text("link"), // deep-link path, e.g. "/app/competitors/abc123"
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import { RedisStore } from "connect-redis";
+import { createClient as createRedisClient } from "redis";
 import fileUpload from "express-fileupload";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -8,6 +10,7 @@ import { registerSEORoutes, crawlerPrerender } from "./seo";
 import { createServer } from "http";
 import { startScheduledJobs } from "./services/scheduled-jobs";
 import { storage } from "./storage";
+import { setPersistenceHooks } from "./services/job-queue";
 import pg from "pg";
 
 const app = express();
@@ -52,16 +55,46 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// ========== SESSION STORE ==========
+// Use Redis when REDIS_URL is set; fall back to PostgreSQL for zero-config deployments.
+function buildSessionStore(): session.Store {
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    try {
+      const redisClient = createRedisClient({
+        url: redisUrl,
+        socket: {
+          reconnectStrategy: (retries: number) => Math.min(retries * 100, 3000),
+        },
+      });
+      redisClient.on("error", (err: Error) => {
+        console.error("[Redis] Session store error:", err.message);
+      });
+      redisClient.connect().then(() => {
+        log("Redis session store connected");
+      }).catch((err: Error) => {
+        console.error("[Redis] Failed to connect — sessions will fall back to in-memory:", err.message);
+      });
+      return new RedisStore({ client: redisClient as any, prefix: "orbit:sess:", ttl: 60 * 60 * 24 * 7 });
+    } catch (err) {
+      console.error("[Redis] Failed to initialise client, using PostgreSQL session store:", err);
+    }
+  }
+  return new PgSession({
+    pool: pgPool,
+    tableName: "user_sessions",
+    createTableIfMissing: true,
+    pruneSessionInterval: 60 * 60, // prune expired sessions every hour
+  });
+}
+
 app.use(
   session({
-    store: new PgSession({
-      pool: pgPool,
-      tableName: "user_sessions",
-      createTableIfMissing: true,
-    }),
+    store: buildSessionStore(),
     secret: process.env.SESSION_SECRET || "orbit-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Extend session TTL on every authenticated request
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
@@ -187,10 +220,58 @@ app.use((req, res, next) => {
         updated_at TIMESTAMP NOT NULL DEFAULT now()
       )
     `);
+    // Notification Centre
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        link TEXT,
+        read_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS notifications_tenant_domain_idx ON notifications(tenant_domain)`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
   }
+
+  // Wire job-queue persistence so all queued jobs write lifecycle events to scheduled_job_runs
+  setPersistenceHooks({
+    async onCreate(job) {
+      try {
+        const run = await storage.createScheduledJobRun({
+          jobType: job.type,
+          tenantDomain: job.ctx?.tenantDomain || null,
+          targetId: job.ctx?.targetId || null,
+          targetName: job.ctx?.targetName || job.label,
+          status: "running",
+          startedAt: job.startedAt,
+        });
+        return run.id;
+      } catch (err) {
+        console.error("[JobQueue persistence] createScheduledJobRun failed:", err);
+        return "";
+      }
+    },
+    async onComplete(dbRowId, status, errorMessage) {
+      if (!dbRowId) return;
+      try {
+        await storage.updateScheduledJobRun(dbRowId, {
+          status,
+          completedAt: new Date(),
+          errorMessage: errorMessage || null,
+        });
+      } catch (err) {
+        console.error("[JobQueue persistence] updateScheduledJobRun failed:", err);
+      }
+    },
+  });
 
   registerSEORoutes(app);
 
