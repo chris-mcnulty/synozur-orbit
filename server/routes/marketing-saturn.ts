@@ -1220,6 +1220,171 @@ export function registerSaturnMarketingRoutes(app: Express) {
   });
 
   // ══════════════════════════════════════════════════════════
+  // MANUAL POST CREATION
+  // ══════════════════════════════════════════════════════════
+
+  app.post("/api/campaigns/:id/create-posts", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const { content, socialAccountIds, scheduledDate, overrideBrandAssetId, aiPolish } = req.body;
+      if (!content || typeof content !== "string" || content.trim().length === 0) {
+        return res.status(400).json({ error: "Post content is required" });
+      }
+      if (!Array.isArray(socialAccountIds) || socialAccountIds.length === 0) {
+        return res.status(400).json({ error: "At least one social account must be selected" });
+      }
+
+      let parsedScheduledDate: Date | undefined;
+      if (scheduledDate) {
+        parsedScheduledDate = new Date(scheduledDate);
+        if (isNaN(parsedScheduledDate.getTime())) {
+          return res.status(400).json({ error: "Invalid scheduled date" });
+        }
+      }
+
+      let validBrandAssetId: string | undefined;
+      if (overrideBrandAssetId) {
+        const [asset] = await db.select({ id: brandAssets.id }).from(brandAssets)
+          .where(and(
+            eq(brandAssets.id, overrideBrandAssetId),
+            eq(brandAssets.tenantDomain, ctx.tenantDomain),
+          ));
+        if (!asset) {
+          return res.status(400).json({ error: "Invalid brand asset" });
+        }
+        validBrandAssetId = asset.id;
+      }
+
+      const linkedSocialIds = (await db.select().from(campaignSocialAccounts)
+        .where(eq(campaignSocialAccounts.campaignId, campaign.id)))
+        .map(cs => cs.socialAccountId);
+
+      const validAccountIds = socialAccountIds.filter((sid: string) => linkedSocialIds.includes(sid));
+      if (validAccountIds.length === 0) {
+        return res.status(400).json({ error: "No valid linked social accounts found" });
+      }
+
+      const selectedAccounts = await db.select().from(socialAccounts)
+        .where(and(
+          eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+          eq(socialAccounts.marketId, ctx.marketId),
+          inArray(socialAccounts.id, validAccountIds),
+        ));
+
+      if (selectedAccounts.length === 0) {
+        return res.status(400).json({ error: "No valid linked social accounts found" });
+      }
+
+      const baseText = content.trim();
+      const variantGroupId = randomUUID();
+      const rows: InsertGeneratedPost[] = [];
+
+      const campaignAlwaysHashtags = (campaign.alwaysHashtags as string[] || [])
+        .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+        .filter((h: string) => h.length > 0);
+
+      let groundingContext: string | null = null;
+      if (aiPolish) {
+        groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
+      }
+
+      for (const account of selectedAccounts) {
+        let postContent = baseText;
+
+        if (aiPolish) {
+          try {
+            const platformGuide = getPlatformGuide(account.platform);
+            const polishPrompt = `You are an expert social media copywriter. Adapt the following post text for ${account.platform} (account: "${account.accountName}").
+
+RULES:
+1. Keep the core message and intent intact — do NOT rewrite from scratch.
+2. Adjust tone, length, and style to fit the platform.
+3. Suggest relevant hashtags.
+4. ${account.platform === "twitter" ? "Twitter/X has a HARD 280 CHARACTER LIMIT for content + hashtags combined. Keep the post very concise." : "Follow platform guidelines."}
+5. Do NOT add placeholder text or instructions.
+
+${groundingContext ? `## Brand Guidelines\n${groundingContext}\n\n` : ""}## Platform Guidelines
+${platformGuide}
+
+## Original Post Text
+${baseText}
+
+Return ONLY a valid JSON object (no markdown fences) with:
+- "content": string (the adapted post body, no inline hashtags)
+- "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)`;
+
+            const result = await completeForFeature("marketing_tasks", polishPrompt);
+            try {
+              const parsed = JSON.parse(result.text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim());
+              if (parsed.content) postContent = parsed.content;
+              let hashtags = (parsed.hashtags ?? [])
+                .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+                .filter((h: string) => h.length > 0 && h.length < 50);
+              if (campaignAlwaysHashtags.length > 0) {
+                const existing = new Set(hashtags.map((h: string) => h.toLowerCase()));
+                for (const ah of campaignAlwaysHashtags) {
+                  if (!existing.has(ah.toLowerCase())) hashtags.push(ah);
+                }
+              }
+              const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+
+              rows.push({
+                id: randomUUID(),
+                campaignId: campaign.id,
+                socialAccountId: account.id,
+                tenantDomain: ctx.tenantDomain,
+                platform: account.platform,
+                content: adapted.content,
+                hashtags: adapted.hashtags,
+                variantGroup: variantGroupId,
+                scheduledDate: parsedScheduledDate,
+                overrideBrandAssetId: validBrandAssetId,
+                status: "draft",
+              } as InsertGeneratedPost);
+              continue;
+            } catch (parseErr: any) {
+              console.warn(`[Manual Post] AI polish JSON parse failed for ${account.platform}, falling back to plain text:`, parseErr.message);
+            }
+          } catch (aiErr: any) {
+            console.warn(`[Manual Post] AI polish call failed for ${account.platform}, falling back to plain text:`, aiErr.message);
+          }
+        }
+
+        // Non-AI path: apply basic platform rules
+        const adapted = applyPlatformRules(baseText, account.platform, [...campaignAlwaysHashtags]);
+
+        rows.push({
+          id: randomUUID(),
+          campaignId: campaign.id,
+          socialAccountId: account.id,
+          tenantDomain: ctx.tenantDomain,
+          platform: account.platform,
+          content: adapted.content,
+          hashtags: adapted.hashtags,
+          variantGroup: variantGroupId,
+          scheduledDate: parsedScheduledDate,
+          overrideBrandAssetId: validBrandAssetId,
+          status: "draft",
+        } as InsertGeneratedPost);
+      }
+
+      if (rows.length > 0) {
+        await db.insert(generatedPosts).values(rows);
+      }
+
+      res.status(201).json({ created: rows.length, posts: rows });
+    } catch (err: any) {
+      console.error("[Manual Post Creation Error]", err.message);
+      res.status(500).json({ error: "Failed to create posts" });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════
   // POST GENERATION — async via job queue
   // ══════════════════════════════════════════════════════════
 
@@ -2586,4 +2751,37 @@ function getPlatformGuide(platform: string): string {
     facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA.",
   };
   return guides[platform] ?? "Professional and engaging. Clear call to action.";
+}
+
+function applyPlatformRules(text: string, platform: string, hashtags?: string[]): { content: string; hashtags: string[] } {
+  const tags = hashtags ?? [];
+  if (platform === "twitter") {
+    const hashtagLine = tags.map(h => `#${h}`).join(" ");
+    const totalLen = text.length + (hashtagLine ? hashtagLine.length + 1 : 0);
+    if (totalLen > 280) {
+      const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
+      const maxContentLen = 280 - reserveForHashtags;
+      if (maxContentLen > 20) {
+        const urlMatch = text.match(/https?:\/\/\S+/);
+        if (urlMatch) {
+          const url = urlMatch[0];
+          const textWithoutUrl = text.replace(url, "").trim();
+          const maxTextLen = maxContentLen - url.length - 2;
+          if (maxTextLen > 20) {
+            const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
+            text = truncated + " " + url;
+          } else {
+            text = text.substring(0, maxContentLen - 1) + "…";
+          }
+        } else {
+          text = text.substring(0, maxContentLen - 1) + "…";
+        }
+      } else {
+        const combined = hashtagLine ? `${text}\n${hashtagLine}` : text;
+        text = combined.substring(0, 279) + "…";
+        return { content: text, hashtags: [] };
+      }
+    }
+  }
+  return { content: text, hashtags: tags };
 }

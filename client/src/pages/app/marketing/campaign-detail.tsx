@@ -450,6 +450,37 @@ export default function CampaignDetailPage() {
   const [postsPerDay, setPostsPerDay] = useState("1");
   const [daysBetweenPosts, setDaysBetweenPosts] = useState("1");
 
+  const [createPostOpen, setCreatePostOpen] = useState(false);
+  const [createPostContent, setCreatePostContent] = useState("");
+  const [createPostAccountIds, setCreatePostAccountIds] = useState<string[]>([]);
+  const [createPostScheduledDate, setCreatePostScheduledDate] = useState("");
+  const [createPostBrandAssetId, setCreatePostBrandAssetId] = useState<string>("");
+  const [createPostAiPolish, setCreatePostAiPolish] = useState(false);
+
+  const createPostMutation = useMutation({
+    mutationFn: async (data: { content: string; socialAccountIds: string[]; scheduledDate?: string; overrideBrandAssetId?: string; aiPolish?: boolean }) => {
+      const r = await fetch(`/api/campaigns/${id}/create-posts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setCreatePostOpen(false);
+      setCreatePostContent("");
+      setCreatePostAccountIds([]);
+      setCreatePostScheduledDate("");
+      setCreatePostBrandAssetId("");
+      setCreatePostAiPolish(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `${data.created} post${data.created !== 1 ? "s" : ""} created` });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const schedulePostsMutation = useMutation({
     mutationFn: async ({ time, perDay, daysBetween }: { time: string; perDay: number; daysBetween: number }) => {
       if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
@@ -812,6 +843,19 @@ export default function CampaignDetailPage() {
               >
                 {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreatePostAccountIds(
+                    campaign?.socialAccounts.map(sa => sa.socialAccountId) ?? []
+                  );
+                  setCreatePostOpen(true);
+                }}
+                className="gap-2"
+                data-testid="button-create-post"
+              >
+                <Pencil className="w-4 h-4" />Create Post
+              </Button>
               {strategicContext?.available && (
                 <Badge variant="secondary" className="text-[10px] gap-1" data-testid="strategic-context-badge">
                   <Sparkles className="w-3 h-3" />
@@ -964,7 +1008,7 @@ export default function CampaignDetailPage() {
             {posts.length === 0 && !isGenerating ? (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-posts">
-                  {jobStatus?.status === "failed" ? "Generation failed. Click Generate Posts to try again." : "No posts yet. Click Generate Posts to create AI-powered social content."}
+                  {jobStatus?.status === "failed" ? "Generation failed. Click Generate Posts to try again." : "No posts yet. Click Generate Posts for AI-powered content, or Create Post to write your own."}
                 </CardContent>
               </Card>
             ) : (
@@ -1749,6 +1793,110 @@ export default function CampaignDetailPage() {
               data-testid="button-confirm-generate"
             >
               {generatePostsMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={createPostOpen} onOpenChange={setCreatePostOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle data-testid="text-create-post-title">Create Post</DialogTitle>
+            <DialogDescription>Write or paste your post content and select which social accounts should receive it.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="create-post-content">Post Content</Label>
+              <Textarea
+                id="create-post-content"
+                placeholder="Type or paste your post text here..."
+                value={createPostContent}
+                onChange={e => setCreatePostContent(e.target.value)}
+                rows={6}
+                className="mt-1"
+                data-testid="textarea-create-post-content"
+              />
+              <p className="text-xs text-muted-foreground mt-1">{createPostContent.length} characters</p>
+            </div>
+            <div>
+              <Label>Social Accounts</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {campaign?.socialAccounts.map(csa => {
+                  const account = allSocialAccounts.find(a => a.id === csa.socialAccountId);
+                  if (!account) return null;
+                  const selected = createPostAccountIds.includes(account.id);
+                  return (
+                    <Badge
+                      key={account.id}
+                      variant={selected ? "default" : "outline"}
+                      className="cursor-pointer gap-1"
+                      onClick={() => setCreatePostAccountIds(prev =>
+                        selected ? prev.filter(x => x !== account.id) : [...prev, account.id]
+                      )}
+                      data-testid={`badge-create-account-${account.id}`}
+                    >
+                      {account.platform} — {account.accountName}
+                    </Badge>
+                  );
+                })}
+                {(!campaign?.socialAccounts || campaign.socialAccounts.length === 0) && (
+                  <p className="text-xs text-muted-foreground">No social accounts linked to this campaign.</p>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="create-post-date">Scheduled Date (optional)</Label>
+                <Input
+                  id="create-post-date"
+                  type="datetime-local"
+                  value={createPostScheduledDate}
+                  onChange={e => setCreatePostScheduledDate(e.target.value)}
+                  className="mt-1"
+                  data-testid="input-create-post-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="create-post-image">Brand Image (optional)</Label>
+                <Select value={createPostBrandAssetId} onValueChange={setCreatePostBrandAssetId}>
+                  <SelectTrigger className="mt-1" data-testid="select-create-post-image">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {brandAssets.filter(ba => ba.fileUrl || ba.url).map(ba => (
+                      <SelectItem key={ba.id} value={ba.id}>{ba.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="create-post-ai-polish"
+                checked={createPostAiPolish}
+                onCheckedChange={(checked) => setCreatePostAiPolish(checked === true)}
+                data-testid="checkbox-ai-polish"
+              />
+              <Label htmlFor="create-post-ai-polish" className="text-sm cursor-pointer">
+                AI Polish — adapt text per platform (adjust tone, suggest hashtags, trim for character limits)
+              </Label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" onClick={() => setCreatePostOpen(false)} data-testid="button-cancel-create-post">Cancel</Button>
+            <Button
+              onClick={() => createPostMutation.mutate({
+                content: createPostContent,
+                socialAccountIds: createPostAccountIds,
+                scheduledDate: createPostScheduledDate || undefined,
+                overrideBrandAssetId: createPostBrandAssetId && createPostBrandAssetId !== "none" ? createPostBrandAssetId : undefined,
+                aiPolish: createPostAiPolish,
+              })}
+              disabled={createPostMutation.isPending || !createPostContent.trim() || createPostAccountIds.length === 0}
+              className="gap-2"
+              data-testid="button-confirm-create-post"
+            >
+              {createPostMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Creating...</> : "Create Post"}
             </Button>
           </div>
         </DialogContent>
