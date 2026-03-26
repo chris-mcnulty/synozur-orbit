@@ -11,7 +11,7 @@ import { objectStorageClient } from "./replit_integrations/object_storage/object
 import { getRequestContext, type RequestContext, ContextError } from "./context";
 import { checkCompetitorLimitAsync, checkAnalysisLimitAsync, checkFeatureAccessAsync, getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, type PlanFeatures, type FeatureKey } from "./services/plan-policy";
 import bcrypt from "bcrypt";
-import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable, contentAssets, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES } from "@shared/schema";
+import { insertUserSchema, insertCompetitorSchema, insertActivitySchema, insertRecommendationSchema, insertReportSchema, insertAnalysisSchema, insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, Competitor, User, competitors, companyProfiles, projectProducts as projectProductsTable, contentAssets, products as productsTable, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, generateRoadmapRecommendations, type CompetitorAnalysis, type LinkedInContext } from "./ai-service";
@@ -7279,7 +7279,7 @@ Respond in JSON format:
           const baselineProduct = projectProducts.find((pp: { role: string }) => pp.role === "baseline");
           let productType: string | null = null;
           if (baselineProduct?.productId) {
-            const [prod] = await db.select({ productType: products.productType }).from(products).where(eq(products.id, baselineProduct.productId));
+            const [prod] = await db.select({ productType: productsTable.productType }).from(productsTable).where(eq(productsTable.id, baselineProduct.productId));
             productType = prod?.productType || null;
           }
           return {
