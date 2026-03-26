@@ -25,6 +25,7 @@ import {
   MessageSquare,
   Star,
   X,
+  ClipboardPaste,
 } from "lucide-react";
 
 interface Persona {
@@ -134,6 +135,9 @@ export default function PersonasPage() {
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [featureGated, setFeatureGated] = useState(false);
+  const [ingestDialogOpen, setIngestDialogOpen] = useState(false);
+  const [ingestText, setIngestText] = useState("");
+  const [ingestLoading, setIngestLoading] = useState(false);
 
   const { data: personas = [], isLoading } = useQuery<Persona[]>({
     queryKey: ["/api/personas"],
@@ -266,6 +270,52 @@ export default function PersonasPage() {
     }
   };
 
+  const handleIngestText = async () => {
+    if (!ingestText.trim() || ingestText.trim().length < 10) {
+      toast({ title: "Too short", description: "Please paste more text for AI to extract a persona from.", variant: "destructive" });
+      return;
+    }
+    setIngestLoading(true);
+    try {
+      const res = await fetch("/api/personas/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text: ingestText }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        if (res.status === 403 && err.upgradeRequired) {
+          setFeatureGated(true);
+          return;
+        }
+        throw new Error(err.error || "Failed to extract persona");
+      }
+      const extracted = await res.json();
+      setFormData({
+        name: extracted.name || "",
+        role: extracted.role || "",
+        industry: extracted.industry || "",
+        companySize: extracted.companySize || "",
+        painPoints: Array.isArray(extracted.painPoints) ? extracted.painPoints : [],
+        goals: Array.isArray(extracted.goals) ? extracted.goals : [],
+        objections: Array.isArray(extracted.objections) ? extracted.objections : [],
+        preferredChannels: Array.isArray(extracted.preferredChannels) ? extracted.preferredChannels : [],
+        notes: extracted.notes || "",
+        isIcp: false,
+      });
+      setIngestDialogOpen(false);
+      setIngestText("");
+      setEditingPersona(null);
+      setDialogOpen(true);
+      toast({ title: "Persona extracted", description: "Review the extracted details and save when ready." });
+    } catch (err: any) {
+      if (!featureGated) toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
   const handleAcceptSuggestion = async (suggestion: any) => {
     try {
       const res = await fetch("/api/personas", {
@@ -364,6 +414,10 @@ export default function PersonasPage() {
               <Download className="h-4 w-4 mr-2" />
               Export CSV
             </Button>
+            <Button variant="outline" onClick={() => setIngestDialogOpen(true)} data-testid="button-import-text">
+              <ClipboardPaste className="h-4 w-4 mr-2" />
+              Import from Text
+            </Button>
             <Button variant="outline" onClick={handleAiGenerate} disabled={aiGenerating} data-testid="button-ai-generate">
               {aiGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
               AI Suggest
@@ -388,7 +442,11 @@ export default function PersonasPage() {
             <p className="text-sm text-muted-foreground">
               Create buyer personas manually or let AI suggest personas based on your competitive intelligence.
             </p>
-            <div className="flex gap-2 justify-center">
+            <div className="flex gap-2 justify-center flex-wrap">
+              <Button variant="outline" onClick={() => setIngestDialogOpen(true)} data-testid="button-import-text-empty">
+                <ClipboardPaste className="h-4 w-4 mr-2" />
+                Import from Text
+              </Button>
               <Button variant="outline" onClick={handleAiGenerate} disabled={aiGenerating} data-testid="button-ai-suggest-empty">
                 {aiGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
                 AI Suggest
@@ -728,6 +786,47 @@ export default function PersonasPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAiDialogOpen(false)} data-testid="button-close-suggestions">
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from Text Dialog */}
+      <Dialog open={ingestDialogOpen} onOpenChange={setIngestDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardPaste className="h-5 w-5 text-purple-500" />
+              Import Persona from Text
+            </DialogTitle>
+            <DialogDescription>
+              Paste text from a CRM, research report, strategy doc, meeting notes, or any source describing a customer. AI will extract a structured persona.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <Textarea
+              value={ingestText}
+              onChange={(e) => setIngestText(e.target.value)}
+              placeholder={"Paste your text here...\n\nExamples:\n- CRM contact notes or deal summaries\n- Market research reports\n- Customer interview transcripts\n- Strategy or planning documents\n- LinkedIn profile descriptions\n- Sales call notes"}
+              rows={10}
+              className="resize-none"
+              data-testid="textarea-ingest-text"
+            />
+            <p className="text-xs text-muted-foreground">
+              AI will analyze the text and extract name, role, industry, pain points, goals, objections, and preferred channels. You can review and edit before saving.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIngestDialogOpen(false); setIngestText(""); }} data-testid="button-cancel-ingest">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleIngestText}
+              disabled={ingestLoading || ingestText.trim().length < 10}
+              data-testid="button-extract-persona"
+            >
+              {ingestLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              Extract Persona
             </Button>
           </DialogFooter>
         </DialogContent>

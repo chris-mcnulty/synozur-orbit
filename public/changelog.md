@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Persona text ingestion**: Paste text from CRM records, research reports, strategy documents, meeting notes, or any source — AI extracts a structured persona with name, role, industry, pain points, goals, objections, and preferred channels. Available via "Import from Text" button on the Personas page.
+
 ---
 
 ## [2.0.0] - 2026-03-25

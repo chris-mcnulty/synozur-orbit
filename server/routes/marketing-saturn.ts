@@ -2122,6 +2122,52 @@ Structure your response using these exact delimiters:
     res.status(204).send();
   });
 
+  app.post("/api/personas/ingest", async (req, res) => {
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
+    const { text } = req.body;
+    if (!text || typeof text !== "string" || text.trim().length < 10) {
+      return res.status(400).json({ error: "Please paste at least a short paragraph of text to extract a persona from." });
+    }
+
+    const prompt = `You are an expert B2B marketing strategist. Extract a structured buyer persona from the following text. The text may be from a CRM record, research report, strategy document, meeting notes, or any other source describing a customer or audience segment.
+
+## Source Text
+${text.trim().slice(0, 8000)}
+
+## Instructions
+Analyze the text and extract as much persona information as possible. Fill in reasonable inferences where the text implies but doesn't explicitly state something. If a field truly cannot be determined, use null.
+
+Return ONLY a valid JSON object (no markdown fences, no explanation) with:
+- "name": string (a descriptive persona name like "Enterprise IT Director" — synthesize from the text)
+- "role": string | null (job title or role)
+- "industry": string | null (target industry)
+- "companySize": string | null (e.g. "50-200 employees", "Enterprise 1000+")
+- "painPoints": string[] (pain points mentioned or implied, up to 5)
+- "goals": string[] (business goals mentioned or implied, up to 5)
+- "objections": string[] (buying objections mentioned or implied, up to 4)
+- "preferredChannels": string[] (preferred channels mentioned or implied, up to 4)
+- "notes": string (brief summary of this persona based on the source text)`;
+
+    try {
+      const result = await completeForFeature("marketing_tasks", prompt);
+      let parsed: any;
+      try {
+        const cleaned = result.text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const objMatch = result.text.match(/\{[\s\S]*\}/);
+        if (objMatch) parsed = JSON.parse(objMatch[0]);
+        else throw new Error("Could not parse AI response");
+      }
+      if (Array.isArray(parsed)) parsed = parsed[0];
+      res.json(parsed);
+    } catch (err: any) {
+      console.error("[Personas] AI ingest error:", err.message);
+      res.status(500).json({ error: `Persona extraction failed: ${err.message}` });
+    }
+  });
+
   app.post("/api/personas/generate", async (req, res) => {
     if (!await guardFeature(req, res, "personaBuilder")) return;
     const ctx = await getRequestContext(req);
