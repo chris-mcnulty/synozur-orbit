@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -419,27 +420,30 @@ export default function BrandLibraryPage() {
         const isImage = ft === "image" || ft === "png" || ft === "jpg" || ft === "jpeg" || ft === "svg" || ft === "webp" || ft === "gif"
           || ft.startsWith("image/")
           || (!!imgSrc && /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|$)/i.test(imgSrc));
-        return (
-          <div className="aspect-video overflow-hidden rounded-lg bg-muted relative mb-2">
-            {imgSrc && isImage ? (
-              <img
-                src={imgSrc}
-                alt={asset.name}
-                className="w-full h-full object-cover"
-                onError={e => (e.currentTarget.style.display = "none")}
-              />
-            ) : (
+        return imgSrc && isImage ? (
+            <OptimizedThumbnail
+              src={imgSrc}
+              alt={asset.name}
+              containerClassName="mb-2"
+            >
+              {categoryName(asset.categoryId) && (
+                <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded z-10">
+                  {categoryName(asset.categoryId)}
+                </span>
+              )}
+            </OptimizedThumbnail>
+          ) : (
+            <div className="aspect-video overflow-hidden rounded-lg bg-muted relative mb-2">
               <div className="w-full h-full flex items-center justify-center">
                 <ImageIcon className="w-12 h-12 text-muted-foreground/30" />
               </div>
-            )}
-            {categoryName(asset.categoryId) && (
-              <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
-                {categoryName(asset.categoryId)}
-              </span>
-            )}
-          </div>
-        );
+              {categoryName(asset.categoryId) && (
+                <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                  {categoryName(asset.categoryId)}
+                </span>
+              )}
+            </div>
+          );
       })()}
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium truncate">{asset.name}</span>

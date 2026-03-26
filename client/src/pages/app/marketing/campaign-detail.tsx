@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1047,20 +1048,17 @@ export default function CampaignDetailPage() {
                           </Badge>
                         )}
                         {postImage && (
-                          <div className="rounded-lg overflow-hidden bg-muted aspect-video relative max-w-md">
-                            <img
-                              src={postImage}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              onError={e => (e.currentTarget.style.display = "none")}
-                              data-testid={`img-post-${post.id}`}
-                            />
+                          <OptimizedThumbnail
+                            src={postImage}
+                            containerClassName="max-w-md"
+                            data-testid={`img-post-${post.id}`}
+                          >
                             {post.overrideImageUrl && (
-                              <Badge variant="secondary" className="absolute bottom-1 right-1 text-[10px]">
+                              <Badge variant="secondary" className="absolute bottom-1 right-1 text-[10px] z-10">
                                 <ImageIcon className="w-2.5 h-2.5 mr-0.5" /> Override
                               </Badge>
                             )}
-                          </div>
+                          </OptimizedThumbnail>
                         )}
                         {editingPostId === post.id ? (
                           <div className="space-y-2">
@@ -1375,11 +1373,10 @@ export default function CampaignDetailPage() {
                         }}
                         data-testid={`button-brand-asset-${ba.id}`}
                       >
-                        <img
+                        <OptimizedThumbnail
                           src={ba.fileUrl || ba.url || ""}
                           alt={ba.name}
-                          className="w-full aspect-video object-cover rounded"
-                          onError={e => (e.currentTarget.style.display = "none")}
+                          containerClassName="rounded"
                         />
                         <p className="text-xs mt-1 truncate">{ba.name}</p>
                         {ba.categoryName && <p className="text-[10px] text-muted-foreground truncate">{ba.categoryName}</p>}

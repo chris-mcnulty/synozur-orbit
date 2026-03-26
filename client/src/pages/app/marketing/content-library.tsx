@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -630,14 +631,10 @@ export default function ContentLibraryPage() {
       data-testid={`card-content-asset-${asset.id}`}
     >
       {asset.leadImageUrl && (
-        <div className="aspect-video overflow-hidden rounded-t-lg bg-muted">
-          <img
-            src={asset.leadImageUrl}
-            alt=""
-            className="w-full h-full object-cover"
-            onError={e => (e.currentTarget.style.display = "none")}
-          />
-        </div>
+        <OptimizedThumbnail
+          src={asset.leadImageUrl}
+          containerClassName="rounded-t-lg rounded-b-none"
+        />
       )}
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
