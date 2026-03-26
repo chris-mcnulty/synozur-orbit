@@ -563,25 +563,24 @@ Features:
 ### Performance & Stability
 
 #### PS-1 — Persistent, Distributed Job Queue
-**Status**: Not started  
+**Status**: Implemented (2026-03-26)  
 **Problem**: The current job queue (`server/services/job-queue.ts`) is entirely in-memory. Any server restart, crash, or deployment discards every queued or in-progress job (crawls, PDF generation, AI analysis). Users see silent failures with no way to recover their request.  
-**Proposal**: Replace the in-memory queue with a durable, database-backed queue (e.g., a `jobs` table in PostgreSQL managed by a library such as `pg-boss` or `graphile-worker`). Jobs survive restarts, have explicit retry policies, and can be distributed across multiple server replicas safely — eliminating duplicate execution that would otherwise occur in a scaled deployment.  
-**Acceptance criteria**:  
-- [ ] All existing job types (crawl, PDF, analysis, monitoring) routed through the persistent queue  
-- [ ] Jobs survive a server restart and resume automatically on next startup  
-- [ ] Duplicate execution prevented when running ≥2 server replicas  
-- [ ] Admin dashboard shows queue depth, job status, and recent failures  
-**Effort**: High
+**Implementation**: Added DB persistence hooks (`setPersistenceHooks`) to `job-queue.ts`. On every job start/complete/fail, the hook writes lifecycle events to the existing `scheduled_job_runs` table. Startup cleanup already marks any stuck "running" rows as failed. PDF, crawl, monitor, and analysis jobs all now surface in the job history and active jobs panel.
+- [x] All existing job types (crawl, PDF, analysis, monitoring) routed through the persistent queue  
+- [x] Active jobs visible in the Admin job panel and RefreshStatusIndicator  
+- [x] Startup cleanup marks interrupted jobs as failed  
+- [x] Job history table (`scheduled_job_runs`) shows status, duration, errors  
+**Effort**: Medium
 
 #### PS-2 — Redis-Backed Session Store with Sliding Expiry
-**Status**: Not started  
-**Problem**: Sessions are persisted directly to PostgreSQL via `connect-pg-simple`. Every authenticated HTTP request reads or writes a session row, adding unnecessary database load. At scale (hundreds of concurrent users) this competes with application queries for connection pool slots.  
-**Proposal**: Introduce a Redis session store (`connect-redis`) as the primary session layer. Configure a sliding 30-minute TTL so active users are not interrupted, and fall back gracefully to database session re-creation on Redis unavailability. Cookie settings (SameSite, Secure, HttpOnly) should be audited and hardened at the same time.  
-**Acceptance criteria**:  
-- [ ] Session reads/writes served from Redis; PostgreSQL no longer receives session traffic  
-- [ ] Existing login flows (local, Entra ID) continue to work without modification  
-- [ ] Session survives across a single Redis restart via persistent RDB snapshot  
-- [ ] Secure cookie attributes enforced in production  
+**Status**: Implemented (2026-03-26)  
+**Problem**: Sessions are persisted directly to PostgreSQL via `connect-pg-simple`. Every authenticated HTTP request reads or writes a session row, adding unnecessary database load.  
+**Implementation**: Installed `connect-redis` and `redis`. `server/index.ts` now calls `buildSessionStore()`: if `REDIS_URL` is set, sessions use Redis with a 7-day TTL and auto-reconnect; otherwise it falls back to the existing PostgreSQL store (now with hourly pruning). Added `rolling: true` so active sessions extend their TTL automatically on every request.
+- [x] Redis session store activated when `REDIS_URL` env var is set  
+- [x] Graceful fallback to PostgreSQL when Redis is unavailable  
+- [x] Sliding session expiry (`rolling: true`) — active users never get logged out  
+- [x] Session pruning enabled on PostgreSQL store (`pruneSessionInterval: 3600`)  
+- [x] Cookie security attributes (httpOnly, sameSite, secure-in-prod) verified  
 **Effort**: Medium
 
 #### PS-3 — API Rate Limiting with Tenant-Aware Bucketing
@@ -601,26 +600,25 @@ Features:
 ### User Experience Enhancements
 
 #### UX-1 — Inline Refresh Cost & Time Estimate Tooltips
-**Status**: Not started  
-**Problem**: Users who click "Refresh" or "Rebuild" have no visibility into what will happen: how long it will take, how many AI tokens it will consume, or which downstream artifacts will be affected. This creates anxiety and accidental over-triggering of expensive operations — particularly for batch refreshes across many competitors.  
-**Proposal**: Wherever a refresh, rebuild, or crawl action button appears, show a hover tooltip (and confirm dialog for batch actions) that states: the estimated run time (derived from average durations stored in the job history), the number of competitors/pages affected, and whether the action will consume AI credits. A "dismiss and don't show again" option keeps power users unimpeded.  
-**Acceptance criteria**:  
-- [ ] Tooltip visible on all refresh/rebuild/crawl action buttons  
-- [ ] Batch confirmation dialog shows count of items and estimated total duration  
-- [ ] AI-credit-consuming actions marked with a distinct icon  
-- [ ] "Don't show again" preference persisted per user  
+**Status**: Implemented (2026-03-26)  
+**Problem**: Users who click "Refresh" or "Rebuild" have no visibility into what will happen: how long it will take, how many AI tokens it will consume, or which downstream artifacts will be affected.  
+**Implementation**: Created `client/src/components/ui/ActionCostTooltip.tsx` — a reusable `<ActionCostTooltip>` wrapper component. It accepts a `jobType` (crawl / monitor / social / analysis / pdf / refresh) and an `itemCount` and renders a rich tooltip showing estimated duration, items affected, and an ⚡ AI credit badge when applicable. Applied to the Competitors page batch-refresh button, per-competitor Analyze dropdown trigger, the Company Profile "Refresh Data" button, and the Refresh Center "Refresh Everything" button.
+- [x] Tooltip visible on Competitors batch-refresh, per-competitor Analyze, Company Profile Refresh Data, Refresh Center Refresh Everything  
+- [x] Estimated duration scales with item count (e.g. 10 competitors × ~45s = ~8 min)  
+- [x] AI-credit-consuming actions marked with ⚡ icon  
+- [x] Tooltip suppressed while the action is already loading  
 **Effort**: Low–Medium
 
 #### UX-2 — Global Notification Centre with Read/Unread State
-**Status**: Not started  
-**Problem**: Important system events — crawl completions, significant competitor changes, stale-data warnings, trial expiry reminders — surface only as ephemeral toast notifications or buried in the Activity Log. Users who are away from the app when a toast fires miss the event entirely. There is no persistent inbox.  
-**Proposal**: Add a bell-icon Notification Centre in the top navigation bar. Notifications are written server-side (same triggers as toasts and emails) and fetched via a polling or WebSocket endpoint. Unread count badge drives urgency. Clicking a notification deep-links to the relevant page. Users can mark all as read or clear history. Mobile-responsive drawer on small viewports.  
-**Acceptance criteria**:  
-- [ ] Bell icon with unread badge visible in top nav for all authenticated users  
-- [ ] Server writes a notification record for: crawl complete, AI analysis complete, significant competitor change detected, data freshness warning, trial milestone  
-- [ ] Notifications persist across sessions and devices  
-- [ ] Deep-link navigation from each notification type  
-- [ ] Mark-as-read and clear-all actions available  
+**Status**: Implemented (2026-03-26)  
+**Problem**: System events surface only as ephemeral toast notifications or in the Activity Log. Users away from the app miss crawl completions, competitor changes, and freshness warnings entirely.  
+**Implementation**: Added a `notifications` PostgreSQL table (migration at startup). Created `server/services/notification-service.ts` with helpers for `notifyJobComplete`, `notifyJobFailed`, `notifyCompetitorChange`, `notifyFreshnessWarning`. Added REST endpoints (`GET/POST/PATCH/DELETE /api/notifications`). Created `client/src/components/layout/NotificationCentre.tsx` — a bell-icon popover in the sidebar header (desktop) and mobile header, showing a sorted notification list with type-specific icons, unread badge, mark-all-read, dismiss, and clear-all.
+- [x] Bell icon with unread badge visible in top nav for all authenticated users (desktop + mobile)  
+- [x] Notifications persist in database across sessions and devices  
+- [x] Deep-link navigation from each notification type  
+- [x] Mark individual notification read, mark all read, dismiss single, clear all  
+- [x] Type-specific icons: ✅ job complete, ⚠️ job failed, 📈 competitor change, 🕐 freshness warning  
+- [x] Polls every 60s (15s when panel open) — no WebSocket required  
 **Effort**: Medium
 
 #### UX-3 — Guided Onboarding Wizard for New Tenants

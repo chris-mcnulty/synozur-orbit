@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import StalenessDot from "@/components/ui/StalenessDot";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -852,19 +853,25 @@ export default function Competitors() {
                     <Badge variant="secondary" className="text-sm">
                       {selectedCompetitors.size} selected
                     </Badge>
-                    <Button
-                      size="sm"
-                      onClick={batchRefreshCompetitors}
+                    <ActionCostTooltip
+                      jobType="crawl"
+                      itemCount={selectedCompetitors.size}
                       disabled={batchRefreshing}
-                      data-testid="button-batch-refresh"
                     >
-                      {batchRefreshing ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                      )}
-                      Refresh Selected
-                    </Button>
+                      <Button
+                        size="sm"
+                        onClick={batchRefreshCompetitors}
+                        disabled={batchRefreshing}
+                        data-testid="button-batch-refresh"
+                      >
+                        {batchRefreshing ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Refresh Selected
+                      </Button>
+                    </ActionCostTooltip>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -996,23 +1003,29 @@ export default function Competitors() {
                                 {/* Analysis Type Dropdown */}
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                    <ActionCostTooltip
+                                      jobType="crawl"
                                       disabled={analyzingCompetitor === competitor.id}
-                                      data-testid={`button-crawl-${competitor.id}`}
+                                      note="Full analysis also uses AI credits"
                                     >
-                                      {analyzingCompetitor === competitor.id ? (
-                                        <>
-                                          <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <RefreshCw className="w-4 h-4 mr-2" /> Analyze <ChevronDown className="w-3 h-3 ml-1" />
-                                        </>
-                                      )}
-                                    </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                        disabled={analyzingCompetitor === competitor.id}
+                                        data-testid={`button-crawl-${competitor.id}`}
+                                      >
+                                        {analyzingCompetitor === competitor.id ? (
+                                          <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <RefreshCw className="w-4 h-4 mr-2" /> Analyze <ChevronDown className="w-3 h-3 ml-1" />
+                                          </>
+                                        )}
+                                      </Button>
+                                    </ActionCostTooltip>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-64">
                                     <DropdownMenuItem 

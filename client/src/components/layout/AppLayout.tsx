@@ -60,6 +60,7 @@ import CompanySetupDialog from "@/components/onboarding/CompanySetupDialog";
 import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDialog";
 import ContextBar from "@/components/layout/ContextBar";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
+import NotificationCentre from "@/components/layout/NotificationCentre";
 import CommandPalette from "@/components/CommandPalette";
 import SmartSuggestions from "@/components/SmartSuggestions";
 import WhatsNewModal from "@/components/WhatsNewModal";
@@ -493,6 +494,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-sidebar-foreground/50 text-lg">|</span>
             <span className="font-semibold text-lg tracking-tight text-sidebar-foreground">Orbit</span>
           </Link>
+          <div className="ml-auto hidden lg:flex items-center gap-1">
+            <NotificationCentre />
+            <RefreshStatusIndicator />
+          </div>
           <button 
             className="ml-auto lg:hidden text-sidebar-foreground/50 hover:text-sidebar-foreground"
             onClick={() => setSidebarOpen(false)}
@@ -653,7 +658,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-sidebar-foreground/50">|</span>
             <span className="font-semibold text-base text-sidebar-foreground">Orbit</span>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <NotificationCentre />
             <RefreshStatusIndicator />
           </div>
         </header>

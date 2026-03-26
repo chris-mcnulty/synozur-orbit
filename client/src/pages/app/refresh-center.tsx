@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
+import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import {
   RefreshCw,
   Globe,
@@ -430,19 +431,27 @@ export default function RefreshCenter() {
               Monitor data freshness and manage refresh operations
             </p>
           </div>
-          <Button 
-            onClick={refreshAllData} 
+          <ActionCostTooltip
+            jobType="crawl"
+            itemCount={Math.max(1, (competitors as any[]).length)}
+            title="Refresh everything"
+            note="Crawls all competitor websites, social profiles, and news"
             disabled={loadingActions.has("all")}
-            className="gap-2"
-            data-testid="refresh-all-button"
           >
-            {loadingActions.has("all") ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Zap className="w-4 h-4" />
-            )}
-            Refresh Everything
-          </Button>
+            <Button 
+              onClick={refreshAllData} 
+              disabled={loadingActions.has("all")}
+              className="gap-2"
+              data-testid="refresh-all-button"
+            >
+              {loadingActions.has("all") ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Zap className="w-4 h-4" />
+              )}
+              Refresh Everything
+            </Button>
+          </ActionCostTooltip>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

@@ -1,6 +1,13 @@
 type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "other";
 type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
 
+/** Optional context passed alongside a job for DB persistence and display. */
+export interface JobContext {
+  tenantDomain?: string;
+  targetId?: string;
+  targetName?: string;
+}
+
 interface QueuedJob<T = any> {
   id: string;
   type: JobType;
@@ -15,6 +22,34 @@ interface QueuedJob<T = any> {
   completedAt?: number;
   timeoutMs: number;
   abortController?: AbortController;
+  /** DB row id when persistence is enabled. */
+  dbRowId?: string;
+  ctx?: JobContext;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence hooks — wired up at startup via setPersistenceHooks() so that
+// the job queue can write lifecycle events to the scheduled_job_runs table
+// without importing the DB layer directly (avoids circular dependencies).
+// ---------------------------------------------------------------------------
+interface PersistenceHooks {
+  onCreate(job: {
+    id: string;
+    type: JobType;
+    label: string;
+    status: "running";
+    startedAt: Date;
+    ctx?: JobContext;
+  }): Promise<string>;
+  onComplete(dbRowId: string, status: "completed" | "failed", errorMessage?: string): Promise<void>;
+}
+
+let persistenceHooks: PersistenceHooks | null = null;
+
+/** Called once during server startup after the DB is ready. */
+export function setPersistenceHooks(hooks: PersistenceHooks): void {
+  persistenceHooks = hooks;
+  console.log("[JobQueue] DB persistence hooks registered");
 }
 
 interface QueueConfig {
@@ -113,6 +148,22 @@ function startJob(job: QueuedJob): void {
   job.abortController = abortController;
   activeJobs.set(job.id, job);
 
+  // Persist job start to DB (fire-and-forget; do not block the queue)
+  if (persistenceHooks) {
+    persistenceHooks.onCreate({
+      id: job.id,
+      type: job.type,
+      label: job.label,
+      status: "running",
+      startedAt: new Date(job.startedAt),
+      ctx: job.ctx,
+    }).then(dbRowId => {
+      job.dbRowId = dbRowId;
+    }).catch(err => {
+      console.error(`[JobQueue] Failed to persist job start for ${job.label}:`, err.message);
+    });
+  }
+
   const timeoutHandle = setTimeout(() => {
     if (activeJobs.has(job.id)) {
       console.error(`[JobQueue] Job ${job.id} (${job.label}) timed out after ${job.timeoutMs / 1000}s - aborting`);
@@ -120,6 +171,9 @@ function startJob(job: QueuedJob): void {
       abortController.abort();
       activeJobs.delete(job.id);
       failedCount++;
+      if (persistenceHooks && job.dbRowId) {
+        persistenceHooks.onComplete(job.dbRowId, "failed", `Timed out after ${job.timeoutMs / 1000}s`).catch(() => {});
+      }
       job.reject(new Error(`Job timed out after ${job.timeoutMs / 1000}s: ${job.label}`));
       processQueue();
     }
@@ -137,6 +191,9 @@ function startJob(job: QueuedJob): void {
       completedCount++;
       const durationSec = ((job.completedAt - (job.startedAt || job.enqueuedAt)) / 1000).toFixed(1);
       console.log(`[JobQueue] Completed ${job.type}/${job.label} in ${durationSec}s (active: ${activeJobs.size}, pending: ${pendingQueue.length})`);
+      if (persistenceHooks && job.dbRowId) {
+        persistenceHooks.onComplete(job.dbRowId, "completed").catch(() => {});
+      }
       job.resolve(result);
       processQueue();
     })
@@ -148,6 +205,9 @@ function startJob(job: QueuedJob): void {
       activeJobs.delete(job.id);
       failedCount++;
       console.error(`[JobQueue] Failed ${job.type}/${job.label}: ${err.message}`);
+      if (persistenceHooks && job.dbRowId) {
+        persistenceHooks.onComplete(job.dbRowId, "failed", err.message).catch(() => {});
+      }
       job.reject(err);
       processQueue();
     });
@@ -157,7 +217,7 @@ export function enqueue<T>(
   type: JobType,
   label: string,
   work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
-  options?: { priority?: number; timeoutMs?: number }
+  options?: { priority?: number; timeoutMs?: number; ctx?: JobContext }
 ): Promise<T> {
   const priority = options?.priority ?? PRIORITY[type] ?? PRIORITY.other;
   const timeoutMs = options?.timeoutMs ?? config.defaultTimeoutMs;
@@ -174,6 +234,7 @@ export function enqueue<T>(
       reject,
       enqueuedAt: Date.now(),
       timeoutMs,
+      ctx: options?.ctx,
     };
 
     if (canStartJob(type)) {
@@ -185,16 +246,16 @@ export function enqueue<T>(
   });
 }
 
-export function enqueuePdf<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
-  return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000 });
+export function enqueuePdf<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
+  return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000, ctx });
 }
 
-export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
-  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 10 * 60 * 1000 });
+export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
+  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
 }
 
-export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number): Promise<T> {
-  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000 });
+export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
+  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
 }
 
 export function getQueueStatus(): QueueStats {

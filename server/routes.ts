@@ -36,6 +36,14 @@ import { AI_FEATURES, AI_MODELS, AI_MODEL_INFO, AI_FEATURE_LABELS, AI_PROVIDERS,
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "./services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "./utils/url-validator";
 import { validateDocumentUpload } from "./utils/file-validator";
+import {
+  getNotificationsForUser,
+  getUnreadCount,
+  markNotificationRead,
+  markAllRead,
+  deleteNotification,
+  clearAllNotifications,
+} from "./services/notification-service";
 
 // Helper to log AI usage after any AI call
 async function logAiUsage(
@@ -2634,6 +2642,78 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(error.status).json({ error: error.message });
       }
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== NOTIFICATION CENTRE ROUTES ====================
+
+  // GET /api/notifications — list notifications for the current user
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const unreadOnly = req.query.unread === "true";
+      const [notifs, unread] = await Promise.all([
+        getNotificationsForUser(req.session.userId, { unreadOnly }),
+        getUnreadCount(req.session.userId),
+      ]);
+      res.json({ notifications: notifs, unreadCount: unread });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/notifications/unread-count — lightweight badge poll
+  app.get("/api/notifications/unread-count", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const count = await getUnreadCount(req.session.userId);
+      res.json({ count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/notifications/:id/read — mark one notification as read
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      await markNotificationRead(req.params.id, req.session.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/notifications/mark-all-read — mark all unread as read
+  app.post("/api/notifications/mark-all-read", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      await markAllRead(req.session.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/notifications/:id — remove a single notification
+  app.delete("/api/notifications/:id", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      await deleteNotification(req.params.id, req.session.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/notifications — clear all notifications for current user
+  app.delete("/api/notifications", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      await clearAllNotifications(req.session.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

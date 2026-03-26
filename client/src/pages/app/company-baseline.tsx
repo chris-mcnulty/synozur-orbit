@@ -18,6 +18,7 @@ import { Link } from "wouter";
 import StalenessDot from "@/components/ui/StalenessDot";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 import RecentUpdatesCard from "@/components/RecentUpdatesCard";
+import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 
 export default function CompanyBaseline() {
   const { toast } = useToast();
@@ -708,20 +709,26 @@ export default function CompanyBaseline() {
                         )}
                         Check All for Changes
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setRefreshStrategyOpen(true)}
+                      <ActionCostTooltip
+                        jobType="refresh"
                         disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
-                        data-testid="button-refresh-strategy"
+                        note="Crawls your company website and social profiles"
                       >
-                        {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Refresh Data
-                      </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRefreshStrategyOpen(true)}
+                          disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                          data-testid="button-refresh-strategy"
+                        >
+                          {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Refresh Data
+                        </Button>
+                      </ActionCostTooltip>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm" onClick={openProfileDialog} data-testid="button-edit-profile">
