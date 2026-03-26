@@ -46,7 +46,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: `shared/schema.ts`
 - **Migrations**: Drizzle Kit
 - **Validation**: Zod schemas.
-- **Key Tables**: `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, `briefingSubscriptions`, `organizations`, `supportTickets`, `supportTicketReplies`.
+- **Key Tables**: `users`, `tenants`, `competitors`, `products`, `activity`, `analysis`, `recommendations`, `battlecards`, `roadmapItems`, `aiUsage`, `intelligenceBriefings`, `briefingSubscriptions`, `organizations`, `supportTickets`, `supportTicketReplies`, `personas`.
 
 ### Authentication & Authorization
 - **Authentication**: Session-based with `express-session`, supporting Microsoft Entra ID (OAuth 2.0) and planned Google SSO, with email/password as a fallback.
@@ -70,6 +70,7 @@ Preferred communication style: Simple, everyday language.
 - **Email Newsletters**: Standalone tool for generating emails from content assets, with platform, tone, and CTA configuration.
 - **Marketing Content Library**: Enterprise-gated content asset management with URL auto-extraction, AI summarization, customizable categories, and flexible tagging.
 - **Marketing Brand Library**: Enterprise-gated brand asset management, supporting product cross-linking, customizable categories, and flexible tagging.
+- **Persona & ICP Builder**: Pro/Enterprise/Unlimited-gated buyer persona management. AI-assisted persona generation, CSV export, ICP designation. Personas inject audience context into AI-generated emails, social posts, battlecards, and recommendations via `formatPersonaContextForPrompt()`. Routes in `marketing-saturn.ts`, feature key `personaBuilder`.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
 - **Client Projects**: Facilitate product-level competitive analysis for consulting firms.
 - **Product Management MVP**: Feature catalog, quarterly roadmap view, AI-powered roadmap recommendations.

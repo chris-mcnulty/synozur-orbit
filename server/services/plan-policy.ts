@@ -32,6 +32,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "podcastBriefings", label: "Podcast Briefings", description: "AI-generated podcast-style audio summaries of intelligence briefings", category: "intelligence" },
   { key: "scheduledBriefingUpdates", label: "Scheduled Briefing Updates", description: "Automatic weekly briefing generation with email delivery", category: "intelligence" },
   { key: "competitorAlerts", label: "Competitor Change Alerts", description: "Real-time in-app and email alerts when competitors make significant changes", category: "monitoring" },
+  { key: "personaBuilder", label: "Persona & ICP Builder", description: "Define buyer personas and inject audience context into AI content", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -79,6 +80,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     podcastBriefings: false,
     scheduledBriefingUpdates: false,
     competitorAlerts: false,
+    personaBuilder: false,
   },
   trial: {
     battlecards: true,
@@ -105,6 +107,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     podcastBriefings: false,
     scheduledBriefingUpdates: false,
     competitorAlerts: false,
+    personaBuilder: false,
   },
   pro: {
     battlecards: true,
@@ -131,6 +134,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     podcastBriefings: true,
     scheduledBriefingUpdates: false,
     competitorAlerts: true,
+    personaBuilder: true,
   },
   enterprise: {
     battlecards: true,
@@ -157,6 +161,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     podcastBriefings: true,
     scheduledBriefingUpdates: true,
     competitorAlerts: true,
+    personaBuilder: true,
   },
   unlimited: {
     battlecards: true,
@@ -183,6 +188,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     podcastBriefings: true,
     scheduledBriefingUpdates: true,
     competitorAlerts: true,
+    personaBuilder: true,
   },
 };
 

@@ -86,6 +86,7 @@ export default function EmailNewslettersPage() {
   const [emailTone, setEmailTone] = useState("professional");
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const [emailInstructions, setEmailInstructions] = useState(
     briefingAction ? `Address this intelligence action item in the email: ${briefingAction}`
     : recommendationContext ? `Address this strategic recommendation: ${recommendationContext}`
@@ -151,6 +152,15 @@ export default function EmailNewslettersPage() {
     queryKey: ["/api/email/saved"],
     queryFn: async () => {
       const r = await fetch("/api/email/saved", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const { data: availablePersonas = [] } = useQuery<{ id: string; name: string; role: string | null; isIcp: boolean }[]>({
+    queryKey: ["/api/personas"],
+    queryFn: async () => {
+      const r = await fetch("/api/personas", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
@@ -259,6 +269,7 @@ export default function EmailNewslettersPage() {
           tone: emailTone,
           callToAction: emailCallToAction || undefined,
           recipientContext: emailRecipientContext || undefined,
+          personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -525,6 +536,27 @@ export default function EmailNewslettersPage() {
                 data-testid="input-email-recipient-context"
               />
             </div>
+            {availablePersonas.length > 0 && (
+              <div>
+                <label className="text-sm font-medium">Target Personas (optional)</label>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {availablePersonas.map(p => (
+                    <Badge
+                      key={p.id}
+                      variant={selectedPersonaIds.includes(p.id) ? "default" : "outline"}
+                      className="cursor-pointer gap-1"
+                      onClick={() => setSelectedPersonaIds(prev =>
+                        prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                      )}
+                      data-testid={`badge-persona-${p.id}`}
+                    >
+                      {p.isIcp && "⭐ "}{p.name}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Select personas to tailor the email to specific audiences.</p>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium">Additional Instructions (optional)</label>
               <Textarea

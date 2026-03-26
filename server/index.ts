@@ -239,6 +239,29 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT false`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_threshold TEXT DEFAULT 'high'`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_email_enabled BOOLEAN DEFAULT false`);
+    // Personas & ICP Builder
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS personas (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        role TEXT,
+        industry TEXT,
+        company_size TEXT,
+        pain_points TEXT[],
+        goals TEXT[],
+        objections TEXT[],
+        preferred_channels TEXT[],
+        notes TEXT,
+        is_icp BOOLEAN NOT NULL DEFAULT false,
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS personas_tenant_domain_idx ON personas(tenant_domain)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS personas_market_id_idx ON personas(market_id)`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

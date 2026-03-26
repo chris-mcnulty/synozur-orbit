@@ -53,6 +53,7 @@ import CampaignsPage from "@/pages/app/marketing/campaigns";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
+import PersonasPage from "@/pages/app/marketing/personas";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
@@ -131,6 +132,7 @@ function Router() {
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
+      <Route path="/app/marketing/personas" component={PersonasPage} />
       <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
       <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       <Route path="/app/refresh-center" component={RefreshCenter} />

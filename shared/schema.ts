@@ -1926,6 +1926,47 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Personas & ICP Builder
+// Structured buyer personas for audience-specific AI content generation.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const personas = pgTable("personas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  role: text("role"),
+  industry: text("industry"),
+  companySize: text("company_size"),
+  painPoints: text("pain_points").array(),
+  goals: text("goals").array(),
+  objections: text("objections").array(),
+  preferredChannels: text("preferred_channels").array(),
+  notes: text("notes"),
+  isIcp: boolean("is_icp").notNull().default(false),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const personasRelations = relations(personas, ({ one }) => ({
+  market: one(markets, {
+    fields: [personas.marketId],
+    references: [markets.id],
+  }),
+  createdByUser: one(users, {
+    fields: [personas.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertPersonaSchema = createInsertSchema(personas).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type Persona = typeof personas.$inferSelect;
+export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

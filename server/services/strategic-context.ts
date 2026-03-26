@@ -20,6 +20,7 @@ export interface StrategicContext {
   gtmPlanSummary: string;
   briefingActionItems: string;
   recommendations: string;
+  personas: string;
 }
 
 /**
@@ -193,6 +194,32 @@ async function loadRecommendations(ctx: ContextFilter): Promise<string> {
 }
 
 /**
+ * Loads buyer personas for a tenant context.
+ */
+async function loadPersonas(ctx: ContextFilter): Promise<string> {
+  const allPersonas = await storage.getPersonasByContext(ctx);
+  if (allPersonas.length === 0) return "";
+
+  const personaSummaries = allPersonas.slice(0, 10).map(p => {
+    const lines: string[] = [`- **${p.name}**${p.isIcp ? " (ICP)" : ""}`];
+    if (p.role) lines.push(`  Role: ${p.role}`);
+    if (p.industry) lines.push(`  Industry: ${p.industry}`);
+    if (p.companySize) lines.push(`  Company Size: ${p.companySize}`);
+    const painPoints = p.painPoints as string[] | null;
+    if (painPoints?.length) lines.push(`  Pain Points: ${painPoints.slice(0, 3).join(", ")}`);
+    const goals = p.goals as string[] | null;
+    if (goals?.length) lines.push(`  Goals: ${goals.slice(0, 3).join(", ")}`);
+    const objections = p.objections as string[] | null;
+    if (objections?.length) lines.push(`  Objections: ${objections.slice(0, 3).join(", ")}`);
+    const channels = p.preferredChannels as string[] | null;
+    if (channels?.length) lines.push(`  Preferred Channels: ${channels.join(", ")}`);
+    return lines.join("\n");
+  });
+
+  return personaSummaries.join("\n\n");
+}
+
+/**
  * Main entry point: assemble the full strategic context for a tenant+market.
  * Each section is loaded independently; missing data is simply omitted.
  */
@@ -201,7 +228,6 @@ export async function loadStrategicContext(
   marketId?: string,
   isDefaultMarket?: boolean,
 ): Promise<StrategicContext> {
-  // Resolve tenantId from domain for ContextFilter compatibility
   const tenant = await storage.getTenantByDomain(tenantDomain);
   const tenantId = tenant?.id || "";
   const resolvedIsDefaultMarket =
@@ -219,6 +245,7 @@ export async function loadStrategicContext(
     loadGtmPlanSummary(ctx),
     loadBriefingActionItems(tenantDomain, marketId),
     loadRecommendations(ctx),
+    loadPersonas(ctx),
   ]);
 
   const messagingFramework =
@@ -231,7 +258,9 @@ export async function loadStrategicContext(
     results[3].status === "fulfilled" ? results[3].value : "";
   const recommendations =
     results[4].status === "fulfilled" ? results[4].value : "";
-  return { messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations };
+  const personasContext =
+    results[5].status === "fulfilled" ? results[5].value : "";
+  return { messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations, personas: personasContext };
 }
 
 /**
@@ -261,5 +290,42 @@ export function formatStrategicContextForPrompt(sc: StrategicContext): string {
     sections.push(`## Recent Intelligence Action Items\nAddress these urgent competitive intelligence findings where relevant:\n${sc.briefingActionItems}`);
   }
 
+  if (sc.personas) {
+    sections.push(`## Target Buyer Personas\nTailor content to resonate with these defined buyer personas. Address their pain points, goals, and preferred communication style:\n${sc.personas}`);
+  }
+
   return sections.join("\n\n");
+}
+
+/**
+ * Formats selected persona data for injection into generation prompts.
+ * Used when users explicitly select personas for targeted content.
+ */
+export function formatPersonaContextForPrompt(personaData: Array<{
+  name: string;
+  role?: string | null;
+  industry?: string | null;
+  companySize?: string | null;
+  painPoints?: string[] | null;
+  goals?: string[] | null;
+  objections?: string[] | null;
+  preferredChannels?: string[] | null;
+  notes?: string | null;
+}>): string {
+  if (!personaData.length) return "";
+
+  const parts = personaData.map(p => {
+    const lines: string[] = [`### ${p.name}`];
+    if (p.role) lines.push(`- Role/Title: ${p.role}`);
+    if (p.industry) lines.push(`- Industry: ${p.industry}`);
+    if (p.companySize) lines.push(`- Company Size: ${p.companySize}`);
+    if (p.painPoints?.length) lines.push(`- Pain Points: ${p.painPoints.join("; ")}`);
+    if (p.goals?.length) lines.push(`- Goals: ${p.goals.join("; ")}`);
+    if (p.objections?.length) lines.push(`- Common Objections: ${p.objections.join("; ")}`);
+    if (p.preferredChannels?.length) lines.push(`- Preferred Channels: ${p.preferredChannels.join(", ")}`);
+    if (p.notes) lines.push(`- Notes: ${p.notes}`);
+    return lines.join("\n");
+  });
+
+  return `## Target Personas (Selected)\nThe following buyer personas have been specifically selected for this content. Tailor messaging, language, pain points addressed, and value propositions to resonate with these audiences:\n\n${parts.join("\n\n")}`;
 }

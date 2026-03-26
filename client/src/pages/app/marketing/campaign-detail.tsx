@@ -158,6 +158,7 @@ export default function CampaignDetailPage() {
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const [brandCategoryFilter, setBrandCategoryFilter] = useState<string>("all");
   const [brandPage, setBrandPage] = useState(0);
   const BRAND_PAGE_SIZE = 12;
@@ -213,6 +214,14 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const { data: availablePersonas = [] } = useQuery<{ id: string; name: string; role: string | null; isIcp: boolean }[]>({
+    queryKey: ["/api/personas"],
+    queryFn: async () => {
+      const r = await fetch("/api/personas", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+
   const { data: posts = [] } = useQuery<GeneratedPost[]>({
     queryKey: [`/api/campaigns/${id}/generated-posts`],
     queryFn: async () => {
@@ -232,12 +241,12 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async (brandImageIds?: string[]) => {
+    mutationFn: async ({ brandImageIds, personaIds }: { brandImageIds?: string[]; personaIds?: string[] }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [] }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [] }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -245,6 +254,7 @@ export default function CampaignDetailPage() {
     onSuccess: () => {
       setGenerateDialogOpen(false);
       setSelectedBrandImageIds([]);
+      setSelectedPersonaIds([]);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
     },
@@ -1711,11 +1721,32 @@ export default function CampaignDetailPage() {
                 </p>
               )}
             </div>
+            {availablePersonas.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium">Target Personas (optional)</Label>
+                <p className="text-xs text-muted-foreground mt-1 mb-2">Select personas to tailor the generated posts to specific audiences.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {availablePersonas.map(p => (
+                    <Badge
+                      key={p.id}
+                      variant={selectedPersonaIds.includes(p.id) ? "default" : "outline"}
+                      className="cursor-pointer gap-1"
+                      onClick={() => setSelectedPersonaIds(prev =>
+                        prev.includes(p.id) ? prev.filter(pid => pid !== p.id) : [...prev, p.id]
+                      )}
+                      data-testid={`badge-gen-persona-${p.id}`}
+                    >
+                      {p.isIcp && "⭐ "}{p.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
-              onClick={() => generatePostsMutation.mutate(selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined)}
+              onClick={() => generatePostsMutation.mutate({ brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined, personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined })}
               disabled={generatePostsMutation.isPending || isGenerating}
               className="gap-2"
               data-testid="button-confirm-generate"

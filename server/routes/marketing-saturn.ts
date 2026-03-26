@@ -48,13 +48,15 @@ import {
   type InsertCampaignSocialAccount,
   type InsertGeneratedPost,
   type InsertGeneratedEmail,
+  personas,
+  type InsertPersona,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
-import { storage } from "../storage";
+import { storage, type ContextFilter } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
-import { loadStrategicContext, formatStrategicContextForPrompt } from "../services/strategic-context";
+import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1230,6 +1232,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
     const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
+    const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
 
     await db.delete(generatedPosts)
       .where(and(
@@ -1253,7 +1256,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(eq(campaigns.id, campaign.id));
 
     // Kick off async generation (fire-and-forget)
-    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds).catch(err => {
+    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds).catch(err => {
       console.error("[Saturn] Post generation error:", err.message);
     });
 
@@ -1495,7 +1498,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext } = req.body;
+    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext, personaIds } = req.body;
 
     const platformKey = platform || "outlook";
     const toneKey = tone || "professional";
@@ -1586,6 +1589,17 @@ VISUAL DESIGN RULES:
     ]);
     const strategicContext = formatStrategicContextForPrompt(strategicCtx);
 
+    let personaContext = "";
+    if (personaIds?.length) {
+      const selectedPersonas = await Promise.all(
+        personaIds.map((pid: string) => storage.getPersona(pid))
+      );
+      const validPersonas = selectedPersonas.filter(Boolean);
+      if (validPersonas.length) {
+        personaContext = formatPersonaContextForPrompt(validPersonas as any);
+      }
+    }
+
     const [companyProfile] = await db.select().from(companyProfiles)
       .where(and(
         eq(companyProfiles.tenantDomain, ctx.tenantDomain),
@@ -1642,7 +1656,7 @@ ${platformInstruction}
 ## Tone
 ${toneInstruction}
 
-${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Assets
+${callToAction ? `## Call to Action\nThe email should drive the reader toward this action: ${callToAction}\n\n` : ""}${recipientContext ? `## Recipient Context\n${recipientContext}\n\n` : ""}${brandContext ? `## Company & Brand Identity\n${brandContext}\nUse the company name and brand colors throughout the email. If a logo URL is provided, include it in the header.\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}## Content Assets
 ${assetContext || "(no assets provided)"}
 
 ${instructions ? `## Additional Instructions\n${instructions}\n\n` : ""}## Response Format
@@ -2035,6 +2049,138 @@ Structure your response using these exact delimiters:
       res.json({ available: false, sections: {} });
     }
   });
+
+  // ══════════════════════════════════════════════════════════
+  // PERSONAS & ICP BUILDER
+  // ══════════════════════════════════════════════════════════
+
+  app.get("/api/personas", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const ctxFilter: ContextFilter = { tenantId: ctx.tenantId, marketId: ctx.marketId, tenantDomain: ctx.tenantDomain, isDefaultMarket: ctx.isDefaultMarket };
+    const rows = await storage.getPersonasByContext(ctxFilter);
+    res.json(rows);
+  });
+
+  app.get("/api/personas/:id", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const persona = await storage.getPersona(req.params.id);
+    if (!persona) return res.status(404).json({ error: "Not found" });
+    res.json(persona);
+  });
+
+  app.post("/api/personas", async (req, res) => {
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
+    const { name, role, industry, companySize, painPoints, goals, objections, preferredChannels, notes, isIcp } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+    const persona = await storage.createPersona({
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      name: name.trim(),
+      role: role || null,
+      industry: industry || null,
+      companySize: companySize || null,
+      painPoints: painPoints || null,
+      goals: goals || null,
+      objections: objections || null,
+      preferredChannels: preferredChannels || null,
+      notes: notes || null,
+      isIcp: isIcp || false,
+      createdBy: ctx.userId,
+    });
+    res.status(201).json(persona);
+  });
+
+  app.put("/api/personas/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
+    const existing = await storage.getPersona(req.params.id);
+    if (!existing || existing.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Not found" });
+    const { name, role, industry, companySize, painPoints, goals, objections, preferredChannels, notes, isIcp } = req.body;
+    const updates: Record<string, any> = {};
+    if (name !== undefined) updates.name = name;
+    if (role !== undefined) updates.role = role;
+    if (industry !== undefined) updates.industry = industry;
+    if (companySize !== undefined) updates.companySize = companySize;
+    if (painPoints !== undefined) updates.painPoints = painPoints;
+    if (goals !== undefined) updates.goals = goals;
+    if (objections !== undefined) updates.objections = objections;
+    if (preferredChannels !== undefined) updates.preferredChannels = preferredChannels;
+    if (notes !== undefined) updates.notes = notes;
+    if (isIcp !== undefined) updates.isIcp = isIcp;
+    const updated = await storage.updatePersona(req.params.id, updates);
+    res.json(updated);
+  });
+
+  app.delete("/api/personas/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
+    const existing = await storage.getPersona(req.params.id);
+    if (!existing || existing.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Not found" });
+    await storage.deletePersona(req.params.id);
+    res.status(204).send();
+  });
+
+  app.post("/api/personas/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
+
+    const [strategicCtx, companyProfile] = await Promise.all([
+      loadStrategicContext(ctx.tenantDomain, ctx.marketId),
+      (async () => {
+        const [row] = await db.select().from(companyProfiles)
+          .where(and(
+            eq(companyProfiles.tenantDomain, ctx.tenantDomain),
+            eq(companyProfiles.marketId, ctx.marketId),
+          ))
+          .limit(1);
+        return row;
+      })(),
+    ]);
+    const strategicContext = formatStrategicContextForPrompt(strategicCtx);
+
+    let companyContext = "";
+    if (companyProfile) {
+      const parts = [`Company: ${companyProfile.companyName}`];
+      if (companyProfile.industry) parts.push(`Industry: ${companyProfile.industry}`);
+      if (companyProfile.description) parts.push(`Description: ${companyProfile.description}`);
+      companyContext = parts.join("\n");
+    }
+
+    const prompt = `You are an expert B2B marketing strategist. Generate 3 detailed buyer persona suggestions based on the company context and strategic intelligence provided.
+
+${companyContext ? `## Company Context\n${companyContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Instructions
+Analyze the company's positioning, target audience, competitive landscape, and messaging to create 3 distinct buyer personas that would be most relevant for this business. Each persona should represent a different segment of the ideal customer base.
+
+Return ONLY a valid JSON array (no markdown fences, no explanation) of 3 objects, each with:
+- "name": string (a descriptive name like "Enterprise IT Director" or "Growth-Stage CMO")
+- "role": string (job title or role)
+- "industry": string (target industry)
+- "companySize": string (e.g. "50-200 employees", "Enterprise 1000+")
+- "painPoints": string[] (3-5 specific pain points)
+- "goals": string[] (3-5 business goals)
+- "objections": string[] (2-4 common objections to buying)
+- "preferredChannels": string[] (2-4 preferred channels like "LinkedIn", "Email", "Webinars")
+- "notes": string (brief description of this persona and why they matter)`;
+
+    try {
+      const result = await completeForFeature("marketing_tasks", prompt);
+      let parsed: any[] = [];
+      try {
+        const cleaned = result.text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
+        parsed = JSON.parse(cleaned);
+        if (!Array.isArray(parsed)) parsed = [parsed];
+      } catch {
+        const arrayMatch = result.text.match(/\[[\s\S]*\]/);
+        if (arrayMatch) parsed = JSON.parse(arrayMatch[0]);
+      }
+      res.json(parsed.slice(0, 5));
+    } catch (err: any) {
+      console.error("[Personas] AI generation error:", err.message);
+      res.status(500).json({ error: `Persona generation failed: ${err.message}` });
+    }
+  });
 }
 
 // ─── async post generation ───────────────────────────────────────────────────
@@ -2137,6 +2283,7 @@ async function generatePostsAsync(
   marketId: string,
   jobId: string,
   brandImageIds: string[] = [],
+  personaIds: string[] = [],
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
@@ -2181,6 +2328,17 @@ async function generatePostsAsync(
       loadStrategicContext(tenantDomain, marketId),
     ]);
     const strategicContext = formatStrategicContextForPrompt(strategicCtx);
+
+    let personaContext = "";
+    if (personaIds.length > 0) {
+      const selectedPersonas = await Promise.all(
+        personaIds.map((pid: string) => storage.getPersona(pid))
+      );
+      const validPersonas = selectedPersonas.filter(Boolean);
+      if (validPersonas.length) {
+        personaContext = formatPersonaContextForPrompt(validPersonas as any);
+      }
+    }
 
     let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
     if (brandImageIds.length > 0) {
@@ -2232,7 +2390,7 @@ IMPORTANT RULES — follow these strictly:
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Content Asset\n${assetGroup.context}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}## Content Asset\n${assetGroup.context}
 
 ## Platform Guidelines
 ${platformGuide}

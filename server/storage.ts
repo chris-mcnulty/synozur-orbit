@@ -128,6 +128,9 @@ import {
   gapDismissals,
   type GapDismissal,
   type InsertGapDismissal,
+  personas,
+  type Persona,
+  type InsertPersona,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
@@ -501,6 +504,13 @@ export interface IStorage {
   getGapDismissalByDedupeKey(dedupeKey: string, tenantDomain: string, marketId?: string | null): Promise<GapDismissal | undefined>;
   createGapDismissal(dismissal: InsertGapDismissal): Promise<GapDismissal>;
   updateGapDismissal(id: string, data: Partial<GapDismissal>): Promise<GapDismissal>;
+
+  // Persona methods
+  getPersona(id: string): Promise<Persona | undefined>;
+  getPersonasByContext(ctx: ContextFilter): Promise<Persona[]>;
+  createPersona(persona: InsertPersona): Promise<Persona>;
+  updatePersona(id: string, data: Partial<Persona>): Promise<Persona>;
+  deletePersona(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3385,6 +3395,41 @@ export class DatabaseStorage implements IStorage {
   async updateGapDismissal(id: string, data: Partial<GapDismissal>): Promise<GapDismissal> {
     const [updated] = await db.update(gapDismissals).set(data).where(eq(gapDismissals.id, id)).returning();
     return updated;
+  }
+
+  // Persona methods
+  async getPersona(id: string): Promise<Persona | undefined> {
+    const [result] = await db.select().from(personas).where(eq(personas.id, id));
+    return result || undefined;
+  }
+
+  async getPersonasByContext(ctx: ContextFilter): Promise<Persona[]> {
+    const conditions = [eq(personas.tenantDomain, ctx.tenantDomain)];
+    if (ctx.marketId) {
+      conditions.push(eq(personas.marketId, ctx.marketId));
+    } else if (ctx.isDefaultMarket) {
+      conditions.push(isNull(personas.marketId));
+    }
+    return db.select().from(personas)
+      .where(and(...conditions))
+      .orderBy(desc(personas.isIcp), personas.name);
+  }
+
+  async createPersona(persona: InsertPersona): Promise<Persona> {
+    const [created] = await db.insert(personas).values(persona).returning();
+    return created;
+  }
+
+  async updatePersona(id: string, data: Partial<Persona>): Promise<Persona> {
+    const [updated] = await db.update(personas)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(personas.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePersona(id: string): Promise<void> {
+    await db.delete(personas).where(eq(personas.id, id));
   }
 }
 

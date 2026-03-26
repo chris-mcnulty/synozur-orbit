@@ -43,6 +43,7 @@ import {
   TicketIcon,
   Map,
   FileText as FileTextIcon,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -423,6 +424,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
+        { label: "Personas", icon: UserCircle, href: "/app/marketing/personas" },
         ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
         { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
