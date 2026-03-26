@@ -537,12 +537,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/marketing/products", async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     const ctx = await getRequestContext(req);
+    if (!ctx.marketId) {
+      return res.json([]);
+    }
     const conditions = [
       eq(products.tenantDomain, ctx.tenantDomain),
+      eq(products.marketId, ctx.marketId),
+      eq(products.isBaseline, true),
     ];
-    if (ctx.marketId) {
-      conditions.push(eq(products.marketId, ctx.marketId));
-    }
     const rows = await db.select({
       id: products.id,
       name: products.name,
