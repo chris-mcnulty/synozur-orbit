@@ -1101,3 +1101,72 @@ export async function sendScheduledBriefingEmail(
     text,
   });
 }
+
+export interface CompetitorAlertEmailParams {
+  to: string;
+  userName: string;
+  competitorName: string;
+  competitorId: string;
+  summary: string;
+  significance: string;
+  baseUrl: string;
+}
+
+function escapeEmailHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export async function sendCompetitorAlertEmail(params: CompetitorAlertEmailParams): Promise<boolean> {
+  const { to, userName, competitorName, competitorId, summary, significance, baseUrl } = params;
+  const copy = COMPETITOR_ALERT_EMAIL;
+  const competitorLink = `${baseUrl}/app/competitors/${competitorId}`;
+  const settingsLink = `${baseUrl}/app/settings`;
+
+  const safeUserName = escapeEmailHtml(userName);
+  const safeCompetitorName = escapeEmailHtml(competitorName);
+  const safeSummary = escapeEmailHtml(summary);
+
+  const significanceBadgeColor =
+    significance === 'high' ? '#EF4444' : significance === 'medium' ? '#F59E0B' : '#3B82F6';
+  const significanceLabel = significance.charAt(0).toUpperCase() + significance.slice(1);
+
+  const content = `
+    <h1>${copy.heading(safeCompetitorName)}</h1>
+
+    <p>${copy.greeting(safeUserName)}</p>
+
+    <p>${copy.intro(safeCompetitorName)}</p>
+
+    <div class="feature">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span style="display: inline-block; padding: 2px 10px; border-radius: 6px; background: ${significanceBadgeColor}; color: #fff; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">${significanceLabel}</span>
+      </div>
+      <p class="feature-desc" style="margin: 0;">${safeSummary}</p>
+    </div>
+
+    <div class="button-container">
+      <a href="${competitorLink}" class="button">${copy.buttonText}</a>
+    </div>
+
+    <div class="divider"></div>
+
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      ${copy.footerMessage}<br/>
+      <a href="${settingsLink}" class="link" style="font-size: 12px;">${copy.unsubscribeText}</a>
+    </p>
+  `;
+
+  const text = copy.plainText(userName, competitorName, summary, significance, competitorLink, settingsLink);
+
+  return sendEmail({
+    to,
+    subject: copy.subject(competitorName, significance),
+    html: wrapEmailContent(content),
+    text,
+  });
+}

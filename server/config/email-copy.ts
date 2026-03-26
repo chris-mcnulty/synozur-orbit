@@ -455,13 +455,18 @@ export const SCHEDULED_BRIEFING_EMAIL = {
 };
 
 // ============================================
-// COMPETITOR ALERT EMAIL (FUTURE)
+// COMPETITOR ALERT EMAIL
 // ============================================
 export const COMPETITOR_ALERT_EMAIL = {
-  subject: (competitorName: string) => `Alert: ${competitorName} has made significant changes`,
+  subject: (competitorName: string, significance: string) =>
+    `${significance === 'high' ? '🔴' : significance === 'medium' ? '🟡' : '🔵'} ${competitorName} — ${significance}-significance change detected`,
   heading: (competitorName: string) => `Competitor Update: ${competitorName}`,
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
-  intro: (competitorName: string) => `We detected significant changes on <span class="highlight">${competitorName}</span>'s website:`,
-  buttonText: 'View Changes',
-  unsubscribeText: 'Manage your alert preferences',
+  intro: (competitorName: string) =>
+    `We detected a significant change on <span class="highlight">${competitorName}</span>'s website:`,
+  buttonText: 'View Changes in Orbit',
+  unsubscribeText: 'Manage your alert preferences in Settings',
+  footerMessage: `You're receiving this email because you enabled competitor change alerts.`,
+  plainText: (name: string, competitorName: string, summary: string, significance: string, link: string, settingsLink: string) =>
+    `Hi ${name},\n\nCompetitor Update: ${competitorName}\nSignificance: ${significance}\n\n${summary}\n\nView changes: ${link}\n\nManage alert preferences: ${settingsLink}`,
 };

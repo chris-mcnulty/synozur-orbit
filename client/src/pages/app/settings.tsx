@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -83,6 +83,9 @@ export default function Settings() {
   
   // Notification preferences
   const [weeklyDigestEnabled, setWeeklyDigestEnabled] = useState(user?.weeklyDigestEnabled ?? true);
+  const [alertsEnabled, setAlertsEnabled] = useState(user?.alertsEnabled ?? false);
+  const [alertThreshold, setAlertThreshold] = useState(user?.alertThreshold ?? "high");
+  const [alertEmailEnabled, setAlertEmailEnabled] = useState(user?.alertEmailEnabled ?? false);
   
   // Entra ID configuration state (simplified - only enable toggle, tenant ID is auto-populated)
   const [entraEnabled, setEntraEnabled] = useState(false);
@@ -146,6 +149,9 @@ export default function Settings() {
   React.useEffect(() => {
     if (user) {
       setWeeklyDigestEnabled(user.weeklyDigestEnabled ?? true);
+      setAlertsEnabled(user.alertsEnabled ?? false);
+      setAlertThreshold(user.alertThreshold ?? "high");
+      setAlertEmailEnabled(user.alertEmailEnabled ?? false);
     }
   }, [user]);
 
@@ -291,12 +297,12 @@ export default function Settings() {
   });
 
   const updateNotificationsMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
+    mutationFn: async (updates: Record<string, any>) => {
       const res = await fetch("/api/me/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ weeklyDigestEnabled: enabled }),
+        body: JSON.stringify(updates),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -310,15 +316,36 @@ export default function Settings() {
     },
     onError: (error: Error) => {
       toast.error(error.message);
-      // Revert UI state on error
-      setWeeklyDigestEnabled(!weeklyDigestEnabled);
+      if (user) {
+        setWeeklyDigestEnabled(user.weeklyDigestEnabled ?? true);
+        setAlertsEnabled(user.alertsEnabled ?? false);
+        setAlertThreshold(user.alertThreshold ?? "high");
+        setAlertEmailEnabled(user.alertEmailEnabled ?? false);
+      }
     },
   });
 
   const handleDigestToggle = (checked: boolean) => {
     setWeeklyDigestEnabled(checked);
-    updateNotificationsMutation.mutate(checked);
+    updateNotificationsMutation.mutate({ weeklyDigestEnabled: checked });
   };
+
+  const handleAlertToggle = (checked: boolean) => {
+    setAlertsEnabled(checked);
+    updateNotificationsMutation.mutate({ alertsEnabled: checked });
+  };
+
+  const handleAlertThresholdChange = (value: string) => {
+    setAlertThreshold(value);
+    updateNotificationsMutation.mutate({ alertThreshold: value });
+  };
+
+  const handleAlertEmailToggle = (checked: boolean) => {
+    setAlertEmailEnabled(checked);
+    updateNotificationsMutation.mutate({ alertEmailEnabled: checked });
+  };
+
+  const isAlertsPlanEligible = tenant?.plan && !["free", "trial"].includes(tenant.plan);
 
   const sendDigestNowMutation = useMutation({
     mutationFn: async () => {
@@ -720,6 +747,84 @@ export default function Settings() {
                 Send Now
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-competitor-alerts">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Competitor Alerts
+            </CardTitle>
+            <CardDescription>Get notified in real-time when competitors make significant changes.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!isAlertsPlanEligible ? (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-center space-y-2">
+                <Lock className="h-8 w-8 mx-auto text-primary/60" />
+                <p className="text-sm font-medium">Upgrade to Pro or higher</p>
+                <p className="text-xs text-muted-foreground">
+                  Real-time competitor change alerts are available on Pro, Enterprise, and Unlimited plans.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="alerts-enabled" data-testid="label-alerts-enabled">In-App Alerts</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Show a notification badge when a competitor website change is detected.
+                    </p>
+                  </div>
+                  <Switch
+                    id="alerts-enabled"
+                    checked={alertsEnabled}
+                    onCheckedChange={handleAlertToggle}
+                    disabled={updateNotificationsMutation.isPending}
+                    data-testid="switch-alerts-enabled"
+                  />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="alert-threshold" data-testid="label-alert-threshold">Significance Threshold</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Minimum change significance to trigger an alert.
+                    </p>
+                  </div>
+                  <Select
+                    value={alertThreshold}
+                    onValueChange={handleAlertThresholdChange}
+                    disabled={!alertsEnabled || updateNotificationsMutation.isPending}
+                  >
+                    <SelectTrigger className="w-[180px]" data-testid="select-alert-threshold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">High only</SelectItem>
+                      <SelectItem value="medium">Medium & High</SelectItem>
+                      <SelectItem value="all">All changes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="alert-email" data-testid="label-alert-email">Email Alerts</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Also receive an email when a change meets your threshold.
+                    </p>
+                  </div>
+                  <Switch
+                    id="alert-email"
+                    checked={alertEmailEnabled}
+                    onCheckedChange={handleAlertEmailToggle}
+                    disabled={!alertsEnabled || updateNotificationsMutation.isPending}
+                    data-testid="switch-alert-email"
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

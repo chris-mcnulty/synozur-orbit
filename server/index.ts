@@ -236,6 +236,9 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS notifications_tenant_domain_idx ON notifications(tenant_domain)`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT false`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_threshold TEXT DEFAULT 'high'`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_email_enabled BOOLEAN DEFAULT false`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

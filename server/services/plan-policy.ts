@@ -31,6 +31,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "intelligenceBriefings", label: "Intelligence Briefings", description: "AI-synthesized periodic market intelligence reports with executive summaries", category: "intelligence" },
   { key: "podcastBriefings", label: "Podcast Briefings", description: "AI-generated podcast-style audio summaries of intelligence briefings", category: "intelligence" },
   { key: "scheduledBriefingUpdates", label: "Scheduled Briefing Updates", description: "Automatic weekly briefing generation with email delivery", category: "intelligence" },
+  { key: "competitorAlerts", label: "Competitor Change Alerts", description: "Real-time in-app and email alerts when competitors make significant changes", category: "monitoring" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -77,6 +78,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     intelligenceBriefings: false,
     podcastBriefings: false,
     scheduledBriefingUpdates: false,
+    competitorAlerts: false,
   },
   trial: {
     battlecards: true,
@@ -102,6 +104,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     intelligenceBriefings: false,
     podcastBriefings: false,
     scheduledBriefingUpdates: false,
+    competitorAlerts: false,
   },
   pro: {
     battlecards: true,
@@ -127,6 +130,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     intelligenceBriefings: true,
     podcastBriefings: true,
     scheduledBriefingUpdates: false,
+    competitorAlerts: true,
   },
   enterprise: {
     battlecards: true,
@@ -152,6 +156,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     intelligenceBriefings: true,
     podcastBriefings: true,
     scheduledBriefingUpdates: true,
+    competitorAlerts: true,
   },
   unlimited: {
     battlecards: true,
@@ -177,6 +182,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     intelligenceBriefings: true,
     podcastBriefings: true,
     scheduledBriefingUpdates: true,
+    competitorAlerts: true,
   },
 };
 

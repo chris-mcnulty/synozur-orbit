@@ -21,6 +21,9 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false),
   status: text("status").default("active"), // active, pending_verification, suspended
   weeklyDigestEnabled: boolean("weekly_digest_enabled").default(true), // Opt-in for weekly competitor digest emails
+  alertsEnabled: boolean("alerts_enabled").default(false), // Opt-in for real-time competitor change alerts (in-app)
+  alertThreshold: text("alert_threshold").default("high"), // "high" | "medium" | "all" — minimum significance to trigger alert
+  alertEmailEnabled: boolean("alert_email_enabled").default(false), // Opt-in for competitor change alert emails
   lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

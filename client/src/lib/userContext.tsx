@@ -15,6 +15,9 @@ interface User {
   country?: string;
   authProvider?: string;
   weeklyDigestEnabled?: boolean;
+  alertsEnabled?: boolean;
+  alertThreshold?: string;
+  alertEmailEnabled?: boolean;
 }
 
 interface UserContextType {

@@ -663,15 +663,42 @@ export async function registerRoutes(
     }
 
     try {
-      const { weeklyDigestEnabled } = req.body;
+      const { weeklyDigestEnabled, alertsEnabled, alertThreshold, alertEmailEnabled } = req.body;
 
-      if (typeof weeklyDigestEnabled !== "boolean") {
-        return res.status(400).json({ error: "weeklyDigestEnabled must be a boolean" });
+      const updates: Record<string, any> = {};
+
+      if (typeof weeklyDigestEnabled === "boolean") {
+        updates.weeklyDigestEnabled = weeklyDigestEnabled;
       }
 
-      const updatedUser = await storage.updateUser(req.session.userId, {
-        weeklyDigestEnabled,
-      });
+      const hasAlertUpdates = typeof alertsEnabled === "boolean" || typeof alertThreshold === "string" || typeof alertEmailEnabled === "boolean";
+      if (hasAlertUpdates) {
+        const user = await storage.getUser(req.session.userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const domain = user.email.split("@")[1]?.toLowerCase();
+        const tenant = domain ? await storage.getTenantByDomain(domain) : null;
+        if (!tenant) return res.status(400).json({ error: "Tenant not found" });
+        const gateResult = await checkFeatureAccessAsync(tenant.plan, "competitorAlerts");
+        if (!gateResult.allowed) {
+          return res.status(403).json({ error: gateResult.reason, upgradeRequired: true, requiredPlan: gateResult.requiredPlan });
+        }
+      }
+
+      if (typeof alertsEnabled === "boolean") {
+        updates.alertsEnabled = alertsEnabled;
+      }
+      if (typeof alertThreshold === "string" && ["high", "medium", "all"].includes(alertThreshold)) {
+        updates.alertThreshold = alertThreshold;
+      }
+      if (typeof alertEmailEnabled === "boolean") {
+        updates.alertEmailEnabled = alertEmailEnabled;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid notification preferences provided" });
+      }
+
+      const updatedUser = await storage.updateUser(req.session.userId, updates);
 
       if (!updatedUser) {
         return res.status(404).json({ error: "User not found" });

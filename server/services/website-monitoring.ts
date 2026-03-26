@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { dispatchCompetitorAlerts } from "./alert-dispatch";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -224,6 +225,8 @@ export async function monitorCompetitorWebsite(
       
       const isRealChange = !summary.toLowerCase().includes("no significant");
       
+      const impactLevel = changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low";
+
       if (isRealChange && userId && tenantDomain) {
         await storage.createActivity({
           type: "website_update",
@@ -239,11 +242,32 @@ export async function monitorCompetitorWebsite(
             changeAnalysis: changeAnalysis || undefined,
           },
           date: now.toISOString().split("T")[0],
-          impact: changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low",
+          impact: impactLevel,
           userId,
           tenantDomain,
           marketId: competitor.marketId,
         });
+      }
+
+      const resolvedTenantDomain = tenantDomain || competitor.tenantDomain;
+      if (isRealChange && resolvedTenantDomain) {
+        const highestSignificance = changeAnalysis?.changes?.length
+          ? (() => {
+              if (changeAnalysis.changes.some(c => c.significance === "high")) return "high" as const;
+              if (changeAnalysis.changes.some(c => c.significance === "medium")) return "medium" as const;
+              return "low" as const;
+            })()
+          : impactLevel === "High" ? "high" as const
+          : impactLevel === "Medium" ? "medium" as const
+          : "low" as const;
+
+        dispatchCompetitorAlerts({
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          summary: summary || `Website content changed (${changeScore}% change detected)`,
+          significance: highestSignificance,
+          tenantDomain: resolvedTenantDomain,
+        }).catch(err => console.error("[WebsiteMonitoring] Alert dispatch failed:", err));
       }
     }
     
