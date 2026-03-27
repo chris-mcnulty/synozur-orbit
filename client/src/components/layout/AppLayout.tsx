@@ -300,11 +300,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const path = location;
     localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
-    // Persist the full path so we can restore it on next login
+    // Persist the full path so we can restore it on next login, scoped per tenant/user
     if (path.startsWith("/app")) {
-      localStorage.setItem("orbit_last_page", path);
+      const lastPageKeyParts = ["orbit_last_page"];
+      if (tenantInfo?.domain) {
+        lastPageKeyParts.push(`tenant:${tenantInfo.domain}`);
+      } else if (user?.id) {
+        lastPageKeyParts.push(`user:${user.id}`);
+      }
+      const lastPageKey = lastPageKeyParts.join("_");
+      localStorage.setItem(lastPageKey, path);
     }
-  }, [location]);
+  }, [location, tenantInfo, user]);
 
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
     const indicators: Record<string, NavIndicator> = {};
