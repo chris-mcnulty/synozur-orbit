@@ -1969,6 +1969,29 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Competitive Positioning Map
+// Stores X/Y positions for competitors and the baseline company on a 2-axis chart.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const competitorPositions = pgTable("competitor_positions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityName: text("entity_name").notNull(),
+  x: real("x").notNull().default(50),
+  y: real("y").notNull().default(50),
+  xAxisLabel: text("x_axis_label").notNull().default("Market Presence"),
+  yAxisLabel: text("y_axis_label").notNull().default("Innovation"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({ id: true, createdAt: true });
+export type CompetitorPosition = typeof competitorPositions.$inferSelect;
+export type InsertCompetitorPosition = z.infer<typeof insertCompetitorPositionSchema>;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

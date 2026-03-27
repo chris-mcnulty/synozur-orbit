@@ -20,6 +20,7 @@ import { registerTenantAdminRoutes } from "./routes/tenant-admin";
 import { registerOperationsRoutes } from "./routes/operations";
 import { registerAnalyticsDataRoutes } from "./routes/analytics-data";
 import { registerPlatformRoutes } from "./routes/platform";
+import { registerPositioningRoutes } from "./routes/positioning";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -69,6 +70,7 @@ export async function registerRoutes(
   registerOperationsRoutes(app);
   registerAnalyticsDataRoutes(app);
   registerPlatformRoutes(app);
+  registerPositioningRoutes(app);
 
   return httpServer;
 }

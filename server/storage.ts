@@ -131,6 +131,8 @@ import {
   personas,
   type Persona,
   type InsertPersona,
+  competitorPositions,
+  type CompetitorPosition,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -513,6 +515,8 @@ export interface IStorage {
   createPersona(persona: InsertPersona): Promise<Persona>;
   updatePersona(id: string, data: Partial<Persona>): Promise<Persona>;
   deletePersona(id: string): Promise<void>;
+  getPositioningMap(tenantDomain: string): Promise<CompetitorPosition[]>;
+  upsertPosition(data: { tenantDomain: string; entityId: string; entityType: string; entityName: string; x: number; y: number; xAxisLabel: string; yAxisLabel: string }): Promise<CompetitorPosition>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3470,6 +3474,24 @@ export class DatabaseStorage implements IStorage {
 
   async deletePersona(id: string): Promise<void> {
     await db.delete(personas).where(eq(personas.id, id));
+  }
+
+  async getPositioningMap(tenantDomain: string): Promise<CompetitorPosition[]> {
+    return db.select().from(competitorPositions).where(eq(competitorPositions.tenantDomain, tenantDomain));
+  }
+
+  async upsertPosition(data: { tenantDomain: string; entityId: string; entityType: string; entityName: string; x: number; y: number; xAxisLabel: string; yAxisLabel: string }): Promise<CompetitorPosition> {
+    const existing = await db.select().from(competitorPositions)
+      .where(and(eq(competitorPositions.tenantDomain, data.tenantDomain), eq(competitorPositions.entityId, data.entityId)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(competitorPositions)
+        .set({ x: data.x, y: data.y, xAxisLabel: data.xAxisLabel, yAxisLabel: data.yAxisLabel, entityName: data.entityName, updatedAt: new Date() })
+        .where(eq(competitorPositions.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(competitorPositions).values({ ...data }).returning();
+    return created;
   }
 }
 

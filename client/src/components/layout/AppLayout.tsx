@@ -420,6 +420,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Activity", icon: Activity, href: "/app/activity" },
         { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
+        { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
       ]
     },
     {
