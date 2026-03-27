@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -1988,7 +1988,10 @@ export const competitorPositions = pgTable("competitor_positions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({ id: true, createdAt: true });
+export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({
+  id: true,
+  createdAt: true,
+});
 export type CompetitorPosition = typeof competitorPositions.$inferSelect;
 export type InsertCompetitorPosition = z.infer<typeof insertCompetitorPositionSchema>;
 

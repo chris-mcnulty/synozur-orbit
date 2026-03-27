@@ -48,7 +48,7 @@ const PRUNE_INTERVAL_MS = 5 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   let pruned = 0;
-  for (const [key, entry] of cache.entries()) {
+  for (const [key, entry] of Array.from(cache.entries())) {
     if (entry.expiresAt <= now) {
       cache.delete(key);
       pruned++;
@@ -121,7 +121,7 @@ export function setCached<T>(
  */
 export function invalidateTenant(tenantDomain: string, feature?: string): number {
   let count = 0;
-  for (const [key, entry] of cache.entries()) {
+  for (const [key, entry] of Array.from(cache.entries())) {
     if (entry.tenantDomain === tenantDomain && (!feature || entry.feature === feature)) {
       cache.delete(key);
       count++;
@@ -158,7 +158,7 @@ export async function withCache<T>(
 export function getCacheStats() {
   const now = Date.now();
   let liveEntries = 0;
-  for (const entry of cache.values()) {
+  for (const entry of Array.from(cache.values())) {
     if (entry.expiresAt > now) liveEntries++;
   }
   return {
