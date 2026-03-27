@@ -18,6 +18,7 @@ import { calculateStaleness, getTimeAgo, getStalenessInfo, checkArtifactFreshnes
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import SharedSourceFreshnessRow, { type SourceFreshnessItem, type SourceFreshnessData } from "@/components/SourceFreshnessRow";
+import ArtifactDiffPanel from "@/components/ArtifactDiffPanel";
 
 // StalenessDot is now handled by shared SourceFreshnessRow component
 
@@ -285,6 +286,27 @@ export default function Analysis() {
       setRegenerationStarted(true);
       setRegenerationDialogOpen(true);
       toast.success(`Full regeneration started! Estimated time: ${data.estimatedMinutes} minutes`);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const rollbackAnalysisMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/analysis/rollback", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to revert analysis");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success("Analysis reverted to previous version.");
+      queryClient.invalidateQueries({ queryKey: ["/api/analysis"] });
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -674,6 +696,12 @@ export default function Analysis() {
             </Card>
           );
         })()}
+        <ArtifactDiffPanel
+          hasPreviousVersion={!!(analysis as any)?.previousContent}
+          onRollback={() => rollbackAnalysisMutation.mutate()}
+          isRollingBack={rollbackAnalysisMutation.isPending}
+          changeSummary={null}
+        />
         <Tabs defaultValue="themes" className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg flex-wrap">
             <TabsTrigger value="themes" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Key Themes</TabsTrigger>

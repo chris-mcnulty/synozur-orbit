@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -454,6 +454,7 @@ export const analysis = pgTable("analysis", {
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),
+  previousContent: jsonb("previous_content"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -471,13 +472,14 @@ export const battlecards = pgTable("battlecards", {
   talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
   quickStats: jsonb("quick_stats"), // {pricing, marketPosition, targetAudience, keyProducts}
   customNotes: text("custom_notes"), // Free-form notes
+  previousContent: jsonb("previous_content"),
   status: text("status").notNull().default("draft"), // draft, published
   lastGeneratedAt: timestamp("last_generated_at"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}); 
 
 export const productBattlecards = pgTable("product_battlecards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1966,6 +1968,32 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 });
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Competitive Positioning Map
+// Stores X/Y positions for competitors and the baseline company on a 2-axis chart.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const competitorPositions = pgTable("competitor_positions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityName: text("entity_name").notNull(),
+  x: real("x").notNull().default(50),
+  y: real("y").notNull().default(50),
+  xAxisLabel: text("x_axis_label").notNull().default("Market Presence"),
+  yAxisLabel: text("y_axis_label").notNull().default("Innovation"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({
+  id: true,
+  createdAt: true,
+});
+export type CompetitorPosition = typeof competitorPositions.$inferSelect;
+export type InsertCompetitorPosition = z.infer<typeof insertCompetitorPositionSchema>;
 
 export const CURRENT_APP_VERSION = "2.0.0";
 

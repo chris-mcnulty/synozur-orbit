@@ -300,7 +300,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const path = location;
     localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
-  }, [location]);
+    // Persist the full path so we can restore it on next login, scoped per tenant/user
+    if (path.startsWith("/app")) {
+      const lastPageKeyParts = ["orbit_last_page"];
+      if (tenantInfo?.domain) {
+        lastPageKeyParts.push(`tenant:${tenantInfo.domain}`);
+      } else if (user?.id) {
+        lastPageKeyParts.push(`user:${user.id}`);
+      }
+      const lastPageKey = lastPageKeyParts.join("_");
+      localStorage.setItem(lastPageKey, path);
+    }
+  }, [location, tenantInfo, user]);
 
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
     const indicators: Record<string, NavIndicator> = {};
@@ -416,6 +427,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Activity", icon: Activity, href: "/app/activity" },
         { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
+        { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
       ]
     },
     {

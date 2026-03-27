@@ -20,6 +20,16 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Restore the user's last-visited page after successful auth
+  const getPostLoginDestination = () => {
+    try {
+      const last = localStorage.getItem("orbit_last_page");
+      return last && last.startsWith("/app") ? last : "/app";
+    } catch {
+      return "/app";
+    }
+  };
+
   const [signinData, setSigninData] = useState({ email: "", password: "" });
   const [signupData, setSignupData] = useState({
     email: "",
@@ -57,7 +67,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (user) {
-      setLocation("/app");
+      setLocation(getPostLoginDestination());
     }
   }, [user, setLocation]);
 
@@ -68,7 +78,7 @@ export default function AuthPage() {
 
     try {
       await login(signinData.email, signinData.password);
-      setLocation("/app");
+      setLocation(getPostLoginDestination());
     } catch (err: any) {
       setError(err.message || "Login failed");
     } finally {
@@ -114,7 +124,7 @@ export default function AuthPage() {
         signupData.industry,
         signupData.country
       );
-      setLocation("/app");
+      setLocation(getPostLoginDestination());
     } catch (err: any) {
       setError(err.message || "Registration failed");
     } finally {

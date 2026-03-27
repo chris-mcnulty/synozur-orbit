@@ -519,7 +519,37 @@ export function getAvailableModelsByProvider(): Record<string, string[]> {
   return result;
 }
 
+import { buildCacheKey, getCached, setCached } from "./ai-cache.js";
+
 export async function completeForFeature(
+  feature: AIFeature,
+  userPrompt: string,
+  options?: AICompletionOptions & { tenantDomain?: string; skipCache?: boolean },
+): Promise<AICompletionResult> {
+  // ── cache read ──────────────────────────────────────────────────────────────
+  const tenantDomain = options?.tenantDomain ?? "_global";
+  if (!options?.skipCache) {
+    const cacheKey = buildCacheKey(
+      tenantDomain,
+      feature,
+      userPrompt,
+      options?.systemPrompt ?? "",
+      String(options?.maxTokens ?? ""),
+    );
+    const cached = getCached<AICompletionResult>(cacheKey);
+    if (cached) {
+      console.log(`[ai-provider] Cache HIT for ${feature} (tenant=${tenantDomain})`);
+      return cached;
+    }
+    // Store key so we can populate after the real call
+    const result = await completeForFeatureUncached(feature, userPrompt, options);
+    setCached(cacheKey, result, tenantDomain, feature);
+    return result;
+  }
+  return completeForFeatureUncached(feature, userPrompt, options);
+}
+
+async function completeForFeatureUncached(
   feature: AIFeature,
   userPrompt: string,
   options?: AICompletionOptions,

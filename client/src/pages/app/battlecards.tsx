@@ -17,6 +17,7 @@ import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
+import ArtifactDiffPanel from "@/components/ArtifactDiffPanel";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ interface BattleCardData {
   talkTracks?: { scenario: string; script: string }[];
   quickStats?: { pricing?: string; marketPosition?: string; targetAudience?: string; keyProducts?: string };
   customNotes?: string;
+  previousContent?: unknown;
   status: string;
 }
 
@@ -152,6 +154,30 @@ export default function BattleCardsPage() {
     setGeneratingFor(competitorId);
     generateMutation.mutate(competitorId);
   };
+
+  const rollbackBattlecardMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/battlecards/${id}/rollback`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to revert battle card");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+      if (selectedCard && data?.competitorId === selectedCard.competitorId) {
+        setSelectedCard({ ...selectedCard, ...data });
+      }
+      toast({ title: "Battle Card Reverted", description: "Restored to the previous version." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Revert Failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const formatBattlecardForClipboard = (card: BattleCardData): string => {
     let text = `🎯 ${card.competitorName} Battle Card\nvs ${companyProfile?.companyName || "Your Company"}\n\n`;
@@ -526,6 +552,13 @@ export default function BattleCardsPage() {
             </DialogDescription>
           </DialogHeader>
           
+          <ArtifactDiffPanel
+            hasPreviousVersion={!!selectedCard?.previousContent}
+            onRollback={selectedCard ? () => rollbackBattlecardMutation.mutate(selectedCard.id) : undefined}
+            isRollingBack={rollbackBattlecardMutation.isPending}
+            changeSummary={null}
+          />
+
           <div className="flex-1 overflow-y-auto pr-4" style={{ maxHeight: 'calc(85vh - 140px)' }}>
             <div className="space-y-6 py-4">
               {/* Company Directory Info */}

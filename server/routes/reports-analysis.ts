@@ -414,5 +414,29 @@ export function registerReportsAnalysisRoutes(app: Express) {
     }
   });
 
-
+  app.post("/api/analysis/rollback", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const current = await storage.getLatestAnalysisByContext(toContextFilter(ctx));
+      if (!current) {
+        return res.status(404).json({ error: "No analysis found" });
+      }
+      const prev = current.previousContent as { themes: unknown; messaging: unknown; gaps: unknown } | null;
+      if (!prev) {
+        return res.status(400).json({ error: "No previous version available" });
+      }
+      const restored = await storage.updateAnalysis(current.id, {
+        themes: prev.themes as any,
+        messaging: prev.messaging as any,
+        gaps: prev.gaps as any,
+        previousContent: null,
+      });
+      res.json(restored);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
 }

@@ -131,9 +131,12 @@ import {
   personas,
   type Persona,
   type InsertPersona,
+  competitorPositions,
+  type CompetitorPosition,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
+import { timedQuery } from "./utils/query-timer.js";
 
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -235,6 +238,7 @@ export interface IStorage {
   getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined>;
   getLatestAnalysisByContext(ctx: ContextFilter): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
+  updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis>;
   
   // Grounding Document methods
   getGroundingDocument(id: string): Promise<GroundingDocument | undefined>;
@@ -511,6 +515,8 @@ export interface IStorage {
   createPersona(persona: InsertPersona): Promise<Persona>;
   updatePersona(id: string, data: Partial<Persona>): Promise<Persona>;
   deletePersona(id: string): Promise<void>;
+  getPositioningMap(tenantDomain: string): Promise<CompetitorPosition[]>;
+  upsertPosition(data: { tenantDomain: string; entityId: string; entityType: string; entityName: string; x: number; y: number; xAxisLabel: string; yAxisLabel: string }): Promise<CompetitorPosition>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -942,11 +948,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
+    const existing = insertAnalysis.tenantDomain
+      ? await this.getLatestAnalysisByTenant(insertAnalysis.tenantDomain)
+      : undefined;
+    const previousContent = existing
+      ? { themes: existing.themes, messaging: existing.messaging, gaps: existing.gaps }
+      : undefined;
     const [newAnalysis] = await db
       .insert(analysis)
-      .values(insertAnalysis)
+      .values({ ...insertAnalysis, previousContent: previousContent ?? null })
       .returning();
     return newAnalysis;
+  }
+
+  async updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis> {
+    const [result] = await db
+      .update(analysis)
+      .set(data)
+      .where(eq(analysis.id, id))
+      .returning();
+    return result;
   }
 
   // Grounding Document methods
@@ -1218,8 +1239,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(competitors.userId, id));
     
     // Delete activity records that reference these competitors (foreign key constraint)
-    for (const comp of userCompetitors) {
-      await db.delete(activity).where(eq(activity.competitorId, comp.id));
+    if (userCompetitors.length > 0) {
+      const ids = userCompetitors.map(c => c.id);
+      await timedQuery("deleteUser.activityByCompetitorIds", () =>
+        db.delete(activity).where(inArray(activity.competitorId, ids))
+      );
     }
     
     // Delete records with NOT NULL user foreign keys (must delete, cannot nullify)
@@ -1500,9 +1524,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateBattlecard(id: string, data: Partial<Battlecard>): Promise<Battlecard> {
+    const current = await this.getBattlecard(id);
+    const previousContent = current
+      ? {
+          strengths: current.strengths,
+          weaknesses: current.weaknesses,
+          ourAdvantages: current.ourAdvantages,
+          comparison: current.comparison,
+          objections: current.objections,
+          talkTracks: current.talkTracks,
+          quickStats: current.quickStats,
+        }
+      : undefined;
     const [result] = await db
       .update(battlecards)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...data, previousContent: previousContent ?? null, updatedAt: new Date() })
       .where(eq(battlecards.id, id))
       .returning();
     return result;
@@ -2035,9 +2071,9 @@ export class DatabaseStorage implements IStorage {
     
     // Delete activity records that reference these competitors (foreign key constraint)
     if (competitorIds.length > 0) {
-      for (const competitorId of competitorIds) {
-        await db.delete(activity).where(eq(activity.competitorId, competitorId));
-      }
+      await timedQuery("deleteMarket.activityByCompetitorIds", () =>
+        db.delete(activity).where(inArray(activity.competitorId, competitorIds))
+      );
     }
     
     // Delete activity records that reference this market directly
@@ -2111,16 +2147,24 @@ export class DatabaseStorage implements IStorage {
       const grants = await this.getConsultantAccessByUser(userId);
       const grantedTenantIds = grants.map(g => g.tenantId);
       const userTenant = await this.getTenantByDomain(userTenantDomain);
-      
+
+      // Batch fetch all granted tenants in one query instead of a serial loop
+      const grantedTenants = grantedTenantIds.length > 0
+        ? await timedQuery("getAccessibleTenants.batchGranted", () =>
+            db.select().from(tenants).where(inArray(tenants.id, grantedTenantIds))
+          )
+        : [];
+
+      const seen = new Set<string>();
       const accessibleTenants: Tenant[] = [];
       if (userTenant) {
         accessibleTenants.push(userTenant);
+        seen.add(userTenant.id);
       }
-      
-      for (const tenantId of grantedTenantIds) {
-        const tenant = await this.getTenant(tenantId);
-        if (tenant && !accessibleTenants.find(t => t.id === tenant.id)) {
+      for (const tenant of grantedTenants) {
+        if (!seen.has(tenant.id)) {
           accessibleTenants.push(tenant);
+          seen.add(tenant.id);
         }
       }
       return accessibleTenants;
@@ -3430,6 +3474,24 @@ export class DatabaseStorage implements IStorage {
 
   async deletePersona(id: string): Promise<void> {
     await db.delete(personas).where(eq(personas.id, id));
+  }
+
+  async getPositioningMap(tenantDomain: string): Promise<CompetitorPosition[]> {
+    return db.select().from(competitorPositions).where(eq(competitorPositions.tenantDomain, tenantDomain));
+  }
+
+  async upsertPosition(data: { tenantDomain: string; entityId: string; entityType: string; entityName: string; x: number; y: number; xAxisLabel: string; yAxisLabel: string }): Promise<CompetitorPosition> {
+    const existing = await db.select().from(competitorPositions)
+      .where(and(eq(competitorPositions.tenantDomain, data.tenantDomain), eq(competitorPositions.entityId, data.entityId)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(competitorPositions)
+        .set({ x: data.x, y: data.y, xAxisLabel: data.xAxisLabel, yAxisLabel: data.yAxisLabel, entityName: data.entityName, updatedAt: new Date() })
+        .where(eq(competitorPositions.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(competitorPositions).values({ ...data }).returning();
+    return created;
   }
 }
 

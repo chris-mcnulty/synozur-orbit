@@ -1,5 +1,97 @@
 # Orbit MVP Feature Backlog
 
+---
+
+## 🔍 Proposed Improvements — Pending Approval
+
+> The following items are **proposals only** — none have been built. They cover three areas: performance & stability, user experience, and brand-new features. All are subject to product review and prioritisation before any work begins.
+
+---
+
+### ⚡ Performance & Stability
+
+#### P1 — AI Response Caching Layer
+**Problem**: Every analysis, battlecard, recommendation, and intelligence briefing triggers a live call to the AI provider (Anthropic / Azure AI Foundry). For tenants with many competitors this produces slow page loads, high API costs, and risk of provider rate-limiting.
+**Proposed Solution**: Introduce a server-side cache (keyed by tenant + entity + content hash) that stores AI-generated artefacts with a configurable TTL (e.g. 24 hours for analysis, 1 hour for briefings). Cache invalidation is triggered on demand (manual rebuild) or when the underlying source data changes (new crawl result, document upload). This reduces redundant AI calls, cuts costs, and makes the UI feel significantly faster.
+**Scope**: `server/ai-service.ts`, `server/routes/reports-analysis.ts`, `server/routes/intelligence.ts`, Redis or in-DB cache table.
+**Effort**: Medium
+
+#### P2 — Database Query Batching & N+1 Elimination
+**Problem**: Several pages (Dashboard, Competitors list, Activity log) independently fetch related data in serial loops — e.g. loading every competitor then querying their latest crawl result one by one. Under moderate load this produces dozens of small round-trips per page render.
+**Proposed Solution**: Audit `server/storage.ts` for N+1 patterns and replace serial `.map(async)` loops with batched `WHERE id IN (...)` queries or Drizzle ORM `leftJoin`s. Add a simple query timer middleware that logs any DB call exceeding 200 ms, to surface future regressions early.
+**Scope**: `server/storage.ts`, `server/routes/*.ts`.
+**Effort**: Medium
+
+#### P3 — Background Job Dead-Letter Queue & Retry Logic
+**Problem**: The centralised job queue (web crawls, PDF generation, monitoring jobs) has no structured retry or dead-letter mechanism. A transient network failure or third-party timeout silently fails and the tenant never knows their data is stale.
+**Proposed Solution**: Add a `job_failures` table (or a dedicated `status` column on the existing jobs table) that captures failed attempts with error messages and retry counts. Jobs retry up to 3 times with exponential back-off. After all retries are exhausted the job lands in a dead-letter state, surfaced as an alert in the Intelligence Health dashboard card and Admin panel. Adds a manual "Retry" button on failed jobs in the Refresh Center / Intelligence Health view.
+**Scope**: `server/services/` (job queue module), `shared/schema.ts`, Admin UI.
+**Effort**: Medium–High
+
+---
+
+### 🎨 User Experience Enhancements
+
+#### UX1 — Persistent Sidebar Navigation State
+**Problem**: Collapsible sidebar groups (Insights, Marketing, Product, System, etc.) reset to their default expanded/collapsed state on every page navigation or refresh, forcing users to re-open the sections they care about each session.
+**Proposed Solution**: Persist the open/closed state of each sidebar group in `localStorage` under a user-specific key. Restore it on mount. Also persist the user's last-visited page so returning users land where they left off rather than always hitting the Dashboard.
+**Scope**: `client/src/` sidebar/navigation component(s), `localStorage` utility.
+**Effort**: Low
+
+#### UX2 — Keyboard-First Command Palette (Cmd/Ctrl + K)
+**Problem**: With 45+ app pages and dozens of actions, power users must navigate through the sidebar or breadcrumbs to reach less-frequently visited pages (e.g. Personas, Assessments, Client Projects). There is no fast-access shortcut.
+**Proposed Solution**: Implement a Cmdk-powered command palette (the `cmdk` package is already installed) that opens on `Cmd+K` / `Ctrl+K`. It should support fuzzy search across: page navigation, competitor names, recent activity items, and quick actions (New Competitor, Generate Briefing, Download Report). Results are grouped by category with icons.
+**Scope**: `client/src/` — new `CommandPalette` component wired into the root layout; data sourced from React Query caches already in memory.
+**Effort**: Low–Medium
+
+#### UX3 — Inline Diff View When Regenerating AI Artefacts
+**Problem**: When a user triggers a rebuild of a competitor analysis, battlecard, or intelligence briefing, the entire page simply re-renders with new content. There is no way to see what actually changed, making it hard to evaluate whether the rebuild added value.
+**Proposed Solution**: After a regeneration completes, show a toggleable "What changed?" diff panel that highlights additions (green) and removals (red) between the previous and new version. Store the previous version snapshot server-side (or in the existing `activity` table) before overwriting. Include a "Keep previous" rollback button.
+**Scope**: `server/routes/reports-analysis.ts`, `server/routes/intelligence.ts`, `client/src/pages/app/analysis.tsx`, battlecards, briefing pages. Diff rendering via a lightweight diff library (e.g. `diff`).
+**Effort**: Medium
+
+---
+
+### 🚀 Brand-New Features
+
+#### F1 — "Ask Orbit" Conversational AI Assistant
+**Description**: A persistent chat interface (slide-out drawer or dedicated page) where users can ask natural-language questions about their competitive landscape. Example queries: *"Which competitors have changed their pricing recently?"*, *"What messaging gaps do we have vs Competitor X?"*, *"Summarise all activity from last week."* The assistant has full RAG access to the tenant's competitors, analysis artefacts, grounding documents, activity log, and briefings. Supports follow-up questions and cites its sources.
+**Why Now**: All the underlying data and AI infrastructure already exists. The missing piece is a conversational front-end and a retrieval-augmented prompt chain.
+**Scope**: New route `GET/POST /api/chat`, new `ChatDrawer` component, vector-similarity or keyword retrieval over existing data.
+**Effort**: High
+
+#### F2 — Competitive Positioning Map (2×2 / Bubble Chart)
+**Description**: An interactive visual that places the baseline company and all tracked competitors on a configurable 2-axis chart (e.g. Price vs Feature Breadth, Market Presence vs Innovation, etc.). Users can drag competitors to reposition them manually or let AI suggest positions based on analysis data. Exportable as PNG/SVG for use in presentations.
+**Why Now**: Orbit already synthesises positioning data from analysis; a visual layer dramatically increases strategic communication value, especially for consultants sharing outputs with clients.
+**Scope**: New page `client/src/pages/app/positioning-map.tsx`, D3.js or Recharts-based chart, positions stored per-tenant in DB.
+**Effort**: Medium
+
+#### F3 — Win/Loss Analysis Module
+**Description**: A structured module for capturing win/loss data from sales deals — competitor involved, deal size, outcome, key reason, sales rep notes. AI correlates win/loss patterns with competitive intel to surface insights like *"We lose 70% of deals where Competitor Y is involved when they lead on price"*. Integrates with the existing HubSpot connector to pull deal data automatically.
+**Why Now**: The platform already has strong competitive intelligence; closing the loop with sales outcomes turns insight into measurable business impact and is a frequent enterprise request.
+**Scope**: New `winLoss` DB table, `server/routes/win-loss.ts`, `client/src/pages/app/win-loss.tsx`, HubSpot deal sync.
+**Effort**: High
+
+#### F4 — Shareable Intelligence Portals (External Read-Only Links)
+**Description**: Allow users to generate a time-limited, token-authenticated shareable link for a specific Intelligence Briefing, Competitor Profile, or Battlecard. The recipient (e.g. a board member or client) can view the content in a clean, branded, read-only portal without needing an Orbit account. The portal respects the tenant's branding colours and logo. Links expire after a configurable period (7 / 30 / 90 days) and can be revoked at any time.
+**Why Now**: Teams frequently export PDFs and email them. A live portal link is more useful — recipients always see the latest version — and is a clear upgrade/retention driver for Enterprise tiers.
+**Scope**: New `sharedLinks` DB table, `GET /api/share/:token` public route, new `SharedPortal` React page outside the authenticated layout.
+**Effort**: Medium
+
+#### F5 — Slack & Microsoft Teams Notification Integration
+**Description**: Allow tenants to connect an incoming webhook for Slack and/or Microsoft Teams channels. Orbit posts real-time notifications when: a competitor changes their website significantly, a new intelligence briefing is generated, an action item is assigned, or a monitoring job detects a social media update. Users configure which event types to send to which channel from the Settings page.
+**Why Now**: The email notification system is already mature. A chat-channel integration dramatically increases the surface area of Orbit's value in day-to-day workflows, reduces the need to log in to check for updates, and is a top-requested enterprise integration.
+**Scope**: New `webhookIntegrations` DB table, `server/services/webhook-notifier.ts`, Settings UI panel.
+**Effort**: Medium
+
+#### F6 — Google SSO & Broader IdP Support
+**Description**: Add Google OAuth 2.0 as a second SSO provider alongside the existing Microsoft Entra ID integration. Include a tenant-level IdP configuration page where Domain Admins can enforce SSO-only login (disabling email/password), set the allowed email domain for auto-provisioning, and view a log of SSO login events. Lay the groundwork for SAML 2.0 / generic OIDC in a future phase.
+**Why Now**: Google SSO is already listed as pending in the backlog and is a frequent ask from SMB and startup customers who do not use Microsoft 365. Completing it removes a signup friction point and broadens the addressable market.
+**Scope**: `server/auth/google-routes.ts`, `google-auth-library` (already installed), Settings → Security page, `users` table (`googleId` field).
+**Effort**: Low–Medium
+
+---
+
 ## Priority 1: Critical (Must Have for Launch)
 
 ### 1.1 SSO Authentication (Microsoft Entra ID + Google)

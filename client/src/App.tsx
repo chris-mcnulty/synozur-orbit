@@ -58,6 +58,7 @@ import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
 import GettingStartedPage from "@/pages/app/getting-started";
+import PositioningMapPage from "@/pages/app/positioning-map";
 import Pricing from "@/pages/pricing";
 import AdminOrganizationsPage from "@/pages/app/admin/organizations";
 import AISettingsPage from "@/pages/app/admin/ai-settings";
@@ -139,6 +140,7 @@ function Router() {
       <Route path="/app/action-items" component={ActionItems} />
       <Route path="/app/intelligence" component={IntelligenceBriefingPage} />
       <Route path="/app/getting-started" component={GettingStartedPage} />
+      <Route path="/app/positioning-map" component={PositioningMapPage} />
       
       {/* Fallback to 404 */}
       <Route component={NotFound} />
