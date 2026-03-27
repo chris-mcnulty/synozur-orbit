@@ -6,7 +6,7 @@
  * N+1 patterns and unexpected slow queries in server logs.
  *
  * Usage:
- *   import { timedQuery } from "./utils/query-timer";
+ *   import { timedQuery } from "./utils/query-timer.js";
  *   const rows = await timedQuery("getCompetitorsByTenant", () =>
  *     db.select().from(competitors).where(eq(competitors.tenantDomain, domain))
  *   );
