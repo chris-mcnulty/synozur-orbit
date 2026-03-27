@@ -27,8 +27,8 @@ export function registerPositioningRoutes(app: Express) {
         entityId,
         entityType,
         entityName,
-        x: Number(x) || 50,
-        y: Number(y) || 50,
+        x: x != null && x !== "" ? Number(x) : 50,
+        y: y != null && y !== "" ? Number(y) : 50,
         xAxisLabel: xAxisLabel || "Market Presence",
         yAxisLabel: yAxisLabel || "Innovation",
       });

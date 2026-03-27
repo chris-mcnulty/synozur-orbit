@@ -179,15 +179,17 @@ export default function PositioningMapPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (entries: PositionEntry[]) => {
-      for (const entry of entries) {
-        const res = await fetch("/api/positioning-map", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ ...entry, xAxisLabel, yAxisLabel }),
-        });
-        if (!res.ok) throw new Error("Failed to save position");
-      }
+      await Promise.all(
+        entries.map(async (entry) => {
+          const res = await fetch("/api/positioning-map", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ ...entry, xAxisLabel, yAxisLabel }),
+          });
+          if (!res.ok) throw new Error("Failed to save position");
+        })
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/positioning-map"] });
@@ -221,7 +223,10 @@ export default function PositioningMapPage() {
   };
 
   const handleCoordChange = (entityId: string, axis: "x" | "y", value: string) => {
-    const num = Math.min(100, Math.max(0, Number(value)));
+    if (value === "" || value === "-") return;
+    const parsed = parseFloat(value);
+    if (isNaN(parsed)) return;
+    const num = Math.min(100, Math.max(0, Math.round(parsed)));
     setPositions((prev) =>
       prev.map((p) => (p.entityId === entityId ? { ...p, [axis]: num } : p))
     );
