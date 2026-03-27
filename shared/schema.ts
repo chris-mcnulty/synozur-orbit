@@ -454,6 +454,7 @@ export const analysis = pgTable("analysis", {
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),
+  previousContent: jsonb("previous_content"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -471,13 +472,14 @@ export const battlecards = pgTable("battlecards", {
   talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
   quickStats: jsonb("quick_stats"), // {pricing, marketPosition, targetAudience, keyProducts}
   customNotes: text("custom_notes"), // Free-form notes
+  previousContent: jsonb("previous_content"),
   status: text("status").notNull().default("draft"), // draft, published
   lastGeneratedAt: timestamp("last_generated_at"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}); 
 
 export const productBattlecards = pgTable("product_battlecards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

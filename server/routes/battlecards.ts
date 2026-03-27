@@ -665,5 +665,46 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  app.post("/api/battlecards/:id/rollback", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const battlecard = await storage.getBattlecard(req.params.id);
+      if (!battlecard) {
+        return res.status(404).json({ error: "Battle card not found" });
+      }
+      if (!validateResourceContext(battlecard, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const prev = battlecard.previousContent as {
+        strengths?: unknown;
+        weaknesses?: unknown;
+        ourAdvantages?: unknown;
+        comparison?: unknown;
+        objections?: unknown;
+        talkTracks?: unknown;
+        quickStats?: unknown;
+      } | null;
+      if (!prev) {
+        return res.status(400).json({ error: "No previous version available" });
+      }
+      const restored = await storage.updateBattlecard(battlecard.id, {
+        strengths: prev.strengths as any,
+        weaknesses: prev.weaknesses as any,
+        ourAdvantages: prev.ourAdvantages as any,
+        comparison: prev.comparison as any,
+        objections: prev.objections as any,
+        talkTracks: prev.talkTracks as any,
+        quickStats: prev.quickStats as any,
+        previousContent: null,
+      });
+      res.json(restored);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
 
 }

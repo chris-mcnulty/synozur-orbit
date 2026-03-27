@@ -236,6 +236,7 @@ export interface IStorage {
   getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined>;
   getLatestAnalysisByContext(ctx: ContextFilter): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
+  updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis>;
   
   // Grounding Document methods
   getGroundingDocument(id: string): Promise<GroundingDocument | undefined>;
@@ -943,11 +944,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
+    const existing = insertAnalysis.tenantDomain
+      ? await this.getLatestAnalysisByTenant(insertAnalysis.tenantDomain)
+      : undefined;
+    const previousContent = existing
+      ? { themes: existing.themes, messaging: existing.messaging, gaps: existing.gaps }
+      : undefined;
     const [newAnalysis] = await db
       .insert(analysis)
-      .values(insertAnalysis)
+      .values({ ...insertAnalysis, previousContent: previousContent ?? null })
       .returning();
     return newAnalysis;
+  }
+
+  async updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis> {
+    const [result] = await db
+      .update(analysis)
+      .set(data)
+      .where(eq(analysis.id, id))
+      .returning();
+    return result;
   }
 
   // Grounding Document methods
@@ -1504,9 +1520,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateBattlecard(id: string, data: Partial<Battlecard>): Promise<Battlecard> {
+    const current = await this.getBattlecard(id);
+    const previousContent = current
+      ? {
+          strengths: current.strengths,
+          weaknesses: current.weaknesses,
+          ourAdvantages: current.ourAdvantages,
+          comparison: current.comparison,
+          objections: current.objections,
+          talkTracks: current.talkTracks,
+          quickStats: current.quickStats,
+        }
+      : undefined;
     const [result] = await db
       .update(battlecards)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...data, previousContent: previousContent ?? null, updatedAt: new Date() })
       .where(eq(battlecards.id, id))
       .returning();
     return result;
