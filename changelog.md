@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Messaging Framework generation**: Now automatically pulls buyer personas to tailor audience segments, messaging pillars, and tone guidance.
 - **Product One Sheet generation**: Now automatically pulls buyer personas to tailor challenge/solution framing, benefits, and audience targeting.
 
+### Fixed
+
+- **Artifact Freshness accuracy**: Previously, artifacts that were months old would show "Current" as long as source data was equally stale. Now applies absolute age thresholds — artifacts older than 14 days show "Aging" and older than 30 days show "Stale" regardless of source data age.
+- **Intelligence Briefings in Artifact Freshness**: Added Intelligence Report to the Artifact Freshness card so all generated intelligence artifacts are tracked.
+
 ---
 
 ## [2.0.0] - 2026-03-25

@@ -31,6 +31,7 @@ import {
   BarChart2,
   Rocket,
   MessageCircle,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate, getFullStalenessInfo } from "@/lib/staleness";
@@ -137,6 +138,15 @@ export default function RefreshCenter() {
     queryKey: ["/api/baseline/recommendations/messaging_framework"],
     queryFn: async () => {
       const res = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const { data: latestBriefing } = useQuery({
+    queryKey: ["/api/intelligence-briefings/latest"],
+    queryFn: async () => {
+      const res = await fetch("/api/intelligence-briefings/latest", { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
@@ -665,16 +675,28 @@ export default function RefreshCenter() {
                 { icon: <FileText className="w-4 h-4" />, label: "Battle Cards", date: battleCards.length > 0 ? new Date(Math.min(...battleCards.map((bc: any) => new Date(bc.generatedFromDataAsOf || bc.lastGeneratedAt || bc.createdAt).getTime()))).toISOString() : null, link: "/app/battlecards" },
                 { icon: <Rocket className="w-4 h-4" />, label: "GTM Plan", date: gtmPlan?.generatedFromDataAsOf || gtmPlan?.lastGeneratedAt, link: "/app/marketing/gtm-plan" },
                 { icon: <MessageCircle className="w-4 h-4" />, label: "Messaging Framework", date: messagingFramework?.generatedFromDataAsOf || messagingFramework?.lastGeneratedAt, link: "/app/marketing/messaging-framework" },
+                { icon: <Brain className="w-4 h-4" />, label: "Intelligence Report", date: latestBriefing?.generatedAt || latestBriefing?.createdAt, link: "/app/intelligence" },
               ];
+
+              const getAgeStatus = (dateStr: string | null | undefined) => {
+                if (!dateStr) return null;
+                const ageDays = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+                if (ageDays > 30) return { label: `${ageDays} days old`, level: "stale" as const };
+                if (ageDays > 14) return { label: `${ageDays} days old`, level: "aging" as const };
+                return null;
+              };
 
               return (
                 <div className="space-y-3">
                   {artifacts.map((a, idx) => {
                     const freshness = a.date ? checkArtifactFreshness(a.date, allSourceDates) : null;
+                    const ageStatus = getAgeStatus(a.date);
+                    const isStale = freshness?.isStale || ageStatus?.level === "stale";
+                    const isAging = !isStale && ageStatus?.level === "aging";
                     return (
                       <div key={idx} className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors" data-testid={`artifact-freshness-${idx}`}>
                         <div className="flex items-center gap-3">
-                          <div className={cn("p-1.5 rounded", freshness?.isStale ? "bg-amber-500/10 text-amber-600" : a.date ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground")}>
+                          <div className={cn("p-1.5 rounded", isStale ? "bg-red-500/10 text-red-600" : isAging ? "bg-amber-500/10 text-amber-600" : a.date ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground")}>
                             {a.icon}
                           </div>
                           <div>
@@ -687,6 +709,10 @@ export default function RefreshCenter() {
                         <div className="flex items-center gap-2">
                           {freshness?.isStale ? (
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50">{freshness.label}</Badge>
+                          ) : isStale && ageStatus ? (
+                            <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50/50">Stale ({ageStatus.label})</Badge>
+                          ) : isAging && ageStatus ? (
+                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50">Aging ({ageStatus.label})</Badge>
                           ) : a.date ? (
                             <Badge variant="outline" className="text-xs text-green-600 border-green-200 bg-green-50/50">Current</Badge>
                           ) : (
