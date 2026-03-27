@@ -133,7 +133,8 @@ import {
   type InsertPersona,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
+import { timedQuery } from "./utils/query-timer.js";
 
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -1218,8 +1219,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(competitors.userId, id));
     
     // Delete activity records that reference these competitors (foreign key constraint)
-    for (const comp of userCompetitors) {
-      await db.delete(activity).where(eq(activity.competitorId, comp.id));
+    if (userCompetitors.length > 0) {
+      const ids = userCompetitors.map(c => c.id);
+      await timedQuery("deleteUser.activityByCompetitorIds", () =>
+        db.delete(activity).where(inArray(activity.competitorId, ids))
+      );
     }
     
     // Delete records with NOT NULL user foreign keys (must delete, cannot nullify)
@@ -2035,9 +2039,9 @@ export class DatabaseStorage implements IStorage {
     
     // Delete activity records that reference these competitors (foreign key constraint)
     if (competitorIds.length > 0) {
-      for (const competitorId of competitorIds) {
-        await db.delete(activity).where(eq(activity.competitorId, competitorId));
-      }
+      await timedQuery("deleteMarket.activityByCompetitorIds", () =>
+        db.delete(activity).where(inArray(activity.competitorId, competitorIds))
+      );
     }
     
     // Delete activity records that reference this market directly
@@ -2111,16 +2115,24 @@ export class DatabaseStorage implements IStorage {
       const grants = await this.getConsultantAccessByUser(userId);
       const grantedTenantIds = grants.map(g => g.tenantId);
       const userTenant = await this.getTenantByDomain(userTenantDomain);
-      
+
+      // Batch fetch all granted tenants in one query instead of a serial loop
+      const grantedTenants = grantedTenantIds.length > 0
+        ? await timedQuery("getAccessibleTenants.batchGranted", () =>
+            db.select().from(tenants).where(inArray(tenants.id, grantedTenantIds))
+          )
+        : [];
+
+      const seen = new Set<string>();
       const accessibleTenants: Tenant[] = [];
       if (userTenant) {
         accessibleTenants.push(userTenant);
+        seen.add(userTenant.id);
       }
-      
-      for (const tenantId of grantedTenantIds) {
-        const tenant = await this.getTenant(tenantId);
-        if (tenant && !accessibleTenants.find(t => t.id === tenant.id)) {
+      for (const tenant of grantedTenants) {
+        if (!seen.has(tenant.id)) {
           accessibleTenants.push(tenant);
+          seen.add(tenant.id);
         }
       }
       return accessibleTenants;

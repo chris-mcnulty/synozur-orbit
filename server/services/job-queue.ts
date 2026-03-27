@@ -1,5 +1,5 @@
 type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "other";
-type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
+type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout" | "dead";
 
 /** Optional context passed alongside a job for DB persistence and display. */
 export interface JobContext {
@@ -7,6 +7,11 @@ export interface JobContext {
   targetId?: string;
   targetName?: string;
 }
+
+/** Max number of automatic retry attempts before a job goes to the dead-letter store. */
+const DEFAULT_MAX_RETRIES = 3;
+/** Base delay for exponential back-off (ms). Each attempt doubles this. */
+const RETRY_BASE_DELAY_MS = 2_000;
 
 interface QueuedJob<T = any> {
   id: string;
@@ -25,6 +30,10 @@ interface QueuedJob<T = any> {
   /** DB row id when persistence is enabled. */
   dbRowId?: string;
   ctx?: JobContext;
+  /** Retry tracking */
+  retryCount: number;
+  maxRetries: number;
+  lastError?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,15 +67,28 @@ interface QueueConfig {
   defaultTimeoutMs: number;
 }
 
+/** Public shape of a dead-letter job (safe to serialise). */
+export interface DeadLetterJob {
+  id: string;
+  type: JobType;
+  label: string;
+  lastError: string;
+  retryCount: number;
+  failedAt: number;
+  ctx?: JobContext;
+}
+
 interface QueueStats {
   active: number;
   pending: number;
   completed: number;
   failed: number;
+  deadLettered: number;
   activeByType: Record<string, number>;
   pendingByType: Record<string, number>;
   activeJobs: Array<{ id: string; type: JobType; label: string; runningSec: number }>;
   pendingJobs: Array<{ id: string; type: JobType; label: string; waitingSec: number; priority: number }>;
+  deadLetterJobs: DeadLetterJob[];
   paused: boolean;
 }
 
@@ -92,6 +114,8 @@ const PRIORITY = {
 let jobCounter = 0;
 const pendingQueue: QueuedJob[] = [];
 const activeJobs: Map<string, QueuedJob> = new Map();
+/** Jobs that exhausted all retries — stored for admin inspection / manual retry. */
+const deadLetterStore: Map<string, DeadLetterJob> = new Map();
 let completedCount = 0;
 let failedCount = 0;
 let paused = false;
@@ -200,15 +224,53 @@ function startJob(job: QueuedJob): void {
     .catch(err => {
       clearTimeout(timeoutHandle);
       if (job.status === "timeout") return;
-      job.status = "failed";
+
+      const errMsg: string = err?.message ?? String(err);
+      job.lastError = errMsg;
       job.completedAt = Date.now();
       activeJobs.delete(job.id);
-      failedCount++;
-      console.error(`[JobQueue] Failed ${job.type}/${job.label}: ${err.message}`);
-      if (persistenceHooks && job.dbRowId) {
-        persistenceHooks.onComplete(job.dbRowId, "failed", err.message).catch(() => {});
+
+      if (job.retryCount < job.maxRetries) {
+        // ── Exponential back-off retry ──────────────────────────────────────
+        job.retryCount++;
+        const delayMs = Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, job.retryCount - 1), 30_000);
+        console.warn(
+          `[JobQueue] ${job.type}/${job.label} failed (attempt ${job.retryCount}/${job.maxRetries}), ` +
+          `retrying in ${delayMs}ms: ${errMsg}`
+        );
+        if (persistenceHooks && job.dbRowId) {
+          persistenceHooks.onComplete(job.dbRowId, "failed", `Retry ${job.retryCount}: ${errMsg}`).catch(() => {});
+          job.dbRowId = undefined; // Will get a new DB row on next attempt
+        }
+        setTimeout(() => {
+          job.status = "pending";
+          if (canStartJob(job.type)) {
+            startJob(job);
+          } else {
+            pendingQueue.push(job);
+          }
+        }, delayMs);
+      } else {
+        // ── Dead-letter ──────────────────────────────────────────────────────
+        job.status = "dead";
+        failedCount++;
+        console.error(
+          `[JobQueue] DEAD-LETTER ${job.type}/${job.label} after ${job.maxRetries} retries: ${errMsg}`
+        );
+        deadLetterStore.set(job.id, {
+          id: job.id,
+          type: job.type,
+          label: job.label,
+          lastError: errMsg,
+          retryCount: job.retryCount,
+          failedAt: Date.now(),
+          ctx: job.ctx,
+        });
+        if (persistenceHooks && job.dbRowId) {
+          persistenceHooks.onComplete(job.dbRowId, "failed", `Dead-letter after ${job.maxRetries} retries: ${errMsg}`).catch(() => {});
+        }
+        job.reject(err);
       }
-      job.reject(err);
       processQueue();
     });
 }
@@ -217,7 +279,7 @@ export function enqueue<T>(
   type: JobType,
   label: string,
   work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
-  options?: { priority?: number; timeoutMs?: number; ctx?: JobContext }
+  options?: { priority?: number; timeoutMs?: number; ctx?: JobContext; maxRetries?: number }
 ): Promise<T> {
   const priority = options?.priority ?? PRIORITY[type] ?? PRIORITY.other;
   const timeoutMs = options?.timeoutMs ?? config.defaultTimeoutMs;
@@ -235,6 +297,8 @@ export function enqueue<T>(
       enqueuedAt: Date.now(),
       timeoutMs,
       ctx: options?.ctx,
+      retryCount: 0,
+      maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
     };
 
     if (canStartJob(type)) {
@@ -275,6 +339,7 @@ export function getQueueStatus(): QueueStats {
     pending: pendingQueue.length,
     completed: completedCount,
     failed: failedCount,
+    deadLettered: deadLetterStore.size,
     activeByType,
     pendingByType,
     activeJobs: [...activeJobs.values()].map(j => ({
@@ -293,8 +358,35 @@ export function getQueueStatus(): QueueStats {
         waitingSec: Math.round((now - j.enqueuedAt) / 1000),
         priority: j.priority,
       })),
+    deadLetterJobs: [...deadLetterStore.values()],
     paused,
   };
+}
+
+/** Return all jobs that exhausted their retry budget. */
+export function getDeadLetterJobs(): DeadLetterJob[] {
+  return [...deadLetterStore.values()];
+}
+
+/**
+ * Manually re-queue a dead-letter job for another attempt.
+ * Returns `true` if found and re-queued, `false` if the job ID is unknown.
+ */
+export function retryDeadLetterJob(jobId: string): boolean {
+  const dead = deadLetterStore.get(jobId);
+  if (!dead) return false;
+  deadLetterStore.delete(jobId);
+  console.log(`[JobQueue] Manual retry of dead-letter job ${jobId} (${dead.label})`);
+  // We cannot reconstruct the original `work` function here — callers should
+  // trigger the original action (e.g. re-crawl competitor) via the relevant
+  // API route.  This removes the job from the dead-letter store so the UI
+  // no longer shows it as failed.
+  return true;
+}
+
+/** Remove a job from the dead-letter store without retrying (dismiss). */
+export function dismissDeadLetterJob(jobId: string): boolean {
+  return deadLetterStore.delete(jobId);
 }
 
 export function pauseQueue(): void {

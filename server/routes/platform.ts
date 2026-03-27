@@ -273,6 +273,33 @@ export function registerPlatformRoutes(app: Express) {
     }
   });
 
+  // Dead-letter queue — list
+  app.get("/api/admin/queue-dead-letter", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Global Admin access required" });
+      const { getDeadLetterJobs } = await import("../services/job-queue");
+      res.json(getDeadLetterJobs());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Dead-letter queue — dismiss a job
+  app.delete("/api/admin/queue-dead-letter/:jobId", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Global Admin access required" });
+      const { dismissDeadLetterJob } = await import("../services/job-queue");
+      const removed = dismissDeadLetterJob(req.params.jobId);
+      res.json({ success: removed });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== GLOBAL ADMIN: ORGANIZATION MANAGEMENT ====================
 
   app.get("/api/admin/organizations", async (req, res) => {
