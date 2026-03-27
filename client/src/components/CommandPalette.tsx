@@ -121,7 +121,7 @@ const ALL_PAGES: NavEntry[] = [
   { id: "nav-getting-started",   label: "Getting Started",       description: "Onboarding guide",                       icon: <Rocket className="w-4 h-4" />,           href: "/app/getting-started" },
   { id: "nav-support",           label: "Support",               description: "Submit a support ticket",                icon: <TicketIcon className="w-4 h-4" />,       href: "/app/support" },
   { id: "nav-user-guide",        label: "User Guide",            description: "Platform documentation",                 icon: <HelpCircle className="w-4 h-4" />,       href: "/app/guide" },
-  { id: "nav-changelog",         label: "Changelog",             description: "Whats new in Orbit",                    icon: <Sparkles className="w-4 h-4" />,         href: "/app/changelog" },
+  { id: "nav-changelog",         label: "Changelog",             description: "What's new in Orbit",                   icon: <Sparkles className="w-4 h-4" />,         href: "/app/changelog" },
   { id: "nav-about",             label: "About",                 description: "About Orbit",                            icon: <Info className="w-4 h-4" />,             href: "/app/about" },
 ];
 

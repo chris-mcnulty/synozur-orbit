@@ -300,6 +300,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const path = location;
     localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
+    // Persist the full path so we can restore it on next login
+    if (path.startsWith("/app")) {
+      localStorage.setItem("orbit_last_page", path);
+    }
   }, [location]);
 
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
