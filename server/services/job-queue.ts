@@ -1,5 +1,5 @@
 type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "other";
-type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout" | "dead";
+type JobStatus = "pending" | "active" | "completed" | "timeout" | "dead";
 
 /** Optional context passed alongside a job for DB persistence and display. */
 export interface JobContext {
