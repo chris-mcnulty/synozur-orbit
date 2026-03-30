@@ -448,6 +448,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },
         ...((user?.role === "Global Admin" || user?.role === "Domain Admin") ? [
+          { label: "Company Roster", icon: Building2, href: "/app/company-roster" },
           { label: "Document Storage", icon: HardDrive, href: "/app/admin/spe-storage" },
         ] : []),
         ...(user?.role === "Global Admin" ? [

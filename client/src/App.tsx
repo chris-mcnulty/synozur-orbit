@@ -62,6 +62,7 @@ import Pricing from "@/pages/pricing";
 import AdminOrganizationsPage from "@/pages/app/admin/organizations";
 import AISettingsPage from "@/pages/app/admin/ai-settings";
 import SpeStoragePage from "@/pages/app/admin/spe-storage";
+import CompanyRosterPage from "@/pages/app/company-roster";
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -106,6 +107,7 @@ function Router() {
       <Route path="/app/admin/organizations" component={AdminOrganizationsPage} />
       <Route path="/app/admin/ai-settings" component={AISettingsPage} />
       <Route path="/app/admin/spe-storage" component={SpeStoragePage} />
+      <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products" component={ProductsPage} />
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />

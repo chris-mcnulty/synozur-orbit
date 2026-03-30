@@ -6,6 +6,7 @@ import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess } from "./helpers";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
 import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount } from "../services/plan-policy";
+import { normalizeToCanonicalDomain } from "../utils/url-normalization";
 
 export function registerTenantAdminRoutes(app: Express) {
   // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
@@ -965,5 +966,343 @@ export function registerTenantAdminRoutes(app: Express) {
     }
   });
 
+  // ==================== TENANT ADMIN - COMPANY ROSTER ====================
 
+  app.get("/api/tenant/company-roster", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      const tenantMarkets = await storage.getMarketsByTenant(tenant.id);
+      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const allProfiles = await storage.getCompanyProfilesByTenantDomain(tenantDomain);
+
+      interface RosterEntry {
+        id: string;
+        name: string;
+        canonicalDomain: string;
+        url: string;
+        organizationId: string | null;
+        organizationName: string | null;
+        faviconUrl: string | null;
+        lastCrawl: string | null;
+        lastFullCrawl: string | null;
+        lastSocialCrawl: string | null;
+        lastWebsiteMonitor: string | null;
+        markets: Array<{
+          marketId: string;
+          marketName: string;
+          role: "baseline" | "competitor";
+          entityId: string;
+        }>;
+        sourceType: "competitor" | "baseline" | "both";
+        linkedInUrl: string | null;
+        instagramUrl: string | null;
+        twitterUrl: string | null;
+      }
+
+      const rosterMap = new Map<string, RosterEntry>();
+
+      const marketNameMap = new Map<string, string>();
+      for (const m of tenantMarkets) {
+        marketNameMap.set(m.id, m.name);
+      }
+
+      for (const comp of allCompetitors) {
+        if (comp.status !== "Active") continue;
+        const domain = normalizeToCanonicalDomain(comp.url);
+        let entry = rosterMap.get(domain);
+        if (!entry) {
+          let org: any = null;
+          if (comp.organizationId) {
+            org = await storage.getOrganization(comp.organizationId);
+          }
+          entry = {
+            id: comp.id,
+            name: comp.name,
+            canonicalDomain: domain,
+            url: comp.url,
+            organizationId: comp.organizationId || null,
+            organizationName: org?.name || null,
+            faviconUrl: comp.faviconUrl || org?.faviconUrl || null,
+            lastCrawl: comp.lastCrawl || org?.lastCrawl || null,
+            lastFullCrawl: (comp.lastFullCrawl || org?.lastFullCrawl)?.toString() || null,
+            lastSocialCrawl: (comp.lastSocialCrawl || org?.lastSocialCrawl)?.toString() || null,
+            lastWebsiteMonitor: (comp.lastWebsiteMonitor || org?.lastWebsiteMonitor)?.toString() || null,
+            markets: [],
+            sourceType: "competitor",
+            linkedInUrl: comp.linkedInUrl || org?.linkedInUrl || null,
+            instagramUrl: comp.instagramUrl || org?.instagramUrl || null,
+            twitterUrl: comp.twitterUrl || org?.twitterUrl || null,
+          };
+          rosterMap.set(domain, entry);
+        }
+
+        const marketName = comp.marketId ? (marketNameMap.get(comp.marketId) || "Unknown") : "Default";
+        entry.markets.push({
+          marketId: comp.marketId || "",
+          marketName,
+          role: "competitor",
+          entityId: comp.id,
+        });
+      }
+
+      for (const profile of allProfiles) {
+        const domain = normalizeToCanonicalDomain(profile.websiteUrl);
+        let entry = rosterMap.get(domain);
+        if (!entry) {
+          let org: any = null;
+          if (profile.organizationId) {
+            org = await storage.getOrganization(profile.organizationId);
+          }
+          entry = {
+            id: profile.id,
+            name: profile.companyName,
+            canonicalDomain: domain,
+            url: profile.websiteUrl,
+            organizationId: profile.organizationId || null,
+            organizationName: org?.name || null,
+            faviconUrl: profile.logoUrl || org?.faviconUrl || null,
+            lastCrawl: profile.lastCrawl || org?.lastCrawl || null,
+            lastFullCrawl: (profile.lastFullCrawl || org?.lastFullCrawl)?.toString() || null,
+            lastSocialCrawl: (profile.lastSocialCrawl || org?.lastSocialCrawl)?.toString() || null,
+            lastWebsiteMonitor: (profile.lastWebsiteMonitor || org?.lastWebsiteMonitor)?.toString() || null,
+            markets: [],
+            sourceType: "baseline",
+            linkedInUrl: profile.linkedInUrl || org?.linkedInUrl || null,
+            instagramUrl: profile.instagramUrl || org?.instagramUrl || null,
+            twitterUrl: profile.twitterUrl || org?.twitterUrl || null,
+          };
+          rosterMap.set(domain, entry);
+        } else {
+          if (entry.sourceType === "competitor") {
+            entry.sourceType = "both";
+          }
+        }
+
+        const marketName = profile.marketId ? (marketNameMap.get(profile.marketId) || "Unknown") : "Default";
+        entry.markets.push({
+          marketId: profile.marketId || "",
+          marketName,
+          role: "baseline",
+          entityId: profile.id,
+        });
+      }
+
+      const roster = Array.from(rosterMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+      const duplicates = detectDuplicates(roster);
+
+      res.json({ roster, duplicates, totalMarkets: tenantMarkets.length });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/tenant/company-roster/merge", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const { primaryDomain, secondaryDomain } = req.body;
+      if (!primaryDomain || !secondaryDomain) {
+        return res.status(400).json({ error: "Both primaryDomain and secondaryDomain are required" });
+      }
+      if (primaryDomain === secondaryDomain) {
+        return res.status(400).json({ error: "Cannot merge a company with itself" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const allCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+      const allProfiles = await storage.getCompanyProfilesByTenantDomain(tenantDomain);
+
+      const primaryCompetitors = allCompetitors.filter(c => normalizeToCanonicalDomain(c.url) === primaryDomain && c.status === "Active");
+      const secondaryCompetitors = allCompetitors.filter(c => normalizeToCanonicalDomain(c.url) === secondaryDomain && c.status === "Active");
+      const primaryProfiles = allProfiles.filter(p => normalizeToCanonicalDomain(p.websiteUrl) === primaryDomain);
+      const secondaryProfiles = allProfiles.filter(p => normalizeToCanonicalDomain(p.websiteUrl) === secondaryDomain);
+
+      const hasPrimary = primaryCompetitors.length > 0 || primaryProfiles.length > 0;
+      const hasSecondary = secondaryCompetitors.length > 0 || secondaryProfiles.length > 0;
+
+      if (!hasPrimary) {
+        return res.status(404).json({ error: "Primary company not found in this tenant" });
+      }
+      if (!hasSecondary) {
+        return res.status(404).json({ error: "Secondary company not found in this tenant" });
+      }
+
+      const primaryEntity = primaryCompetitors[0] || primaryProfiles[0];
+      let targetOrgId = primaryEntity.organizationId;
+      if (!targetOrgId) {
+        const url = primaryCompetitors[0]?.url || primaryProfiles[0]?.websiteUrl;
+        const name = primaryCompetitors[0]?.name || primaryProfiles[0]?.companyName;
+        const org = await storage.findOrCreateOrganization(url, name);
+        targetOrgId = org.id;
+        for (const c of primaryCompetitors) {
+          await storage.updateCompetitor(c.id, { organizationId: targetOrgId } as any);
+        }
+        for (const p of primaryProfiles) {
+          await storage.updateCompanyProfile(p.id, { organizationId: targetOrgId });
+        }
+      }
+
+      for (const c of secondaryCompetitors) {
+        const oldOrgId = c.organizationId;
+        if (oldOrgId === targetOrgId) continue;
+        await storage.updateCompetitor(c.id, { organizationId: targetOrgId } as any);
+        await storage.incrementOrgRefCount(targetOrgId);
+        if (oldOrgId) {
+          await storage.decrementOrgRefCount(oldOrgId);
+        }
+      }
+
+      for (const p of secondaryProfiles) {
+        const oldOrgId = p.organizationId;
+        if (oldOrgId === targetOrgId) continue;
+        await storage.updateCompanyProfile(p.id, { organizationId: targetOrgId });
+        await storage.incrementOrgRefCount(targetOrgId);
+        if (oldOrgId) {
+          await storage.decrementOrgRefCount(oldOrgId);
+        }
+      }
+
+      const secondaryName = secondaryCompetitors[0]?.name || secondaryProfiles[0]?.companyName || secondaryDomain;
+      const primaryName = primaryCompetitors[0]?.name || primaryProfiles[0]?.companyName || primaryDomain;
+
+      await storage.createActivity({
+        type: "merge",
+        sourceType: "baseline",
+        competitorName: primaryName,
+        description: `Merged "${secondaryName}" (${secondaryDomain}) into "${primaryName}" (${primaryDomain})`,
+        summary: `Company records consolidated under organization linked to ${primaryDomain}`,
+        date: new Date().toISOString(),
+        impact: "Low",
+        userId: user.id,
+        tenantDomain,
+      });
+
+      res.json({
+        success: true,
+        message: `Merged ${secondaryDomain} into ${primaryDomain}`,
+        targetOrganizationId: targetOrgId,
+        mergedCompetitors: secondaryCompetitors.length,
+        mergedProfiles: secondaryProfiles.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\b(inc|llc|ltd|corp|co|company|group|holdings|technologies|technology|tech|solutions|services|software)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+interface DuplicateGroup {
+  reason: string;
+  entries: Array<{ canonicalDomain: string; name: string }>;
+}
+
+function detectDuplicates(
+  roster: Array<{ canonicalDomain: string; name: string; organizationId: string | null }>
+): DuplicateGroup[] {
+  const groups: DuplicateGroup[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < roster.length; i++) {
+    for (let j = i + 1; j < roster.length; j++) {
+      const a = roster[i];
+      const b = roster[j];
+      const pairKey = [a.canonicalDomain, b.canonicalDomain].sort().join("|");
+      if (seen.has(pairKey)) continue;
+
+      if (a.organizationId && b.organizationId && a.organizationId === b.organizationId) {
+        continue;
+      }
+
+      const normA = normalizeCompanyName(a.name);
+      const normB = normalizeCompanyName(b.name);
+      if (normA.length >= 3 && normB.length >= 3) {
+        if (normA === normB) {
+          seen.add(pairKey);
+          groups.push({
+            reason: "Identical company name",
+            entries: [
+              { canonicalDomain: a.canonicalDomain, name: a.name },
+              { canonicalDomain: b.canonicalDomain, name: b.name },
+            ],
+          });
+          continue;
+        }
+
+        const maxLen = Math.max(normA.length, normB.length);
+        const dist = levenshteinDistance(normA, normB);
+        const similarity = 1 - dist / maxLen;
+        if (similarity >= 0.8) {
+          seen.add(pairKey);
+          groups.push({
+            reason: `Similar name (${Math.round(similarity * 100)}% match)`,
+            entries: [
+              { canonicalDomain: a.canonicalDomain, name: a.name },
+              { canonicalDomain: b.canonicalDomain, name: b.name },
+            ],
+          });
+        }
+      }
+    }
+  }
+
+  return groups;
 }

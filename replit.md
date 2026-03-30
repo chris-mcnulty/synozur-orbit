@@ -42,6 +42,7 @@ Preferred communication style: Simple, everyday language.
 - **Storage Abstraction**: Drizzle ORM for PostgreSQL.
 - **Route Organization**: Domain-focused modules under `server/routes/`, each exporting a `register*Routes(app)` function. The orchestrator `server/routes.ts` imports and registers all modules. Shared utilities live in `server/routes/helpers.ts`.
   - Modules: auth, competitors, battlecards, notifications-activity, reports-analysis, admin, consultant-plans, client-projects, products, intelligence, executive-regen, tenant-admin, operations, analytics-data, platform, marketing-saturn
+  - Company Roster: `GET /api/tenant/company-roster` (aggregates competitors + company profiles across all markets with duplicate detection), `POST /api/tenant/company-roster/merge` (merges two company records under one organization). Both require Domain Admin+ access. Registered in `server/routes/tenant-admin.ts`.
 
 ### Database
 - **ORM**: Drizzle ORM (PostgreSQL dialect)
