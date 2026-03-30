@@ -331,13 +331,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.delete("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    await db.update(contentAssets)
-      .set({ status: "archived", updatedAt: new Date() })
-      .where(and(
-        eq(contentAssets.id, req.params.id),
-        eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
-      ));
+    const conditions = and(
+      eq(contentAssets.id, req.params.id),
+      eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      eq(contentAssets.marketId, ctx.marketId),
+    );
+    if (req.query.permanent === "true") {
+      const [existing] = await db.select({ status: contentAssets.status }).from(contentAssets).where(conditions);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      if (existing.status !== "archived") return res.status(400).json({ error: "Only archived assets can be permanently deleted" });
+      await db.delete(contentAssets).where(conditions);
+    } else {
+      await db.update(contentAssets)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(conditions);
+    }
     res.status(204).send();
   });
 
@@ -722,13 +730,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.delete("/api/brand-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    await db.update(brandAssets)
-      .set({ status: "archived", updatedAt: new Date() })
-      .where(and(
-        eq(brandAssets.id, req.params.id),
-        eq(brandAssets.tenantDomain, ctx.tenantDomain),
-        eq(brandAssets.marketId, ctx.marketId),
-      ));
+    const conditions = and(
+      eq(brandAssets.id, req.params.id),
+      eq(brandAssets.tenantDomain, ctx.tenantDomain),
+      eq(brandAssets.marketId, ctx.marketId),
+    );
+    if (req.query.permanent === "true") {
+      const [existing] = await db.select({ status: brandAssets.status }).from(brandAssets).where(conditions);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      if (existing.status !== "archived") return res.status(400).json({ error: "Only archived assets can be permanently deleted" });
+      await db.delete(brandAssets).where(conditions);
+    } else {
+      await db.update(brandAssets)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(conditions);
+    }
     res.status(204).send();
   });
 

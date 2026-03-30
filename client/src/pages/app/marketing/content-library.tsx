@@ -290,6 +290,24 @@ export default function ContentLibraryPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/content-assets/${id}?permanent=true`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Delete failed" }));
+        throw new Error(err.error);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "Content asset permanently deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const editMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof editForm }) => {
       const r = await fetch(`/api/content-assets/${id}`, {
@@ -658,16 +676,28 @@ export default function ContentLibraryPage() {
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-tight">{asset.title}</CardTitle>
           {asset.status === "archived" ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7 text-green-500 hover:text-green-600"
-              onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
-              title="Restore"
-              data-testid={`button-restore-${asset.id}`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-7 w-7 text-green-500 hover:text-green-600"
+                onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
+                title="Restore"
+                data-testid={`button-restore-${asset.id}`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-7 w-7 text-destructive hover:text-destructive"
+                onClick={e => { e.stopPropagation(); if (window.confirm("Permanently delete this asset? This cannot be undone.")) permanentDeleteMutation.mutate(asset.id); }}
+                title="Permanently delete"
+                data-testid={`button-perm-delete-${asset.id}`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           ) : (
             <Button
               variant="ghost"
@@ -1356,9 +1386,14 @@ export default function ContentLibraryPage() {
                           View
                         </Button>
                         {asset.status === "archived" ? (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-green-500 hover:text-green-600" onClick={() => restoreMutation.mutate(asset.id)} title="Restore" data-testid={`button-restore-table-${asset.id}`}>
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </Button>
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-green-500 hover:text-green-600" onClick={() => restoreMutation.mutate(asset.id)} title="Restore" data-testid={`button-restore-table-${asset.id}`}>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (window.confirm("Permanently delete this asset? This cannot be undone.")) permanentDeleteMutation.mutate(asset.id); }} title="Permanently delete" data-testid={`button-perm-delete-table-${asset.id}`}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </>
                         ) : (
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => deleteMutation.mutate(asset.id)} title="Archive" data-testid={`button-archive-table-${asset.id}`}>
                             <Archive className="w-3.5 h-3.5" />

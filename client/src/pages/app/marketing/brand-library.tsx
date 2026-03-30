@@ -206,6 +206,24 @@ export default function BrandLibraryPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/brand-assets/${id}?permanent=true`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Delete failed" }));
+        throw new Error(err.error);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      toast({ title: "Brand asset permanently deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const createCategoryMutation = useMutation({
     mutationFn: async (name: string) => {
       const r = await fetch("/api/brand-asset-categories", {
@@ -475,16 +493,28 @@ export default function BrandLibraryPage() {
             <Settings className="w-3 h-3" />
           </Button>
           {asset.status === "archived" ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-green-500 hover:text-green-600"
-              onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
-              title="Restore"
-              data-testid={`button-restore-brand-${asset.id}`}
-            >
-              <RotateCcw className="w-3 h-3" />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-green-500 hover:text-green-600"
+                onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
+                title="Restore"
+                data-testid={`button-restore-brand-${asset.id}`}
+              >
+                <RotateCcw className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-destructive hover:text-destructive"
+                onClick={e => { e.stopPropagation(); if (window.confirm("Permanently delete this asset? This cannot be undone.")) permanentDeleteMutation.mutate(asset.id); }}
+                title="Permanently delete"
+                data-testid={`button-perm-delete-brand-${asset.id}`}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </>
           ) : (
             <Button
               variant="ghost"
