@@ -927,15 +927,16 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const { pdfBuffer } = await enqueuePdf(`briefing-pdf:${briefingId}`, () => generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId));
 
       let contextName = "";
-      if (briefing.marketId) {
-        const market = await storage.getMarket(briefing.marketId);
+      const marketId = briefing.marketId || undefined;
+      if (marketId) {
+        const market = await storage.getMarket(marketId);
         if (market) contextName = market.name;
       }
       if (!contextName) {
-        const profile = await storage.getCompanyProfileByContext({ tenantDomain: ctx.tenantDomain, marketId: briefing.marketId || undefined });
+        const profile = await storage.getCompanyProfileByContext({ tenantDomain: ctx.tenantDomain, marketId, isDefaultMarket: !marketId });
         if (profile) contextName = profile.companyName;
       }
-      const safeName = contextName ? `_${contextName.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+      const safeName = contextName ? `_${contextName.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}` : "";
       const filename = `Intelligence_Briefing${safeName}_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
       
       res.setHeader("Content-Type", "application/pdf");
