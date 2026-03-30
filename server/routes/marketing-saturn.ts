@@ -1704,9 +1704,9 @@ CRITICAL WIDTH CONSTRAINT — STRICT 560px MAXIMUM:
 
 REQUIRED HTML STRUCTURE:
 - Wrap everything in: <table width="560" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:560px;table-layout:fixed;background-color:#ffffff;margin:0 auto">
-- Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
+- CRITICAL: Use ONLY inline CSS styles (style="..." attributes) on every element. NEVER use <style> tags or blocks anywhere in the output — they are NOT supported by HubSpot or Gmail and will trigger warnings.
 - Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags — output ONLY the table HTML fragment
-- Do NOT include <style> blocks — HubSpot does not support them; use inline styles only
+- Do NOT include ANY <style>...</style> blocks, not even for resets or responsive media queries
 - Use table-based layout ONLY (email clients don't support flexbox, grid, or div layouts)
 - Text content <td> cells should have style="padding:24px 32px"
 - Image/banner <td> cells should have style="padding:0" with the image at width="100%"
