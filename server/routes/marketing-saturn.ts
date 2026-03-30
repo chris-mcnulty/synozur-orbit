@@ -1695,24 +1695,26 @@ Return ONLY a valid JSON object (no markdown fences) with:
       "hubspot-marketing": `Generate a RICH, visually compelling HTML email suitable for HubSpot Marketing Email.
 Structure the email as a complete, production-ready HTML email using nested <table> layout (NOT divs) for maximum email client compatibility.
 
-CRITICAL WIDTH CONSTRAINT — STRICT 600px MAXIMUM:
-- The outer wrapper table is width="600" with style="max-width:600px;table-layout:fixed". Every child element must fit INSIDE 600px.
-- Content text <td> cells have 32px left + 32px right padding, so text content max width = 536px.
-- IMPORTANT: Full-width elements like hero images and header banners must be in their OWN <tr><td> with ZERO padding (style="padding:0"). The image inside uses width="100%" style="display:block;width:100%;max-width:600px;height:auto;border:0". NEVER put a 600px image inside a <td> that has padding — that makes the row wider than 600px.
-- Do NOT use width values greater than 600 on ANY element (table, td, img, div, or inline style).
+CRITICAL WIDTH CONSTRAINT — STRICT 560px MAXIMUM:
+- The outer wrapper table is width="560" with style="max-width:560px;table-layout:fixed". Every child element must fit INSIDE 560px.
+- Content text <td> cells have 32px left + 32px right padding, so text content max width = 496px.
+- IMPORTANT: Full-width elements like hero images and header banners must be in their OWN <tr><td> with ZERO padding (style="padding:0"). The image inside uses width="100%" style="display:block;width:100%;max-width:560px;height:auto;border:0". NEVER put a wide image inside a <td> that has padding — that makes the row wider than 560px.
+- Do NOT use width values greater than 560 on ANY element (table, td, img, div, or inline style).
 - Stat card tables inside a padded td must use percentage widths (width="33%"), NEVER pixel widths.
 
 REQUIRED HTML STRUCTURE:
-- Wrap everything in: <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;table-layout:fixed;background-color:#ffffff;margin:0 auto">
+- Wrap everything in: <table width="560" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:560px;table-layout:fixed;background-color:#ffffff;margin:0 auto">
 - Use inline CSS styles on every element (no external stylesheets, no <style> blocks)
+- Do NOT include <!DOCTYPE>, <html>, <head>, or <body> tags — output ONLY the table HTML fragment
+- Do NOT include <style> blocks — HubSpot does not support them; use inline styles only
 - Use table-based layout ONLY (email clients don't support flexbox, grid, or div layouts)
 - Text content <td> cells should have style="padding:24px 32px"
 - Image/banner <td> cells should have style="padding:0" with the image at width="100%"
 
 REQUIRED SECTIONS (adapt based on content):
 1. **Branded Header Banner**: Use the Brand Primary Color as the header background-color. Include company logo as a small image and company name in small uppercase white text, a bold headline (h1 style, max font-size 26px, color:#ffffff), and a subheading in white/light text.
-2. **Hero Image**: If the content asset has an image URL, include it as <img src="URL" width="600" style="display:block;width:600px;max-width:600px;height:auto;border:0" alt="...">. The image td must have NO padding (padding:0).
-3. **Opening Paragraph**: Personal greeting and 2-3 context-setting paragraphs.
+2. **Hero Image**: If the content asset has an image URL, include it as <img src="URL" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0" alt="...">. The image td must have NO padding (padding:0).
+3. **Opening Paragraph**: Jump straight into 2-3 context-setting paragraphs. Do NOT include a greeting like "Hi there" or "Dear Reader" — the email platform handles greetings separately in its pre-HTML section.
 4. **Key Stats / Data Cards**: If stats exist, use a SINGLE-ROW table with 2-3 <td> cells, each with percentage widths (e.g. width="33%"). Each cell: use Brand Secondary Color as background, border-radius:8px, centered large bold number and label in white. Do NOT use fixed pixel widths on stat cells.
 5. **Key Points**: Present 3-5 highlights as styled paragraphs with bold titles (use Brand Primary Color for bold text) and descriptions.
 6. **Primary CTA Button**: Render as a centered <table> with a single <td bgcolor="BRAND_PRIMARY_COLOR" style="border-radius:6px;text-align:center"><a href="URL" style="display:inline-block;padding:14px 32px;color:#ffffff;font-weight:bold;text-decoration:none;font-family:Arial,sans-serif;font-size:16px">Button Text</a></td>. Do NOT use [CTA_BUTTON] placeholders.
@@ -1886,16 +1888,16 @@ Structure your response using these exact delimiters:
       );
 
       emailBody = emailBody.replace(
-        /width\s*=\s*"(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})"/gi,
-        'width="600"'
+        /width\s*=\s*"(56[1-9]|5[7-9]\d|[6-9]\d{2}|\d{4,})"/gi,
+        'width="560"'
       );
       emailBody = emailBody.replace(
-        /max-width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
-        'max-width:600px'
+        /max-width:\s*(56[1-9]|5[7-9]\d|[6-9]\d{2}|\d{4,})px/gi,
+        'max-width:560px'
       );
       emailBody = emailBody.replace(
-        /width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
-        'width:600px'
+        /width:\s*(56[1-9]|5[7-9]\d|[6-9]\d{2}|\d{4,})px/gi,
+        'width:560px'
       );
 
       emailBody = emailBody.replace(
@@ -1903,12 +1905,12 @@ Structure your response using these exact delimiters:
         (match, attrs) => {
           let result = match;
           result = result.replace(/width\s*=\s*"(\d+)"/i, (m: string, w: string) => {
-            return parseInt(w, 10) > 536 ? 'width="600"' : m;
+            return parseInt(w, 10) > 496 ? 'width="560"' : m;
           });
           if (!/style\s*=/i.test(result)) {
-            result = result.replace(/<img/i, '<img style="max-width:600px;height:auto;display:block"');
+            result = result.replace(/<img/i, '<img style="max-width:560px;height:auto;display:block"');
           } else {
-            result = result.replace(/style\s*=\s*"/i, 'style="max-width:600px;');
+            result = result.replace(/style\s*=\s*"/i, 'style="max-width:560px;');
           }
           return result;
         }
@@ -1917,11 +1919,11 @@ Structure your response using these exact delimiters:
       emailBody = emailBody.replace(
         /<table([^>]*?)>/gi,
         (match, attrs) => {
-          if (/width\s*=\s*"600"/i.test(attrs)) {
+          if (/width\s*=\s*"560"/i.test(attrs)) {
             if (!/style/i.test(attrs)) {
-              return `<table${attrs} style="max-width:600px;table-layout:fixed">`;
+              return `<table${attrs} style="max-width:560px;table-layout:fixed">`;
             }
-            return match.replace(/style\s*=\s*"/i, 'style="max-width:600px;table-layout:fixed;');
+            return match.replace(/style\s*=\s*"/i, 'style="max-width:560px;table-layout:fixed;');
           }
           return match;
         }
@@ -1930,26 +1932,32 @@ Structure your response using these exact delimiters:
       emailBody = emailBody.replace(
         /<img(?![^>]*width\s*=)([^>]*?)>/gi,
         (match, attrs) => {
-          return `<img${attrs} width="600" style="display:block;max-width:100%;height:auto">`;
+          return `<img${attrs} width="560" style="display:block;max-width:100%;height:auto">`;
         }
       );
 
       emailBody = emailBody.replace(
-        /min-width:\s*(60[1-9]|6[1-9]\d|[7-9]\d{2}|\d{4,})px/gi,
-        'min-width:600px'
+        /min-width:\s*(56[1-9]|5[7-9]\d|[6-9]\d{2}|\d{4,})px/gi,
+        'min-width:560px'
       );
 
       emailBody = emailBody.replace(
         /(<table[^>]*?)width\s*:\s*auto([^>]*?>)/gi,
-        '$1width:600px$2'
+        '$1width:560px$2'
       );
 
-      const styleBlock = `<style>table { max-width: 600px !important; } img { max-width: 100% !important; height: auto !important; }</style>`;
-      emailBody = styleBlock + emailBody;
+      emailBody = emailBody.replace(/<!DOCTYPE[^>]*>/gi, "");
+      emailBody = emailBody.replace(/<\/?html[^>]*>/gi, "");
+      emailBody = emailBody.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "");
+      emailBody = emailBody.replace(/<\/?body[^>]*>/gi, "");
+      emailBody = emailBody.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
 
-      const hasOuterWrapper = /^(<style>[^<]*<\/style>)?\s*<table[^>]*width\s*=\s*"600"/i.test(emailBody);
+      emailBody = emailBody.replace(/^\s*<p[^>]*>\s*(Hi\s+there|Hello\s+there|Dear\s+(Reader|Friend|Colleague))[^<]*<\/p>\s*/i, "");
+      emailBody = emailBody.replace(/^\s*(Hi\s+there|Hello\s+there|Dear\s+(Reader|Friend|Colleague))\s*[,!.]?\s*(<br\s*\/?\s*>){1,2}\s*/i, "");
+
+      const hasOuterWrapper = /^\s*<table[^>]*width\s*=\s*"(560|600)"/i.test(emailBody);
       if (!hasOuterWrapper) {
-        emailBody = `<table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;margin:0 auto;table-layout:fixed;overflow:hidden"><tr><td>${emailBody}</td></tr></table>`;
+        emailBody = `<table width="560" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:560px;margin:0 auto;table-layout:fixed;overflow:hidden"><tr><td>${emailBody}</td></tr></table>`;
       }
     }
 
@@ -1965,6 +1973,8 @@ Structure your response using these exact delimiters:
         "Keep the primary CTA above the fold",
         "Personalize with HubSpot tokens like {{contact.firstname}}",
         "Test with HubSpot's email preview tool before sending",
+        "HubSpot adds its own greeting section — no need to add 'Hi there' in the HTML body",
+        "The generated HTML is 560px wide to fit within HubSpot's 600px editor frame",
       ],
       "hubspot-1to1": [
         "Keep it under 150 words for higher response rates",

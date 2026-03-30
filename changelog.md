@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Persona text ingestion**: Paste text from CRM records, research reports, strategy documents, meeting notes, or any source — AI extracts a structured persona with name, role, industry, pain points, goals, objections, and preferred channels. Available via "Import from Text" button on the Personas page.
+- **Email newsletter product filter**: Content asset picker now includes a Product filter dropdown alongside the existing Category filter, with product badges on each asset row.
+
+### Fixed
+
+- **HubSpot email formatting**: Changed inner table width from 600px to 560px to fit within HubSpot's editor frame without overflow. Stripped `<style>` blocks, `<!DOCTYPE>`, `<html>`, `<head>`, and `<body>` tags that HubSpot doesn't support. Removed default "Hi there" greeting since HubSpot provides its own greeting section.
 
 ### Changed
 
