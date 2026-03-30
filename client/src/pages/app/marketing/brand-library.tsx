@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ImageIcon, Plus, Search, ExternalLink, Trash2, Lock, Settings, ChevronDown, X, Tag, Filter,
-  Download, Upload, LayoutGrid, List
+  Download, Upload, LayoutGrid, List, Archive, RotateCcw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -71,7 +71,7 @@ export default function BrandLibraryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [fileTypeFilter, setFileTypeFilter] = useState<string>("all");
-  const [statusTab, setStatusTab] = useState<string>("all");
+  const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -184,7 +184,24 @@ export default function BrandLibraryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
-      toast({ title: "Brand asset deleted" });
+      toast({ title: "Brand asset archived" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/brand-assets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (!r.ok) throw new Error("Restore failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      toast({ title: "Brand asset restored" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -457,15 +474,29 @@ export default function BrandLibraryPage() {
           >
             <Settings className="w-3 h-3" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-destructive hover:text-destructive"
-            onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
-            data-testid={`button-archive-brand-${asset.id}`}
-          >
-            <Trash2 className="w-3 h-3" />
-          </Button>
+          {asset.status === "archived" ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-green-500 hover:text-green-600"
+              onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
+              title="Restore"
+              data-testid={`button-restore-brand-${asset.id}`}
+            >
+              <RotateCcw className="w-3 h-3" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
+              title="Archive"
+              data-testid={`button-archive-brand-${asset.id}`}
+            >
+              <Archive className="w-3 h-3" />
+            </Button>
+          )}
         </div>
       </div>
       {asset.tags && (
@@ -661,6 +692,27 @@ export default function BrandLibraryPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input className="pl-9" placeholder="Search brand assets..." value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-brand" />
           </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center bg-muted rounded-md p-0.5" data-testid="status-toggle-brand">
+              <button
+                onClick={() => setStatusTab("active")}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${statusTab === "active" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="button-status-active-brand"
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setStatusTab("archived")}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${statusTab === "archived" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="button-status-archived-brand"
+              >
+                <Archive className="w-3 h-3" /> Archived
+                {assets.filter(a => a.status === "archived").length > 0 && (
+                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assets.filter(a => a.status === "archived").length}</span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap" data-testid="category-pills-brand">
@@ -714,7 +766,7 @@ export default function BrandLibraryPage() {
         ) : filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-brand">
-              {assets.length === 0 ? "No brand assets yet. Add your first asset to get started." : "No assets match your search or filter."}
+              {assets.length === 0 ? "No brand assets yet. Add your first asset to get started." : statusTab === "archived" ? "No archived brand assets." : "No assets match your search or filter."}
             </CardContent>
           </Card>
         ) : (

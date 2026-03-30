@@ -9,7 +9,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2, AlertTriangle,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
-  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText
+  Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText,
+  Archive, RotateCcw
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -87,7 +88,7 @@ export default function ContentLibraryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [statusTab, setStatusTab] = useState<string>("all");
+  const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -267,7 +268,24 @@ export default function ContentLibraryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast({ title: "Content asset deleted" });
+      toast({ title: "Content asset archived" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/content-assets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (!r.ok) throw new Error("Restore failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "Content asset restored" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -639,15 +657,29 @@ export default function ContentLibraryPage() {
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-tight">{asset.title}</CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
-            onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
-            data-testid={`button-archive-${asset.id}`}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
+          {asset.status === "archived" ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7 text-green-500 hover:text-green-600"
+              onClick={e => { e.stopPropagation(); restoreMutation.mutate(asset.id); }}
+              title="Restore"
+              data-testid={`button-restore-${asset.id}`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="opacity-0 group-hover:opacity-100 shrink-0 h-7 w-7"
+              onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
+              title="Archive"
+              data-testid={`button-archive-${asset.id}`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+            </Button>
+          )}
         </div>
         <div className="flex flex-wrap gap-1.5 mt-1">
           {asset.capturedViaExtension && <Badge variant="secondary" className="text-xs">Captured</Badge>}
@@ -1152,6 +1184,25 @@ export default function ContentLibraryPage() {
             <Input className="pl-9" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-content" />
           </div>
           <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center bg-muted rounded-md p-0.5" data-testid="status-toggle-content">
+              <button
+                onClick={() => setStatusTab("active")}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${statusTab === "active" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="button-status-active-content"
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setStatusTab("archived")}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${statusTab === "archived" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="button-status-archived-content"
+              >
+                <Archive className="w-3 h-3" /> Archived
+                {assets.filter(a => a.status === "archived").length > 0 && (
+                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assets.filter(a => a.status === "archived").length}</span>
+                )}
+              </button>
+            </div>
             <Button
               variant={viewMode === "table" ? "secondary" : "ghost"}
               size="icon"
@@ -1304,9 +1355,15 @@ export default function ContentLibraryPage() {
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditDialog(asset)} data-testid={`button-view-${asset.id}`}>
                           View
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(asset.id)} data-testid={`button-delete-table-${asset.id}`}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        {asset.status === "archived" ? (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-green-500 hover:text-green-600" onClick={() => restoreMutation.mutate(asset.id)} title="Restore" data-testid={`button-restore-table-${asset.id}`}>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => deleteMutation.mutate(asset.id)} title="Archive" data-testid={`button-archive-table-${asset.id}`}>
+                            <Archive className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
