@@ -543,7 +543,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const conditions = [
       eq(products.tenantDomain, ctx.tenantDomain),
       eq(products.marketId, ctx.marketId),
-      eq(products.isBaseline, true),
     ];
     const rows = await db.select({
       id: products.id,
