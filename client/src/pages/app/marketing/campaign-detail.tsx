@@ -1120,7 +1120,7 @@ export default function CampaignDetailPage() {
                         ) : (
                           <p className="text-sm whitespace-pre-wrap">{post.editedContent ?? post.content}</p>
                         )}
-                        {post.sourceUrl && (
+                        {post.sourceUrl && !(post.editedContent ?? post.content).includes(post.sourceUrl) && (
                           <a
                             href={post.sourceUrl}
                             target="_blank"
