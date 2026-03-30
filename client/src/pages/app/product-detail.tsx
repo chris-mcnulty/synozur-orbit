@@ -145,6 +145,7 @@ export default function ProductDetail() {
     twitterUrl: "",
     blogUrl: "",
     socialCheckFrequency: "daily",
+    isBaseline: false,
   });
 
   const { data: project, isLoading: projectLoading } = useQuery<ClientProject>({
@@ -974,6 +975,7 @@ export default function ProductDetail() {
       twitterUrl: product.twitterUrl || "",
       blogUrl: product.blogUrl || "",
       socialCheckFrequency: product.socialCheckFrequency || "daily",
+      isBaseline: product.isBaseline ?? false,
     });
     setIsEditProductOpen(true);
   };
@@ -3062,6 +3064,24 @@ export default function ProductDetail() {
                   data-testid="input-edit-company-name"
                   value={editFormData.companyName}
                   onChange={(e) => setEditFormData({ ...editFormData, companyName: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="edit-isBaseline" className="font-medium">
+                    {editFormData.isBaseline ? "Our product" : "Competitor product"}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {editFormData.isBaseline
+                      ? "This product belongs to your company"
+                      : "This product belongs to a competitor"}
+                  </p>
+                </div>
+                <Switch
+                  id="edit-isBaseline"
+                  data-testid="switch-edit-is-baseline"
+                  checked={editFormData.isBaseline}
+                  onCheckedChange={(checked) => setEditFormData({ ...editFormData, isBaseline: !!checked })}
                 />
               </div>
               <div className="grid gap-2">
