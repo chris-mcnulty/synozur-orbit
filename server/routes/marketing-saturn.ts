@@ -1306,8 +1306,9 @@ RULES:
 1. Keep the core message and intent intact — do NOT rewrite from scratch.
 2. Adjust tone, length, and style to fit the platform.
 3. Suggest relevant hashtags.
-4. ${account.platform === "twitter" ? "Twitter/X has a HARD 280 CHARACTER LIMIT for content + hashtags combined. Keep the post very concise." : "Follow platform guidelines."}
+4. ${account.platform === "twitter" ? "Twitter/X has a HARD 280 CHARACTER LIMIT for content + hashtags combined. Keep post body under 180 characters to leave room for hashtags and URL. One punchy sentence + URL is ideal." : "Follow platform guidelines."}
 5. Do NOT add placeholder text or instructions.
+6. Include any URL ONCE only — never duplicate it in the post.
 
 ${groundingContext ? `## Brand Guidelines\n${groundingContext}\n\n` : ""}## Platform Guidelines
 ${platformGuide}
@@ -2596,7 +2597,7 @@ async function generatePostsAsync(
 
 IMPORTANT RULES — follow these strictly:
 1. Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate "About Us", social sharing button text, comment sections. Only use the actual article substance and key messages.
-2. The content asset has a URL — you MUST include the asset URL naturally in the post body so readers can click through to the source content. Place it at the end of the post or integrate it with a call to action (e.g. "Read more: <url>" or "Learn more here: <url>").
+2. The content asset has a URL — include the asset URL ONCE in the post body so readers can click through. Place it at the end or with a CTA (e.g. "Read more: <url>"). NEVER include the URL more than once.
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
@@ -2651,34 +2652,9 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
             }
           }
 
-          if (account.platform === "twitter") {
-            const hashtagLine = hashtags.map(h => `#${h}`).join(" ");
-            const totalLen = postContent.length + (hashtagLine ? hashtagLine.length + 1 : 0);
-            if (totalLen > 280) {
-              const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
-              const maxContentLen = 280 - reserveForHashtags;
-              if (maxContentLen > 20) {
-                const urlMatch = postContent.match(/https?:\/\/\S+/);
-                if (urlMatch) {
-                  const url = urlMatch[0];
-                  const textWithoutUrl = postContent.replace(url, "").trim();
-                  const maxTextLen = maxContentLen - url.length - 2;
-                  if (maxTextLen > 20) {
-                    const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
-                    postContent = truncated + " " + url;
-                  } else {
-                    postContent = postContent.substring(0, maxContentLen - 1) + "…";
-                  }
-                } else {
-                  postContent = postContent.substring(0, maxContentLen - 1) + "…";
-                }
-              } else {
-                const combined = hashtagLine ? `${postContent}\n${hashtagLine}` : postContent;
-                postContent = combined.substring(0, 279) + "…";
-                hashtags = [];
-              }
-            }
-          }
+          const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+          postContent = adapted.content;
+          hashtags = adapted.hashtags;
 
           cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
         }
@@ -2746,43 +2722,75 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
 
 function getPlatformGuide(platform: string): string {
   const guides: Record<string, string> = {
-    linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability.",
-    twitter: "HARD LIMIT: 280 characters TOTAL for content + hashtags combined. Keep post body under 200 characters to leave room for hashtags. Count every character. One concise sentence + URL only. Do NOT write long-form content.",
-    instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line.",
-    facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA.",
+    linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability. Include the source URL once as a call-to-action link — never repeat it.",
+    twitter: "HARD LIMIT: 280 characters TOTAL for content + hashtags combined. Keep post body under 180 characters to leave room for hashtags and a URL. One punchy sentence + URL. NEVER duplicate the URL. Do NOT write long-form content. Count characters carefully.",
+    instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line. Include the source URL once — never repeat it.",
+    facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA. Include the source URL once — never repeat it.",
   };
   return guides[platform] ?? "Professional and engaging. Clear call to action.";
 }
 
+function deduplicateUrls(text: string): string {
+  const urlPattern = /https?:\/\/\S+/g;
+  const urls = text.match(urlPattern);
+  if (!urls || urls.length <= 1) return text;
+  const seen = new Set<string>();
+  return text.replace(urlPattern, (match) => {
+    const normalized = match.replace(/\/+$/, "").toLowerCase();
+    if (seen.has(normalized)) return "";
+    seen.add(normalized);
+    return match;
+  }).replace(/\s{2,}/g, " ").trim();
+}
+
 function applyPlatformRules(text: string, platform: string, hashtags?: string[]): { content: string; hashtags: string[] } {
-  const tags = hashtags ?? [];
+  let tags = hashtags ?? [];
+  text = deduplicateUrls(text);
+
   if (platform === "twitter") {
     const hashtagLine = tags.map(h => `#${h}`).join(" ");
     const totalLen = text.length + (hashtagLine ? hashtagLine.length + 1 : 0);
+
     if (totalLen > 280) {
-      const reserveForHashtags = hashtagLine ? hashtagLine.length + 1 : 0;
-      const maxContentLen = 280 - reserveForHashtags;
-      if (maxContentLen > 20) {
-        const urlMatch = text.match(/https?:\/\/\S+/);
-        if (urlMatch) {
-          const url = urlMatch[0];
-          const textWithoutUrl = text.replace(url, "").trim();
-          const maxTextLen = maxContentLen - url.length - 2;
-          if (maxTextLen > 20) {
-            const truncated = textWithoutUrl.substring(0, maxTextLen - 1).replace(/\s+\S*$/, "") + "…";
-            text = truncated + " " + url;
-          } else {
-            text = text.substring(0, maxContentLen - 1) + "…";
-          }
-        } else {
-          text = text.substring(0, maxContentLen - 1) + "…";
-        }
+      const urlMatch = text.match(/https?:\/\/\S+/);
+      const url = urlMatch ? urlMatch[0] : "";
+      const textWithoutUrl = url ? text.replace(url, "").trim() : text;
+
+      const fitWithHashtags = (body: string, ht: string[], u: string): string | null => {
+        const htLine = ht.map(h => `#${h}`).join(" ");
+        const parts = [body, u, htLine].filter(Boolean);
+        const combined = parts.join(u && htLine ? " " : u ? " " : "\n");
+        const total = body.length + (u ? u.length + 1 : 0) + (htLine ? htLine.length + 1 : 0);
+        return total <= 280 ? combined : null;
+      };
+
+      const maxBodyForFull = 280 - (url ? url.length + 1 : 0) - (hashtagLine ? hashtagLine.length + 1 : 0);
+      if (maxBodyForFull >= 40) {
+        const trimmed = textWithoutUrl.substring(0, maxBodyForFull).replace(/[,.\s]+\S*$/, "").trim();
+        text = [trimmed, url].filter(Boolean).join(" ");
       } else {
-        const combined = hashtagLine ? `${text}\n${hashtagLine}` : text;
-        text = combined.substring(0, 279) + "…";
-        return { content: text, hashtags: [] };
+        const reducedTags = tags.slice(0, 2);
+        const reducedLine = reducedTags.map(h => `#${h}`).join(" ");
+        const maxBodyReduced = 280 - (url ? url.length + 1 : 0) - (reducedLine ? reducedLine.length + 1 : 0);
+        if (maxBodyReduced >= 40) {
+          const trimmed = textWithoutUrl.substring(0, maxBodyReduced).replace(/[,.\s]+\S*$/, "").trim();
+          text = [trimmed, url].filter(Boolean).join(" ");
+          tags = reducedTags;
+        } else {
+          tags = [];
+          const maxBody = 280 - (url ? url.length + 1 : 0);
+          if (maxBody >= 30) {
+            const trimmed = textWithoutUrl.substring(0, maxBody).replace(/[,.\s]+\S*$/, "").trim();
+            text = [trimmed, url].filter(Boolean).join(" ");
+          } else {
+            text = text.substring(0, 280);
+          }
+        }
       }
     }
+  } else {
+    text = deduplicateUrls(text);
   }
+
   return { content: text, hashtags: tags };
 }
