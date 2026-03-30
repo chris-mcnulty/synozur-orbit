@@ -41,8 +41,15 @@ interface ContentAsset {
   leadImageUrl?: string;
   url?: string;
   categoryId?: string;
+  productIds?: string[];
   createdAt: string;
   status: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  isBaseline: boolean;
 }
 
 interface Category {
@@ -99,6 +106,7 @@ export default function EmailNewslettersPage() {
 
   const [assetSearchQuery, setAssetSearchQuery] = useState("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
+  const [assetProductFilter, setAssetProductFilter] = useState<string>("all");
   const [assetDateSort, setAssetDateSort] = useState<string>("newest");
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -148,6 +156,15 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed,
   });
 
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+    queryFn: async () => {
+      const r = await fetch("/api/products", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
   const { data: savedEmails = [] } = useQuery<SavedEmail[]>({
     queryKey: ["/api/email/saved"],
     queryFn: async () => {
@@ -180,6 +197,8 @@ export default function EmailNewslettersPage() {
     return categories.find(c => c.id === catId)?.name || "";
   };
 
+  const productName = (pid: string) => products.find(p => p.id === pid)?.name || "";
+
   const activeAssets = contentAssets.filter(a => a.status === "active");
 
   const filteredAssets = useMemo(() => {
@@ -194,17 +213,25 @@ export default function EmailNewslettersPage() {
     if (assetCategoryFilter !== "all") {
       list = list.filter(a => a.categoryId === assetCategoryFilter);
     }
+    if (assetProductFilter !== "all") {
+      list = list.filter(a => a.productIds?.includes(assetProductFilter));
+    }
     list = [...list].sort((a, b) => {
       if (assetDateSort === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
     return list;
-  }, [activeAssets, assetSearchQuery, assetCategoryFilter, assetDateSort]);
+  }, [activeAssets, assetSearchQuery, assetCategoryFilter, assetProductFilter, assetDateSort]);
 
   const usedCategories = useMemo(() => {
     const ids = new Set(activeAssets.map(a => a.categoryId).filter(Boolean));
     return categories.filter(c => ids.has(c.id));
   }, [activeAssets, categories]);
+
+  const usedProducts = useMemo(() => {
+    const ids = new Set(activeAssets.flatMap(a => a.productIds || []));
+    return products.filter(p => ids.has(p.id));
+  }, [activeAssets, products]);
 
   const updateEmailMutation = useMutation({
     mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
@@ -424,6 +451,20 @@ export default function EmailNewslettersPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {usedProducts.length > 0 && (
+                    <Select value={assetProductFilter} onValueChange={setAssetProductFilter}>
+                      <SelectTrigger className="h-8 w-[160px] text-sm" data-testid="select-asset-product-filter">
+                        <Tag className="w-3 h-3 mr-1 text-muted-foreground" />
+                        <SelectValue placeholder="Product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Products</SelectItem>
+                        {usedProducts.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Select value={assetDateSort} onValueChange={setAssetDateSort}>
                     <SelectTrigger className="h-8 w-[130px] text-sm" data-testid="select-asset-date-sort">
                       <Calendar className="w-3 h-3 mr-1 text-muted-foreground" />
@@ -473,6 +514,9 @@ export default function EmailNewslettersPage() {
                             {categoryName(asset.categoryId) && (
                               <Badge variant="outline" className="text-[10px] h-4">{categoryName(asset.categoryId)}</Badge>
                             )}
+                            {asset.productIds?.map(pid => (
+                              <Badge key={pid} variant="outline" className="text-[10px] h-4 text-primary">{productName(pid) || pid}</Badge>
+                            ))}
                             <span className="text-[10px] text-muted-foreground">{format(new Date(asset.createdAt), "MMM d, yyyy")}</span>
                           </div>
                           {asset.description && (
