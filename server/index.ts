@@ -55,6 +55,18 @@ const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+pgPool.on("error", (err) => {
+  console.error("[PostgreSQL Pool] Unexpected client error:", err.message);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[Process] Uncaught exception (keeping alive):", err.message, err.stack);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Process] Unhandled rejection (keeping alive):", reason);
+});
+
 // ========== SESSION STORE ==========
 // Use Redis when REDIS_URL is set; fall back to PostgreSQL for zero-config deployments.
 function buildSessionStore(): session.Store {
