@@ -476,6 +476,7 @@ export interface IStorage {
   // Organization methods
   getOrganization(id: string): Promise<Organization | undefined>;
   getOrganizationByDomain(canonicalDomain: string): Promise<Organization | undefined>;
+  getCompetitorsByOrganizationId(organizationId: string): Promise<Competitor[]>;
   createOrganization(data: InsertOrganization): Promise<Organization>;
   updateOrganization(id: string, data: Partial<InsertOrganization>): Promise<Organization>;
   findOrCreateOrganization(url: string, name?: string, extraData?: Partial<InsertOrganization>): Promise<Organization & { wasCreated: boolean }>;
@@ -3029,6 +3030,10 @@ export class DatabaseStorage implements IStorage {
   async getOrganization(id: string): Promise<Organization | undefined> {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
     return org || undefined;
+  }
+
+  async getCompetitorsByOrganizationId(organizationId: string): Promise<Competitor[]> {
+    return db.select().from(competitors).where(eq(competitors.organizationId, organizationId));
   }
 
   async getOrganizationByDomain(canonicalDomain: string): Promise<Organization | undefined> {

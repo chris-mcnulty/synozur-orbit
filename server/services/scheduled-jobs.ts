@@ -179,6 +179,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
   jobStatus.websiteCrawl.isRunning = true;
   console.log("[Scheduled Job] Starting website crawl job...");
 
+  const sweepMetrics = { totalChecked: 0, crawlsExecuted: 0, crawlsSkippedOrgFresh: 0, crawlsSkippedOrgQueued: 0 };
+  const orgsQueuedThisSweep = new Set<string>();
+
   try {
     const tenants = await storage.getAllTenants();
 
@@ -199,6 +202,8 @@ async function runWebsiteCrawlJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        sweepMetrics.totalChecked++;
+
         // Skip competitors in archived markets
         if (await isMarketArchived(competitor.marketId)) {
           console.log(`[Scheduled Job] Skipping ${competitor.name} - market is archived`);
@@ -221,6 +226,47 @@ async function runWebsiteCrawlJob(): Promise<void> {
           continue;
         }
 
+        if (competitor.organizationId) {
+          try {
+            const org = await storage.getOrganization(competitor.organizationId);
+
+            if (orgsQueuedThisSweep.has(competitor.organizationId)) {
+              sweepMetrics.crawlsSkippedOrgQueued++;
+              console.log(`[Scheduled Job] Skipping crawl for ${competitor.name} - org already queued this sweep, will receive fresh data via post-crawl fan-out`);
+              continue;
+            }
+
+            if (org?.lastFullCrawl) {
+              const orgLastCrawl = new Date(org.lastFullCrawl).getTime();
+              if (Number.isFinite(orgLastCrawl) && now - orgLastCrawl < intervalMs && org.crawlData) {
+                const syncUpdates: any = {};
+                if (org.crawlData) syncUpdates.crawlData = org.crawlData;
+                if (org.lastFullCrawl) syncUpdates.lastFullCrawl = org.lastFullCrawl;
+                if (org.lastCrawl) syncUpdates.lastCrawl = org.lastCrawl;
+                if (org.previousWebsiteContent) syncUpdates.previousWebsiteContent = org.previousWebsiteContent;
+                if (org.blogSnapshot) syncUpdates.blogSnapshot = org.blogSnapshot;
+                if (org.linkedInUrl && !competitor.linkedInUrl) syncUpdates.linkedInUrl = org.linkedInUrl;
+                if (org.instagramUrl && !competitor.instagramUrl) syncUpdates.instagramUrl = org.instagramUrl;
+                if (org.faviconUrl && !competitor.faviconUrl) syncUpdates.faviconUrl = org.faviconUrl;
+                if (org.screenshotUrl && !competitor.screenshotUrl) syncUpdates.screenshotUrl = org.screenshotUrl;
+
+                if (Object.keys(syncUpdates).length > 0) {
+                  await storage.updateCompetitor(competitor.id, syncUpdates);
+                }
+
+                sweepMetrics.crawlsSkippedOrgFresh++;
+                console.log(`[Scheduled Job] Skipping crawl for ${competitor.name} - org ${org.name} already crawled recently, synced data`);
+                continue;
+              }
+            }
+          } catch (orgErr) {
+            console.error(`[Scheduled Job] Org freshness check failed for ${competitor.name}:`, (orgErr as Error).message);
+          }
+
+          orgsQueuedThisSweep.add(competitor.organizationId);
+        }
+
+        sweepMetrics.crawlsExecuted++;
         console.log(`[Scheduled Job] Queuing crawl for ${competitor.name} (${competitor.url})...`);
 
         enqueueCrawl(`crawl:${competitor.name}`, (signal) => trackJobRun(
@@ -304,6 +350,34 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 instagramUrl: updates.instagramUrl,
                 blogSnapshot: updates.blogSnapshot,
               }).catch(err => console.error(`[Scheduled Job] Org sync failed for ${competitor.name}:`, err.message));
+
+              try {
+                const freshOrg = await storage.getOrganization(competitor.organizationId);
+                if (freshOrg) {
+                  const siblings = await storage.getCompetitorsByOrganizationId(competitor.organizationId);
+                  for (const sibling of siblings) {
+                    if (sibling.id === competitor.id) continue;
+                    const siblingSync: any = {};
+                    if (freshOrg.crawlData) siblingSync.crawlData = freshOrg.crawlData;
+                    if (freshOrg.lastFullCrawl) siblingSync.lastFullCrawl = freshOrg.lastFullCrawl;
+                    if (freshOrg.lastCrawl) siblingSync.lastCrawl = freshOrg.lastCrawl;
+                    if (freshOrg.previousWebsiteContent) siblingSync.previousWebsiteContent = freshOrg.previousWebsiteContent;
+                    if (freshOrg.blogSnapshot) siblingSync.blogSnapshot = freshOrg.blogSnapshot;
+                    if (freshOrg.linkedInUrl && !sibling.linkedInUrl) siblingSync.linkedInUrl = freshOrg.linkedInUrl;
+                    if (freshOrg.instagramUrl && !sibling.instagramUrl) siblingSync.instagramUrl = freshOrg.instagramUrl;
+                    if (freshOrg.faviconUrl && !sibling.faviconUrl) siblingSync.faviconUrl = freshOrg.faviconUrl;
+                    if (freshOrg.screenshotUrl && !sibling.screenshotUrl) siblingSync.screenshotUrl = freshOrg.screenshotUrl;
+                    if (Object.keys(siblingSync).length > 0) {
+                      await storage.updateCompetitor(sibling.id, siblingSync);
+                    }
+                  }
+                  if (siblings.length > 1) {
+                    console.log(`[Scheduled Job] Post-crawl fan-out: synced fresh data to ${siblings.length - 1} sibling competitor(s) for org ${competitor.organizationId}`);
+                  }
+                }
+              } catch (fanOutErr) {
+                console.error(`[Scheduled Job] Post-crawl fan-out failed for org ${competitor.organizationId}:`, (fanOutErr as Error).message);
+              }
             }
 
             if (!competitor.faviconUrl || !competitor.screenshotUrl) {
@@ -523,7 +597,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
     jobStatus.websiteCrawl.isRunning = false;
     jobStatus.websiteCrawl.abortController = null;
     jobStatus.websiteCrawl.lastRun = new Date();
-    console.log("[Scheduled Job] Website crawl sweep completed (jobs queued)");
+    const crawlsSkipped = sweepMetrics.crawlsSkippedOrgFresh + sweepMetrics.crawlsSkippedOrgQueued;
+    const estTimeSavedSec = crawlsSkipped * 60;
+    console.log(`[Scheduled Job] Website crawl sweep completed — total checked: ${sweepMetrics.totalChecked}, crawls queued: ${sweepMetrics.crawlsExecuted}, skipped (org fresh): ${sweepMetrics.crawlsSkippedOrgFresh}, skipped (org queued): ${sweepMetrics.crawlsSkippedOrgQueued}, est. time saved: ${estTimeSavedSec}s`);
   }
 }
 
@@ -537,6 +613,9 @@ async function runSocialMonitorJob(): Promise<void> {
   jobStatus.socialMonitor.abortController = abortController;
   jobStatus.socialMonitor.isRunning = true;
   console.log("[Scheduled Job] Starting social monitor job...");
+
+  const sweepMetrics = { totalChecked: 0, fetchesExecuted: 0, fetchesSkippedOrgFresh: 0, fetchesSkippedOrgQueued: 0 };
+  const orgsQueuedThisSweep = new Set<string>();
 
   try {
     const tenants = await storage.getAllTenants();
@@ -558,6 +637,8 @@ async function runSocialMonitorJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        sweepMetrics.totalChecked++;
+
         // Skip competitors in archived markets
         if (await isMarketArchived(competitor.marketId)) {
           console.log(`[Scheduled Job] Skipping social for ${competitor.name} - market is archived`);
@@ -580,6 +661,44 @@ async function runSocialMonitorJob(): Promise<void> {
           continue;
         }
 
+        if (competitor.organizationId) {
+          try {
+            const org = await storage.getOrganization(competitor.organizationId);
+
+            const hasOrgSocialPayload = org && (org.linkedInContent || org.linkedInEngagement || org.instagramContent || org.instagramEngagement || org.twitterContent || org.twitterEngagement);
+
+            if (orgsQueuedThisSweep.has(competitor.organizationId)) {
+              sweepMetrics.fetchesSkippedOrgQueued++;
+              console.log(`[Scheduled Job] Skipping social fetch for ${competitor.name} - org already queued this sweep, will receive fresh data via post-fetch fan-out`);
+              continue;
+            }
+
+            if (org?.lastSocialCrawl && hasOrgSocialPayload) {
+              const orgLastSocial = new Date(org.lastSocialCrawl).getTime();
+              if (Number.isFinite(orgLastSocial) && now - orgLastSocial < competitorIntervalMs) {
+                const syncUpdates: any = { lastSocialCrawl: org.lastSocialCrawl };
+                if (org.linkedInContent) syncUpdates.linkedInContent = org.linkedInContent;
+                if (org.linkedInEngagement) syncUpdates.linkedInEngagement = org.linkedInEngagement;
+                if (org.instagramContent) syncUpdates.instagramContent = org.instagramContent;
+                if (org.instagramEngagement) syncUpdates.instagramEngagement = org.instagramEngagement;
+                if (org.twitterContent) syncUpdates.twitterContent = org.twitterContent;
+                if (org.twitterEngagement) syncUpdates.twitterEngagement = org.twitterEngagement;
+
+                await storage.updateCompetitor(competitor.id, syncUpdates);
+
+                sweepMetrics.fetchesSkippedOrgFresh++;
+                console.log(`[Scheduled Job] Skipping social fetch for ${competitor.name} - org already monitored recently, synced data`);
+                continue;
+              }
+            }
+          } catch (orgErr) {
+            console.error(`[Scheduled Job] Org social freshness check failed for ${competitor.name}:`, (orgErr as Error).message);
+          }
+
+          orgsQueuedThisSweep.add(competitor.organizationId);
+        }
+
+        sweepMetrics.fetchesExecuted++;
         console.log(`[Scheduled Job] Queuing social monitor for ${competitor.name} (${competitorFrequency})...`);
 
         enqueueMonitor(`social:${competitor.name}`, () => trackJobRun(
@@ -589,6 +708,35 @@ async function runSocialMonitorJob(): Promise<void> {
           `Competitor: ${competitor.name}`,
           async () => {
             await monitorCompetitorSocialMedia(competitor.id, tenant.domain);
+
+            if (competitor.organizationId) {
+              try {
+                const freshOrg = await storage.getOrganization(competitor.organizationId);
+                if (freshOrg) {
+                  const siblings = await storage.getCompetitorsByOrganizationId(competitor.organizationId);
+                  for (const sibling of siblings) {
+                    if (sibling.id === competitor.id) continue;
+                    const siblingSync: any = {};
+                    if (freshOrg.lastSocialCrawl) siblingSync.lastSocialCrawl = freshOrg.lastSocialCrawl;
+                    if (freshOrg.linkedInContent) siblingSync.linkedInContent = freshOrg.linkedInContent;
+                    if (freshOrg.linkedInEngagement) siblingSync.linkedInEngagement = freshOrg.linkedInEngagement;
+                    if (freshOrg.instagramContent) siblingSync.instagramContent = freshOrg.instagramContent;
+                    if (freshOrg.instagramEngagement) siblingSync.instagramEngagement = freshOrg.instagramEngagement;
+                    if (freshOrg.twitterContent) siblingSync.twitterContent = freshOrg.twitterContent;
+                    if (freshOrg.twitterEngagement) siblingSync.twitterEngagement = freshOrg.twitterEngagement;
+                    if (Object.keys(siblingSync).length > 0) {
+                      await storage.updateCompetitor(sibling.id, siblingSync);
+                    }
+                  }
+                  if (siblings.length > 1) {
+                    console.log(`[Scheduled Job] Post-social fan-out: synced fresh data to ${siblings.length - 1} sibling competitor(s) for org ${competitor.organizationId}`);
+                  }
+                }
+              } catch (fanOutErr) {
+                console.error(`[Scheduled Job] Post-social fan-out failed for org ${competitor.organizationId}:`, (fanOutErr as Error).message);
+              }
+            }
+
             return {
               status: "success",
               entityType: "competitor",
@@ -699,7 +847,9 @@ async function runSocialMonitorJob(): Promise<void> {
     jobStatus.socialMonitor.isRunning = false;
     jobStatus.socialMonitor.abortController = null;
     jobStatus.socialMonitor.lastRun = new Date();
-    console.log("[Scheduled Job] Social monitor job completed");
+    const fetchesSkipped = sweepMetrics.fetchesSkippedOrgFresh + sweepMetrics.fetchesSkippedOrgQueued;
+    const estSocialTimeSavedSec = fetchesSkipped * 30;
+    console.log(`[Scheduled Job] Social monitor sweep completed — total checked: ${sweepMetrics.totalChecked}, fetches queued: ${sweepMetrics.fetchesExecuted}, skipped (org fresh): ${sweepMetrics.fetchesSkippedOrgFresh}, skipped (org queued): ${sweepMetrics.fetchesSkippedOrgQueued}, est. time saved: ${estSocialTimeSavedSec}s`);
   }
 }
 
@@ -713,6 +863,9 @@ async function runWebsiteMonitorJob(): Promise<void> {
   jobStatus.websiteMonitor.abortController = abortController;
   jobStatus.websiteMonitor.isRunning = true;
   console.log("[Scheduled Job] Starting website change monitor job...");
+
+  const sweepMetrics = { totalChecked: 0, monitorsExecuted: 0, monitorsSkippedOrgFresh: 0, monitorsSkippedOrgQueued: 0 };
+  const orgsQueuedThisSweep = new Set<string>();
 
   try {
     const tenants = await storage.getAllTenants();
@@ -739,6 +892,8 @@ async function runWebsiteMonitorJob(): Promise<void> {
       const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
 
       for (const competitor of competitors) {
+        sweepMetrics.totalChecked++;
+
         // Skip competitors in archived markets
         if (await isMarketArchived(competitor.marketId)) {
           console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - market is archived`);
@@ -760,6 +915,39 @@ async function runWebsiteMonitorJob(): Promise<void> {
           continue;
         }
 
+        if (competitor.organizationId) {
+          try {
+            const org = await storage.getOrganization(competitor.organizationId);
+
+            if (orgsQueuedThisSweep.has(competitor.organizationId)) {
+              sweepMetrics.monitorsSkippedOrgQueued++;
+              console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - org already queued this sweep, will receive fresh data via post-monitor fan-out`);
+              continue;
+            }
+
+            if (org?.lastWebsiteMonitor && (org.previousWebsiteContent || org.crawlData)) {
+              const orgLastMonitor = new Date(org.lastWebsiteMonitor).getTime();
+              if (Number.isFinite(orgLastMonitor) && now - orgLastMonitor < intervalMs) {
+                const syncUpdates: any = { lastWebsiteMonitor: org.lastWebsiteMonitor };
+                if (org.previousWebsiteContent) syncUpdates.previousWebsiteContent = org.previousWebsiteContent;
+                if (org.crawlData) syncUpdates.crawlData = org.crawlData;
+                if (org.blogSnapshot) syncUpdates.blogSnapshot = org.blogSnapshot;
+
+                await storage.updateCompetitor(competitor.id, syncUpdates);
+
+                sweepMetrics.monitorsSkippedOrgFresh++;
+                console.log(`[Scheduled Job] Skipping website monitor for ${competitor.name} - org already monitored recently, synced data`);
+                continue;
+              }
+            }
+          } catch (orgErr) {
+            console.error(`[Scheduled Job] Org website monitor freshness check failed for ${competitor.name}:`, (orgErr as Error).message);
+          }
+
+          orgsQueuedThisSweep.add(competitor.organizationId);
+        }
+
+        sweepMetrics.monitorsExecuted++;
         console.log(`[Scheduled Job] Queuing website monitor for ${competitor.name}...`);
 
         enqueueMonitor(`monitor:${competitor.name}`, (signal) => trackJobRun(
@@ -775,6 +963,32 @@ async function runWebsiteMonitorJob(): Promise<void> {
               tenant.domain,
               signal
             );
+
+            if (competitor.organizationId) {
+              try {
+                const freshOrg = await storage.getOrganization(competitor.organizationId);
+                if (freshOrg) {
+                  const siblings = await storage.getCompetitorsByOrganizationId(competitor.organizationId);
+                  for (const sibling of siblings) {
+                    if (sibling.id === competitor.id) continue;
+                    const siblingSync: any = {};
+                    if (freshOrg.lastWebsiteMonitor) siblingSync.lastWebsiteMonitor = freshOrg.lastWebsiteMonitor;
+                    if (freshOrg.previousWebsiteContent) siblingSync.previousWebsiteContent = freshOrg.previousWebsiteContent;
+                    if (freshOrg.crawlData) siblingSync.crawlData = freshOrg.crawlData;
+                    if (freshOrg.blogSnapshot) siblingSync.blogSnapshot = freshOrg.blogSnapshot;
+                    if (Object.keys(siblingSync).length > 0) {
+                      await storage.updateCompetitor(sibling.id, siblingSync);
+                    }
+                  }
+                  if (siblings.length > 1) {
+                    console.log(`[Scheduled Job] Post-monitor fan-out: synced fresh data to ${siblings.length - 1} sibling competitor(s) for org ${competitor.organizationId}`);
+                  }
+                }
+              } catch (fanOutErr) {
+                console.error(`[Scheduled Job] Post-monitor fan-out failed for org ${competitor.organizationId}:`, (fanOutErr as Error).message);
+              }
+            }
+
             return {
               status: result.status,
               entityType: "competitor",
@@ -836,7 +1050,9 @@ async function runWebsiteMonitorJob(): Promise<void> {
     jobStatus.websiteMonitor.isRunning = false;
     jobStatus.websiteMonitor.abortController = null;
     jobStatus.websiteMonitor.lastRun = new Date();
-    console.log("[Scheduled Job] Website change monitor job completed");
+    const monitorsSkipped = sweepMetrics.monitorsSkippedOrgFresh + sweepMetrics.monitorsSkippedOrgQueued;
+    const estMonitorTimeSavedSec = monitorsSkipped * 45;
+    console.log(`[Scheduled Job] Website monitor sweep completed — total checked: ${sweepMetrics.totalChecked}, monitors queued: ${sweepMetrics.monitorsExecuted}, skipped (org fresh): ${sweepMetrics.monitorsSkippedOrgFresh}, skipped (org queued): ${sweepMetrics.monitorsSkippedOrgQueued}, est. time saved: ${estMonitorTimeSavedSec}s`);
   }
 }
 
