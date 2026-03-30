@@ -56,3 +56,6 @@ GNEWS_API_KEY = "e16dd44feb054d697453232587729ac7"
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 120000
+
+[objectStorage]
+defaultBucketID = "replit-objstore-7732f445-e623-487e-959c-af350317396c"

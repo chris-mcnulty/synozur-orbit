@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "5DuV1ktemkOaLoNhZFRG0"
+uri = "file://public/orbit-product-overview-creative-brief.md"
+type = "text"
+title = "Orbit Product Overview — Creative Brief"
