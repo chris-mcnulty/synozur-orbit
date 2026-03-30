@@ -449,6 +449,7 @@ export default function CampaignDetailPage() {
   const [scheduleTime, setScheduleTime] = useState("09:00");
   const [postsPerDay, setPostsPerDay] = useState("1");
   const [daysBetweenPosts, setDaysBetweenPosts] = useState("1");
+  const [minutesBetweenPosts, setMinutesBetweenPosts] = useState("180");
 
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [createPostContent, setCreatePostContent] = useState("");
@@ -482,7 +483,7 @@ export default function CampaignDetailPage() {
   });
 
   const schedulePostsMutation = useMutation({
-    mutationFn: async ({ time, perDay, daysBetween }: { time: string; perDay: number; daysBetween: number }) => {
+    mutationFn: async ({ time, perDay, daysBetween, spacingMinutes }: { time: string; perDay: number; daysBetween: number; spacingMinutes: number }) => {
       if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
       const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
       if (activePosts.length === 0) throw new Error("No active posts to schedule");
@@ -539,7 +540,16 @@ export default function CampaignDetailPage() {
       const slots: string[] = [];
       for (const dateIso of eligibleSlots) {
         for (let s = 0; s < perDay; s++) {
-          slots.push(dateIso);
+          if (s === 0) {
+            slots.push(dateIso);
+          } else {
+            const base = new Date(dateIso);
+            base.setMinutes(base.getMinutes() + s * spacingMinutes);
+            const hh = String(base.getHours()).padStart(2, "0");
+            const mm = String(base.getMinutes()).padStart(2, "0");
+            const offsetIso = dateIso.replace(/T\d{2}:\d{2}:\d{2}/, `T${hh}:${mm}:00`);
+            slots.push(offsetIso);
+          }
         }
       }
 
@@ -1584,7 +1594,7 @@ export default function CampaignDetailPage() {
                 onChange={e => setScheduleTime(e.target.value)}
                 data-testid="input-schedule-time"
               />
-              <p className="text-xs text-muted-foreground">All posts will be scheduled at this time of day.</p>
+              <p className="text-xs text-muted-foreground">{parseInt(postsPerDay) > 1 ? "First post of each day starts at this time." : "All posts will be scheduled at this time of day."}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="posts-per-day">Posts Per Day</Label>
@@ -1601,6 +1611,32 @@ export default function CampaignDetailPage() {
                 </SelectContent>
               </Select>
             </div>
+            {parseInt(postsPerDay) > 1 && (
+              <div className="space-y-2">
+                <Label htmlFor="minutes-between">Minutes Between Posts</Label>
+                <Input
+                  id="minutes-between"
+                  type="number"
+                  min="15"
+                  max="480"
+                  step="15"
+                  value={minutesBetweenPosts}
+                  onChange={e => setMinutesBetweenPosts(e.target.value)}
+                  data-testid="input-minutes-between"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {parseInt(postsPerDay) > 1
+                    ? `${postsPerDay} posts per day spaced ${minutesBetweenPosts} min apart (${parseFloat((parseInt(minutesBetweenPosts) / 60).toFixed(1))} hrs). First post at ${scheduleTime}, last at ${(() => {
+                        const [h, m] = scheduleTime.split(":").map(Number);
+                        const totalMin = h * 60 + m + (parseInt(postsPerDay) - 1) * parseInt(minutesBetweenPosts);
+                        const fh = Math.floor(totalMin / 60) % 24;
+                        const fm = totalMin % 60;
+                        return `${String(fh).padStart(2, "0")}:${String(fm).padStart(2, "0")}`;
+                      })()}.`
+                    : ""}
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="days-between-posts">Days Between Posts</Label>
               <Select value={daysBetweenPosts} onValueChange={setDaysBetweenPosts}>
@@ -1653,14 +1689,15 @@ export default function CampaignDetailPage() {
                 const weekdaysOnly = !campaign.includeSaturday || !campaign.includeSunday;
                 const intervalLabel = interval === 1 ? "daily" : `every ${interval} days`;
                 const dayTypeLabel = weekdaysOnly ? ", weekdays only" : "";
-                return `${active} active post${active !== 1 ? "s" : ""} will be distributed across ${postingDays} posting day${postingDays !== 1 ? "s" : ""} (${intervalLabel}${dayTypeLabel}).`;
+                const spacingLabel = perDay > 1 ? `, ${minutesBetweenPosts} min apart` : "";
+                return `${active} active post${active !== 1 ? "s" : ""} will be distributed across ${postingDays} posting day${postingDays !== 1 ? "s" : ""} (${perDay}/day${spacingLabel}, ${intervalLabel}${dayTypeLabel}).`;
               })()}
             </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowScheduleDialog(false)} data-testid="button-cancel-schedule">Cancel</Button>
             <Button
-              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts) })}
+              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts), spacingMinutes: parseInt(minutesBetweenPosts) || 180 })}
               disabled={schedulePostsMutation.isPending}
               data-testid="button-confirm-schedule"
             >
