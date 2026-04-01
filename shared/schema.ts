@@ -310,6 +310,8 @@ export const organizations = pgTable("organizations", {
   revenue: text("revenue"),
   fundingRaised: text("funding_raised"),
   industry: text("industry"),
+  description: text("description"),
+  category: text("category"),
   crawlData: jsonb("crawl_data"),
   previousWebsiteContent: text("previous_website_content"),
   linkedInContent: text("linkedin_content"),

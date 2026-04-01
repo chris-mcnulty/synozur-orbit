@@ -15,6 +15,13 @@
       "when": 1774443451107,
       "tag": "0001_eminent_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775045969155,
+      "tag": "0002_legal_satana",
+      "breakpoints": true
     }
   ]
 }

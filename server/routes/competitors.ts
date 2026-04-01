@@ -261,6 +261,40 @@ export function registerCompetitorRoutes(app: Express) {
     }
   });
 
+  app.get("/api/organizations/search", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const q = (req.query.q as string || "").trim();
+      if (!q || q.length < 2) {
+        return res.json([]);
+      }
+
+      const orgs = await storage.searchOrganizations(q, 10);
+      const results = orgs.map(org => ({
+        id: org.id,
+        name: org.name,
+        canonicalDomain: org.canonicalDomain,
+        faviconUrl: org.faviconUrl,
+        industry: org.industry,
+        description: org.description,
+        category: org.category,
+        url: org.url,
+        linkedInUrl: org.linkedInUrl,
+        instagramUrl: org.instagramUrl,
+        twitterUrl: org.twitterUrl,
+        blogUrl: org.blogUrl,
+      }));
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("[Organizations Search] Error:", error.message);
+      res.status(500).json({ error: "Failed to search organizations" });
+    }
+  });
+
   app.post("/api/competitors", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
@@ -592,10 +626,20 @@ export function registerCompetitorRoutes(app: Express) {
           // Store analysis data on the competitor record
           // But protect manual research data from being overwritten
           if (hasManualResearch) {
-            // Preserve manual research, only update crawl metadata
             console.log(`Skipping analysis update for ${competitor.name} - has manual research data`);
           } else {
             await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          }
+          
+          if (competitor.organizationId) {
+            const orgEnrichment: any = {};
+            if (analysis.description) orgEnrichment.description = analysis.description;
+            if (analysis.category) orgEnrichment.category = analysis.category;
+            if (analysis.industry) orgEnrichment.industry = analysis.industry;
+            if (Object.keys(orgEnrichment).length > 0) {
+              await storage.updateOrganization(competitor.organizationId, orgEnrichment)
+                .catch(err => console.error(`[Crawl] Org enrichment failed for ${competitor.name}:`, err.message));
+            }
           }
           
           // Extract company profile data from about/homepage content (if not already set)

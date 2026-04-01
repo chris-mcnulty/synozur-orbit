@@ -424,6 +424,17 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 await storage.updateCompetitorAnalysis(competitor.id, analysis);
                 analysisResult = { summary: analysis.summary };
 
+                if (competitor.organizationId) {
+                  const orgEnrichment: any = {};
+                  if (analysis.description) orgEnrichment.description = analysis.description;
+                  if (analysis.category) orgEnrichment.category = analysis.category;
+                  if (analysis.industry) orgEnrichment.industry = analysis.industry;
+                  if (Object.keys(orgEnrichment).length > 0) {
+                    await storage.updateOrganization(competitor.organizationId, orgEnrichment)
+                      .catch(err => console.error(`[Scheduled Job] Org enrichment failed for ${competitor.name}:`, err.message));
+                  }
+                }
+
                 await storage.createActivity({
                   type: "scheduled_crawl",
                   competitorId: competitor.id,

@@ -485,6 +485,7 @@ export interface IStorage {
   getActiveOrganizations(): Promise<Organization[]>;
   getArchivedOrganizations(): Promise<Organization[]>;
   getAllOrganizations(): Promise<Organization[]>;
+  searchOrganizations(query: string, limit?: number): Promise<Organization[]>;
   permanentlyDeleteOrganization(id: string): Promise<void>;
   backfillOrganizations(): Promise<{ created: number; linked: number }>;
   recoverStuckBriefings(): Promise<number>;
@@ -3121,6 +3122,18 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(organizations)
       .where(sql`${organizations.status} != 'deleted'`)
       .orderBy(organizations.name);
+  }
+
+  async searchOrganizations(query: string, limit: number = 10): Promise<Organization[]> {
+    const prefixTerm = `${query.toLowerCase()}%`;
+    const containsTerm = `%${query.toLowerCase()}%`;
+    return await db.select().from(organizations)
+      .where(and(
+        eq(organizations.status, "active"),
+        sql`(LOWER(${organizations.name}) LIKE ${prefixTerm} OR LOWER(${organizations.canonicalDomain}) LIKE ${prefixTerm} OR LOWER(COALESCE(${organizations.industry}, '')) LIKE ${containsTerm} OR LOWER(COALESCE(${organizations.category}, '')) LIKE ${containsTerm} OR LOWER(COALESCE(${organizations.description}, '')) LIKE ${containsTerm})`
+      ))
+      .orderBy(desc(organizations.activeReferenceCount), organizations.name)
+      .limit(limit);
   }
 
   async permanentlyDeleteOrganization(id: string): Promise<void> {

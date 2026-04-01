@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Search, RotateCcw, Trash2, AlertCircle, ArrowLeft } from "lucide-react";
+import { Building2, Search, RotateCcw, Trash2, AlertCircle, ArrowLeft, ArrowUpDown } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useLocation } from "wouter";
@@ -51,6 +58,9 @@ export default function AdminOrganizationsPage() {
   const [activeTab, setActiveTab] = useState("active");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
+  const [sortField, setSortField] = useState<string>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   const { data: organizations = [], isLoading } = useQuery<Organization[]>({
     queryKey: ["/api/admin/organizations"],
@@ -118,17 +128,49 @@ export default function AdminOrganizationsPage() {
   const activeOrgs = organizations.filter(o => o.status === "active");
   const archivedOrgs = organizations.filter(o => o.status === "archived");
 
-  const filterOrgs = (orgs: Organization[]) => {
-    if (!searchQuery.trim()) return orgs;
-    const q = searchQuery.toLowerCase();
-    return orgs.filter(o =>
-      o.name.toLowerCase().includes(q) ||
-      o.canonicalDomain.toLowerCase().includes(q)
-    );
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set<string>();
+    organizations.forEach(o => { if (o.category) cats.add(o.category); });
+    return Array.from(cats).sort();
+  }, [organizations]);
+
+  const filterAndSortOrgs = (orgs: Organization[]) => {
+    let filtered = orgs;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(o =>
+        o.name.toLowerCase().includes(q) ||
+        o.canonicalDomain.toLowerCase().includes(q) ||
+        (o.industry && o.industry.toLowerCase().includes(q)) ||
+        (o.description && o.description.toLowerCase().includes(q))
+      );
+    }
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter(o => o.category === categoryFilter);
+    }
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortField === "domain") cmp = a.canonicalDomain.localeCompare(b.canonicalDomain);
+      else if (sortField === "refCount") cmp = (a.activeReferenceCount || 0) - (b.activeReferenceCount || 0);
+      else if (sortField === "industry") cmp = (a.industry || "").localeCompare(b.industry || "");
+      else if (sortField === "category") cmp = (a.category || "").localeCompare(b.category || "");
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return filtered;
   };
 
-  const filteredActive = filterOrgs(activeOrgs);
-  const filteredArchived = filterOrgs(archivedOrgs);
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  const filteredActive = filterAndSortOrgs(activeOrgs);
+  const filteredArchived = filterAndSortOrgs(archivedOrgs);
 
   return (
     <AppLayout>
@@ -155,15 +197,30 @@ export default function AdminOrganizationsPage() {
           </p>
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name or domain..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-            data-testid="input-search-organizations"
-          />
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, domain, or industry..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+              data-testid="input-search-organizations"
+            />
+          </div>
+          {uniqueCategories.length > 0 && (
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-category-filter">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {uniqueCategories.map(cat => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -193,12 +250,33 @@ export default function AdminOrganizationsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead></TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Domain</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Ref Count</TableHead>
+                        <TableHead>
+                          <Button variant="ghost" size="sm" className="h-auto p-0 font-medium" onClick={() => toggleSort("name")} data-testid="sort-name">
+                            Name <ArrowUpDown className="ml-1 h-3 w-3 inline" />
+                          </Button>
+                        </TableHead>
+                        <TableHead>
+                          <Button variant="ghost" size="sm" className="h-auto p-0 font-medium" onClick={() => toggleSort("domain")} data-testid="sort-domain">
+                            Domain <ArrowUpDown className="ml-1 h-3 w-3 inline" />
+                          </Button>
+                        </TableHead>
+                        <TableHead>
+                          <Button variant="ghost" size="sm" className="h-auto p-0 font-medium" onClick={() => toggleSort("industry")} data-testid="sort-industry">
+                            Industry <ArrowUpDown className="ml-1 h-3 w-3 inline" />
+                          </Button>
+                        </TableHead>
+                        <TableHead>
+                          <Button variant="ghost" size="sm" className="h-auto p-0 font-medium" onClick={() => toggleSort("category")} data-testid="sort-category">
+                            Category <ArrowUpDown className="ml-1 h-3 w-3 inline" />
+                          </Button>
+                        </TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>
+                          <Button variant="ghost" size="sm" className="h-auto p-0 font-medium" onClick={() => toggleSort("refCount")} data-testid="sort-refcount">
+                            Refs <ArrowUpDown className="ml-1 h-3 w-3 inline" />
+                          </Button>
+                        </TableHead>
                         <TableHead>Last Crawl</TableHead>
-                        <TableHead>Last Monitor</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -222,19 +300,32 @@ export default function AdminOrganizationsPage() {
                           <TableCell data-testid={`text-domain-${org.id}`}>
                             {org.canonicalDomain}
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="default" data-testid={`badge-status-${org.id}`}>
-                              {org.status}
-                            </Badge>
+                          <TableCell data-testid={`text-industry-${org.id}`}>
+                            {org.industry ? (
+                              <Badge variant="outline" className="text-xs">{org.industry}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell data-testid={`text-category-${org.id}`}>
+                            {org.category ? (
+                              <Badge variant="secondary" className="text-xs">{org.category}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell data-testid={`text-description-${org.id}`}>
+                            <span className="text-xs text-muted-foreground line-clamp-2 max-w-[200px]">
+                              {org.description || "—"}
+                            </span>
                           </TableCell>
                           <TableCell data-testid={`text-refcount-${org.id}`}>
-                            {org.activeReferenceCount}
+                            <Badge variant={org.activeReferenceCount > 0 ? "default" : "secondary"} className="text-xs">
+                              {org.activeReferenceCount}
+                            </Badge>
                           </TableCell>
                           <TableCell data-testid={`text-lastcrawl-${org.id}`}>
                             {formatRelativeTime(org.lastFullCrawl)}
-                          </TableCell>
-                          <TableCell data-testid={`text-lastmonitor-${org.id}`}>
-                            {formatRelativeTime(org.lastWebsiteMonitor)}
                           </TableCell>
                         </TableRow>
                       ))}

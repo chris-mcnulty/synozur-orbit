@@ -39,6 +39,15 @@ export default function Competitors() {
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
   const [urlError, setUrlError] = useState("");
+  const [orgSearchQuery, setOrgSearchQuery] = useState("");
+  const [orgSearchResults, setOrgSearchResults] = useState<Array<{
+    id: string; name: string; canonicalDomain: string; faviconUrl: string | null;
+    industry: string | null; description: string | null; category: string | null;
+    url: string; linkedInUrl: string | null; instagramUrl: string | null;
+    twitterUrl: string | null; blogUrl: string | null;
+  }>>([]);
+  const [showOrgDropdown, setShowOrgDropdown] = useState(false);
+  const [orgSearchLoading, setOrgSearchLoading] = useState(false);
   
   // Social/Blog links editing state
   const [linksEditOpen, setLinksEditOpen] = useState(false);
@@ -163,7 +172,7 @@ export default function Competitors() {
   const isAtCompetitorLimit = competitorLimit !== -1 && competitorCount >= competitorLimit;
 
   const addCompetitor = useMutation({
-    mutationFn: async (data: { name: string; url: string; projectId?: string }) => {
+    mutationFn: async (data: { name: string; url: string; projectId?: string; linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; blogUrl?: string }) => {
       const response = await fetch("/api/competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,6 +192,10 @@ export default function Competitors() {
       setUrl("");
       setUrlError("");
       setSelectedProjectId("");
+      setOrgSearchQuery("");
+      setOrgSearchResults([]);
+      setShowOrgDropdown(false);
+      setSelectedOrgSocialLinks({});
       toast({
         title: "Competitor Added",
         description: "We've started tracking this competitor.",
@@ -433,6 +446,52 @@ export default function Competitors() {
     setLinksEditOpen(true);
   };
 
+  const orgSearchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const handleOrgSearch = (query: string) => {
+    setOrgSearchQuery(query);
+    setName(query);
+    if (orgSearchTimeoutRef.current) clearTimeout(orgSearchTimeoutRef.current);
+    if (query.trim().length < 2) {
+      setOrgSearchResults([]);
+      setShowOrgDropdown(false);
+      return;
+    }
+    setOrgSearchLoading(true);
+    orgSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/organizations/search?q=${encodeURIComponent(query.trim())}`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const results = await response.json();
+          setOrgSearchResults(results);
+          setShowOrgDropdown(results.length > 0);
+        }
+      } catch (e) {
+        console.error("Organization search failed:", e);
+      } finally {
+        setOrgSearchLoading(false);
+      }
+    }, 300);
+  };
+
+  const [selectedOrgSocialLinks, setSelectedOrgSocialLinks] = useState<{
+    linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; blogUrl?: string;
+  }>({});
+
+  const handleSelectOrg = (org: typeof orgSearchResults[0]) => {
+    setName(org.name);
+    setUrl(org.url);
+    setShowOrgDropdown(false);
+    setOrgSearchQuery(org.name);
+    setSelectedOrgSocialLinks({
+      linkedInUrl: org.linkedInUrl || undefined,
+      twitterUrl: org.twitterUrl || undefined,
+      instagramUrl: org.instagramUrl || undefined,
+      blogUrl: org.blogUrl || undefined,
+    });
+  };
+
   const handleAddCompetitor = (e: React.FormEvent) => {
     e.preventDefault();
     setUrlError("");
@@ -447,7 +506,8 @@ export default function Competitors() {
     addCompetitor.mutate({ 
       name, 
       url: validation.normalized,
-      projectId: selectedProjectId === "__none__" ? undefined : (selectedProjectId || undefined)
+      projectId: selectedProjectId === "__none__" ? undefined : (selectedProjectId || undefined),
+      ...selectedOrgSocialLinks,
     });
   };
 
@@ -636,14 +696,48 @@ export default function Competitors() {
                   <Label htmlFor="name" className="text-right">
                     Name
                   </Label>
-                  <Input
-                    id="name"
-                    placeholder="Acme Inc."
-                    className="col-span-3"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
+                  <div className="col-span-3 relative">
+                    <Input
+                      id="name"
+                      placeholder="Search or type company name..."
+                      value={orgSearchQuery || name}
+                      onChange={(e) => handleOrgSearch(e.target.value)}
+                      onFocus={() => { if (orgSearchResults.length > 0) setShowOrgDropdown(true); }}
+                      onBlur={() => setTimeout(() => setShowOrgDropdown(false), 200)}
+                      required
+                      autoComplete="off"
+                      data-testid="input-competitor-name"
+                    />
+                    {orgSearchLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                    {showOrgDropdown && orgSearchResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-60 overflow-auto" data-testid="org-search-dropdown">
+                        {orgSearchResults.map((org) => (
+                          <button
+                            key={org.id}
+                            type="button"
+                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-accent text-left text-sm cursor-pointer"
+                            onMouseDown={(e) => { e.preventDefault(); handleSelectOrg(org); }}
+                            data-testid={`org-result-${org.id}`}
+                          >
+                            {org.faviconUrl ? (
+                              <img src={org.faviconUrl} alt="" className="h-5 w-5 rounded flex-shrink-0" />
+                            ) : (
+                              <Building2 className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{org.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {org.canonicalDomain}
+                                {org.industry && ` · ${org.industry}`}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="url" className="text-right">

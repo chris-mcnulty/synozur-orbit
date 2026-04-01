@@ -14,6 +14,8 @@ export interface CompetitorAnalysis {
   fundingInfo?: string;
   companyDescription?: string;
   industry?: string;
+  category?: string;
+  description?: string;
   employeeCount?: number;
   followerCount?: number;
   socialPresence?: string;
@@ -172,7 +174,9 @@ Please provide a JSON response with the following structure:
   "headquarters": "City, State/Country if mentioned on About page or footer (null if not found)",
   "foundedYear": 2010,
   "revenueRange": "Revenue range if mentioned, e.g. '$10M-$50M' or 'Enterprise' (null if not found)",
-  "fundingInfo": "Funding info if mentioned, e.g. 'Series B, $25M raised' (null if not found)"${linkedInData ? `,
+  "fundingInfo": "Funding info if mentioned, e.g. 'Series B, $25M raised' (null if not found)",
+  "description": "One-line company description (what the company does), max 150 chars",
+  "category": "Industry category, e.g. 'SaaS', 'E-commerce', 'Healthcare Tech', 'FinTech', 'MarTech', 'DevTools', etc."${linkedInData ? `,
   "companyDescription": "Their LinkedIn company description or tagline",
   "industry": "Their stated industry",
   "employeeCount": ${linkedInData.employeeCount ?? "null"},
