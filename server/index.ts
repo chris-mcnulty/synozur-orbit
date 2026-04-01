@@ -274,6 +274,9 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS personas_tenant_domain_idx ON personas(tenant_domain)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS personas_market_id_idx ON personas(market_id)`);
+    // Organizations directory columns
+    await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT`);
+    await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS category TEXT`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
