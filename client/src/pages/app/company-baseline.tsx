@@ -1657,8 +1657,8 @@ export default function CompanyBaseline() {
                     <li>Crawls your baseline company website and social profiles</li>
                     <li>Uses AI to discover top competitors in your market</li>
                     <li>Adds each competitor and crawls their websites and socials</li>
-                    <li>Runs competitive scoring and gap analysis</li>
-                    <li>Generates executive summary and battlecards</li>
+                    <li>Runs AI analysis, competitive scoring, and gap analysis</li>
+                    <li>Generates your executive summary</li>
                     {autoBuildGenBriefing && <li>Creates your first 30-day intelligence briefing</li>}
                   </ol>
                   <p className="mt-2 text-xs">This process typically takes 5-15 minutes depending on the number of competitors.</p>
@@ -1692,11 +1692,11 @@ export default function CompanyBaseline() {
                    autoBuildProgress?.currentStep || "Starting..."}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {autoBuildProgress?.stepsCompleted || 0} / {autoBuildProgress?.totalSteps || 10}
+                  {autoBuildProgress?.stepsCompleted || 0} / {autoBuildProgress?.totalSteps || 11}
                 </span>
               </div>
               <Progress
-                value={((autoBuildProgress?.stepsCompleted || 0) / (autoBuildProgress?.totalSteps || 10)) * 100}
+                value={((autoBuildProgress?.stepsCompleted || 0) / (autoBuildProgress?.totalSteps || 11)) * 100}
                 className="h-2"
                 data-testid="progress-auto-build"
               />

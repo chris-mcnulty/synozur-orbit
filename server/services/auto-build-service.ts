@@ -5,6 +5,7 @@ import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { calculateScores } from "./scoring-service";
 import { generateBriefing } from "./intelligence-briefing-service";
+import { generateExecutiveSummary } from "./executive-summary-service";
 import { validateCompetitorUrl } from "../utils/url-validator";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -57,7 +58,7 @@ export async function startAutoBuild(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 10,
+    totalSteps: 11,
     startedAt: new Date(),
     discoveredCompetitors: [],
     details: [],
@@ -133,7 +134,7 @@ async function runAutoBuildWithProfile(
     console.log(`[Auto Build ${jobId}] ${step}`);
   };
 
-  updateStep("Step 1/10: Crawling baseline company website...");
+  updateStep("Step 1/11: Crawling baseline company website...");
   try {
     if (profile.websiteUrl) {
       const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl, { maxPages: 15, timeout: 60000 });
@@ -156,7 +157,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 1;
 
-  updateStep("Step 2/10: Refreshing baseline social media...");
+  updateStep("Step 2/11: Refreshing baseline social media...");
   try {
     await monitorCompanyProfileSocialMedia(profile.id, userId, tenantDomain, marketId);
     progress.details.push("Baseline social media refreshed");
@@ -165,7 +166,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 2;
 
-  updateStep("Step 3/10: Discovering competitors with AI...");
+  updateStep("Step 3/11: Discovering competitors with AI...");
   let suggestions: Array<{ name: string; url: string; description: string; rationale: string }> = [];
   try {
     const refreshedProfile = await storage.getCompanyProfile(profile.id);
@@ -214,7 +215,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 3;
 
-  updateStep("Step 4/10: Adding competitors...");
+  updateStep("Step 4/11: Adding competitors...");
   const createdCompetitors: any[] = [];
   for (const suggestion of suggestions) {
     try {
@@ -251,7 +252,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 4;
 
-  updateStep("Step 5/10: Crawling competitor websites...");
+  updateStep("Step 5/11: Crawling competitor websites...");
   for (const competitor of createdCompetitors) {
     try {
       const crawlResult = await crawlCompetitorWebsite(competitor.url, { maxPages: 10, timeout: 60000 });
@@ -274,7 +275,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 5;
 
-  updateStep("Step 6/10: Refreshing competitor social profiles...");
+  updateStep("Step 6/11: Refreshing competitor social profiles...");
   for (const competitor of createdCompetitors) {
     try {
       await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
@@ -285,7 +286,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 6;
 
-  updateStep("Step 7/10: Running AI analysis on competitors...");
+  updateStep("Step 7/11: Running AI analysis on competitors...");
   for (const competitor of createdCompetitors) {
     try {
       const freshComp = await storage.getCompetitor(competitor.id);
@@ -309,7 +310,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 7;
 
-  updateStep("Step 8/10: Calculating competitive scores...");
+  updateStep("Step 8/11: Calculating competitive scores...");
   try {
     for (const competitor of createdCompetitors) {
       const freshComp = await storage.getCompetitor(competitor.id);
@@ -334,7 +335,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 8;
 
-  updateStep("Step 9/10: Generating gap analysis & recommendations...");
+  updateStep("Step 9/11: Generating gap analysis & recommendations...");
   try {
     const allCompetitors = await storage.getCompetitorsByContext({ tenantDomain, marketId, isDefaultMarket: false });
     const analyzedCompetitors = allCompetitors.filter((c: any) => c.analysisData);
@@ -376,8 +377,17 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 9;
 
+  updateStep("Step 10/11: Generating executive summary...");
+  try {
+    await generateExecutiveSummary(tenantDomain, marketId, profile.id);
+    progress.details.push("Executive summary generated");
+  } catch (err: any) {
+    progress.details.push(`Executive summary warning: ${err.message}`);
+  }
+  progress.stepsCompleted = 10;
+
   if (options.generateBriefing) {
-    updateStep("Step 10/10: Generating 30-day intelligence briefing...");
+    updateStep("Step 11/11: Generating 30-day intelligence briefing...");
     try {
       const briefing = await generateBriefing(tenantDomain, 30, marketId);
       if (briefing) {
@@ -387,9 +397,9 @@ Only return the JSON array, no other text.`;
       progress.details.push(`Briefing warning: ${err.message}`);
     }
   } else {
-    updateStep("Step 10/10: Finalizing...");
+    updateStep("Step 11/11: Finalizing...");
   }
-  progress.stepsCompleted = 10;
+  progress.stepsCompleted = 11;
 
   progress.status = "completed";
   progress.currentStep = "Auto Build Complete";
