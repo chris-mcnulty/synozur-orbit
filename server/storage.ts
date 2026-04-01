@@ -2402,15 +2402,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActivityByContext(ctx: ContextFilter): Promise<Activity[]> {
-    const marketCondition = ctx.isDefaultMarket
-      ? or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
-      : eq(activity.marketId, ctx.marketId);
-    
     return await db.select().from(activity)
       .where(
         and(
           eq(activity.tenantDomain, ctx.tenantDomain),
-          marketCondition
+          eq(activity.marketId, ctx.marketId)
         )
       )
       .orderBy(desc(activity.createdAt));
