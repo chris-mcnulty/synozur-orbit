@@ -1726,6 +1726,104 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
+  app.post("/api/markets/:id/auto-build", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!hasAdminAccess(user.role)) {
+        return res.status(403).json({ error: "Access denied - admin privileges required" });
+      }
+
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      if (!targetTenantId) return res.status(400).json({ error: "No tenant context available" });
+
+      const tenant = await storage.getTenant(targetTenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+      const { checkFeatureAccess } = await import("../services/plan-policy");
+      const featureCheck = checkFeatureAccess(tenant.plan, "autoBuild");
+      if (!featureCheck.allowed) {
+        return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true });
+      }
+
+      const market = await storage.getMarket(req.params.id);
+      if (!market || market.tenantId !== targetTenantId) {
+        return res.status(404).json({ error: "Market not found" });
+      }
+
+      const { z } = await import("zod");
+      const autoBuildSchema = z.object({
+        generateBriefing: z.boolean().default(true),
+        competitorCount: z.number().int().min(2).max(10).default(6),
+      });
+      const parsed = autoBuildSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid parameters", details: parsed.error.flatten() });
+      }
+
+      const { startAutoBuild } = await import("../services/auto-build-service");
+      const jobId = await startAutoBuild(user.id, tenant.domain, market.id, {
+        generateBriefing: parsed.data.generateBriefing,
+        competitorCount: parsed.data.competitorCount,
+      });
+
+      res.json({ jobId, message: "Auto Build started" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/auto-build/status/:jobId", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      const tenantDomain = (req.session.activeTenantId ? (await storage.getTenant(req.session.activeTenantId))?.domain : userTenant?.domain) || userDomain;
+
+      const { getAutoBuildStatus } = await import("../services/auto-build-service");
+      const status = getAutoBuildStatus(req.params.jobId, tenantDomain);
+      if (!status) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      const { tenantDomain: _td, userId: _uid, ...safeStatus } = status;
+      res.json(safeStatus);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/markets/:id/auto-build/active", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const userDomain = user.email.split("@")[1];
+      const userTenant = await storage.getTenantByDomain(userDomain);
+      const tenantDomain = (req.session.activeTenantId ? (await storage.getTenant(req.session.activeTenantId))?.domain : userTenant?.domain) || userDomain;
+
+      const { getActiveJobForMarket } = await import("../services/auto-build-service");
+      const activeJob = getActiveJobForMarket(tenantDomain, req.params.id);
+      if (!activeJob) {
+        return res.json({ active: false });
+      }
+      const { tenantDomain: _td, userId: _uid, ...safeProgress } = activeJob.progress;
+      res.json({ active: true, jobId: activeJob.jobId, progress: safeProgress });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Analyze a URL for market creation (get company name and description)
   app.post("/api/markets/analyze-url", async (req, res) => {
     try {

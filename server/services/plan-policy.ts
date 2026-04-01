@@ -33,6 +33,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "scheduledBriefingUpdates", label: "Scheduled Briefing Updates", description: "Automatic weekly briefing generation with email delivery", category: "intelligence" },
   { key: "competitorAlerts", label: "Competitor Change Alerts", description: "Real-time in-app and email alerts when competitors make significant changes", category: "monitoring" },
   { key: "personaBuilder", label: "Persona & ICP Builder", description: "Define buyer personas and inject audience context into AI content", category: "marketing" },
+  { key: "autoBuild", label: "Auto Build", description: "Automatically discover competitors, crawl data, and generate full analytics for a new market", category: "platform" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -81,6 +82,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     scheduledBriefingUpdates: false,
     competitorAlerts: false,
     personaBuilder: false,
+    autoBuild: false,
   },
   trial: {
     battlecards: true,
@@ -108,6 +110,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     scheduledBriefingUpdates: false,
     competitorAlerts: false,
     personaBuilder: false,
+    autoBuild: false,
   },
   pro: {
     battlecards: true,
@@ -135,6 +138,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     scheduledBriefingUpdates: false,
     competitorAlerts: true,
     personaBuilder: true,
+    autoBuild: false,
   },
   enterprise: {
     battlecards: true,
@@ -162,6 +166,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     scheduledBriefingUpdates: true,
     competitorAlerts: true,
     personaBuilder: true,
+    autoBuild: true,
   },
   unlimited: {
     battlecards: true,
@@ -189,6 +194,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     scheduledBriefingUpdates: true,
     competitorAlerts: true,
     personaBuilder: true,
+    autoBuild: true,
   },
 };
 

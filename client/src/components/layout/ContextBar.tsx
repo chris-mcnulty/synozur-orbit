@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import {
@@ -87,6 +87,17 @@ export default function ContextBar() {
   const [marketToEdit, setMarketToEdit] = useState<Market | null>(null);
   const [editMarketName, setEditMarketName] = useState("");
   const [editMarketDescription, setEditMarketDescription] = useState("");
+  const [autoBuildEnabled, setAutoBuildEnabled] = useState(false);
+
+  const { data: tenantSettingsCtx } = useQuery<{ plan: string }>({
+    queryKey: ["/api/tenant/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/settings", { credentials: "include" });
+      if (!response.ok) return { plan: "free" };
+      return response.json();
+    },
+  });
+  const canAutoBuildCtx = tenantSettingsCtx?.plan === "enterprise" || tenantSettingsCtx?.plan === "unlimited";
 
   const resetMarketDialog = () => {
     setMarketCreationStep("choose");
@@ -94,6 +105,7 @@ export default function ContextBar() {
     setNewMarketName("");
     setNewMarketDescription("");
     setIsAnalyzingUrl(false);
+    setAutoBuildEnabled(false);
   };
 
   const handleCloseMarketDialog = (open: boolean) => {
@@ -198,15 +210,43 @@ export default function ContextBar() {
       }
       return response.json();
     },
-    onSuccess: (newMarket) => {
+    onSuccess: async (newMarket) => {
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/context"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
       handleCloseMarketDialog(false);
-      toast({
-        title: "Market created",
-        description: `"${newMarket.name}" has been created and is now active.`,
-      });
+
+      if (autoBuildEnabled && newMarket.id) {
+        try {
+          const response = await fetch(`/api/markets/${newMarket.id}/auto-build`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ generateBriefing: true, competitorCount: 6 }),
+            credentials: "include",
+          });
+          if (response.ok) {
+            toast({
+              title: "Market created with Auto Build",
+              description: `"${newMarket.name}" is being built automatically. Check the Company Baseline page for progress.`,
+            });
+          } else {
+            toast({
+              title: "Market created",
+              description: `"${newMarket.name}" created. Auto Build could not start — you can trigger it from the Company Baseline page.`,
+            });
+          }
+        } catch {
+          toast({
+            title: "Market created",
+            description: `"${newMarket.name}" created. Auto Build could not start.`,
+          });
+        }
+      } else {
+        toast({
+          title: "Market created",
+          description: `"${newMarket.name}" has been created and is now active.`,
+        });
+      }
       switchMarketMutation.mutate(newMarket.id);
     },
     onError: (error: Error) => {
@@ -852,6 +892,27 @@ export default function ContextBar() {
                     data-testid="input-market-description"
                   />
                 </div>
+                {canAutoBuildCtx && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
+                    <input
+                      type="checkbox"
+                      id="auto-build-market"
+                      checked={autoBuildEnabled}
+                      onChange={(e) => setAutoBuildEnabled(e.target.checked)}
+                      className="mt-1 rounded border-border"
+                      data-testid="checkbox-auto-build-market"
+                    />
+                    <label htmlFor="auto-build-market" className="cursor-pointer space-y-1">
+                      <div className="flex items-center gap-1.5 text-sm font-medium">
+                        <Zap className="w-4 h-4 text-primary" />
+                        Auto Build
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Automatically discover competitors, crawl websites, run AI analysis, and generate your first intelligence briefing.
+                      </p>
+                    </label>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button 

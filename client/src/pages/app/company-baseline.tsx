@@ -1,9 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -29,6 +30,11 @@ export default function CompanyBaseline() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
+  const [autoBuildOpen, setAutoBuildOpen] = useState(false);
+  const [autoBuildJobId, setAutoBuildJobId] = useState<string | null>(null);
+  const [autoBuildProgress, setAutoBuildProgress] = useState<any>(null);
+  const [autoBuildGenBriefing, setAutoBuildGenBriefing] = useState(true);
+  const [autoBuildCompCount, setAutoBuildCompCount] = useState(6);
   const [profileForm, setProfileForm] = useState({
     companyName: "",
     websiteUrl: "",
@@ -66,6 +72,93 @@ export default function CompanyBaseline() {
       return response.json();
     },
   });
+
+  const { data: tenantSettings } = useQuery<{ plan: string }>({
+    queryKey: ["/api/tenant/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/settings", { credentials: "include" });
+      if (!response.ok) return { plan: "free" };
+      return response.json();
+    },
+  });
+
+  const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null }>({
+    queryKey: ["/api/markets"],
+    queryFn: async () => {
+      const response = await fetch("/api/markets", { credentials: "include" });
+      if (!response.ok) return { markets: [], activeMarketId: null };
+      return response.json();
+    },
+  });
+  const activeMarketId = marketsData?.activeMarketId;
+
+  const canAutoBuild = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
+
+  useEffect(() => {
+    if (!activeMarketId || !canAutoBuild || autoBuildJobId) return;
+    const checkActive = async () => {
+      try {
+        const response = await fetch(`/api/markets/${activeMarketId}/auto-build/active`, { credentials: "include" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.active && data.jobId) {
+          setAutoBuildJobId(data.jobId);
+          setAutoBuildProgress(data.progress);
+          setAutoBuildOpen(true);
+        }
+      } catch {}
+    };
+    checkActive();
+  }, [activeMarketId, canAutoBuild]);
+
+  const startAutoBuildMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeMarketId) throw new Error("No active market");
+      const marketId = activeMarketId;
+      const response = await fetch(`/api/markets/${marketId}/auto-build`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          generateBriefing: autoBuildGenBriefing,
+          competitorCount: autoBuildCompCount,
+        }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to start Auto Build");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAutoBuildJobId(data.jobId);
+      toast({ title: "Auto Build Started", description: "Discovering competitors and building your market intelligence..." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (!autoBuildJobId) return;
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/auto-build/status/${autoBuildJobId}`, { credentials: "include" });
+        if (!response.ok) return;
+        const status = await response.json();
+        setAutoBuildProgress(status);
+        if (status.status === "completed" || status.status === "failed") {
+          clearInterval(interval);
+          if (status.status === "completed") {
+            queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+            toast({ title: "Auto Build Complete", description: `${status.discoveredCompetitors?.length || 0} competitors discovered and analyzed` });
+          }
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [autoBuildJobId]);
 
   const saveProfile = useMutation({
     mutationFn: async (data: typeof profileForm) => {
@@ -729,6 +822,23 @@ export default function CompanyBaseline() {
                           Refresh Data
                         </Button>
                       </ActionCostTooltip>
+                      {canAutoBuild && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => setAutoBuildOpen(true)}
+                          disabled={!!autoBuildJobId && autoBuildProgress?.status === "running"}
+                          data-testid="button-auto-build"
+                          className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                        >
+                          {autoBuildJobId && autoBuildProgress?.status === "running" ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <Zap className="w-4 h-4 mr-2" />
+                          )}
+                          Auto Build
+                        </Button>
+                      )}
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm" onClick={openProfileDialog} data-testid="button-edit-profile">
@@ -1494,6 +1604,153 @@ export default function CompanyBaseline() {
           />
         </>
       )}
+
+      <Dialog open={autoBuildOpen} onOpenChange={(open) => {
+        if (!open && autoBuildProgress?.status === "running") return;
+        setAutoBuildOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-auto-build">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-primary" />
+              Auto Build Market Intelligence
+            </DialogTitle>
+            <DialogDescription>
+              Automatically discover competitors, crawl their websites and social profiles, run AI analysis, and generate your first intelligence briefing.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!autoBuildJobId ? (
+            <>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>Number of Competitors to Discover</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={2}
+                      max={10}
+                      value={autoBuildCompCount}
+                      onChange={(e) => setAutoBuildCompCount(Math.min(10, Math.max(2, parseInt(e.target.value) || 6)))}
+                      className="w-24"
+                      data-testid="input-auto-build-count"
+                    />
+                    <span className="text-sm text-muted-foreground">competitors (2-10)</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="auto-build-briefing"
+                    checked={autoBuildGenBriefing}
+                    onChange={(e) => setAutoBuildGenBriefing(e.target.checked)}
+                    className="rounded border-border"
+                    data-testid="checkbox-auto-build-briefing"
+                  />
+                  <Label htmlFor="auto-build-briefing" className="text-sm cursor-pointer">
+                    Generate 30-day Intelligence Briefing when complete
+                  </Label>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
+                  <p className="font-medium text-foreground">What Auto Build does:</p>
+                  <ol className="list-decimal list-inside space-y-0.5">
+                    <li>Crawls your baseline company website and social profiles</li>
+                    <li>Uses AI to discover top competitors in your market</li>
+                    <li>Adds each competitor and crawls their websites and socials</li>
+                    <li>Runs competitive scoring and gap analysis</li>
+                    <li>Generates executive summary and battlecards</li>
+                    {autoBuildGenBriefing && <li>Creates your first 30-day intelligence briefing</li>}
+                  </ol>
+                  <p className="mt-2 text-xs">This process typically takes 5-15 minutes depending on the number of competitors.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAutoBuildOpen(false)} data-testid="button-auto-build-cancel">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => startAutoBuildMutation.mutate()}
+                  disabled={startAutoBuildMutation.isPending}
+                  className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                  data-testid="button-auto-build-start"
+                >
+                  {startAutoBuildMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Zap className="w-4 h-4 mr-2" />
+                  )}
+                  Start Auto Build
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  {autoBuildProgress?.status === "completed" ? "Complete!" :
+                   autoBuildProgress?.status === "failed" ? "Failed" :
+                   autoBuildProgress?.currentStep || "Starting..."}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {autoBuildProgress?.stepsCompleted || 0} / {autoBuildProgress?.totalSteps || 10}
+                </span>
+              </div>
+              <Progress
+                value={((autoBuildProgress?.stepsCompleted || 0) / (autoBuildProgress?.totalSteps || 10)) * 100}
+                className="h-2"
+                data-testid="progress-auto-build"
+              />
+              <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg bg-muted/50 p-3">
+                {(autoBuildProgress?.details || []).map((detail: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    {i < (autoBuildProgress?.stepsCompleted || 0) ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                    ) : i === (autoBuildProgress?.stepsCompleted || 0) && autoBuildProgress?.status === "running" ? (
+                      <Loader2 className="w-4 h-4 text-primary animate-spin mt-0.5 shrink-0" />
+                    ) : autoBuildProgress?.status === "failed" ? (
+                      <XCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border border-muted-foreground/30 mt-0.5 shrink-0" />
+                    )}
+                    <span className={i === (autoBuildProgress?.stepsCompleted || 0) && autoBuildProgress?.status === "running" ? "text-foreground font-medium" : "text-muted-foreground"}>
+                      {detail}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {autoBuildProgress?.discoveredCompetitors?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Discovered Competitors:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {autoBuildProgress.discoveredCompetitors.map((name: string, i: number) => (
+                      <Badge key={i} variant="secondary" className="text-xs">{name}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {autoBuildProgress?.error && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                  {autoBuildProgress.error}
+                </div>
+              )}
+              {(autoBuildProgress?.status === "completed" || autoBuildProgress?.status === "failed") && (
+                <DialogFooter>
+                  <Button
+                    onClick={() => {
+                      setAutoBuildOpen(false);
+                      setAutoBuildJobId(null);
+                      setAutoBuildProgress(null);
+                    }}
+                    data-testid="button-auto-build-close"
+                  >
+                    {autoBuildProgress?.status === "completed" ? "Done" : "Close"}
+                  </Button>
+                </DialogFooter>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
