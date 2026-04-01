@@ -248,6 +248,14 @@ export function invalidatePlanCache() {
   planCacheTime = 0;
 }
 
+const PLAN_ALIASES: Record<string, string> = {
+  professional: "pro",
+};
+
+export function normalizePlanName(plan: string): string {
+  return PLAN_ALIASES[plan] || plan;
+}
+
 function buildUnlimitedFeatures(): PlanFeatures {
   const allTrue: Record<string, boolean> = {};
   for (const feat of FEATURE_REGISTRY) {
@@ -260,6 +268,7 @@ function buildUnlimitedFeatures(): PlanFeatures {
 }
 
 export async function getPlanFeaturesAsync(planName: string): Promise<PlanFeatures> {
+  planName = normalizePlanName(planName);
   if (planName === "unlimited") return buildUnlimitedFeatures();
   const plans = await loadPlansFromDb();
   const dbPlan = plans.get(planName);
@@ -275,6 +284,7 @@ export async function getPlanFeaturesAsync(planName: string): Promise<PlanFeatur
 }
 
 export function getPlanFeatures(planName: string): PlanFeatures {
+  planName = normalizePlanName(planName);
   if (planName === "unlimited") return buildUnlimitedFeatures();
   const fallbackLimits = DEFAULT_PLAN_LIMITS[planName] || DEFAULT_PLAN_LIMITS.free;
   const fallbackFeatures = DEFAULT_PLAN_FEATURES[planName] || DEFAULT_PLAN_FEATURES.free;
@@ -282,12 +292,14 @@ export function getPlanFeatures(planName: string): PlanFeatures {
 }
 
 export function isFeatureEnabled(plan: string, feature: FeatureKey): boolean {
+  plan = normalizePlanName(plan);
   if (plan === "unlimited") return true;
   const features = getPlanFeatures(plan);
   return features[feature] === true;
 }
 
 export async function isFeatureEnabledAsync(plan: string, feature: FeatureKey): Promise<boolean> {
+  plan = normalizePlanName(plan);
   if (plan === "unlimited") return true;
   const features = await getPlanFeaturesAsync(plan);
   return features[feature] === true;

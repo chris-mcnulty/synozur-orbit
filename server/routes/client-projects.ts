@@ -3,8 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, guardFeature } from "./helpers";
 import { contentAssets, products as productsTable } from "@shared/schema";
 
 export function registerClientProjectRoutes(app: Express) {
@@ -12,17 +11,9 @@ export function registerClientProjectRoutes(app: Express) {
   
   // Get all client projects for current tenant
   app.get("/api/projects", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      
-      // Plan-gating: only Pro and Enterprise tenants can use client projects
-      if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ 
-          error: "Client Projects require a Pro or Enterprise plan",
-          upgradeRequired: true
-        });
-      }
 
       const projects = await storage.getClientProjectsByContext(toContextFilter(ctx));
       
@@ -54,6 +45,7 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Get single client project with its competitors
   app.get("/api/projects/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -81,21 +73,9 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Create client project
   app.post("/api/projects", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      
-      // Plan gating: check feature access
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "clientProjects");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({
-            error: featureCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: featureCheck.requiredPlan,
-          });
-        }
-      }
 
       const { name, clientName, clientDomain, description, analysisType, notifyOnUpdates, productUrl, sourceContentAssetId, productType } = req.body;
       
@@ -172,6 +152,7 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Update client project
   app.patch("/api/projects/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -235,6 +216,7 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Delete client project (cascades to unlink competitors)
   app.delete("/api/projects/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -265,6 +247,7 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Assign competitor to project
   app.post("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -301,6 +284,7 @@ export function registerClientProjectRoutes(app: Express) {
 
   // Remove competitor from project
   app.delete("/api/projects/:projectId/competitors/:competitorId", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 

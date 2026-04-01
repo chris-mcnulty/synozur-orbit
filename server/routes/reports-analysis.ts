@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, computeLatestSourceDataTimestamp } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
 import { insertRecommendationSchema, insertReportSchema, insertAnalysisSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 
@@ -10,6 +9,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
   // ==================== RECOMMENDATION ROUTES ====================
 
   app.get("/api/recommendations", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const recommendations = await storage.getRecommendationsByContext(toContextFilter(ctx));
@@ -23,6 +23,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
   });
 
   app.post("/api/recommendations", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -49,6 +50,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
   // ==================== REPORT ROUTES ====================
 
   app.get("/api/reports", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
       const reports = await storage.getReportsByContext(toContextFilter(ctx));
@@ -62,21 +64,10 @@ export function registerReportsAnalysisRoutes(app: Express) {
   });
 
   app.post("/api/reports/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
-
-      // Plan gating: check feature access
       const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "pdfReports");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({
-            error: featureCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: featureCheck.requiredPlan,
-          });
-        }
-      }
 
       const { scope, projectId, name, includeStrategicPlans } = req.body;
 
@@ -154,6 +145,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
   // Full analysis PDF report (includes GTM Plan and Messaging Framework)
   app.get("/api/reports/full-analysis/pdf", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -204,6 +196,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
   // Competitor-specific PDF report
   app.get("/api/competitors/:id/report/pdf", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
       const { id } = req.params;
@@ -259,6 +252,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
   });
 
   app.post("/api/reports", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
       const { scope, projectId, name } = req.body;
@@ -326,6 +320,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
   // Delete a report (Domain Admin or Global Admin only)
   app.delete("/api/reports/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
     try {
       const ctx = await getRequestContext(req);
       const user = await storage.getUser(ctx.userId);
@@ -356,6 +351,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
   // Clear all recommendations (Domain Admin or Global Admin only)
   app.delete("/api/recommendations/clear", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const user = await storage.getUser(ctx.userId);

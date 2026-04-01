@@ -5,8 +5,7 @@ import { eq, and, count } from "drizzle-orm";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, hasAdminAccess, guardFeature } from "./helpers";
 import { TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, competitors, companyProfiles } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
@@ -15,15 +14,9 @@ export function registerPlatformRoutes(app: Express) {
   // ==================== PODCAST & SUBSCRIPTION ROUTES ====================
 
   app.post("/api/intelligence-briefings/:id/podcast", async (req, res) => {
+    if (!await guardFeature(req, res, "podcastBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "podcastBriefings");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const briefing = await storage.getIntelligenceBriefing(req.params.id);
       if (!briefing) {
         return res.status(404).json({ error: "Briefing not found" });
@@ -59,6 +52,7 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.get("/api/intelligence-briefings/:id/podcast-status", async (req, res) => {
+    if (!await guardFeature(req, res, "podcastBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
       const briefing = await storage.getIntelligenceBriefing(req.params.id);
@@ -81,6 +75,7 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.get("/api/intelligence-briefings/:id/podcast-audio", async (req, res) => {
+    if (!await guardFeature(req, res, "podcastBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
       const briefing = await storage.getIntelligenceBriefing(req.params.id);
@@ -114,15 +109,9 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.get("/api/briefing-subscriptions", async (req, res) => {
+    if (!await guardFeature(req, res, "scheduledBriefingUpdates")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const subscription = await storage.getBriefingSubscription(ctx.userId, ctx.tenantDomain, ctx.marketId);
       res.json(subscription || { enabled: false, frequency: "weekly" });
     } catch (error: any) {
@@ -134,15 +123,9 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.put("/api/briefing-subscriptions", async (req, res) => {
+    if (!await guardFeature(req, res, "scheduledBriefingUpdates")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const { enabled, frequency } = req.body;
       if (typeof enabled !== "boolean") {
         return res.status(400).json({ error: "enabled must be a boolean" });
@@ -167,15 +150,9 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.get("/api/scheduled-briefing-config", async (req, res) => {
+    if (!await guardFeature(req, res, "scheduledBriefingUpdates")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const config = await storage.getScheduledBriefingConfig(ctx.tenantDomain, ctx.marketId);
       res.json(config || { enabled: false, frequency: "weekly" });
     } catch (error: any) {
@@ -187,17 +164,11 @@ export function registerPlatformRoutes(app: Express) {
   });
 
   app.put("/api/scheduled-briefing-config", async (req, res) => {
+    if (!await guardFeature(req, res, "scheduledBriefingUpdates")) return;
     try {
       const ctx = await getRequestContext(req);
       if (!hasAdminAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to configure scheduled briefings" });
-      }
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "scheduledBriefingUpdates");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
       }
       const { enabled, frequency } = req.body;
       if (typeof enabled !== "boolean") {

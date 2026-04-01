@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider } from "@/lib/userContext";
+import { UpgradeModalProvider, PageFeatureGate } from "@/components/UpgradePrompt";
 import { ThemeProvider } from "next-themes";
 import { HelmetProvider } from "react-helmet-async";
 import NotFound from "@/pages/not-found";
@@ -99,7 +100,7 @@ function Router() {
       <Route path="/app/analysis" component={Analysis} />
       <Route path="/app/recommendations" component={Recommendations} />
       <Route path="/app/activity" component={Activity} />
-      <Route path="/app/reports" component={Reports} />
+      <Route path="/app/reports">{() => <PageFeatureGate featureKey="pdfReports" label="PDF Reports" description="Generate branded PDF competitive reports. Upgrade to unlock this feature."><Reports /></PageFeatureGate>}</Route>
       <Route path="/app/documents" component={Documents} />
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
@@ -109,7 +110,7 @@ function Router() {
       <Route path="/app/admin/spe-storage" component={SpeStoragePage} />
       <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
-      <Route path="/app/products" component={ProductsPage} />
+      <Route path="/app/products">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductsPage /></PageFeatureGate>}</Route>
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />
       <Route path="/app/products/:id/roadmap" component={ProductRoadmapRedirect} />
       <Route path="/app/products/:productId/executive-summary" component={ExecutiveSummary} />
@@ -121,25 +122,25 @@ function Router() {
       <Route path="/app/roadmap" component={AppRoadmapPage} />
       <Route path="/app/about" component={AppAbout} />
       <Route path="/app/data-sources" component={DataSourcesPage} />
-      <Route path="/app/battlecards" component={BattleCardsPage} />
+      <Route path="/app/battlecards">{() => <PageFeatureGate featureKey="battlecards" label="Sales Battlecards" description="Generate competitive battlecards for sales teams. Upgrade to unlock this feature."><BattleCardsPage /></PageFeatureGate>}</Route>
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing" component={MarketingLandingPage} />
       <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
-      <Route path="/app/marketing/content-library" component={ContentLibraryPage} />
-      <Route path="/app/marketing/brand-library" component={BrandLibraryPage} />
-      <Route path="/app/marketing/campaigns" component={CampaignsPage} />
+      <Route path="/app/marketing/content-library">{() => <PageFeatureGate featureKey="contentLibrary" label="Content Library" description="Manage marketing content assets. Upgrade to unlock this feature."><ContentLibraryPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Brand Library" description="Manage brand-approved visual assets. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
-      <Route path="/app/marketing/personas" component={PersonasPage} />
+      <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
       <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
       <Route path="/app/refresh-center" component={RefreshCenter} />
       <Route path="/app/action-items" component={ActionItems} />
-      <Route path="/app/intelligence" component={IntelligenceBriefingPage} />
+      <Route path="/app/intelligence">{() => <PageFeatureGate featureKey="intelligenceBriefings" label="Intelligence Briefings" description="AI-synthesized periodic market intelligence reports. Upgrade to unlock this feature."><IntelligenceBriefingPage /></PageFeatureGate>}</Route>
       <Route path="/app/getting-started" component={GettingStartedPage} />
       
       {/* Fallback to 404 */}
@@ -154,10 +155,12 @@ function App() {
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <QueryClientProvider client={queryClient}>
           <UserProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
+            <UpgradeModalProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router />
+              </TooltipProvider>
+            </UpgradeModalProvider>
           </UserProvider>
         </QueryClientProvider>
       </ThemeProvider>

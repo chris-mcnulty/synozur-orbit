@@ -1,6 +1,8 @@
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { storage, type ContextFilter } from "../storage";
+import { getRequestContext, ContextError } from "../context";
 import { type RequestContext } from "../context";
+import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { calculateEstimatedCost } from "../services/ai-pricing";
 import { z } from "zod";
 
@@ -212,3 +214,39 @@ export const updateMarketSchema = z.object({
 export const grantConsultantAccessSchema = z.object({
   consultantUserId: z.string().uuid("Invalid user ID format"),
 });
+
+export async function guardFeature(
+  req: Request,
+  res: Response,
+  feature: string
+): Promise<boolean> {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  try {
+    const ctx = await getRequestContext(req);
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    const plan = tenant?.plan ?? "free";
+    const gate = await checkFeatureAccessAsync(plan, feature);
+    if (!gate.allowed) {
+      res.status(403).json({
+        error: gate.reason,
+        upgradeRequired: gate.upgradeRequired,
+        requiredPlan: gate.requiredPlan,
+      });
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    if (err instanceof ContextError) {
+      res.status(err.status).json({ error: err.message });
+    } else if (err && typeof err === "object" && "status" in err) {
+      const status = (err as any).status as number;
+      res.status(status).json({ error: status === 401 ? "Not authenticated" : status === 403 ? "Forbidden" : "Request failed" });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+    return false;
+  }
+}

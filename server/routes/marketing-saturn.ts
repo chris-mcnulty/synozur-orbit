@@ -2248,7 +2248,7 @@ Structure your response using these exact delimiters:
   // ══════════════════════════════════════════════════════════
 
   app.get("/api/personas", async (req, res) => {
-    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (!await guardFeature(req, res, "personaBuilder")) return;
     const ctx = await getRequestContext(req);
     const ctxFilter: ContextFilter = { tenantId: ctx.tenantId, marketId: ctx.marketId, tenantDomain: ctx.tenantDomain, isDefaultMarket: ctx.isDefaultMarket };
     const rows = await storage.getPersonasByContext(ctxFilter);
@@ -2256,9 +2256,10 @@ Structure your response using these exact delimiters:
   });
 
   app.get("/api/personas/:id", async (req, res) => {
-    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (!await guardFeature(req, res, "personaBuilder")) return;
+    const ctx = await getRequestContext(req);
     const persona = await storage.getPersona(req.params.id);
-    if (!persona) return res.status(404).json({ error: "Not found" });
+    if (!persona || persona.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Not found" });
     res.json(persona);
   });
 

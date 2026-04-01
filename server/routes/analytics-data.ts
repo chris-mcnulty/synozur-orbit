@@ -2,8 +2,7 @@ import type { Express } from "express";
 import { createHash } from "crypto";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, logAiUsage } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, hasAdminAccess, logAiUsage, guardFeature } from "./helpers";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "../services/news-monitoring";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Competitor } from "@shared/schema";
@@ -214,14 +213,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
 
   // Marketing Plans API - Enterprise feature
   app.get("/api/marketing-plans", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      // Check if tenant is enterprise
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plans = await storage.getMarketingPlans(toContextFilter(ctx));
       res.json(plans);
@@ -234,13 +228,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.get("/api/marketing-plans/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
       if (!plan) {
@@ -260,13 +250,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.post("/api/marketing-plans", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const { name, fiscalYear, description, configMatrix } = req.body;
       
@@ -295,13 +281,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.patch("/api/marketing-plans/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const { name, description, configMatrix, status } = req.body;
       
@@ -325,13 +307,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.delete("/api/marketing-plans/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const deleted = await storage.deleteMarketingPlan(req.params.id, toContextFilter(ctx));
       if (!deleted) {
@@ -349,13 +327,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
 
   // Marketing Tasks API
   app.get("/api/marketing-plans/:planId/tasks", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
       if (!plan) {
@@ -373,13 +347,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.post("/api/marketing-plans/:planId/tasks", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
       if (!plan) {
@@ -418,13 +388,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.patch("/api/marketing-plans/:planId/tasks/:taskId", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
       if (!plan) {
@@ -454,13 +420,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
   });
 
   app.delete("/api/marketing-plans/:planId/tasks/:taskId", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
       if (!plan) {
@@ -483,13 +445,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
 
   // Generate AI-suggested marketing tasks
   app.post("/api/marketing-plans/:planId/generate-tasks", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
     try {
       const ctx = await getRequestContext(req);
-      
-      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      if (!tenant || (tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-        return res.status(403).json({ error: "Marketing Planner is an Enterprise feature" });
-      }
       
       const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
       if (!plan) {
@@ -782,15 +740,9 @@ Only use these timeframe values: ${periods.join(", ")}`;
   });
 
   app.get("/api/intelligence-briefings/source-freshness", async (req, res) => {
+    if (!await guardFeature(req, res, "intelligenceBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const ctxFilter = toContextFilter(ctx);
 
       const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
@@ -969,15 +921,9 @@ Only use these timeframe values: ${periods.join(", ")}`;
   });
 
   app.get("/api/intelligence-briefings", async (req, res) => {
+    if (!await guardFeature(req, res, "intelligenceBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
       const briefings = await storage.getIntelligenceBriefingsByTenant(ctx.tenantDomain, limit, ctx.marketId);
@@ -991,15 +937,9 @@ Only use these timeframe values: ${periods.join(", ")}`;
   });
 
   app.post("/api/intelligence-briefings/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "intelligenceBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "intelligenceBriefings");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
-        }
-      }
       if (!hasAdminAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to generate briefings" });
       }

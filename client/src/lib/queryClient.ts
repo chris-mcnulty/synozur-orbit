@@ -1,5 +1,18 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export class ApiError extends Error {
+  status: number;
+  upgradeRequired?: boolean;
+  requiredPlan?: string;
+
+  constructor(status: number, message: string, upgradeRequired?: boolean, requiredPlan?: string) {
+    super(`${status}: ${message}`);
+    this.status = status;
+    this.upgradeRequired = upgradeRequired;
+    this.requiredPlan = requiredPlan;
+  }
+}
+
 async function safeJsonParse(res: Response): Promise<any> {
   const text = await res.text();
   try {
@@ -15,6 +28,8 @@ async function safeJsonParse(res: Response): Promise<any> {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
+    let upgradeRequired = false;
+    let requiredPlan: string | undefined;
     try {
       const text = await res.text();
       if (text.includes("<!DOCTYPE") || text.includes("<html") || text.includes("<HTML")) {
@@ -23,12 +38,16 @@ async function throwIfResNotOk(res: Response) {
         try {
           const json = JSON.parse(text);
           errorMessage = json.error || json.message || text;
+          if (json.upgradeRequired) {
+            upgradeRequired = true;
+            requiredPlan = json.requiredPlan;
+          }
         } catch {
           errorMessage = text || res.statusText;
         }
       }
     } catch {}
-    throw new Error(`${res.status}: ${errorMessage}`);
+    throw new ApiError(res.status, errorMessage, upgradeRequired, requiredPlan);
   }
 }
 

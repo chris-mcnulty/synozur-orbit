@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { formatPersonaContextForPrompt } from "../services/strategic-context";
@@ -15,6 +14,7 @@ export function registerIntelligenceRoutes(app: Express) {
   
   // Get all long-form recommendations for a project
   app.get("/api/projects/:projectId/recommendations", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -40,6 +40,7 @@ export function registerIntelligenceRoutes(app: Express) {
 
   // Get a specific recommendation by type for a project
   app.get("/api/projects/:projectId/recommendations/:type", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -81,6 +82,7 @@ export function registerIntelligenceRoutes(app: Express) {
 
   // Generate GTM plan for a project
   app.post("/api/projects/:projectId/recommendations/gtm_plan/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "gtmPlan")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -89,12 +91,10 @@ export function registerIntelligenceRoutes(app: Express) {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Validate project belongs to current context
       if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Extract prompts from request body
       const { targetRoles, distributionChannels, customGuidance, budget, timeline } = req.body;
       const savedPrompts = { targetRoles, distributionChannels, customGuidance, budget, timeline };
 
@@ -223,6 +223,7 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
 
   // Generate messaging framework for a project
   app.post("/api/projects/:projectId/recommendations/messaging_framework/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "messagingFramework")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -231,12 +232,10 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Validate project belongs to current context
       if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Extract prompts from request body
       const { targetAudience, toneOfVoice, keyMessages, customGuidance } = req.body;
       const savedPrompts = { targetAudience, toneOfVoice, keyMessages, customGuidance };
 
@@ -371,6 +370,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Generate product one sheet (marketing copy draft)
   app.post("/api/projects/:projectId/recommendations/product_one_sheet/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -533,6 +533,7 @@ Make this compelling, concise, and suitable for a one-page PDF. Use active voice
 
   // Generate project-level gap analysis
   app.post("/api/projects/:projectId/recommendations/gap_analysis/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -659,6 +660,7 @@ Make this actionable and specific to the competitive landscape.`;
 
   // Generate project-level recommendations
   app.post("/api/projects/:projectId/recommendations/strategic_recommendations/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -787,6 +789,7 @@ Make each recommendation specific, actionable, and tied to competitive insights.
 
   // Generate project-level competitive summary
   app.post("/api/projects/:projectId/recommendations/competitive_summary/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -925,6 +928,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
 
   // Get project executive summary - unified view of all competitive intelligence
   app.get("/api/projects/:projectId/executive-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1095,6 +1099,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
 
   // Export project as Markdown report
   app.get("/api/projects/:projectId/export", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1264,6 +1269,7 @@ Make this a comprehensive reference document for sales and strategy teams.`;
 
   // Generate Full Report - orchestrate all AI generations with one click
   app.post("/api/projects/:projectId/generate-full-report", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1518,6 +1524,7 @@ Generate a messaging framework in markdown format with sections:
 
   // Get side-by-side messaging comparison
   app.get("/api/projects/:projectId/messaging-comparison", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
@@ -1591,6 +1598,7 @@ Generate a messaging framework in markdown format with sections:
 
   // Calculate and update competitor scores
   app.post("/api/projects/:projectId/calculate-scores", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });

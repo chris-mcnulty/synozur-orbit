@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp } from "./helpers";
+import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
 import { checkCompetitorLimitAsync, checkFeatureAccessAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, checkAnalysisLimitAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
@@ -143,14 +143,7 @@ export function registerCompetitorRoutes(app: Express) {
             return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
           }
 
-          // Plan-gating: Only Pro/Enterprise can use projects
-          const tenant = await storage.getTenant(ctx.tenantId);
-          if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-            return res.status(403).json({ 
-              error: "Client Projects require a Pro or Enterprise plan",
-              upgradeRequired: true
-            });
-          }
+          if (!await guardFeature(req, res, "clientProjects")) return;
 
           updateData.projectId = projectId;
         }
@@ -313,17 +306,9 @@ export function registerCompetitorRoutes(app: Express) {
           return res.status(403).json({ error: "Access denied - project belongs to another tenant" });
         }
 
-        // Plan-gating: Only Pro/Enterprise can use projects
-        const tenant = await storage.getTenant(ctx.tenantId);
-        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-          return res.status(403).json({ 
-            error: "Client Projects require a Pro or Enterprise plan",
-            upgradeRequired: true
-          });
-        }
+        if (!await guardFeature(req, res, "clientProjects")) return;
       }
 
-      // Plan gating: check competitor count limit (only for baseline competitors, not project competitors)
       if (!projectId) {
         const tenant = await storage.getTenant(ctx.tenantId);
         if (tenant) {
@@ -414,16 +399,8 @@ export function registerCompetitorRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid analysis type. Must be 'quick', 'full', or 'full_with_change'" });
       }
 
-      // Check plan for full_with_change analysis
       if (analysisType === "full_with_change") {
-        const tenant = await storage.getTenant(ctx.tenantId);
-        
-        if (!tenant || (tenant.plan !== "pro" && tenant.plan !== "professional" && tenant.plan !== "enterprise" && tenant.plan !== "unlimited")) {
-          return res.status(403).json({ 
-            error: "Full Analysis with Change Monitoring requires a Pro or Enterprise plan",
-            upgradeRequired: true
-          });
-        }
+        if (!await guardFeature(req, res, "websiteMonitoring")) return;
       }
 
       // Use the robust web crawler service
@@ -847,16 +824,9 @@ Return ONLY the JSON object, no other text.`;
 
   // Monitor social media for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-social", async (req, res) => {
+    if (!await guardFeature(req, res, "socialMonitoring")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-
-      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Social media monitoring is a premium feature. Please upgrade your plan.",
-          upgradeRequired: true 
-        });
-      }
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
@@ -963,11 +933,9 @@ Return ONLY the JSON object, no other text.`;
         return res.status(404).json({ error: "Tenant not found" });
       }
 
-      if (tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Social media monitoring settings require a premium plan",
-          upgradeRequired: true 
-        });
+      const featureCheck = await checkFeatureAccessAsync(tenant.plan, "socialMonitoring");
+      if (!featureCheck.allowed) {
+        return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
       }
 
       const { monitoringFrequency } = req.body;
@@ -989,16 +957,9 @@ Return ONLY the JSON object, no other text.`;
 
   // Monitor website for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-website", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-
-      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
-          upgradeRequired: true 
-        });
-      }
 
       const competitor = await storage.getCompetitor(req.params.id);
       if (!competitor) {
@@ -1050,16 +1011,9 @@ Return ONLY the JSON object, no other text.`;
 
   // Batch monitor: Company profile + all market competitors
   app.post("/api/company-profile/:id/monitor-all", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-
-      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
-          upgradeRequired: true 
-        });
-      }
 
       const profile = await storage.getCompanyProfile(req.params.id);
       if (!profile) {
@@ -1306,16 +1260,9 @@ Return ONLY the JSON object, no other text.`;
 
   // Batch monitor: All competitor products in a project
   app.post("/api/projects/:id/monitor-all", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
     try {
       const ctx = await getRequestContext(req);
-      const tenant = await storage.getTenant(ctx.tenantId);
-
-      if (!tenant || tenant.plan === "free" || tenant.plan === "trial") {
-        return res.status(403).json({ 
-          error: "Website change monitoring is a premium feature. Please upgrade your plan.",
-          upgradeRequired: true 
-        });
-      }
 
       const project = await storage.getClientProject(req.params.id);
       if (!project) {

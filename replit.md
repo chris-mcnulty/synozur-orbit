@@ -10,7 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Design Principles
 - **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
-- **Service Plans**: Database-driven plans with flexible feature gating.
+- **Service Plans**: Database-driven plans with flexible feature gating. All premium API routes enforced server-side via `guardFeature()` helper in `server/routes/helpers.ts`, using `plan-policy.ts` FEATURE_REGISTRY as single source of truth. Returns 403 with `upgradeRequired: true` when blocked. Frontend auto-intercepts upgrade-required errors via `UpgradeModalProvider` (global query/mutation error interception).
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
 - **Canonical Organization Layer**: Centralizes public company data in the `organizations` table with URL normalization.
 - **Centralized Job Queue**: Priority-based, concurrency-limited for heavy background tasks (PDF generation, crawls, monitors, analysis).

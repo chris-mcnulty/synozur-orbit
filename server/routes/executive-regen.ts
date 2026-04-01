@@ -1,8 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
@@ -15,6 +14,7 @@ export function registerExecutiveRegenRoutes(app: Express) {
 
   // Get baseline GTM plan
   app.get("/api/baseline/recommendations/gtm_plan", async (req, res) => {
+    if (!await guardFeature(req, res, "gtmPlan")) return;
     try {
       const ctx = await getRequestContext(req);
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
@@ -57,6 +57,7 @@ export function registerExecutiveRegenRoutes(app: Express) {
 
   // Get baseline messaging framework
   app.get("/api/baseline/recommendations/messaging_framework", async (req, res) => {
+    if (!await guardFeature(req, res, "messagingFramework")) return;
     try {
       const ctx = await getRequestContext(req);
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
@@ -99,21 +100,9 @@ export function registerExecutiveRegenRoutes(app: Express) {
 
   // Generate baseline GTM plan
   app.post("/api/baseline/recommendations/gtm_plan/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "gtmPlan")) return;
     try {
       const ctx = await getRequestContext(req);
-
-      // Plan gating: check feature access
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "gtmPlan");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({
-            error: featureCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: featureCheck.requiredPlan,
-          });
-        }
-      }
 
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
@@ -264,21 +253,9 @@ Make this practical and actionable for the team.`;
 
   // Generate baseline messaging framework
   app.post("/api/baseline/recommendations/messaging_framework/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "messagingFramework")) return;
     try {
       const ctx = await getRequestContext(req);
-
-      // Plan gating: check feature access
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "messagingFramework");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({
-            error: featureCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: featureCheck.requiredPlan,
-          });
-        }
-      }
 
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
@@ -431,6 +408,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Get baseline executive summary
   app.get("/api/baseline/executive-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const { getExecutiveSummary } = await import("../services/executive-summary-service");
@@ -460,6 +438,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Generate/regenerate executive summary (respects locked sections)
   app.post("/api/baseline/executive-summary/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const { generateExecutiveSummary } = await import("../services/executive-summary-service");
@@ -489,6 +468,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Update a specific section of the executive summary
   app.patch("/api/baseline/executive-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const { section, content, lock } = req.body;
@@ -522,6 +502,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Start full regeneration of all analysis (runs in background, emails when complete)
   app.post("/api/baseline/full-regenerate", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const user = await storage.getUser(ctx.userId);
@@ -581,6 +562,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Download recommendation as markdown
   app.get("/api/recommendations/:id/download/markdown", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
@@ -612,6 +594,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Download recommendation as Word document (DOCX)
   app.get("/api/recommendations/:id/download/docx", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
@@ -676,6 +659,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
 
   // Update saved prompts for a recommendation
   app.patch("/api/recommendations/:id/prompts", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
@@ -706,6 +690,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
   });
 
   app.patch("/api/baseline/recommendations/:id/content", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
       const { content } = req.body;
@@ -757,6 +742,7 @@ Make this practical and ready for use by sales, marketing, and leadership teams.
   });
 
   app.get("/api/baseline/recommendations/:id/versions", async (req, res) => {
+    if (!await guardFeature(req, res, "recommendations")) return;
     try {
       const ctx = await getRequestContext(req);
 

@@ -1,14 +1,14 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp } from "./helpers";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 
 export function registerBattlecardRoutes(app: Express) {
   // ==================== BATTLECARD ROUTES ====================
 
   app.get("/api/competitors/:competitorId/battlecard", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -17,7 +17,6 @@ export function registerBattlecardRoutes(app: Express) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Validate competitor belongs to current context
       if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -33,6 +32,7 @@ export function registerBattlecardRoutes(app: Express) {
   });
 
   app.post("/api/competitors/:competitorId/battlecard/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -41,12 +41,10 @@ export function registerBattlecardRoutes(app: Express) {
         return res.status(404).json({ error: "Competitor not found" });
       }
 
-      // Validate competitor belongs to current context
       if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Get company profile for comparison
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       // Get existing analysis data
@@ -175,6 +173,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
   });
 
   app.patch("/api/battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -183,7 +182,6 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      // Validate battlecard belongs to current context
       if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -211,6 +209,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
   });
 
   app.delete("/api/battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -219,7 +218,6 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      // Validate battlecard belongs to current context
       if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -238,6 +236,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
   // ==================== BATTLECARD ROUTES ====================
 
   app.get("/api/battlecards", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
       const battlecards = await storage.getBattlecardsByContext(toContextFilter(ctx));
@@ -261,6 +260,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
   });
 
   app.get("/api/battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -269,7 +269,6 @@ Return ONLY valid JSON, no markdown or explanation.`;
         return res.status(404).json({ error: "Battle card not found" });
       }
 
-      // Validate battlecard belongs to current context
       if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -288,21 +287,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
   });
 
   app.post("/api/battlecards/generate/:competitorId", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
-
-      // Plan gating: check feature access
-      const tenant = await storage.getTenant(ctx.tenantId);
-      if (tenant) {
-        const featureCheck = await checkFeatureAccessAsync(tenant.plan, "battlecards");
-        if (!featureCheck.allowed) {
-          return res.status(403).json({
-            error: featureCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: featureCheck.requiredPlan,
-          });
-        }
-      }
 
       const competitorId = req.params.competitorId;
 
@@ -447,6 +434,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
   });
 
   app.delete("/api/battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -455,7 +443,6 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(404).json({ error: "Battle card not found" });
       }
 
-      // Validate battlecard belongs to current context
       if (!validateResourceContext(battlecard, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -472,6 +459,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
 
   // Battlecard PDF export
   app.get("/api/battlecards/:id/pdf", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
       const battlecard = await storage.getBattlecard(req.params.id);

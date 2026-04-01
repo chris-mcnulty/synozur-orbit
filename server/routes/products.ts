@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage } from "./helpers";
+import { toContextFilter, validateResourceContext, logAiUsage, guardFeature } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
 import { z } from "zod";
@@ -15,6 +15,7 @@ export function registerProductRoutes(app: Express) {
 
   // Get all products for tenant
   app.get("/api/products", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const products = await storage.getProductsByContext(toContextFilter(ctx));
@@ -29,6 +30,7 @@ export function registerProductRoutes(app: Express) {
 
   // Get single product
   app.get("/api/products/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -53,6 +55,7 @@ export function registerProductRoutes(app: Express) {
 
   // Create product
   app.post("/api/products", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const { name, description, url, companyName, competitorId, isBaseline, companyProfileId, createAsCompetitor } = req.body;
@@ -130,6 +133,7 @@ export function registerProductRoutes(app: Express) {
   });
 
   app.post("/api/products/from-content-asset", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const bodySchema = z.object({
@@ -194,6 +198,7 @@ export function registerProductRoutes(app: Express) {
 
   // Update product
   app.patch("/api/products/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -202,7 +207,6 @@ export function registerProductRoutes(app: Express) {
         return res.status(404).json({ error: "Product not found" });
       }
 
-      // Validate product belongs to current context
       if (!validateResourceContext(product, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -219,6 +223,7 @@ export function registerProductRoutes(app: Express) {
 
   // Delete product
   app.delete("/api/products/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -227,7 +232,6 @@ export function registerProductRoutes(app: Express) {
         return res.status(404).json({ error: "Product not found" });
       }
 
-      // Validate product belongs to current context
       if (!validateResourceContext(product, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
@@ -244,6 +248,7 @@ export function registerProductRoutes(app: Express) {
 
   // Generate competitive position summary for a product
   app.post("/api/products/:id/generate-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.id);
@@ -325,6 +330,7 @@ Be specific and analytical. Do not use generic marketing language. Return ONLY t
 
   // Update product competitive position summary (manual edit)
   app.patch("/api/products/:id/summary", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.id);
@@ -355,6 +361,7 @@ Be specific and analytical. Do not use generic marketing language. Return ONLY t
 
   // Generate competitive position summaries for all products in context
   app.post("/api/products/generate-all-summaries", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const products = await storage.getProductsByContext(toContextFilter(ctx));
@@ -428,6 +435,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
 
   // Scan/Analyze a product (crawl website and generate analysis)
   app.post("/api/products/:id/scan", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -541,6 +549,7 @@ Provide analysis in this JSON format:
   
   // Get features for a product
   app.get("/api/products/:productId/features", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -557,6 +566,7 @@ Provide analysis in this JSON format:
 
   // Create feature for a product
   app.post("/api/products/:productId/features", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -578,6 +588,7 @@ Provide analysis in this JSON format:
 
   // Update feature
   app.patch("/api/products/:productId/features/:featureId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -599,6 +610,7 @@ Provide analysis in this JSON format:
 
   // Delete feature
   app.delete("/api/products/:productId/features/:featureId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -620,6 +632,7 @@ Provide analysis in this JSON format:
 
   // Import features from URL
   app.post("/api/products/:productId/features/import-url", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -702,6 +715,7 @@ Provide analysis in this JSON format:
 
   // Import features from pasted text
   app.post("/api/products/:productId/features/import-text", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -748,6 +762,7 @@ Provide analysis in this JSON format:
   
   // Get roadmap items for a product
   app.get("/api/products/:productId/roadmap", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -764,6 +779,7 @@ Provide analysis in this JSON format:
 
   // Create roadmap item
   app.post("/api/products/:productId/roadmap", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -785,6 +801,7 @@ Provide analysis in this JSON format:
 
   // Update roadmap item
   app.patch("/api/products/:productId/roadmap/:itemId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -806,6 +823,7 @@ Provide analysis in this JSON format:
 
   // Delete roadmap item
   app.delete("/api/products/:productId/roadmap/:itemId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -827,6 +845,7 @@ Provide analysis in this JSON format:
 
   // Import roadmap items from URL
   app.post("/api/products/:productId/roadmap/import-url", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -893,6 +912,7 @@ Provide analysis in this JSON format:
 
   // Import roadmap items from pasted text
   app.post("/api/products/:productId/roadmap/import-text", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -935,6 +955,7 @@ Provide analysis in this JSON format:
   
   // Get recommendations for a product
   app.get("/api/products/:productId/recommendations", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -951,6 +972,7 @@ Provide analysis in this JSON format:
 
   // Update recommendation status (accept/dismiss)
   app.patch("/api/products/:productId/recommendations/:recId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -972,6 +994,7 @@ Provide analysis in this JSON format:
 
   // Add recommendation to roadmap
   app.post("/api/products/:productId/recommendations/:recId/add-to-roadmap", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -1021,6 +1044,7 @@ Provide analysis in this JSON format:
 
   // Generate AI roadmap recommendations for a product
   app.post("/api/products/:productId/recommendations/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -1125,6 +1149,7 @@ Provide analysis in this JSON format:
 
   // Get products for a project
   app.get("/api/projects/:projectId/products", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1150,6 +1175,7 @@ Provide analysis in this JSON format:
 
   // Add product to project
   app.post("/api/projects/:projectId/products", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1186,6 +1212,7 @@ Provide analysis in this JSON format:
 
   // Update product role in project (with single baseline enforcement)
   app.patch("/api/projects/:projectId/products/:productId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1226,6 +1253,7 @@ Provide analysis in this JSON format:
 
   // Remove product from project
   app.delete("/api/projects/:projectId/products/:productId", async (req, res) => {
+    if (!await guardFeature(req, res, "productManagement")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1253,6 +1281,7 @@ Provide analysis in this JSON format:
 
   // Get all product battlecards for a project
   app.get("/api/projects/:projectId/battlecards", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1278,6 +1307,7 @@ Provide analysis in this JSON format:
 
   // Get a specific product battlecard
   app.get("/api/product-battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1302,6 +1332,7 @@ Provide analysis in this JSON format:
 
   // Generate a product battlecard for a competitor product
   app.post("/api/projects/:projectId/battlecards/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1454,6 +1485,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   // Update a product battlecard (e.g., custom notes)
   app.patch("/api/product-battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1484,6 +1516,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
   // Delete a product battlecard
   app.delete("/api/product-battlecards/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "battlecards")) return;
     try {
       const ctx = await getRequestContext(req);
 
