@@ -2196,9 +2196,13 @@ Structure your response using these exact delimiters:
         })
       );
 
+      const emailFilter = ctx.marketId
+        ? and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId))
+        : eq(generatedEmails.tenantDomain, ctx.tenantDomain);
+
       const savedEmails = await db.select({ id: generatedEmails.id, subject: generatedEmails.subject, platform: generatedEmails.platform, label: generatedEmails.label, createdAt: generatedEmails.createdAt })
         .from(generatedEmails)
-        .where(eq(generatedEmails.tenantDomain, ctx.tenantDomain))
+        .where(emailFilter)
         .orderBy(desc(generatedEmails.createdAt))
         .limit(10);
 
