@@ -10,7 +10,7 @@ import { fromError } from "zod-validation-error";
 import Anthropic from "@anthropic-ai/sdk";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { documentExtractionService } from "../services/document-extraction";
-import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
+import { analyzeCompetitorWebsite, aiCompanyResearch, type LinkedInContext } from "../ai-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "../services/web-crawler";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "../services/website-monitoring";
 import { monitorCompetitorSocialMedia } from "../services/social-monitoring";
@@ -1041,6 +1041,56 @@ export function registerAdminRoutes(app: Express) {
       res.json({ success: true, analysisData });
     } catch (error: any) {
       console.error("Manual research save error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/company-profile/ai-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      const { preview } = req.query;
+      const research = await aiCompanyResearch(profile.companyName, profile.websiteUrl);
+
+      const fieldsToPopulate: Record<string, string | null> = {};
+      if (!profile.headquarters && research.headquarters) fieldsToPopulate.headquarters = research.headquarters;
+      if (!profile.founded && research.foundedYear) fieldsToPopulate.founded = research.foundedYear;
+      if (!profile.employeeCount && research.employeeCount) fieldsToPopulate.employeeCount = research.employeeCount;
+      if (!profile.revenue && research.revenueRange) fieldsToPopulate.revenue = research.revenueRange;
+      if (!profile.fundingRaised && research.fundingRaised) fieldsToPopulate.fundingRaised = research.fundingRaised;
+      if (!profile.industry && research.industry) fieldsToPopulate.industry = research.industry;
+      if (!profile.linkedInUrl && research.linkedInUrl) fieldsToPopulate.linkedInUrl = research.linkedInUrl;
+      if (!profile.blogUrl && research.blogUrl) fieldsToPopulate.blogUrl = research.blogUrl;
+      if (!profile.description && research.description) fieldsToPopulate.description = research.description;
+
+      if (preview === "true") {
+        return res.json({ preview: true, research, fieldsToPopulate });
+      }
+
+      if (Object.keys(fieldsToPopulate).length > 0) {
+        await storage.updateCompanyProfile(profile.id, fieldsToPopulate);
+      }
+
+      await storage.createActivity({
+        type: "ai_research",
+        sourceType: "baseline",
+        companyProfileId: profile.id,
+        competitorName: profile.companyName,
+        description: `AI Company Research completed: ${Object.keys(fieldsToPopulate).length} fields enriched`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+
+      res.json({ success: true, fieldsPopulated: Object.keys(fieldsToPopulate), research });
+    } catch (error: any) {
+      console.error("AI research error:", error);
       res.status(500).json({ error: error.message });
     }
   });

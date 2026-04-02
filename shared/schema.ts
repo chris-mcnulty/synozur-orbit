@@ -1195,6 +1195,7 @@ export const AI_FEATURES = {
   FEATURE_EXTRACTION: 'feature_extraction',
   PRODUCT_ONE_SHEET: 'product_one_sheet',
   MARKETING_TASKS: 'marketing_tasks',
+  COMPANY_RESEARCH: 'company_research',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1212,6 +1213,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   feature_extraction: 'Feature Extraction',
   product_one_sheet: 'Product One-Sheet',
   marketing_tasks: 'Marketing Task Generation',
+  company_research: 'AI Company Research',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {

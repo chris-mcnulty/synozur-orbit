@@ -4,8 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
+import { AIResearchDialog } from "@/components/AIResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
@@ -30,6 +31,7 @@ export default function CompanyBaseline() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
+  const [aiResearchOpen, setAiResearchOpen] = useState(false);
   const [autoBuildOpen, setAutoBuildOpen] = useState(false);
   const [autoBuildJobId, setAutoBuildJobId] = useState<string | null>(null);
   const [autoBuildProgress, setAutoBuildProgress] = useState<any>(null);
@@ -811,6 +813,15 @@ export default function CompanyBaseline() {
                       >
                         <ClipboardPaste className="w-4 h-4 mr-2" />
                         Manual Research
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAiResearchOpen(true)}
+                        data-testid="button-ai-research"
+                      >
+                        <Search className="w-4 h-4 mr-2" />
+                        AI Research
                       </Button>
                       <Button
                         variant="outline"
@@ -1605,6 +1616,14 @@ export default function CompanyBaseline() {
             entityName={companyProfile.companyName}
             entityUrl={companyProfile.websiteUrl}
           />
+          <AIResearchDialog
+            open={aiResearchOpen}
+            onOpenChange={setAiResearchOpen}
+            entityType="company"
+            entityId={companyProfile.id}
+            entityName={companyProfile.companyName}
+            entityUrl={companyProfile.websiteUrl}
+          />
           <RefreshStrategyDialog
             open={refreshStrategyOpen}
             onOpenChange={setRefreshStrategyOpen}
@@ -1754,6 +1773,68 @@ export default function CompanyBaseline() {
               {autoBuildProgress?.error && (
                 <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
                   {autoBuildProgress.error}
+                </div>
+              )}
+              {autoBuildProgress?.status === "completed" && autoBuildProgress?.enrichmentGaps?.length > 0 && (
+                <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 space-y-3" data-testid="enrichment-gaps-summary">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5 text-amber-500" />
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Missing Metadata</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Some companies still have missing metadata after auto-build. Use AI Research to fill in the gaps.
+                  </p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {autoBuildProgress.enrichmentGaps.map((gap: any, i: number) => (
+                      <div key={i} className="flex items-start justify-between gap-2 text-sm border rounded-md p-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate">{gap.companyName}</span>
+                            {gap.entityType === "baseline" && (
+                              <Badge variant="outline" className="text-xs shrink-0">Baseline</Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            Missing: {gap.missingFields.join(", ")}
+                          </div>
+                        </div>
+                        {gap.entityType === "baseline" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 gap-1 text-xs"
+                            onClick={() => {
+                              setAutoBuildOpen(false);
+                              setAutoBuildJobId(null);
+                              setAutoBuildProgress(null);
+                              setAiResearchOpen(true);
+                            }}
+                            data-testid={`button-enrich-baseline-${gap.companyId}`}
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            Research
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 gap-1 text-xs"
+                            asChild
+                            data-testid={`button-enrich-competitor-${gap.companyId}`}
+                          >
+                            <Link href={`/app/competitors/${gap.companyId}`} onClick={() => {
+                              setAutoBuildOpen(false);
+                              setAutoBuildJobId(null);
+                              setAutoBuildProgress(null);
+                            }}>
+                              <Sparkles className="h-3 w-3" />
+                              Research
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               {(autoBuildProgress?.status === "completed" || autoBuildProgress?.status === "failed") && (

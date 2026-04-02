@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban, Search } from "lucide-react";
+import { AIResearchDialog } from "@/components/AIResearchDialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,7 @@ export default function CompetitorDetail() {
   const [editRevenue, setEditRevenue] = useState("");
   const [editFundingRaised, setEditFundingRaised] = useState("");
   const [editIndustry, setEditIndustry] = useState("");
+  const [aiResearchOpen, setAiResearchOpen] = useState(false);
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -740,6 +742,14 @@ export default function CompetitorDetail() {
             </div>
             
             <div className="flex items-center gap-3">
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={() => setAiResearchOpen(true)}
+                data-testid="button-ai-research"
+              >
+                <Search className="h-4 w-4" /> AI Research
+              </Button>
               <Button 
                 variant="outline" 
                 className="gap-2"
@@ -1542,6 +1552,15 @@ export default function CompetitorDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <AIResearchDialog
+        open={aiResearchOpen}
+        onOpenChange={setAiResearchOpen}
+        entityType="competitor"
+        entityId={competitor.id}
+        entityName={competitor.name}
+        entityUrl={competitor.url}
+      />
     </AppLayout>
   );
 }

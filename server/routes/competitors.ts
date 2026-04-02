@@ -5,7 +5,7 @@ import { toContextFilter, validateResourceContext, parseManualResearch, computeL
 import { checkCompetitorLimitAsync, checkFeatureAccessAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, checkAnalysisLimitAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
 import Anthropic from "@anthropic-ai/sdk";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "../services/social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "../services/website-monitoring";
@@ -816,6 +816,58 @@ Return ONLY the JSON object, no other text.`;
       res.json({ success: true, analysisData });
     } catch (error: any) {
       console.error("Manual research save error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/competitors/:id/ai-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { preview } = req.query;
+      const research = await aiCompanyResearch(competitor.name, competitor.url);
+
+      const fieldsToPopulate: Record<string, string | null> = {};
+      if (!competitor.headquarters && research.headquarters) fieldsToPopulate.headquarters = research.headquarters;
+      if (!competitor.founded && research.foundedYear) fieldsToPopulate.founded = research.foundedYear;
+      if (!competitor.employeeCount && research.employeeCount) fieldsToPopulate.employeeCount = research.employeeCount;
+      if (!competitor.revenue && research.revenueRange) fieldsToPopulate.revenue = research.revenueRange;
+      if (!competitor.fundingRaised && research.fundingRaised) fieldsToPopulate.fundingRaised = research.fundingRaised;
+      if (!competitor.industry && research.industry) fieldsToPopulate.industry = research.industry;
+      if (!competitor.linkedInUrl && research.linkedInUrl) fieldsToPopulate.linkedInUrl = research.linkedInUrl;
+      if (!competitor.blogUrl && research.blogUrl) fieldsToPopulate.blogUrl = research.blogUrl;
+
+      if (preview === "true") {
+        return res.json({ preview: true, research, fieldsToPopulate });
+      }
+
+      if (Object.keys(fieldsToPopulate).length > 0) {
+        await storage.updateCompetitor(competitor.id, fieldsToPopulate);
+      }
+
+      await storage.createActivity({
+        type: "ai_research",
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        description: `AI Company Research completed: ${Object.keys(fieldsToPopulate).length} fields enriched`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+
+      res.json({ success: true, fieldsPopulated: Object.keys(fieldsToPopulate), research });
+    } catch (error: any) {
+      console.error("AI research error:", error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations } from "../ai-service";
+import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch } from "../ai-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
@@ -8,6 +8,13 @@ import { generateBriefing } from "./intelligence-briefing-service";
 import { generateExecutiveSummary } from "./executive-summary-service";
 import { validateCompetitorUrl } from "../utils/url-validator";
 import Anthropic from "@anthropic-ai/sdk";
+
+export interface EnrichmentGap {
+  companyName: string;
+  companyId: string;
+  entityType: "baseline" | "competitor";
+  missingFields: string[];
+}
 
 export interface AutoBuildProgress {
   status: "pending" | "running" | "completed" | "failed";
@@ -22,6 +29,7 @@ export interface AutoBuildProgress {
   tenantDomain: string;
   marketId: string;
   userId: string;
+  enrichmentGaps?: EnrichmentGap[];
 }
 
 const activeJobs = new Map<string, AutoBuildProgress>();
@@ -58,7 +66,7 @@ export async function startAutoBuild(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 11,
+    totalSteps: 12,
     startedAt: new Date(),
     discoveredCompetitors: [],
     details: [],
@@ -134,7 +142,7 @@ async function runAutoBuildWithProfile(
     console.log(`[Auto Build ${jobId}] ${step}`);
   };
 
-  updateStep("Step 1/11: Crawling baseline company website...");
+  updateStep("Step 1/12: Crawling baseline company website...");
   try {
     if (profile.websiteUrl) {
       const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl, { maxPages: 15, timeout: 60000 });
@@ -170,7 +178,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 1;
 
-  updateStep("Step 2/11: Refreshing baseline social media...");
+  updateStep("Step 2/12: Refreshing baseline social media...");
   try {
     await monitorCompanyProfileSocialMedia(profile.id, userId, tenantDomain, marketId);
     progress.details.push("Baseline social media refreshed");
@@ -179,7 +187,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 2;
 
-  updateStep("Step 3/11: Discovering competitors with AI...");
+  updateStep("Step 3/12: Discovering competitors with AI...");
   let suggestions: Array<{ name: string; url: string; description: string; rationale: string }> = [];
   try {
     const refreshedProfile = await storage.getCompanyProfile(profile.id);
@@ -262,7 +270,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 3;
 
-  updateStep("Step 4/11: Adding competitors...");
+  updateStep("Step 4/12: Adding competitors...");
   const createdCompetitors: any[] = [];
   for (const suggestion of suggestions) {
     try {
@@ -304,7 +312,7 @@ Only return the JSON array, no other text.`;
     progress.details.push("WARNING: No competitors were successfully added. Skipping competitor-dependent steps (crawl, social, analysis, scoring). Reports will be baseline-only.");
   }
 
-  updateStep("Step 5/11: Crawling competitor websites...");
+  updateStep("Step 5/12: Crawling competitor websites...");
   for (const competitor of createdCompetitors) {
     try {
       const crawlResult = await crawlCompetitorWebsite(competitor.url, { maxPages: 10, timeout: 60000 });
@@ -337,7 +345,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 5;
 
-  updateStep("Step 6/11: Refreshing competitor social profiles...");
+  updateStep("Step 6/12: Refreshing competitor social profiles...");
   for (const competitor of createdCompetitors) {
     try {
       const socialResults = await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
@@ -360,7 +368,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 6;
 
-  updateStep("Step 7/11: Running AI analysis on competitors...");
+  updateStep("Step 7/12: Running AI analysis on competitors...");
   for (const competitor of createdCompetitors) {
     try {
       const freshComp = await storage.getCompetitor(competitor.id);
@@ -376,6 +384,30 @@ Only return the JSON array, no other text.`;
         await storage.updateCompetitor(competitor.id, {
           analysisData: analysis as any,
         });
+
+        const firmographicUpdates: any = {};
+        if (!freshComp.headquarters && analysis.headquarters) {
+          firmographicUpdates.headquarters = analysis.headquarters;
+        }
+        if (!freshComp.founded && analysis.foundedYear) {
+          firmographicUpdates.founded = String(analysis.foundedYear);
+        }
+        if (!freshComp.revenue && analysis.revenueRange) {
+          firmographicUpdates.revenue = analysis.revenueRange;
+        }
+        if (!freshComp.fundingRaised && analysis.fundingInfo) {
+          firmographicUpdates.fundingRaised = analysis.fundingInfo;
+        }
+        if (!freshComp.industry && analysis.industry) {
+          firmographicUpdates.industry = analysis.industry;
+        }
+        if (!freshComp.employeeCount && analysis.employeeCount) {
+          firmographicUpdates.employeeCount = String(analysis.employeeCount);
+        }
+        if (Object.keys(firmographicUpdates).length > 0) {
+          await storage.updateCompetitor(competitor.id, firmographicUpdates);
+          progress.details.push(`Saved firmographic data for ${competitor.name}: ${Object.keys(firmographicUpdates).join(", ")}`);
+        }
       }
       progress.details.push(`Analyzed: ${competitor.name}`);
     } catch (err: any) {
@@ -384,7 +416,75 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 7;
 
-  updateStep("Step 8/11: Calculating competitive scores...");
+  updateStep("Step 8/12: AI Company Research (enriching metadata)...");
+  try {
+    const refreshedProfile = await storage.getCompanyProfile(profile.id);
+    if (refreshedProfile) {
+      const baselineMissing = !refreshedProfile.headquarters || !refreshedProfile.founded || 
+        !refreshedProfile.employeeCount || !refreshedProfile.industry || !refreshedProfile.linkedInUrl || !refreshedProfile.blogUrl;
+      if (baselineMissing) {
+        try {
+          const research = await aiCompanyResearch(refreshedProfile.companyName, refreshedProfile.websiteUrl);
+          const baselineUpdates: any = {};
+          if (!refreshedProfile.headquarters && research.headquarters) baselineUpdates.headquarters = research.headquarters;
+          if (!refreshedProfile.founded && research.foundedYear) baselineUpdates.founded = research.foundedYear;
+          if (!refreshedProfile.employeeCount && research.employeeCount) baselineUpdates.employeeCount = research.employeeCount;
+          if (!refreshedProfile.revenue && research.revenueRange) baselineUpdates.revenue = research.revenueRange;
+          if (!refreshedProfile.fundingRaised && research.fundingRaised) baselineUpdates.fundingRaised = research.fundingRaised;
+          if (!refreshedProfile.industry && research.industry) baselineUpdates.industry = research.industry;
+          if (!refreshedProfile.linkedInUrl && research.linkedInUrl) baselineUpdates.linkedInUrl = research.linkedInUrl;
+          if (!refreshedProfile.blogUrl && research.blogUrl) baselineUpdates.blogUrl = research.blogUrl;
+          if (!refreshedProfile.description && research.description) baselineUpdates.description = research.description;
+          if (Object.keys(baselineUpdates).length > 0) {
+            await storage.updateCompanyProfile(refreshedProfile.id, baselineUpdates);
+            progress.details.push(`AI Research enriched baseline: ${Object.keys(baselineUpdates).join(", ")}`);
+          } else {
+            progress.details.push("AI Research: baseline already has complete metadata");
+          }
+        } catch (err: any) {
+          progress.details.push(`AI Research warning for baseline: ${err.message}`);
+        }
+      } else {
+        progress.details.push("AI Research: baseline already has complete metadata");
+      }
+    }
+
+    const allTenantCompetitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
+    const allMarketCompetitors = allTenantCompetitors.filter(c => c.marketId === marketId);
+    for (const comp of allMarketCompetitors) {
+      try {
+        const freshComp = await storage.getCompetitor(comp.id);
+        if (!freshComp) continue;
+        const compMissing = !freshComp.headquarters || !freshComp.founded || 
+          !freshComp.employeeCount || !freshComp.industry || !freshComp.linkedInUrl || !freshComp.blogUrl;
+        if (!compMissing) {
+          progress.details.push(`AI Research: ${freshComp.name} already has complete metadata`);
+          continue;
+        }
+        const research = await aiCompanyResearch(freshComp.name, freshComp.url);
+        const compUpdates: any = {};
+        if (!freshComp.headquarters && research.headquarters) compUpdates.headquarters = research.headquarters;
+        if (!freshComp.founded && research.foundedYear) compUpdates.founded = research.foundedYear;
+        if (!freshComp.employeeCount && research.employeeCount) compUpdates.employeeCount = research.employeeCount;
+        if (!freshComp.revenue && research.revenueRange) compUpdates.revenue = research.revenueRange;
+        if (!freshComp.fundingRaised && research.fundingRaised) compUpdates.fundingRaised = research.fundingRaised;
+        if (!freshComp.industry && research.industry) compUpdates.industry = research.industry;
+        if (!freshComp.linkedInUrl && research.linkedInUrl) compUpdates.linkedInUrl = research.linkedInUrl;
+        if (!freshComp.blogUrl && research.blogUrl) compUpdates.blogUrl = research.blogUrl;
+        if (Object.keys(compUpdates).length > 0) {
+          await storage.updateCompetitor(comp.id, compUpdates);
+          progress.details.push(`AI Research enriched ${freshComp.name}: ${Object.keys(compUpdates).join(", ")}`);
+        }
+      } catch (err: any) {
+        progress.details.push(`AI Research warning for ${comp.name}: ${err.message}`);
+      }
+    }
+  } catch (err: any) {
+    progress.details.push(`AI Company Research step warning: ${err.message}`);
+  }
+  progress.stepsCompleted = 8;
+
+  updateStep("Step 9/12: Calculating competitive scores...");
   try {
     for (const competitor of createdCompetitors) {
       const freshComp = await storage.getCompetitor(competitor.id);
@@ -407,9 +507,9 @@ Only return the JSON array, no other text.`;
   } catch (err: any) {
     progress.details.push(`Scoring warning: ${err.message}`);
   }
-  progress.stepsCompleted = 8;
+  progress.stepsCompleted = 9;
 
-  updateStep("Step 9/11: Generating gap analysis & recommendations...");
+  updateStep("Step 10/12: Generating gap analysis & recommendations...");
   try {
     const allCompetitors = await storage.getCompetitorsByContext({ tenantDomain, marketId, isDefaultMarket: false });
     const analyzedCompetitors = allCompetitors.filter((c: any) => c.analysisData);
@@ -449,23 +549,23 @@ Only return the JSON array, no other text.`;
   } catch (err: any) {
     progress.details.push(`Gap analysis warning: ${err.message}`);
   }
-  progress.stepsCompleted = 9;
+  progress.stepsCompleted = 10;
 
-  updateStep("Step 10/11: Generating executive summary...");
+  updateStep("Step 11/12: Generating executive summary...");
   try {
     await generateExecutiveSummary(tenantDomain, marketId, profile.id);
     progress.details.push("Executive summary generated");
   } catch (err: any) {
     progress.details.push(`Executive summary warning: ${err.message}`);
   }
-  progress.stepsCompleted = 10;
+  progress.stepsCompleted = 11;
 
   if (options.generateBriefing) {
     if (!hasCompetitors) {
-      updateStep("Step 11/11: Skipping intelligence briefing (no competitors tracked)...");
+      updateStep("Step 12/12: Skipping intelligence briefing (no competitors tracked)...");
       progress.details.push("Intelligence briefing skipped: no competitors were discovered or added. Add competitors manually and regenerate the briefing for competitive insights.");
     } else {
-      updateStep("Step 11/11: Generating 30-day intelligence briefing...");
+      updateStep("Step 12/12: Generating 30-day intelligence briefing...");
       try {
         const briefing = await generateBriefing(tenantDomain, 30, marketId);
         if (briefing) {
@@ -476,9 +576,14 @@ Only return the JSON array, no other text.`;
       }
     }
   } else {
-    updateStep("Step 11/11: Finalizing...");
+    updateStep("Step 12/12: Finalizing...");
   }
-  progress.stepsCompleted = 11;
+  progress.stepsCompleted = 12;
+
+  const allCompetitorsForGaps = await storage.getCompetitorsByTenantDomain(tenantDomain);
+  const marketCompetitorsForGaps = allCompetitorsForGaps.filter(c => c.marketId === marketId);
+  const enrichmentGaps = await computeEnrichmentGaps(profile.id, marketCompetitorsForGaps.map(c => c.id), tenantDomain);
+  progress.enrichmentGaps = enrichmentGaps;
 
   progress.status = "completed";
   progress.currentStep = hasCompetitors ? "Auto Build Complete" : "Auto Build Complete (Baseline Only — No Competitors Found)";
@@ -490,4 +595,61 @@ Only return the JSON array, no other text.`;
   }
 
   setTimeout(() => activeJobs.delete(jobId), 30 * 60 * 1000);
+}
+
+async function computeEnrichmentGaps(
+  profileId: string,
+  competitorIds: string[],
+  tenantDomain: string
+): Promise<EnrichmentGap[]> {
+  const gaps: EnrichmentGap[] = [];
+  const keyFields = ["headquarters", "founded", "employeeCount", "industry", "linkedInUrl", "blogUrl", "revenue", "fundingRaised"];
+  const fieldLabels: Record<string, string> = {
+    headquarters: "Headquarters",
+    founded: "Founded Year",
+    employeeCount: "Employee Count",
+    industry: "Industry",
+    linkedInUrl: "LinkedIn URL",
+    blogUrl: "Blog URL",
+    revenue: "Revenue",
+    fundingRaised: "Funding Raised",
+  };
+
+  try {
+    const profile = await storage.getCompanyProfile(profileId);
+    if (profile) {
+      const missing = keyFields.filter(f => !(profile as any)[f]);
+      if (missing.length > 0) {
+        gaps.push({
+          companyName: profile.companyName,
+          companyId: profile.id,
+          entityType: "baseline",
+          missingFields: missing.map(f => fieldLabels[f] || f),
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error("[Enrichment Gaps] Failed to check baseline profile:", err.message);
+  }
+
+  for (const compId of competitorIds) {
+    try {
+      const comp = await storage.getCompetitor(compId);
+      if (comp) {
+        const missing = keyFields.filter(f => !(comp as any)[f]);
+        if (missing.length > 0) {
+          gaps.push({
+            companyName: comp.name,
+            companyId: comp.id,
+            entityType: "competitor",
+            missingFields: missing.map(f => fieldLabels[f] || f),
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Enrichment Gaps] Failed to check competitor ${compId}:`, err.message);
+    }
+  }
+
+  return gaps;
 }
