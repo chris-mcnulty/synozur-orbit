@@ -513,11 +513,11 @@ export default function ContextBar() {
                           )}
                         </div>
                         {canDeleteMarket && !market.isDefault && (
-                          <div className="flex items-center gap-0.5 ml-2">
+                          <div className="flex items-center gap-0.5 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                              className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
                               onClick={(e) => handleEditMarket(market, e)}
                               data-testid={`btn-edit-market-${market.id}`}
                               title="Edit market"
@@ -527,7 +527,7 @@ export default function ContextBar() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={`h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
+                              className={`h-6 w-6 text-muted-foreground ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
                               onClick={(e) => handleArchiveMarket(market, e)}
                               data-testid={`btn-archive-market-${market.id}`}
                               title={market.status === "archived" ? "Restore market" : "Archive market"}
@@ -541,7 +541,7 @@ export default function ContextBar() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                               onClick={(e) => handleDeleteMarket(market, e)}
                               data-testid={`btn-delete-market-${market.id}`}
                               title="Delete market"
