@@ -230,12 +230,15 @@ export default function ContextBar() {
               description: `"${newMarket.name}" is being built automatically. Check the Company Baseline page for progress.`,
             });
           } else {
+            const errBody = await response.json().catch(() => ({}));
+            console.error("[Auto Build] Failed to start:", response.status, errBody);
             toast({
               title: "Market created",
               description: `"${newMarket.name}" created. Auto Build could not start — you can trigger it from the Company Baseline page.`,
             });
           }
-        } catch {
+        } catch (err) {
+          console.error("[Auto Build] Error starting:", err);
           toast({
             title: "Market created",
             description: `"${newMarket.name}" created. Auto Build could not start.`,
@@ -513,40 +516,40 @@ export default function ContextBar() {
                           )}
                         </div>
                         {canDeleteMarket && !market.isDefault && (
-                          <div className="flex items-center gap-0.5 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                              className="h-7 w-7 text-foreground/60 hover:text-primary hover:bg-primary/10"
                               onClick={(e) => handleEditMarket(market, e)}
                               data-testid={`btn-edit-market-${market.id}`}
                               title="Edit market"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={`h-6 w-6 text-muted-foreground ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
+                              className={`h-7 w-7 text-foreground/60 ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
                               onClick={(e) => handleArchiveMarket(market, e)}
                               data-testid={`btn-archive-market-${market.id}`}
                               title={market.status === "archived" ? "Restore market" : "Archive market"}
                             >
                               {market.status === "archived" ? (
-                                <ArchiveRestore className="h-3 w-3" />
+                                <ArchiveRestore className="h-3.5 w-3.5" />
                               ) : (
-                                <Archive className="h-3 w-3" />
+                                <Archive className="h-3.5 w-3.5" />
                               )}
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              className="h-7 w-7 text-foreground/60 hover:text-destructive hover:bg-destructive/10"
                               onClick={(e) => handleDeleteMarket(market, e)}
                               data-testid={`btn-delete-market-${market.id}`}
                               title="Delete market"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         )}
