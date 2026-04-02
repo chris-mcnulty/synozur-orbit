@@ -175,6 +175,7 @@ export async function generateBriefing(
   const signalSummary = buildSignalSummary(activities);
   const newsSummary = buildNewsSummary(newsArticles);
   const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
+  const noCompetitorsTracked = competitors.length === 0;
 
   const periodLabel = periodDays === 7 
     ? "Weekly" 
@@ -192,6 +193,19 @@ ${newsSummary}
 
 ${activities.length === 0 && newsArticles.length === 0 ? `
 Note: No signals or news were detected this period. This could mean competitors are stable, or monitoring coverage needs expansion. Provide a briefing that acknowledges the quiet period and suggests what to watch for based on the competitive landscape.
+` : ""}
+
+${noCompetitorsTracked ? `
+CRITICAL INSTRUCTION — ZERO COMPETITORS TRACKED:
+There are NO tracked competitors for this company. This is a BASELINE-ONLY assessment.
+- Do NOT invent, fabricate, or reference any competitor companies by name.
+- Do NOT hallucinate competitor movements, scores, or activities.
+- The "competitorMovements" array MUST be empty [].
+- The "keyThemes" competitors arrays MUST be empty [].
+- The "relatedCompetitors" arrays in actionItems MUST be empty [].
+- Focus the briefing entirely on the baseline company's own positioning and market observations.
+- Clearly state in the executiveSummary that no competitors are currently tracked and this is a baseline-only report.
+- Recommend adding competitors as a key action item.
 ` : ""}
 
 Produce a comprehensive intelligence briefing as JSON with this exact structure:
@@ -393,6 +407,7 @@ export async function generateBriefingData(
   const signalSummary = buildSignalSummary(activities);
   const newsSummary = buildNewsSummary(newsArticles);
   const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
+  const noCompetitorsTracked = competitors.length === 0;
 
   const periodLabel = periodDays === 7 
     ? "Weekly" 
@@ -410,6 +425,19 @@ ${newsSummary}
 
 ${activities.length === 0 && newsArticles.length === 0 ? `
 Note: No signals or news were detected this period. This could mean competitors are stable, or monitoring coverage needs expansion. Provide a briefing that acknowledges the quiet period and suggests what to watch for based on the competitive landscape.
+` : ""}
+
+${noCompetitorsTracked ? `
+CRITICAL INSTRUCTION — ZERO COMPETITORS TRACKED:
+There are NO tracked competitors for this company. This is a BASELINE-ONLY assessment.
+- Do NOT invent, fabricate, or reference any competitor companies by name.
+- Do NOT hallucinate competitor movements, scores, or activities.
+- The "competitorMovements" array MUST be empty [].
+- The "keyThemes" competitors arrays MUST be empty [].
+- The "relatedCompetitors" arrays in actionItems MUST be empty [].
+- Focus the briefing entirely on the baseline company's own positioning and market observations.
+- Clearly state in the executiveSummary that no competitors are currently tracked and this is a baseline-only report.
+- Recommend adding competitors as a key action item.
 ` : ""}
 
 Produce a comprehensive intelligence briefing as JSON with this exact structure:

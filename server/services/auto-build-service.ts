@@ -171,14 +171,32 @@ async function runAutoBuildWithProfile(
   try {
     const refreshedProfile = await storage.getCompanyProfile(profile.id);
     const analysisData = (refreshedProfile?.analysisData || refreshedProfile?.crawlData) as any || {};
+    const crawlData = (refreshedProfile?.crawlData) as any || {};
 
-    const prompt = `Analyze this company and suggest ${maxCompetitors} competing companies in the market:
+    const crawlPages = Array.isArray(crawlData.pages) ? crawlData.pages : [];
+    const websiteContentSummary = crawlPages.length > 0
+      ? crawlPages.map((p: any) => `Page: ${p.title || p.url}\n${(p.content || p.text || "").substring(0, 500)}`).join("\n---\n").substring(0, 3000)
+      : "";
+
+    const buildDiscoveryPrompt = (broader: boolean) => {
+      const scopeInstruction = broader
+        ? `Find companies that operate in the same general business space, serve similar customers, or offer overlapping products/services. Cast a wide net — include adjacent competitors, indirect competitors, and companies that a customer might evaluate alongside ${profile.companyName}.`
+        : `Focus on direct competitors in the same market segment. Include well-known industry leaders and emerging challengers.`;
+
+      return `Analyze this company and suggest ${maxCompetitors} competing companies in the market:
 
 Company: ${profile.companyName}
 Website: ${profile.websiteUrl}
 Industry: ${analysisData.industry || "Unknown"}
 Description: ${analysisData.companyDescription || analysisData.valueProposition || profile.description || "No description available"}
 Key offerings: ${analysisData.keyOfferings?.join(", ") || "Not specified"}
+Value proposition: ${analysisData.valueProposition || "Not specified"}
+Target audience: ${analysisData.targetAudience || analysisData.targetMarket || "Not specified"}
+
+## Website Content Summary (crawled from ${profile.websiteUrl}):
+${websiteContentSummary || "No website content available"}
+
+Use ALL of the above context — especially the website content — to understand what this company actually does. The company name "${profile.companyName}" may be ambiguous, so rely on the website content and description to determine the correct industry and competitive landscape.
 
 Return a JSON array of suggested competitor companies with this structure:
 [
@@ -190,26 +208,42 @@ Return a JSON array of suggested competitor companies with this structure:
   }
 ]
 
-Focus on direct competitors in the same market segment. Include well-known industry leaders and emerging challengers.
+${scopeInstruction}
 Only return the JSON array, no other text.`;
+    };
 
     const anthropic = new Anthropic({
       apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
       baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
     });
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
-    });
 
-    const responseText = message.content[0].type === "text" ? message.content[0].text : "";
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      suggestions = JSON.parse(jsonMatch[0]).slice(0, maxCompetitors);
+    const tryDiscovery = async (prompt: string): Promise<typeof suggestions> => {
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const responseText = message.content[0].type === "text" ? message.content[0].text : "";
+      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]).slice(0, maxCompetitors);
+      }
+      return [];
+    };
+
+    suggestions = await tryDiscovery(buildDiscoveryPrompt(false));
+
+    if (suggestions.length === 0) {
+      progress.details.push("No competitors found on first attempt, retrying with broader search...");
+      suggestions = await tryDiscovery(buildDiscoveryPrompt(true));
     }
+
     progress.discoveredCompetitors = suggestions.map((s) => s.name);
-    progress.details.push(`Discovered ${suggestions.length} competitors: ${suggestions.map((s) => s.name).join(", ")}`);
+    if (suggestions.length > 0) {
+      progress.details.push(`Discovered ${suggestions.length} competitors: ${suggestions.map((s) => s.name).join(", ")}`);
+    } else {
+      progress.details.push("WARNING: Could not discover any competitors after retry. The auto-build will continue without competitor data.");
+    }
   } catch (err: any) {
     progress.details.push(`Competitor discovery error: ${err.message}`);
   }
@@ -251,6 +285,11 @@ Only return the JSON array, no other text.`;
     }
   }
   progress.stepsCompleted = 4;
+
+  const hasCompetitors = createdCompetitors.length > 0;
+  if (!hasCompetitors) {
+    progress.details.push("WARNING: No competitors were successfully added. Skipping competitor-dependent steps (crawl, social, analysis, scoring). Reports will be baseline-only.");
+  }
 
   updateStep("Step 5/11: Crawling competitor websites...");
   for (const competitor of createdCompetitors) {
@@ -387,14 +426,19 @@ Only return the JSON array, no other text.`;
   progress.stepsCompleted = 10;
 
   if (options.generateBriefing) {
-    updateStep("Step 11/11: Generating 30-day intelligence briefing...");
-    try {
-      const briefing = await generateBriefing(tenantDomain, 30, marketId);
-      if (briefing) {
-        progress.details.push("30-day intelligence briefing generated");
+    if (!hasCompetitors) {
+      updateStep("Step 11/11: Skipping intelligence briefing (no competitors tracked)...");
+      progress.details.push("Intelligence briefing skipped: no competitors were discovered or added. Add competitors manually and regenerate the briefing for competitive insights.");
+    } else {
+      updateStep("Step 11/11: Generating 30-day intelligence briefing...");
+      try {
+        const briefing = await generateBriefing(tenantDomain, 30, marketId);
+        if (briefing) {
+          progress.details.push("30-day intelligence briefing generated");
+        }
+      } catch (err: any) {
+        progress.details.push(`Briefing warning: ${err.message}`);
       }
-    } catch (err: any) {
-      progress.details.push(`Briefing warning: ${err.message}`);
     }
   } else {
     updateStep("Step 11/11: Finalizing...");
@@ -402,9 +446,13 @@ Only return the JSON array, no other text.`;
   progress.stepsCompleted = 11;
 
   progress.status = "completed";
-  progress.currentStep = "Auto Build Complete";
+  progress.currentStep = hasCompetitors ? "Auto Build Complete" : "Auto Build Complete (Baseline Only — No Competitors Found)";
   progress.completedAt = new Date();
-  progress.details.push(`Auto Build completed: ${createdCompetitors.length} competitors added and analyzed`);
+  if (hasCompetitors) {
+    progress.details.push(`Auto Build completed: ${createdCompetitors.length} competitors added and analyzed`);
+  } else {
+    progress.details.push(`Auto Build completed (partial): No competitors were found or added. Baseline company data has been set up. Add competitors manually to get full competitive intelligence.`);
+  }
 
   setTimeout(() => activeJobs.delete(jobId), 30 * 60 * 1000);
 }

@@ -188,6 +188,8 @@ Differentiators: ${Array.isArray((analysis as any).differentiators) ? ((analysis
     return summaryData;
   }
 
+  const noCompetitorsTracked = competitors.length === 0;
+
   const prompt = `You are an executive briefing specialist creating a comprehensive market intelligence summary for a C-level audience. Based on the following data, generate detailed, actionable executive summaries.
 
 ## Baseline Company
@@ -206,7 +208,17 @@ ${recsContext}
 ## Grounding Documents (${groundingDocs.length} uploaded)
 ${docsContext}
 
-Generate the following sections in JSON format. Each section should be substantive (4-6 sentences), data-driven, and focused on actionable strategic insights. Include specific metrics, competitor names, and concrete recommendations where available.
+${noCompetitorsTracked ? `
+CRITICAL INSTRUCTION — ZERO COMPETITORS TRACKED:
+There are NO tracked competitors for this company. This is a BASELINE-ONLY assessment.
+- Do NOT invent, fabricate, or reference any competitor companies by name in any section.
+- Do NOT hallucinate competitor scores, movements, or activities.
+- The competitiveLandscape section must clearly state that no competitors are currently being tracked and recommend adding competitors for full competitive intelligence.
+- Focus all sections on the baseline company's own positioning, strengths, and market observations based on available data.
+- The opportunities section should include adding and tracking competitors as a recommended action.
+` : ""}
+
+Generate the following sections in JSON format. Each section should be substantive (4-6 sentences), data-driven, and focused on actionable strategic insights. ${noCompetitorsTracked ? "Since no competitors are tracked, focus on baseline company analysis and do NOT reference any competitor names." : "Include specific metrics, competitor names, and concrete recommendations where available."}
 
 CRITICAL FORMATTING RULES:
 1. Output ONLY valid JSON - no markdown, no code blocks, no asterisks, no bullet points
