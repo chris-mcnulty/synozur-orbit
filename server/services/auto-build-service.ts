@@ -273,7 +273,7 @@ Only return the JSON array, no other text.`;
         tenantDomain,
         marketId,
         organizationId: org.id,
-        addedBy: userId,
+        userId,
       });
       if (org) {
         await storage.incrementOrgRefCount(org.id);

@@ -1606,7 +1606,6 @@ export default function CompanyBaseline() {
       )}
 
       <Dialog open={autoBuildOpen} onOpenChange={(open) => {
-        if (!open && autoBuildProgress?.status === "running") return;
         setAutoBuildOpen(open);
       }}>
         <DialogContent className="sm:max-w-lg" data-testid="dialog-auto-build">
