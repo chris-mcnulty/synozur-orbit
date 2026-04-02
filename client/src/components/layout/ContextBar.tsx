@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import {
   DropdownMenu,
@@ -22,7 +23,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { useUser } from "@/lib/userContext";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -87,7 +87,7 @@ export default function ContextBar() {
   const [marketToEdit, setMarketToEdit] = useState<Market | null>(null);
   const [editMarketName, setEditMarketName] = useState("");
   const [editMarketDescription, setEditMarketDescription] = useState("");
-  const [autoBuildEnabled, setAutoBuildEnabled] = useState(false);
+  const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
 
   const { data: tenantSettingsCtx } = useQuery<{ plan: string }>({
     queryKey: ["/api/tenant/settings"],
@@ -105,7 +105,7 @@ export default function ContextBar() {
     setNewMarketName("");
     setNewMarketDescription("");
     setIsAnalyzingUrl(false);
-    setAutoBuildEnabled(false);
+    setAutoBuildEnabled(true);
   };
 
   const handleCloseMarketDialog = (open: boolean) => {
@@ -216,7 +216,7 @@ export default function ContextBar() {
       queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
       handleCloseMarketDialog(false);
 
-      if (autoBuildEnabled && newMarket.id) {
+      if (autoBuildEnabled && canAutoBuildCtx && newMarket.id) {
         try {
           const response = await fetch(`/api/markets/${newMarket.id}/auto-build`, {
             method: "POST",
@@ -755,10 +755,33 @@ export default function ContextBar() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 py-4">
+                {canAutoBuildCtx && (
+                  <Button
+                    variant="outline"
+                    className="h-auto p-4 justify-start text-left flex-col items-start gap-2 border-primary/40 bg-primary/5 hover:bg-primary/10 relative"
+                    onClick={() => {
+                      setAutoBuildEnabled(true);
+                      setMarketCreationStep("url");
+                    }}
+                    data-testid="btn-market-auto-build"
+                  >
+                    <Badge className="absolute top-2 right-2 text-[10px] bg-primary/90">Recommended</Badge>
+                    <div className="flex items-center gap-2 font-medium">
+                      <Zap className="w-4 h-4 text-primary" />
+                      Auto Build from website
+                    </div>
+                    <span className="text-xs text-muted-foreground font-normal">
+                      Enter a URL and we'll automatically discover competitors, run AI analysis, and build your intelligence briefing
+                    </span>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
-                  onClick={() => setMarketCreationStep("url")}
+                  onClick={() => {
+                    setAutoBuildEnabled(false);
+                    setMarketCreationStep("url");
+                  }}
                   data-testid="btn-market-from-url"
                 >
                   <div className="flex items-center gap-2 font-medium">
@@ -766,13 +789,16 @@ export default function ContextBar() {
                     Start from a website URL
                   </div>
                   <span className="text-xs text-muted-foreground font-normal">
-                    We'll analyze the website and auto-fill market details
+                    We'll analyze the website and auto-fill market details — you'll add competitors yourself
                   </span>
                 </Button>
                 <Button
                   variant="outline"
                   className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
-                  onClick={() => setMarketCreationStep("manual")}
+                  onClick={() => {
+                    setAutoBuildEnabled(false);
+                    setMarketCreationStep("manual");
+                  }}
                   data-testid="btn-market-manual"
                 >
                   <div className="flex items-center gap-2 font-medium">
@@ -804,15 +830,17 @@ export default function ContextBar() {
                   >
                     <ArrowLeft className="w-4 h-4" />
                   </Button>
-                  Analyze Website
+                  {autoBuildEnabled ? "Auto Build Market" : "Analyze Website"}
                 </DialogTitle>
                 <DialogDescription>
-                  Enter a website URL and we'll extract company information to create your market.
+                  {autoBuildEnabled 
+                    ? "Enter the company website URL. We'll analyze it, discover competitors, and build your full competitive intelligence automatically."
+                    : "Enter a website URL and we'll extract company information to create your market."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="market-url">Website URL</Label>
+                  <Label htmlFor="market-url">Company Website URL</Label>
                   <Input
                     id="market-url"
                     placeholder="https://example.com"
@@ -822,6 +850,14 @@ export default function ContextBar() {
                     data-testid="input-market-url"
                   />
                 </div>
+                {autoBuildEnabled && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <Zap className="w-4 h-4 text-primary flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      Auto Build will discover up to 6 competitors, crawl their websites, run AI analysis, research company details, and generate an intelligence briefing.
+                    </p>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setMarketCreationStep("choose")} disabled={isAnalyzingUrl}>
@@ -836,6 +872,11 @@ export default function ContextBar() {
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Analyzing...
+                    </>
+                  ) : autoBuildEnabled ? (
+                    <>
+                      <Zap className="w-4 h-4 mr-2" />
+                      Analyze & Auto Build
                     </>
                   ) : (
                     <>
@@ -892,27 +933,6 @@ export default function ContextBar() {
                     data-testid="input-market-description"
                   />
                 </div>
-                {canAutoBuildCtx && (
-                  <div className="flex items-start gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
-                    <input
-                      type="checkbox"
-                      id="auto-build-market"
-                      checked={autoBuildEnabled}
-                      onChange={(e) => setAutoBuildEnabled(e.target.checked)}
-                      className="mt-1 rounded border-border"
-                      data-testid="checkbox-auto-build-market"
-                    />
-                    <label htmlFor="auto-build-market" className="cursor-pointer space-y-1">
-                      <div className="flex items-center gap-1.5 text-sm font-medium">
-                        <Zap className="w-4 h-4 text-primary" />
-                        Auto Build
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Automatically discover competitors, crawl websites, run AI analysis, and generate your first intelligence briefing.
-                      </p>
-                    </label>
-                  </div>
-                )}
               </div>
               <DialogFooter>
                 <Button 

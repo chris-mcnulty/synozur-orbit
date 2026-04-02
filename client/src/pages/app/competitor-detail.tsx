@@ -743,12 +743,11 @@ export default function CompetitorDetail() {
             
             <div className="flex items-center gap-3">
               <Button 
-                variant="outline" 
-                className="gap-2"
+                className="gap-2 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
                 onClick={() => setAiResearchOpen(true)}
                 data-testid="button-ai-research"
               >
-                <Search className="h-4 w-4" /> AI Research
+                <Sparkles className="h-4 w-4" /> AI Research
               </Button>
               <Button 
                 variant="outline" 
