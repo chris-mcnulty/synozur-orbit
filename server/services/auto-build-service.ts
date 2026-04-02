@@ -141,14 +141,27 @@ async function runAutoBuildWithProfile(
       if (crawlResult) {
         const combinedContent = getCombinedContent(crawlResult);
         const socialLinks = crawlResult.socialLinks || {};
-        await storage.updateCompanyProfile(profile.id, {
+        const profileUpdates: any = {
           crawlData: crawlResult as any,
           lastCrawl: new Date().toISOString(),
           linkedInUrl: profile.linkedInUrl || socialLinks.linkedIn || null,
           instagramUrl: profile.instagramUrl || socialLinks.instagram || null,
           twitterUrl: profile.twitterUrl || socialLinks.twitter || null,
           blogUrl: profile.blogUrl || socialLinks.blog || null,
-        });
+        };
+
+        if (!profile.organizationId) {
+          try {
+            const org = await storage.findOrCreateOrganization(profile.websiteUrl, profile.companyName);
+            profileUpdates.organizationId = org.id;
+            await storage.incrementOrgRefCount(org.id);
+            progress.details.push(`Linked baseline to organization directory: ${org.id}`);
+          } catch (orgErr: any) {
+            progress.details.push(`Organization linking warning: ${orgErr.message}`);
+          }
+        }
+
+        await storage.updateCompanyProfile(profile.id, profileUpdates);
         progress.details.push(`Crawled ${crawlResult.pages?.length || 0} pages from ${profile.websiteUrl}`);
       }
     }
@@ -306,7 +319,17 @@ Only return the JSON array, no other text.`;
           blogUrl: socialLinks.blog || null,
           blogSnapshot: crawlResult.blogSnapshot || null,
         });
-        progress.details.push(`Crawled ${competitor.name}: ${crawlResult.pages?.length || 0} pages`);
+
+        const pageCount = crawlResult.pages?.length || 0;
+        const totalWords = crawlResult.totalWordCount || 0;
+
+        if (pageCount === 0 || totalWords < 50) {
+          progress.details.push(`⚠ ${competitor.name}: crawl returned minimal data (${pageCount} page(s), ${totalWords} words) — site may block automated access`);
+        } else {
+          progress.details.push(`Crawled ${competitor.name}: ${pageCount} pages, ${totalWords} words`);
+        }
+      } else {
+        progress.details.push(`⚠ ${competitor.name}: crawl returned no data — site may be unreachable or block automated access`);
       }
     } catch (err: any) {
       progress.details.push(`Crawl warning for ${competitor.name}: ${err.message}`);
@@ -317,10 +340,22 @@ Only return the JSON array, no other text.`;
   updateStep("Step 6/11: Refreshing competitor social profiles...");
   for (const competitor of createdCompetitors) {
     try {
-      await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
-      progress.details.push(`Social refresh complete: ${competitor.name}`);
+      const socialResults = await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
+      const failures = socialResults.filter((r: any) => r.status === "error" || r.status === "blocked");
+      const successes = socialResults.filter((r: any) => r.status === "success");
+
+      if (successes.length > 0) {
+        progress.details.push(`Social refresh complete: ${competitor.name} (${successes.map((r: any) => r.platform).join(", ")})`);
+      }
+      for (const failure of failures) {
+        const platformName = failure.platform === "twitter" ? "Twitter/X" : failure.platform.charAt(0).toUpperCase() + failure.platform.slice(1);
+        progress.details.push(`⚠ ${competitor.name} ${platformName}: ${failure.message || `${failure.status} — monitoring unavailable`}`);
+      }
+      if (socialResults.length === 0) {
+        progress.details.push(`Social refresh: ${competitor.name} — no social profiles configured`);
+      }
     } catch (err: any) {
-      progress.details.push(`Social warning for ${competitor.name}: ${err.message}`);
+      progress.details.push(`⚠ Social monitoring failed for ${competitor.name}: ${err.message}`);
     }
   }
   progress.stepsCompleted = 6;

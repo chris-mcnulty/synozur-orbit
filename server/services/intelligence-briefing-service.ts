@@ -258,7 +258,10 @@ Rules:
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
 - CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
+- CRITICAL: You may ONLY reference the following competitor names in the briefing. Do NOT invent, fabricate, or reference any company not in this list: [${competitors.map(c => `"${c.name}"`).join(", ")}]. Every name in competitorMovements, keyThemes.competitors, and actionItems.relatedCompetitors MUST come from this exact list.
 - Return ONLY valid JSON, no markdown code fences.`;
+
+  const allowedCompetitorNames = new Set(competitors.map(c => c.name.toLowerCase()));
 
   let briefingData: BriefingData;
 
@@ -293,11 +296,28 @@ Rules:
     }));
 
     const { movements, themes } = stripBaselineFromBriefing(parsed, baseline?.companyName);
+
+    const filteredMovements = movements.filter(
+      (m: any) => m.name && typeof m.name === "string" && allowedCompetitorNames.has(m.name.toLowerCase())
+    );
+    const filteredThemes = themes.map((t: any) => ({
+      ...t,
+      competitors: Array.isArray(t.competitors)
+        ? t.competitors.filter((c: any) => typeof c === "string" && allowedCompetitorNames.has(c.toLowerCase()))
+        : t.competitors,
+    }));
+    const filteredActionItems = (Array.isArray(parsed.actionItems) ? parsed.actionItems : []).map((item: any) => ({
+      ...item,
+      relatedCompetitors: Array.isArray(item.relatedCompetitors)
+        ? item.relatedCompetitors.filter((c: any) => typeof c === "string" && allowedCompetitorNames.has(c.toLowerCase()))
+        : item.relatedCompetitors,
+    }));
+
     briefingData = {
       executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",
-      keyThemes: themes,
-      competitorMovements: movements,
-      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+      keyThemes: filteredThemes,
+      competitorMovements: filteredMovements,
+      actionItems: filteredActionItems,
       riskAlerts: Array.isArray(parsed.riskAlerts) ? parsed.riskAlerts : [],
       signalDigest: {
         totalSignals: activities.length,
@@ -490,7 +510,10 @@ Rules:
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
 - CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
+- CRITICAL: You may ONLY reference the following competitor names in the briefing. Do NOT invent, fabricate, or reference any company not in this list: [${competitors.map(c => `"${c.name}"`).join(", ")}]. Every name in competitorMovements, keyThemes.competitors, and actionItems.relatedCompetitors MUST come from this exact list.
 - Return ONLY valid JSON, no markdown code fences.`;
+
+  const allowedNames = new Set(competitors.map(c => c.name.toLowerCase()));
 
   let briefingData: BriefingData;
 
@@ -524,11 +547,25 @@ Rules:
       matchedEntity: a.matchedEntity,
     }));
 
+    const rawMovements = Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [];
+    const rawThemes = Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [];
+    const rawActionItems = Array.isArray(parsed.actionItems) ? parsed.actionItems : [];
+
     briefingData = {
       executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",
-      keyThemes: Array.isArray(parsed.keyThemes) ? parsed.keyThemes : [],
-      competitorMovements: Array.isArray(parsed.competitorMovements) ? parsed.competitorMovements : [],
-      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+      keyThemes: rawThemes.map((t: any) => ({
+        ...t,
+        competitors: Array.isArray(t.competitors)
+          ? t.competitors.filter((c: any) => typeof c === "string" && allowedNames.has(c.toLowerCase()))
+          : t.competitors,
+      })),
+      competitorMovements: rawMovements.filter((m: any) => m.name && typeof m.name === "string" && allowedNames.has(m.name.toLowerCase())),
+      actionItems: rawActionItems.map((item: any) => ({
+        ...item,
+        relatedCompetitors: Array.isArray(item.relatedCompetitors)
+          ? item.relatedCompetitors.filter((c: any) => typeof c === "string" && allowedNames.has(c.toLowerCase()))
+          : item.relatedCompetitors,
+      })),
       riskAlerts: Array.isArray(parsed.riskAlerts) ? parsed.riskAlerts : [],
       signalDigest: {
         totalSignals: activities.length,

@@ -141,9 +141,33 @@ export default function CompanyBaseline() {
 
   useEffect(() => {
     if (!autoBuildJobId) return;
+    let consecutive404s = 0;
     const interval = setInterval(async () => {
       try {
         const response = await fetch(`/api/auto-build/status/${autoBuildJobId}`, { credentials: "include" });
+        if (response.status === 404) {
+          consecutive404s++;
+          if (consecutive404s >= 2) {
+            clearInterval(interval);
+            setAutoBuildJobId(null);
+            setAutoBuildProgress({
+              status: "failed",
+              currentStep: "Build interrupted",
+              stepsCompleted: 0,
+              totalSteps: 11,
+              startedAt: new Date(),
+              error: "This build was interrupted (the server restarted and lost the job state). You can re-trigger Auto Build to try again.",
+              discoveredCompetitors: [],
+              details: ["Build job was lost due to a server restart. Please re-trigger Auto Build."],
+              tenantDomain: "",
+              marketId: "",
+              userId: "",
+            });
+            toast({ title: "Auto Build Interrupted", description: "The server restarted and the build job was lost. You can re-trigger it.", variant: "destructive" });
+          }
+          return;
+        }
+        consecutive404s = 0;
         if (!response.ok) return;
         const status = await response.json();
         setAutoBuildProgress(status);
@@ -1734,6 +1758,19 @@ export default function CompanyBaseline() {
               )}
               {(autoBuildProgress?.status === "completed" || autoBuildProgress?.status === "failed") && (
                 <DialogFooter>
+                  {autoBuildProgress?.error?.includes("interrupted") && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setAutoBuildJobId(null);
+                        setAutoBuildProgress(null);
+                      }}
+                      data-testid="button-auto-build-retrigger"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      Re-trigger Auto Build
+                    </Button>
+                  )}
                   <Button
                     onClick={() => {
                       setAutoBuildOpen(false);
