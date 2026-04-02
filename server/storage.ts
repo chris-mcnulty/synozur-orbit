@@ -2027,35 +2027,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteMarket(id: string): Promise<void> {
-    // Delete all related data for this market (cascade delete)
-    // The schema uses onDelete: "set null" which would leave orphaned data, so we clean up explicitly
-    
-    // First, get all competitor IDs for this market so we can delete related activity records
-    const marketCompetitors = await db.select({ id: competitors.id }).from(competitors)
-      .where(eq(competitors.marketId, id));
-    const competitorIds = marketCompetitors.map(c => c.id);
-    
-    // Delete activity records that reference these competitors (foreign key constraint)
-    if (competitorIds.length > 0) {
-      for (const competitorId of competitorIds) {
-        await db.delete(activity).where(eq(activity.competitorId, competitorId));
+    await db.transaction(async (tx) => {
+      const marketCompetitors = await tx.select({ id: competitors.id, organizationId: competitors.organizationId }).from(competitors)
+        .where(eq(competitors.marketId, id));
+      const competitorIds = marketCompetitors.map(c => c.id);
+
+      const marketCompanyProfiles = await tx.select({ organizationId: companyProfiles.organizationId }).from(companyProfiles)
+        .where(eq(companyProfiles.marketId, id));
+
+      const orgIdsToDecrement: string[] = [
+        ...marketCompetitors.map(c => c.organizationId).filter((oid): oid is string => oid != null),
+        ...marketCompanyProfiles.map(p => p.organizationId).filter((oid): oid is string => oid != null),
+      ];
+
+      if (competitorIds.length > 0) {
+        for (const competitorId of competitorIds) {
+          await tx.delete(activity).where(eq(activity.competitorId, competitorId));
+        }
       }
-    }
-    
-    // Delete activity records that reference this market directly
-    await db.delete(activity).where(eq(activity.marketId, id));
-    
-    // Now delete competitors and other market-related data
-    await db.delete(competitors).where(eq(competitors.marketId, id));
-    await db.delete(companyProfiles).where(eq(companyProfiles.marketId, id));
-    await db.delete(clientProjects).where(eq(clientProjects.marketId, id));
-    await db.delete(battlecards).where(eq(battlecards.marketId, id));
-    await db.delete(executiveSummaries).where(eq(executiveSummaries.marketId, id));
-    await db.delete(groundingDocuments).where(eq(groundingDocuments.marketId, id));
-    await db.delete(competitorScores).where(eq(competitorScores.marketId, id));
-    await db.delete(socialMetrics).where(eq(socialMetrics.marketId, id));
-    // Finally delete the market itself
-    await db.delete(markets).where(eq(markets.id, id));
+
+      await tx.delete(activity).where(eq(activity.marketId, id));
+
+      await tx.delete(competitors).where(eq(competitors.marketId, id));
+      await tx.delete(companyProfiles).where(eq(companyProfiles.marketId, id));
+      await tx.delete(clientProjects).where(eq(clientProjects.marketId, id));
+      await tx.delete(battlecards).where(eq(battlecards.marketId, id));
+      await tx.delete(executiveSummaries).where(eq(executiveSummaries.marketId, id));
+      await tx.delete(groundingDocuments).where(eq(groundingDocuments.marketId, id));
+      await tx.delete(competitorScores).where(eq(competitorScores.marketId, id));
+      await tx.delete(socialMetrics).where(eq(socialMetrics.marketId, id));
+      await tx.delete(markets).where(eq(markets.id, id));
+
+      for (const orgId of orgIdsToDecrement) {
+        await tx.update(organizations)
+          .set({
+            activeReferenceCount: sql`GREATEST(${organizations.activeReferenceCount} - 1, 0)`,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizations.id, orgId));
+
+        const [org] = await tx.select({ refCount: organizations.activeReferenceCount })
+          .from(organizations)
+          .where(eq(organizations.id, orgId));
+        if (org && org.refCount <= 0) {
+          await tx.update(organizations)
+            .set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+            .where(eq(organizations.id, orgId));
+        }
+      }
+    });
   }
 
   async validateMarketBelongsToTenant(marketId: string, tenantId: string): Promise<boolean> {
