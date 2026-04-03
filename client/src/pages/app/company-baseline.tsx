@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { AIResearchDialog } from "@/components/AIResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +32,7 @@ export default function CompanyBaseline() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [aiResearchOpen, setAiResearchOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [autoBuildOpen, setAutoBuildOpen] = useState(false);
   const [autoBuildJobId, setAutoBuildJobId] = useState<string | null>(null);
   const [autoBuildProgress, setAutoBuildProgress] = useState<any>(null);
@@ -791,72 +792,6 @@ export default function CompanyBaseline() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => analyzeProfile.mutate()}
-                        disabled={analyzeProfile.isPending}
-                        data-testid="button-analyze-website"
-                      >
-                        {analyzeProfile.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Analyze Website
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setManualResearchOpen(true)}
-                        data-testid="button-manual-research"
-                      >
-                        <ClipboardPaste className="w-4 h-4 mr-2" />
-                        Manual Research
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
-                        onClick={() => setAiResearchOpen(true)}
-                        data-testid="button-ai-research"
-                      >
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        AI Research
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => companyProfile?.id && monitorAllMutation.mutate(companyProfile.id)}
-                        disabled={!companyProfile?.id || monitorAllMutation.isPending}
-                        data-testid="button-check-all-changes"
-                      >
-                        {monitorAllMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <Globe className="w-4 h-4 mr-2" />
-                        )}
-                        Check All for Changes
-                      </Button>
-                      <ActionCostTooltip
-                        jobType="refresh"
-                        disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
-                        note="Crawls your company website and social profiles"
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setRefreshStrategyOpen(true)}
-                          disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
-                          data-testid="button-refresh-strategy"
-                        >
-                          {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          ) : (
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                          )}
-                          Refresh Data
-                        </Button>
-                      </ActionCostTooltip>
                       {canAutoBuild && (
                         <Button
                           variant="default"
@@ -874,12 +809,94 @@ export default function CompanyBaseline() {
                           Auto Build
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        className="bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+                        onClick={() => setAiResearchOpen(true)}
+                        data-testid="button-ai-research"
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        AI Research
+                      </Button>
+                      <ActionCostTooltip
+                        jobType="refresh"
+                        disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                        note="Re-crawls website and social profiles for latest data"
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRefreshStrategyOpen(true)}
+                          disabled={!companyProfile?.id || refreshAllMutation.isPending || refreshSocialMutation.isPending}
+                          data-testid="button-refresh-strategy"
+                        >
+                          {(refreshAllMutation.isPending || refreshSocialMutation.isPending) ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Refresh
+                        </Button>
+                      </ActionCostTooltip>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" data-testid="button-more-actions">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => analyzeProfile.mutate()}
+                            disabled={analyzeProfile.isPending}
+                            data-testid="button-analyze-website"
+                          >
+                            {analyzeProfile.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Search className="w-4 h-4 mr-2" />
+                            )}
+                            Analyze Website
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => companyProfile?.id && monitorAllMutation.mutate(companyProfile.id)}
+                            disabled={!companyProfile?.id || monitorAllMutation.isPending}
+                            data-testid="button-check-all-changes"
+                          >
+                            {monitorAllMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Globe className="w-4 h-4 mr-2" />
+                            )}
+                            Check All for Changes
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setManualResearchOpen(true)}
+                            data-testid="button-manual-research"
+                          >
+                            <ClipboardPaste className="w-4 h-4 mr-2" />
+                            Manual Research
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => { openProfileDialog(); setIsProfileDialogOpen(true); }}
+                            data-testid="button-edit-profile"
+                          >
+                            <Edit2 className="w-4 h-4 mr-2" />
+                            Edit Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            data-testid="button-delete-profile"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Profile
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Dialog open={isProfileDialogOpen} onOpenChange={setIsProfileDialogOpen}>
                         <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={openProfileDialog} data-testid="button-edit-profile">
-                            <Edit2 className="w-4 h-4 mr-2" />
-                            Edit
-                          </Button>
+                          <span className="hidden" />
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
@@ -1113,12 +1130,7 @@ export default function CompanyBaseline() {
                           </form>
                         </DialogContent>
                       </Dialog>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" data-testid="button-delete-profile">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </AlertDialogTrigger>
+                      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete Company Profile?</AlertDialogTitle>
