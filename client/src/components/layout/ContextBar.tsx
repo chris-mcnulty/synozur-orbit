@@ -89,7 +89,7 @@ export default function ContextBar() {
   const [editMarketDescription, setEditMarketDescription] = useState("");
   const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
 
-  const { data: tenantSettingsCtx } = useQuery<{ plan: string }>({
+  const { data: tenantSettingsCtx, isLoading: tenantSettingsLoading } = useQuery<{ plan: string }>({
     queryKey: ["/api/tenant/settings"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/settings", { credentials: "include" });
@@ -758,60 +758,69 @@ export default function ContextBar() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 py-4">
-                {canAutoBuildCtx && (
-                  <Button
-                    variant="outline"
-                    className="h-auto p-4 justify-start text-left flex-col items-start gap-2 border-primary/40 bg-primary/5 hover:bg-primary/10 relative"
-                    onClick={() => {
-                      setAutoBuildEnabled(true);
-                      setMarketCreationStep("url");
-                    }}
-                    data-testid="btn-market-auto-build"
-                  >
-                    <Badge className="absolute top-2 right-2 text-[10px] bg-primary/90">Recommended</Badge>
-                    <div className="flex items-center gap-2 font-medium">
-                      <Zap className="w-4 h-4 text-primary" />
-                      Auto Build from website
-                    </div>
-                    <span className="text-xs text-muted-foreground font-normal">
-                      Enter a URL and we'll automatically discover competitors, run AI analysis, and build your intelligence briefing
-                    </span>
-                  </Button>
+                {tenantSettingsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Loading options...
+                  </div>
+                ) : (
+                  <>
+                    {canAutoBuildCtx && (
+                      <Button
+                        variant="outline"
+                        className="h-auto p-4 justify-start text-left flex-col items-start gap-2 border-primary/40 bg-primary/5 hover:bg-primary/10 relative"
+                        onClick={() => {
+                          setAutoBuildEnabled(true);
+                          setMarketCreationStep("url");
+                        }}
+                        data-testid="btn-market-auto-build"
+                      >
+                        <Badge className="absolute top-2 right-2 text-[10px] bg-primary/90">Recommended</Badge>
+                        <div className="flex items-center gap-2 font-medium">
+                          <Zap className="w-4 h-4 text-primary" />
+                          Auto Build from website
+                        </div>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          Enter a URL and we'll automatically discover competitors, run AI analysis, and build your intelligence briefing
+                        </span>
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                      onClick={() => {
+                        setAutoBuildEnabled(false);
+                        setMarketCreationStep("url");
+                      }}
+                      data-testid="btn-market-from-url"
+                    >
+                      <div className="flex items-center gap-2 font-medium">
+                        <Link2 className="w-4 h-4" />
+                        Start from a website URL
+                      </div>
+                      <span className="text-xs text-muted-foreground font-normal">
+                        We'll analyze the website and auto-fill market details — you'll add competitors yourself
+                      </span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                      onClick={() => {
+                        setAutoBuildEnabled(false);
+                        setMarketCreationStep("manual");
+                      }}
+                      data-testid="btn-market-manual"
+                    >
+                      <div className="flex items-center gap-2 font-medium">
+                        <FileText className="w-4 h-4" />
+                        Enter details manually
+                      </div>
+                      <span className="text-xs text-muted-foreground font-normal">
+                        Provide a name and description yourself
+                      </span>
+                    </Button>
+                  </>
                 )}
-                <Button
-                  variant="outline"
-                  className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
-                  onClick={() => {
-                    setAutoBuildEnabled(false);
-                    setMarketCreationStep("url");
-                  }}
-                  data-testid="btn-market-from-url"
-                >
-                  <div className="flex items-center gap-2 font-medium">
-                    <Link2 className="w-4 h-4" />
-                    Start from a website URL
-                  </div>
-                  <span className="text-xs text-muted-foreground font-normal">
-                    We'll analyze the website and auto-fill market details — you'll add competitors yourself
-                  </span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
-                  onClick={() => {
-                    setAutoBuildEnabled(false);
-                    setMarketCreationStep("manual");
-                  }}
-                  data-testid="btn-market-manual"
-                >
-                  <div className="flex items-center gap-2 font-medium">
-                    <FileText className="w-4 h-4" />
-                    Enter details manually
-                  </div>
-                  <span className="text-xs text-muted-foreground font-normal">
-                    Provide a name and description yourself
-                  </span>
-                </Button>
               </div>
               <DialogFooter>
                 <Button variant="ghost" onClick={() => handleCloseMarketDialog(false)}>
