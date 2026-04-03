@@ -218,9 +218,9 @@ export default function GettingStartedPage() {
                       <span className={cn(
                         "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
                         step.complete
-                          ? "bg-green-500 text-white"
+                          ? "bg-emerald-500 text-primary-foreground dark:bg-emerald-600"
                           : isNext
-                          ? "bg-primary text-white"
+                          ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground"
                       )}>
                         {step.complete ? <CheckCircle2 className="w-4 h-4" /> : step.step}
@@ -228,7 +228,7 @@ export default function GettingStartedPage() {
                       <div className={cn(
                         "p-2 rounded-lg",
                         step.complete
-                          ? "bg-green-500/10 text-green-500"
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                           : isNext
                           ? "bg-primary/10 text-primary"
                           : "bg-muted text-muted-foreground"

@@ -161,8 +161,8 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
         aria-controls={open ? "synozur-app-menu" : undefined}
         className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
           forceDark
-            ? `text-gray-400 hover:bg-white/10 hover:text-white ${open ? "bg-white/10 text-white" : ""}`
-            : `text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white ${open ? "bg-gray-100 text-gray-900 dark:bg-white/10 dark:text-white" : ""}`
+            ? `text-muted-foreground hover:bg-accent hover:text-foreground ${open ? "bg-accent text-foreground" : ""}`
+            : `text-muted-foreground hover:bg-accent hover:text-foreground ${open ? "bg-accent text-foreground" : ""}`
         }`}
         title="Synozur Apps"
         aria-label="Synozur Apps"
@@ -187,20 +187,13 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
           id="synozur-app-menu"
           role="menu"
           aria-label="Synozur Suite Applications"
-          className={`absolute top-full left-0 mt-2 w-[360px] rounded-xl shadow-2xl border z-[100] overflow-hidden ${
-            forceDark
-              ? "bg-gray-950 border-white/10"
-              : "bg-white border-gray-200 dark:bg-gray-950 dark:border-white/10"
-          }`}
-          style={{ animation: "fadeIn 0.15s ease-out" }}
+          className={`absolute top-full left-0 mt-2 w-[360px] rounded-xl shadow-2xl border border-border z-[100] overflow-hidden bg-popover text-popover-foreground`}
+          style={{ animation: "var(--animate-fade-in-up)" }}
         >
-          <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
           <div className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2 mb-1">
-              <span className={`text-[10px] font-bold tracking-[0.2em] uppercase ${
-                forceDark ? "text-gray-500" : "text-gray-400 dark:text-gray-500"
-              }`}>Synozur Suite</span>
+              <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">Synozur Suite</span>
             </div>
           </div>
 
@@ -217,12 +210,8 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
                   onClick={isCurrent ? (e) => { e.preventDefault(); closeMenu(); } : undefined}
                   className={`flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all group cursor-pointer ${
                     isCurrent
-                      ? forceDark
-                        ? "bg-white/[0.08] ring-1 ring-white/10"
-                        : "bg-gray-100 ring-1 ring-gray-200 dark:bg-white/[0.08] dark:ring-white/10"
-                      : forceDark
-                        ? "hover:bg-white/[0.06]"
-                        : "hover:bg-gray-50 dark:hover:bg-white/[0.06]"
+                      ? "bg-accent ring-1 ring-border"
+                      : "hover:bg-accent/50"
                   }`}
                   data-testid={`app-switcher-${app.id}`}
                 >
@@ -237,15 +226,9 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-semibold ${
-                        forceDark ? "text-white" : "text-gray-900 dark:text-white"
-                      }`}>{app.name}</span>
+                      <span className="text-sm font-semibold text-foreground">{app.name}</span>
                       {isCurrent && (
-                        <span className={`text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full ${
-                          forceDark
-                            ? "bg-white/10 text-gray-400"
-                            : "bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-gray-400"
-                        }`}>
+                        <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
                           Current
                         </span>
                       )}
@@ -253,18 +236,12 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
                     <p className="text-xs font-medium mt-0.5" style={{ color: app.brandColor }}>
                       {app.tagline}
                     </p>
-                    <p className={`text-[11px] leading-snug mt-0.5 ${
-                      forceDark ? "text-gray-500" : "text-gray-500 dark:text-gray-500"
-                    }`}>
+                    <p className="text-[11px] leading-snug mt-0.5 text-muted-foreground">
                       {app.description}
                     </p>
                   </div>
                   {!isCurrent && (
-                    <svg viewBox="0 0 16 16" fill="none" className={`w-3.5 h-3.5 transition-colors mt-1.5 flex-shrink-0 ${
-                      forceDark
-                        ? "text-gray-600 group-hover:text-gray-400"
-                        : "text-gray-300 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
-                    }`}>
+                    <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 transition-colors mt-1.5 flex-shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground">
                       <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
                   )}
@@ -273,18 +250,12 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
             })}
           </div>
 
-          <div className={`border-t px-4 py-2.5 ${
-            forceDark ? "border-white/5" : "border-gray-100 dark:border-white/5"
-          }`}>
+          <div className="border-t border-border px-4 py-2.5">
             <a
               href="https://www.synozur.com/applications"
               target="_blank"
               rel="noopener noreferrer"
-              className={`text-[11px] transition-colors ${
-                forceDark
-                  ? "text-gray-500 hover:text-gray-300"
-                  : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-              }`}
+              className="text-[11px] transition-colors text-muted-foreground hover:text-foreground"
             >
               Learn more at synozur.com
             </a>

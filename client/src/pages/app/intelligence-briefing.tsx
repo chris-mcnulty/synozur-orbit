@@ -153,29 +153,29 @@ const hasAdminAccess = (role: string) =>
   role === "Global Admin" || role === "Domain Admin";
 
 const urgencyConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  immediate: { label: "Immediate", color: "bg-red-500/10 text-red-500 border-red-500/20", icon: <Zap className="w-3.5 h-3.5" /> },
-  this_week: { label: "This Week", color: "bg-orange-500/10 text-orange-500 border-orange-500/20", icon: <Clock className="w-3.5 h-3.5" /> },
-  this_month: { label: "This Month", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", icon: <Calendar className="w-3.5 h-3.5" /> },
-  watch: { label: "Watch", color: "bg-gray-500/10 text-gray-500 border-gray-500/20", icon: <Eye className="w-3.5 h-3.5" /> },
+  immediate: { label: "Immediate", color: "status-danger", icon: <Zap className="w-3.5 h-3.5" /> },
+  this_week: { label: "This Week", color: "status-warning", icon: <Clock className="w-3.5 h-3.5" /> },
+  this_month: { label: "This Month", color: "status-info", icon: <Calendar className="w-3.5 h-3.5" /> },
+  watch: { label: "Watch", color: "status-neutral", icon: <Eye className="w-3.5 h-3.5" /> },
 };
 
 const severityConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  critical: { label: "Critical", color: "bg-red-500/10 text-red-500 border-red-500/20", icon: <AlertTriangle className="w-3.5 h-3.5" /> },
-  warning: { label: "Warning", color: "bg-amber-500/10 text-amber-500 border-amber-500/20", icon: <Shield className="w-3.5 h-3.5" /> },
-  watch: { label: "Watch", color: "bg-blue-500/10 text-blue-500 border-blue-500/20", icon: <Eye className="w-3.5 h-3.5" /> },
+  critical: { label: "Critical", color: "status-danger", icon: <AlertTriangle className="w-3.5 h-3.5" /> },
+  warning: { label: "Warning", color: "status-warning", icon: <Shield className="w-3.5 h-3.5" /> },
+  watch: { label: "Watch", color: "status-info", icon: <Eye className="w-3.5 h-3.5" /> },
 };
 
 const significanceConfig: Record<string, { label: string; color: string }> = {
-  high: { label: "High", color: "bg-red-500/10 text-red-500 border-red-500/20" },
-  medium: { label: "Medium", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
-  low: { label: "Low", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  high: { label: "High", color: "status-danger" },
+  medium: { label: "Medium", color: "status-warning" },
+  low: { label: "Low", color: "status-info" },
 };
 
 const threatConfig: Record<string, { label: string; color: string }> = {
-  high: { label: "High Threat", color: "bg-red-500/10 text-red-500 border-red-500/20" },
-  medium: { label: "Medium Threat", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
-  low: { label: "Low Threat", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
-  none: { label: "No Threat", color: "bg-green-500/10 text-green-500 border-green-500/20" },
+  high: { label: "High Threat", color: "status-danger" },
+  medium: { label: "Medium Threat", color: "status-warning" },
+  low: { label: "Low Threat", color: "status-info" },
+  none: { label: "No Threat", color: "status-success" },
 };
 
 function formatDate(dateStr: string) {

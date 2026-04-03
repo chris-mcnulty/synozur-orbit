@@ -706,13 +706,13 @@ export default function EmailNewslettersPage() {
                 </div>
                 {previewEmail.platform === "hubspot-marketing" ? (
                   <div
-                    className="border rounded bg-white text-black text-sm overflow-y-auto"
+                    className="border rounded bg-card text-card-foreground text-sm overflow-y-auto"
                     style={{ maxHeight: "600px" }}
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewEmail.htmlBody) }}
                     data-testid="preview-email-html"
                   />
                 ) : (
-                  <pre className="border rounded p-4 bg-white text-black text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
+                  <pre className="border rounded p-4 bg-card text-card-foreground text-sm max-h-96 overflow-y-auto whitespace-pre-wrap font-sans" data-testid="preview-email-text">
                     {previewEmail.textBody || previewEmail.htmlBody}
                   </pre>
                 )}
@@ -1056,13 +1056,13 @@ export default function EmailNewslettersPage() {
               <div className="mt-2">
                 {viewingEmail.platform === "hubspot-marketing" ? (
                   <div
-                    className="border rounded bg-white text-black text-sm overflow-y-auto"
+                    className="border rounded bg-card text-card-foreground text-sm overflow-y-auto"
                     style={{ maxHeight: "65vh" }}
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingEmail.htmlBody) }}
                     data-testid="view-email-html"
                   />
                 ) : (
-                  <pre className="border rounded p-4 bg-white text-black text-sm overflow-y-auto whitespace-pre-wrap font-sans" style={{ maxHeight: "65vh" }} data-testid="view-email-text">
+                  <pre className="border rounded p-4 bg-card text-card-foreground text-sm overflow-y-auto whitespace-pre-wrap font-sans" style={{ maxHeight: "65vh" }} data-testid="view-email-text">
                     {viewingEmail.textBody || viewingEmail.htmlBody}
                   </pre>
                 )}

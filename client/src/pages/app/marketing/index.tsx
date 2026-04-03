@@ -249,7 +249,7 @@ export default function MarketingLandingPage() {
                         {card.loading ? (
                           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                         ) : card.generated ? (
-                          <Badge className="bg-emerald-600/90 text-white text-[10px]">
+                          <Badge className="bg-emerald-600/90 dark:bg-emerald-500/90 text-primary-foreground text-[10px]">
                             <CheckCircle className="w-3 h-3 mr-0.5" />
                             Ready
                           </Badge>
