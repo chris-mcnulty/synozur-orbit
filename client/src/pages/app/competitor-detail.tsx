@@ -777,7 +777,7 @@ export default function CompetitorDetail() {
                     ) : (
                       <Globe className="h-4 w-4 mr-2" />
                     )}
-                    Scan for Website Changes
+                    Crawl Website
                   </DropdownMenuItem>
                   {hasSocialUrls && (
                     <DropdownMenuItem
@@ -790,7 +790,7 @@ export default function CompetitorDetail() {
                       ) : (
                         <Activity className="h-4 w-4 mr-2" />
                       )}
-                      Check Social Updates
+                      Check Socials
                       {!isPremium && <Lock className="h-3 w-3 ml-1" />}
                     </DropdownMenuItem>
                   )}
@@ -861,6 +861,7 @@ export default function CompetitorDetail() {
           websiteLastUpdated={competitor.lastCrawledAt || competitor.lastCrawl || null}
           socialLastUpdated={competitor.socialLastFetchedAt || null}
           autoRefreshAllowed={false}
+          readOnly
           onRefresh={async (sources) => {
             if (sources.includes("website")) {
               await fetch(`/api/competitors/${id}/crawl`, { method: "POST", credentials: "include" });

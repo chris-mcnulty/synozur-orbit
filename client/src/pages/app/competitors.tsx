@@ -3,9 +3,10 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Zap, Search, Crown, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Users, Lock, AlertTriangle, Ban } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban } from "lucide-react";
 import { PlanLimitBadge } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
+import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -38,6 +39,8 @@ export default function Competitors() {
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
   const [manualResearchOpen, setManualResearchOpen] = useState(false);
   const [manualResearchTarget, setManualResearchTarget] = useState<{ id: string; name: string; url: string } | null>(null);
+  const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
+  const [refreshStrategyTarget, setRefreshStrategyTarget] = useState<any>(null);
   const [urlError, setUrlError] = useState("");
   const [orgSearchQuery, setOrgSearchQuery] = useState("");
   const [orgSearchResults, setOrgSearchResults] = useState<Array<{
@@ -211,38 +214,6 @@ export default function Competitors() {
   });
 
   const [analyzingCompetitor, setAnalyzingCompetitor] = useState<string | null>(null);
-  const [checkingSocialsId, setCheckingSocialsId] = useState<string | null>(null);
-
-  const checkSocials = useMutation({
-    mutationFn: async (id: string) => {
-      setCheckingSocialsId(id);
-      const response = await fetch(`/api/competitors/${id}/monitor-social`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to check socials");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      setCheckingSocialsId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
-      toast({
-        title: "Social Check Complete",
-        description: "Social media profiles have been checked for updates.",
-      });
-    },
-    onError: (error: Error) => {
-      setCheckingSocialsId(null);
-      toast({
-        title: "Social Check Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   const crawlCompetitor = useMutation({
     mutationFn: async ({ id, analysisType }: { id: string; analysisType: "quick" | "full" | "full_with_change" }) => {
@@ -1095,70 +1066,18 @@ export default function Competitors() {
 
                               <div className="flex items-center gap-2">
                                 {/* Analysis Type Dropdown */}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <ActionCostTooltip
-                                      jobType="crawl"
-                                      disabled={analyzingCompetitor === competitor.id}
-                                      note="Full analysis also uses AI credits"
-                                    >
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                        disabled={analyzingCompetitor === competitor.id}
-                                        data-testid={`button-crawl-${competitor.id}`}
-                                      >
-                                        {analyzingCompetitor === competitor.id ? (
-                                          <>
-                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <RefreshCw className="w-4 h-4 mr-2" /> Analyze <ChevronDown className="w-3 h-3 ml-1" />
-                                          </>
-                                        )}
-                                      </Button>
-                                    </ActionCostTooltip>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-64">
-                                    <DropdownMenuItem 
-                                      onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "quick" })}
-                                      data-testid={`button-quick-analysis-${competitor.id}`}
-                                    >
-                                      <Zap className="w-4 h-4 mr-2 text-yellow-500" />
-                                      <div>
-                                        <div className="font-medium">Quick Refresh</div>
-                                        <div className="text-xs text-muted-foreground">Refresh webpage data only</div>
-                                      </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}
-                                      data-testid={`button-full-analysis-${competitor.id}`}
-                                    >
-                                      <Search className="w-4 h-4 mr-2 text-blue-500" />
-                                      <div>
-                                        <div className="font-medium">Full Analysis</div>
-                                        <div className="text-xs text-muted-foreground">Crawl + AI analysis</div>
-                                      </div>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => isPremiumPlan && crawlCompetitor.mutate({ id: competitor.id, analysisType: "full_with_change" })}
-                                      disabled={!isPremiumPlan}
-                                      className={!isPremiumPlan ? "opacity-50 cursor-not-allowed" : ""}
-                                      data-testid={`button-full-change-analysis-${competitor.id}`}
-                                    >
-                                      <Crown className="w-4 h-4 mr-2 text-amber-500" />
-                                      <div className="flex-1">
-                                        <div className="font-medium flex items-center gap-2">
-                                          Full + Change Analysis
-                                          {!isPremiumPlan && <Badge variant="outline" className="text-[10px] px-1 py-0">Pro</Badge>}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground">Include social & news monitoring</div>
-                                      </div>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity gap-2"
+                                  onClick={() => {
+                                    setRefreshStrategyTarget(competitor);
+                                    setRefreshStrategyOpen(true);
+                                  }}
+                                  data-testid={`button-refresh-${competitor.id}`}
+                                >
+                                  <RefreshCw className="w-4 h-4" /> Refresh
+                                </Button>
                                 
                                 {(analysis || competitor.screenshotUrl) && (
                                   <CollapsibleTrigger asChild>
@@ -1181,8 +1100,15 @@ export default function Competitors() {
                                         View Details
                                       </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => crawlCompetitor.mutate({ id: competitor.id, analysisType: "full" })}>
-                                      Re-analyze Website
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setRefreshStrategyTarget(competitor);
+                                        setRefreshStrategyOpen(true);
+                                      }}
+                                      data-testid={`button-context-refresh-${competitor.id}`}
+                                    >
+                                      <RefreshCw className="w-4 h-4 mr-2" />
+                                      Refresh
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
                                       onClick={() => {
@@ -1192,7 +1118,7 @@ export default function Competitors() {
                                       data-testid={`button-manual-research-${competitor.id}`}
                                     >
                                       <ClipboardPaste className="w-4 h-4 mr-2" />
-                                      Manual AI Research
+                                      AI Research
                                     </DropdownMenuItem>
                                     <DropdownMenuItem 
                                       onClick={() => openLinksEdit(competitor)}
@@ -1200,18 +1126,6 @@ export default function Competitors() {
                                     >
                                       <Pencil className="w-4 h-4 mr-2" />
                                       Edit Details
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => checkSocials.mutate(competitor.id)}
-                                      disabled={checkingSocialsId === competitor.id}
-                                      data-testid={`button-check-socials-${competitor.id}`}
-                                    >
-                                      {checkingSocialsId === competitor.id ? (
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                      ) : (
-                                        <Users className="w-4 h-4 mr-2" />
-                                      )}
-                                      Check Socials
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
@@ -1308,6 +1222,32 @@ export default function Competitors() {
           entityId={manualResearchTarget.id}
           entityName={manualResearchTarget.name}
           entityUrl={manualResearchTarget.url}
+        />
+      )}
+
+      {refreshStrategyTarget && (
+        <RefreshStrategyDialog
+          open={refreshStrategyOpen}
+          onOpenChange={setRefreshStrategyOpen}
+          entityName={refreshStrategyTarget.name}
+          entityType="competitor"
+          sources={{
+            website: { lastUpdated: refreshStrategyTarget.lastCrawledAt || refreshStrategyTarget.lastCrawl || null },
+            ...(refreshStrategyTarget.linkedInUrl || refreshStrategyTarget.twitterUrl || refreshStrategyTarget.instagramUrl
+              ? { social: { lastUpdated: refreshStrategyTarget.socialLastFetchedAt || null } }
+              : {}),
+          }}
+          onConfirm={async (selectedSources) => {
+            if (selectedSources.includes("website")) {
+              await fetch(`/api/competitors/${refreshStrategyTarget.id}/crawl`, { method: "POST", credentials: "include" });
+              toast({ title: "Website crawl started", description: `${refreshStrategyTarget.name} is being refreshed` });
+            }
+            if (selectedSources.includes("social")) {
+              await fetch(`/api/competitors/${refreshStrategyTarget.id}/monitor-social`, { method: "POST", credentials: "include" });
+              toast({ title: "Social check started", description: `${refreshStrategyTarget.name} social data is being updated` });
+            }
+            queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+          }}
         />
       )}
 

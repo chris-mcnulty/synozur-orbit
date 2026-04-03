@@ -44,6 +44,7 @@ export interface DataFreshnessBarProps {
   onRefresh: (sources: string[]) => Promise<void>;
   onSchedule?: (sources: string[], timing: string) => void;
   className?: string;
+  readOnly?: boolean;
 }
 
 export default function DataFreshnessBar({
@@ -57,6 +58,7 @@ export default function DataFreshnessBar({
   onRefresh,
   onSchedule,
   className,
+  readOnly = false,
 }: DataFreshnessBarProps) {
   const [isRefreshing, setIsRefreshing] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -185,69 +187,71 @@ export default function DataFreshnessBar({
           )}
         </button>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {hasStaleData && (
-            <Button
-              size="sm"
-              variant="default"
-              className="gap-1.5 h-7 text-xs"
-              onClick={handleRefreshAllStale}
-              disabled={isRefreshing.size > 0}
-              data-testid="refresh-all-stale-button"
-            >
-              {isRefreshing.size > 0 ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3 h-3" />
-              )}
-              Refresh {staleSources.length === sources.length ? "All" : "Stale"}
-            </Button>
-          )}
-
-          {onSchedule && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 h-7 text-xs"
-                >
-                  <Calendar className="w-3 h-3" />
-                  Schedule
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleSchedule("tonight")}>
-                  <Clock className="w-3.5 h-3.5 mr-2" />
-                  Schedule for tonight (2am)
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {autoRefreshAllowed ? (
-                  <DropdownMenuItem onClick={() => handleSchedule("weekly")}>
-                    <Calendar className="w-3.5 h-3.5 mr-2" />
-                    Set up weekly auto-refresh
-                  </DropdownMenuItem>
+        {!readOnly && (
+          <div className="flex items-center gap-2 shrink-0">
+            {hasStaleData && (
+              <Button
+                size="sm"
+                variant="default"
+                className="gap-1.5 h-7 text-xs"
+                onClick={handleRefreshAllStale}
+                disabled={isRefreshing.size > 0}
+                data-testid="refresh-all-stale-button"
+              >
+                {isRefreshing.size > 0 ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <DropdownMenuItem disabled className="opacity-100">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Lock className="w-3.5 h-3.5" />
-                      <span className="text-xs">
-                        Auto-refresh requires {tenantPlan === "free" || tenantPlan === "trial" ? "Pro" : "Enterprise"}+
-                      </span>
-                      <a
-                        href="mailto:contactus@synozur.com"
-                        className="text-primary hover:underline text-xs ml-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Upgrade
-                      </a>
-                    </div>
-                  </DropdownMenuItem>
+                  <RefreshCw className="w-3 h-3" />
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+                Refresh {staleSources.length === sources.length ? "All" : "Stale"}
+              </Button>
+            )}
+
+            {onSchedule && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 h-7 text-xs"
+                  >
+                    <Calendar className="w-3 h-3" />
+                    Schedule
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleSchedule("tonight")}>
+                    <Clock className="w-3.5 h-3.5 mr-2" />
+                    Schedule for tonight (2am)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {autoRefreshAllowed ? (
+                    <DropdownMenuItem onClick={() => handleSchedule("weekly")}>
+                      <Calendar className="w-3.5 h-3.5 mr-2" />
+                      Set up weekly auto-refresh
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem disabled className="opacity-100">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span className="text-xs">
+                          Auto-refresh requires {tenantPlan === "free" || tenantPlan === "trial" ? "Pro" : "Enterprise"}+
+                        </span>
+                        <a
+                          href="mailto:contactus@synozur.com"
+                          className="text-primary hover:underline text-xs ml-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Upgrade
+                        </a>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Expanded detail rows */}
@@ -274,21 +278,23 @@ export default function DataFreshnessBar({
                   />
                 </div>
 
-                <Button
-                  size="sm"
-                  variant={staleness.level === "stale" || staleness.level === "never" ? "default" : "ghost"}
-                  className="gap-1.5 h-7 text-xs shrink-0"
-                  onClick={() => handleRefreshSource(source.type)}
-                  disabled={isSourceRefreshing}
-                  data-testid={`refresh-source-${source.type}`}
-                >
-                  {isSourceRefreshing ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3 h-3" />
-                  )}
-                  Refresh
-                </Button>
+                {!readOnly && (
+                  <Button
+                    size="sm"
+                    variant={staleness.level === "stale" || staleness.level === "never" ? "default" : "ghost"}
+                    className="gap-1.5 h-7 text-xs shrink-0"
+                    onClick={() => handleRefreshSource(source.type)}
+                    disabled={isSourceRefreshing}
+                    data-testid={`refresh-source-${source.type}`}
+                  >
+                    {isSourceRefreshing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    Refresh
+                  </Button>
+                )}
               </div>
             );
           })}
