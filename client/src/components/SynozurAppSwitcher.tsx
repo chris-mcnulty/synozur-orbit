@@ -149,21 +149,15 @@ export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: 
     };
   }, [open]);
 
-  const fd = forceDark ? "forced-dark " : "";
-
   return (
-    <div className={`relative ${fd}`}>
+    <div className={`relative${forceDark ? " dark" : ""}`}>
       <button
         ref={buttonRef}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="true"
         aria-controls={open ? "synozur-app-menu" : undefined}
-        className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
-          forceDark
-            ? `text-muted-foreground hover:bg-accent hover:text-foreground ${open ? "bg-accent text-foreground" : ""}`
-            : `text-muted-foreground hover:bg-accent hover:text-foreground ${open ? "bg-accent text-foreground" : ""}`
-        }`}
+        className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors text-muted-foreground hover:bg-accent hover:text-foreground${open ? " bg-accent text-foreground" : ""}`}
         title="Synozur Apps"
         aria-label="Synozur Apps"
         data-testid="button-synozur-app-switcher"
