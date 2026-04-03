@@ -22,17 +22,44 @@ interface AiUsageStats {
   }>;
 }
 
-// Use CSS variables via getComputedStyle at render time for theme-awareness
+// Use CSS variables for chart colors, but avoid repeated getComputedStyle calls
+// during render and provide SSR/non-DOM fallbacks.
+const FALLBACK_CHART_COLORS = [
+  "hsl(221.2 83.2% 53.3%)",
+  "hsl(212 95% 68%)",
+  "hsl(216 92% 60%)",
+  "hsl(210 98% 78%)",
+  "hsl(215 20.2% 65.1%)",
+  "hsl(221.2 83.2% 53.3%)",
+];
+
+let cachedChartColors: string[] | null = null;
+
 function getChartColors(): string[] {
+  if (cachedChartColors) {
+    return cachedChartColors;
+  }
+
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return FALLBACK_CHART_COLORS;
+  }
+
   const style = getComputedStyle(document.documentElement);
-  return [
-    `hsl(${style.getPropertyValue('--chart-1').trim()})`,
-    `hsl(${style.getPropertyValue('--chart-2').trim()})`,
-    `hsl(${style.getPropertyValue('--chart-3').trim()})`,
-    `hsl(${style.getPropertyValue('--chart-4').trim()})`,
-    `hsl(${style.getPropertyValue('--chart-5').trim()})`,
-    `hsl(${style.getPropertyValue('--primary').trim()})`,
+  const cssVariableNames = [
+    "--chart-1",
+    "--chart-2",
+    "--chart-3",
+    "--chart-4",
+    "--chart-5",
+    "--primary",
   ];
+
+  cachedChartColors = cssVariableNames.map((variableName, index) => {
+    const value = style.getPropertyValue(variableName).trim();
+    return value ? `hsl(${value})` : FALLBACK_CHART_COLORS[index];
+  });
+
+  return cachedChartColors;
 }
 
 const operationLabels: Record<string, string> = {
