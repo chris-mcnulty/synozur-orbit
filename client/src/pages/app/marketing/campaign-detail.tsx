@@ -911,7 +911,7 @@ export default function CampaignDetailPage() {
                     <CalendarDays className="w-3.5 h-3.5" />
                     {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
                     {needsScheduling && (
-                      <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full bg-white text-primary" data-testid="badge-unscheduled-count">
+                      <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full bg-primary-foreground text-primary" data-testid="badge-unscheduled-count">
                         {unscheduledCount}
                       </span>
                     )}

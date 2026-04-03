@@ -1483,7 +1483,7 @@ export default function ContentLibraryPage() {
                                 <button
                                   key={ba.id}
                                   type="button"
-                                  className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-white"
+                                  className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-card"
                                   onClick={() => {
                                     setEditForm(f => ({ ...f, leadImageUrl: imgUrl }));
                                     setShowBrandImagePicker(false);

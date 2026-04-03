@@ -486,7 +486,7 @@ export default function CompanyBaseline() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-white" />
+              <Building2 className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
               <h1 className="text-2xl font-bold" data-testid="text-baseline-title">Company Baseline</h1>
@@ -772,11 +772,11 @@ export default function CompanyBaseline() {
                         <img 
                           src={companyProfile.logoUrl} 
                           alt={companyProfile.companyName}
-                          className="w-14 h-14 rounded-xl object-contain bg-white shadow-lg"
+                          className="w-14 h-14 rounded-xl object-contain bg-card shadow-lg"
                         />
                       ) : (
                         <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                          <span className="text-2xl font-bold text-white">
+                          <span className="text-2xl font-bold text-primary-foreground">
                             {companyProfile.companyName?.charAt(0) || "C"}
                           </span>
                         </div>

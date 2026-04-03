@@ -66,9 +66,9 @@ const DISMISS_REASONS = [
 
 function ImpactBadge({ impact }: { impact: string }) {
   const colors: Record<string, string> = {
-    High: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-    Medium: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-    Low: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+    High: "bg-destructive/10 text-destructive border-destructive/20",
+    Medium: "bg-primary/10 text-primary border-primary/20",
+    Low: "status-neutral",
   };
   return (
     <Badge variant="outline" className={colors[impact] || colors.Low} data-testid={`badge-impact-${impact}`}>
@@ -79,9 +79,9 @@ function ImpactBadge({ impact }: { impact: string }) {
 
 function SourceBadge({ source }: { source: string }) {
   const config: Record<string, { icon: typeof Lightbulb; color: string }> = {
-    "Competitive Intelligence": { icon: Lightbulb, color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30" },
-    "Product Roadmap": { icon: Package, color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-    "Gap Analysis": { icon: Target, color: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+    "Competitive Intelligence": { icon: Lightbulb, color: "bg-primary/10 text-primary border-primary/20" },
+    "Product Roadmap": { icon: Package, color: "status-success" },
+    "Gap Analysis": { icon: Target, color: "status-warning" },
   };
   const { icon: Icon, color } = config[source] || config["Competitive Intelligence"];
   return (

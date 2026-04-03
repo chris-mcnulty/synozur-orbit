@@ -22,7 +22,45 @@ interface AiUsageStats {
   }>;
 }
 
-const COLORS = ['#810FFB', '#E60CB3', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'];
+// Use CSS variables for chart colors, but avoid repeated getComputedStyle calls
+// during render and provide SSR/non-DOM fallbacks.
+const FALLBACK_CHART_COLORS = [
+  "hsl(221.2 83.2% 53.3%)",
+  "hsl(212 95% 68%)",
+  "hsl(216 92% 60%)",
+  "hsl(210 98% 78%)",
+  "hsl(215 20.2% 65.1%)",
+  "hsl(221.2 83.2% 53.3%)",
+];
+
+let cachedChartColors: string[] | null = null;
+
+function getChartColors(): string[] {
+  if (cachedChartColors) {
+    return cachedChartColors;
+  }
+
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return FALLBACK_CHART_COLORS;
+  }
+
+  const style = getComputedStyle(document.documentElement);
+  const cssVariableNames = [
+    "--chart-1",
+    "--chart-2",
+    "--chart-3",
+    "--chart-4",
+    "--chart-5",
+    "--primary",
+  ];
+
+  cachedChartColors = cssVariableNames.map((variableName, index) => {
+    const value = style.getPropertyValue(variableName).trim();
+    return value ? `hsl(${value})` : FALLBACK_CHART_COLORS[index];
+  });
+
+  return cachedChartColors;
+}
 
 const operationLabels: Record<string, string> = {
   'analyze_competitor': 'Competitor Analysis',
@@ -57,6 +95,8 @@ export function AiUsageDashboard() {
       </Card>
     );
   }
+
+  const chartColors = getChartColors();
 
   const dailyData = Object.entries(stats.dailyUsage || {}).map(([date, count]) => ({
     date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -128,7 +168,7 @@ export function AiUsageDashboard() {
                     borderRadius: '6px'
                   }}
                 />
-                <Bar dataKey="usage" fill="#810FFB" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="usage" fill={chartColors[0]} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -154,7 +194,7 @@ export function AiUsageDashboard() {
                     dataKey="value"
                   >
                     {operationData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -171,7 +211,7 @@ export function AiUsageDashboard() {
                   <div key={entry.name} className="flex items-center gap-2">
                     <div
                       className="w-3 h-3 rounded"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      style={{ backgroundColor: chartColors[index % chartColors.length] }}
                     />
                     <span className="text-sm truncate">{entry.name}</span>
                   </div>
