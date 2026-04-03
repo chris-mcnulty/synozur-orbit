@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban, Search } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban, Search, MoreHorizontal } from "lucide-react";
 import { AIResearchDialog } from "@/components/AIResearchDialog";
+import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +43,7 @@ export default function CompetitorDetail() {
   const [editFundingRaised, setEditFundingRaised] = useState("");
   const [editIndustry, setEditIndustry] = useState("");
   const [aiResearchOpen, setAiResearchOpen] = useState(false);
+  const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -741,7 +744,7 @@ export default function CompetitorDetail() {
               </div>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Button 
                 className="gap-2 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
                 onClick={() => setAiResearchOpen(true)}
@@ -752,57 +755,60 @@ export default function CompetitorDetail() {
               <Button 
                 variant="outline" 
                 className="gap-2"
-                onClick={() => websiteMonitorMutation.mutate()}
-                disabled={websiteMonitorMutation.isPending}
-                data-testid="button-scan-website"
+                onClick={() => setRefreshStrategyOpen(true)}
+                data-testid="button-refresh-competitor"
               >
-                <RefreshCw className={cn("h-4 w-4", websiteMonitorMutation.isPending && "animate-spin")} /> 
-                {websiteMonitorMutation.isPending ? "Scanning..." : "Scan Website"}
+                <RefreshCw className="h-4 w-4" /> Refresh
               </Button>
-              
-              {hasSocialUrls && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span>
-                        <Button 
-                          variant="outline" 
-                          className="gap-2"
-                          onClick={() => socialMonitorMutation.mutate()}
-                          disabled={!isPremium || socialMonitorMutation.isPending}
-                          data-testid="button-monitor-social"
-                        >
-                          {!isPremium && <Lock className="h-3 w-3" />}
-                          <Activity className="h-4 w-4" /> 
-                          {socialMonitorMutation.isPending ? "Checking..." : "Check Social"}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    {!isPremium && (
-                      <TooltipContent>
-                        <p>Social monitoring is a premium feature</p>
-                      </TooltipContent>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" data-testid="button-more-actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => websiteMonitorMutation.mutate()}
+                    disabled={websiteMonitorMutation.isPending}
+                    data-testid="button-scan-website"
+                  >
+                    {websiteMonitorMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Globe className="h-4 w-4 mr-2" />
                     )}
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              
-              <Button 
-                className="gap-2"
-                onClick={() => generateReportMutation.mutate()}
-                disabled={generateReportMutation.isPending}
-                data-testid="button-generate-report"
-              >
-                {generateReportMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Generating...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4" /> Generate Report
-                  </>
-                )}
-              </Button>
+                    Scan for Website Changes
+                  </DropdownMenuItem>
+                  {hasSocialUrls && (
+                    <DropdownMenuItem
+                      onClick={() => socialMonitorMutation.mutate()}
+                      disabled={!isPremium || socialMonitorMutation.isPending}
+                      data-testid="button-monitor-social"
+                    >
+                      {socialMonitorMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Activity className="h-4 w-4 mr-2" />
+                      )}
+                      Check Social Updates
+                      {!isPremium && <Lock className="h-3 w-3 ml-1" />}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => generateReportMutation.mutate()}
+                    disabled={generateReportMutation.isPending}
+                    data-testid="button-generate-report"
+                  >
+                    {generateReportMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Generate Report
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -1559,6 +1565,28 @@ export default function CompetitorDetail() {
         entityId={competitor.id}
         entityName={competitor.name}
         entityUrl={competitor.url}
+      />
+
+      <RefreshStrategyDialog
+        open={refreshStrategyOpen}
+        onOpenChange={setRefreshStrategyOpen}
+        entityName={competitor.name}
+        entityType="competitor"
+        sources={{
+          website: { lastUpdated: competitor.lastCrawledAt || competitor.lastCrawl || null },
+          ...(hasSocialUrls ? { social: { lastUpdated: competitor.socialLastFetchedAt || null } } : {}),
+        }}
+        onConfirm={async (selectedSources) => {
+          if (selectedSources.includes("website")) {
+            await fetch(`/api/competitors/${id}/crawl`, { method: "POST", credentials: "include" });
+            toast({ title: "Website crawl started", description: `${competitor.name} is being refreshed` });
+          }
+          if (selectedSources.includes("social")) {
+            await fetch(`/api/competitors/${id}/refresh-social`, { method: "POST", credentials: "include" });
+            toast({ title: "Social refresh started", description: `${competitor.name} social data is being updated` });
+          }
+          queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+        }}
       />
     </AppLayout>
   );
