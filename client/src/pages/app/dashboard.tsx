@@ -340,7 +340,10 @@ export default function Dashboard() {
   });
 
   const baselineComplete = companyProfile && companyProfile.websiteUrl;
-  const hasAnalysis = analysis && analysis.themes;
+  const hasAnalysis = (analysis && analysis.themes) || 
+    (companyProfile?.gapAnalysis) || 
+    (companyProfile?.recommendations) ||
+    competitors.some((c: any) => c.analysisData);
   const activeProjects = projects.filter((p: any) => p.status === "active");
   const highImpactActivity = activity.filter((a: any) => a.impact === "High");
   
