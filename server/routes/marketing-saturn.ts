@@ -49,6 +49,7 @@ import {
   type InsertGeneratedPost,
   type InsertGeneratedEmail,
   personas,
+  markets,
   type InsertPersona,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
@@ -2370,7 +2371,7 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with:
     if (!await guardFeature(req, res, "personaBuilder")) return;
     const ctx = await getRequestContext(req);
 
-    const [strategicCtx, companyProfile] = await Promise.all([
+    const [strategicCtx, companyProfile, marketRow] = await Promise.all([
       loadStrategicContext(ctx.tenantDomain, ctx.marketId),
       (async () => {
         const [row] = await db.select().from(companyProfiles)
@@ -2381,8 +2382,16 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with:
           .limit(1);
         return row;
       })(),
+      (async () => {
+        const [row] = await db.select().from(markets)
+          .where(eq(markets.id, ctx.marketId))
+          .limit(1);
+        return row;
+      })(),
     ]);
     const strategicContext = formatStrategicContextForPrompt(strategicCtx);
+    const businessType = (marketRow as any)?.businessType || "b2b";
+    const isB2C = businessType === "b2c";
 
     let companyContext = "";
     if (companyProfile) {
@@ -2392,7 +2401,7 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with:
       companyContext = parts.join("\n");
     }
 
-    const prompt = `You are an expert B2B marketing strategist. Generate 3 detailed buyer persona suggestions based on the company context and strategic intelligence provided.
+    const b2bPrompt = `You are an expert B2B marketing strategist. Generate 3 detailed buyer persona suggestions based on the company context and strategic intelligence provided.
 
 ${companyContext ? `## Company Context\n${companyContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Instructions
 Analyze the company's positioning, target audience, competitive landscape, and messaging to create 3 distinct buyer personas that would be most relevant for this business. Each persona should represent a different segment of the ideal customer base.
@@ -2407,6 +2416,26 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of 3 objects
 - "objections": string[] (2-4 common objections to buying)
 - "preferredChannels": string[] (2-4 preferred channels like "LinkedIn", "Email", "Webinars")
 - "notes": string (brief description of this persona and why they matter)`;
+
+    const b2cPrompt = `You are an expert B2C marketing strategist specializing in consumer brands. Generate 3 detailed consumer persona suggestions based on the company context and strategic intelligence provided.
+
+${companyContext ? `## Company Context\n${companyContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}## Instructions
+This is a B2C (business-to-consumer) company. Analyze the company's brand positioning, consumer appeal, competitive landscape, and messaging to create 3 distinct consumer personas that would be the most relevant target customers for this business. Each persona should represent a different consumer segment (e.g., demographics, lifestyle, buying motivation).
+
+Focus on consumer-facing characteristics: lifestyle, values, shopping behavior, social media habits, spending patterns, and emotional drivers rather than enterprise/corporate attributes.
+
+Return ONLY a valid JSON array (no markdown fences, no explanation) of 3 objects, each with:
+- "name": string (a descriptive consumer archetype like "Weekend Wine Enthusiast" or "Health-Conscious Millennial Mom")
+- "role": string (life role or consumer identity, e.g. "Young Professional", "Retired Hobbyist", "Family Decision-Maker")
+- "industry": string (relevant consumer segment or lifestyle category)
+- "companySize": string (household or spending tier, e.g. "Dual-income household", "Budget-conscious", "Premium spender")
+- "painPoints": string[] (3-5 consumer frustrations or unmet needs)
+- "goals": string[] (3-5 personal or lifestyle goals related to the product/service)
+- "objections": string[] (2-4 reasons they might hesitate to buy)
+- "preferredChannels": string[] (2-4 channels like "Instagram", "TikTok", "In-store", "Google Search", "Email newsletters")
+- "notes": string (brief description of this consumer persona and why they matter for this brand)`;
+
+    const prompt = isB2C ? b2cPrompt : b2bPrompt;
 
     try {
       const result = await completeForFeature("marketing_tasks", prompt);
