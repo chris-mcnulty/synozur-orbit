@@ -1943,6 +1943,7 @@ export function registerAdminRoutes(app: Express) {
       const analysisPrompt = `Analyze this website content and provide:
 1. The company/organization name
 2. A brief 1-2 sentence description of what they do
+3. Whether this is a B2B (business-to-business) or B2C (business-to-consumer) company. B2C companies sell directly to individual consumers — examples include wineries, restaurants, hotels, retail stores, consumer brands. B2B companies sell to other businesses — examples include SaaS, consulting firms, enterprise software, professional services.
 
 Website URL: ${url}
 Website Content:
@@ -1951,7 +1952,8 @@ ${combinedContent.substring(0, 4000)}
 Respond in JSON format:
 {
   "companyName": "Company Name",
-  "description": "Brief description of what the company does"
+  "description": "Brief description of what the company does",
+  "businessType": "b2b or b2c"
 }`;
 
       const message = await anthropic.messages.create({
@@ -1960,7 +1962,7 @@ Respond in JSON format:
         messages: [{ role: "user", content: analysisPrompt }],
       });
 
-      let result = { companyName, description: "" };
+      let result = { companyName, description: "", businessType: "b2b" };
       try {
         const responseText = message.content[0].type === "text" ? message.content[0].text : "";
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -1968,6 +1970,7 @@ Respond in JSON format:
           const parsed = JSON.parse(jsonMatch[0]);
           result.companyName = parsed.companyName || companyName;
           result.description = parsed.description || "";
+          result.businessType = parsed.businessType === "b2c" ? "b2c" : "b2b";
         }
       } catch (e) {
         console.error("Failed to parse AI response for market URL analysis:", e);

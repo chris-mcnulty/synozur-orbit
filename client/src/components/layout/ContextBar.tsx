@@ -139,6 +139,9 @@ export default function ContextBar() {
       const data = await response.json();
       setNewMarketName(data.companyName || "");
       setNewMarketDescription(data.description || "");
+      if (data.businessType === "b2c") {
+        setNewMarketBusinessType("b2c");
+      }
       setMarketCreationStep("manual");
     } catch (error: any) {
       toast({
@@ -987,6 +990,11 @@ export default function ContextBar() {
                   {newMarketBusinessType === "b2c" && (
                     <p className="text-xs text-muted-foreground">
                       B2C scoring prioritizes social signals like Instagram engagement over LinkedIn and website content depth.
+                    </p>
+                  )}
+                  {marketUrl.trim() && (
+                    <p className="text-[11px] text-muted-foreground/70 italic">
+                      Detected from website analysis — change if needed
                     </p>
                   )}
                 </div>
