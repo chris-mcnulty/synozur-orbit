@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban, Search, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, ExternalLink, Globe, Calendar, RefreshCw, BarChart2, FileText, Linkedin, Instagram, Twitter, Facebook, Pencil, Activity, Lock, Swords, Sparkles, Target, Shield, MessageSquare, TrendingUp, Loader2, Check, X, Clock, FileSearch, AlertCircle, Eye, Rss, Hash, Tags, Download, Building2, DollarSign, Users, AlertTriangle, Ban, Search, MoreHorizontal } from "lucide-react";
 import { AIResearchDialog } from "@/components/AIResearchDialog";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -31,6 +31,7 @@ export default function CompetitorDetail() {
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
   const [editTwitter, setEditTwitter] = useState("");
+  const [editFacebook, setEditFacebook] = useState("");
   const [editBlogUrl, setEditBlogUrl] = useState("");
   const [editSocialFrequency, setEditSocialFrequency] = useState("daily");
   const [excludeFromCrawl, setExcludeFromCrawl] = useState(false);
@@ -156,7 +157,7 @@ export default function CompetitorDetail() {
   });
 
   const updateSocialMutation = useMutation({
-    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; excludeFromCrawl?: boolean; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string; industry?: string }) => {
+    mutationFn: async (data: { linkedInUrl?: string; instagramUrl?: string; twitterUrl?: string; facebookUrl?: string; blogFeedUrl?: string; socialCheckFrequency?: string; excludeFromCrawl?: boolean; headquarters?: string; founded?: string; employeeCount?: string; revenue?: string; fundingRaised?: string; industry?: string }) => {
       const response = await fetch(`/api/competitors/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -187,6 +188,7 @@ export default function CompetitorDetail() {
     setEditLinkedIn(competitor?.linkedInUrl || "");
     setEditInstagram(competitor?.instagramUrl || "");
     setEditTwitter(competitor?.twitterUrl || "");
+    setEditFacebook(competitor?.facebookUrl || "");
     setEditBlogUrl(competitor?.blogFeedUrl || "");
     setEditSocialFrequency(competitor?.socialCheckFrequency || "daily");
     setExcludeFromCrawl(competitor?.excludeFromCrawl || false);
@@ -206,6 +208,7 @@ export default function CompetitorDetail() {
       linkedInUrl: editLinkedIn,
       instagramUrl: editInstagram,
       twitterUrl: editTwitter,
+      facebookUrl: editFacebook,
       blogFeedUrl: editBlogUrl,
       socialCheckFrequency: editSocialFrequency,
       excludeFromCrawl: excludeFromCrawl,
@@ -437,7 +440,7 @@ export default function CompetitorDetail() {
     },
   });
 
-  const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl;
+  const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl || competitor?.facebookUrl;
   const isPremium = monitoringSettings?.isPremium;
 
   if (isLoading) {
@@ -574,6 +577,21 @@ export default function CompetitorDetail() {
                       <Twitter className="h-4 w-4" /> No Twitter
                     </span>
                   )}
+                  {competitor.facebookUrl ? (
+                    <a 
+                      href={competitor.facebookUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-1 text-sm text-[#1877F2] hover:underline"
+                      data-testid="link-facebook"
+                    >
+                      <Facebook className="h-4 w-4" /> Facebook
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground/50">
+                      <Facebook className="h-4 w-4" /> No Facebook
+                    </span>
+                  )}
                   <Dialog open={editOpen} onOpenChange={setEditOpen}>
                     <DialogTrigger asChild>
                       <Button variant="ghost" size="sm" onClick={handleEditOpen} data-testid="button-edit-social">
@@ -622,6 +640,18 @@ export default function CompetitorDetail() {
                             value={editTwitter}
                             onChange={(e) => setEditTwitter(e.target.value)}
                             data-testid="input-twitter"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="facebook" className="flex items-center gap-2">
+                            <Facebook className="h-4 w-4 text-[#1877F2]" /> Facebook URL
+                          </Label>
+                          <Input
+                            id="facebook"
+                            placeholder="https://facebook.com/..."
+                            value={editFacebook}
+                            onChange={(e) => setEditFacebook(e.target.value)}
+                            data-testid="input-facebook"
                           />
                         </div>
                         <div className="space-y-2">

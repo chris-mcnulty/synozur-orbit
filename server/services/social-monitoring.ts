@@ -10,7 +10,7 @@ const anthropic = new Anthropic({
 interface SocialMonitoringResult {
   competitorId: string;
   competitorName: string;
-  platform: "linkedin" | "instagram" | "twitter";
+  platform: "linkedin" | "instagram" | "twitter" | "facebook";
   hasChanges: boolean;
   summary?: string;
   status: "success" | "blocked" | "error" | "no_url";
@@ -106,6 +106,15 @@ function extractEngagementMetrics(html: string, platform: string): EngagementSna
     
     const likesMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*likes?/i);
     if (likesMatch) engagement.likes = parseNumber(likesMatch[1]);
+  } else if (platform === "facebook") {
+    const followersMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*followers?/i);
+    if (followersMatch) engagement.followers = parseNumber(followersMatch[1]);
+    
+    const likesMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*(?:people\s+like|likes?)\s*(?:this)?/i);
+    if (likesMatch) engagement.likes = parseNumber(likesMatch[1]);
+
+    const postsMatch = html.match(/(\d{1,3}(?:,\d{3})*|\d+[KMB]?)\s*posts?/i);
+    if (postsMatch) engagement.posts = parseNumber(postsMatch[1]);
   }
   
   return engagement;
@@ -585,6 +594,82 @@ export async function monitorCompetitorSocialMedia(
       });
     }
   }
+
+  // Facebook monitoring
+  if (competitor.facebookUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(competitor.facebookUrl);
+
+    if (blocked) {
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "facebook",
+        hasChanges: false,
+        status: "blocked",
+        message: "Facebook page requires authentication for full access.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = competitor.facebookContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+
+      const engagement = extractEngagementMetrics(rawHtml, "facebook");
+      updates.facebookEngagement = engagement;
+
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(
+          competitor.name,
+          "Facebook",
+          previousContent,
+          newContent,
+          changeScore
+        );
+
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "competitor",
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            description: `Facebook page updated (${changeScore}% change detected)`,
+            summary,
+            details: {
+              platform: "facebook",
+              changeScore,
+              url: competitor.facebookUrl,
+            },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId: userId || competitor.userId,
+            tenantDomain,
+            marketId: competitor.marketId,
+          });
+        }
+      }
+
+      updates.facebookContent = newContent;
+
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "facebook",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    } else {
+      results.push({
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        platform: "facebook",
+        hasChanges: false,
+        status: "error",
+        message: "Could not fetch Facebook page content",
+      });
+    }
+  }
   
   await storage.updateCompetitor(competitorId, updates);
 
@@ -596,6 +681,8 @@ export async function monitorCompetitorSocialMedia(
     if (updates.instagramEngagement) orgSocialUpdates.instagramEngagement = updates.instagramEngagement;
     if (updates.twitterContent) orgSocialUpdates.twitterContent = updates.twitterContent;
     if (updates.twitterEngagement) orgSocialUpdates.twitterEngagement = updates.twitterEngagement;
+    if (updates.facebookContent) orgSocialUpdates.facebookContent = updates.facebookContent;
+    if (updates.facebookEngagement) orgSocialUpdates.facebookEngagement = updates.facebookEngagement;
     await storage.updateOrganization(competitor.organizationId, orgSocialUpdates)
       .catch(err => console.error("[Org Update] Social sync failed:", err.message));
   }
@@ -606,7 +693,7 @@ export async function monitorCompetitorSocialMedia(
 interface CompanyProfileSocialResult {
   companyProfileId: string;
   companyName: string;
-  platform: "linkedin" | "instagram" | "twitter";
+  platform: "linkedin" | "instagram" | "twitter" | "facebook";
   hasChanges: boolean;
   summary?: string;
   status: "success" | "blocked" | "error" | "no_url";
@@ -880,6 +967,62 @@ export async function monitorCompanyProfileSocialMedia(
       });
     }
   }
+
+  // Facebook monitoring
+  if (companyProfile.facebookUrl) {
+    const { content: newContent, rawHtml, blocked } = await fetchSocialPageContent(companyProfile.facebookUrl);
+
+    if (blocked) {
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "facebook",
+        hasChanges: false,
+        status: "blocked",
+        message: "Facebook page requires authentication for full access.",
+      });
+    } else if (newContent && rawHtml) {
+      const previousContent = companyProfile.facebookContent || "";
+      const changeScore = calculateChangeScore(previousContent, newContent);
+      const hasSignificantChanges = previousContent !== "" && changeScore >= MIN_CHANGE_THRESHOLD;
+
+      const engagement = extractEngagementMetrics(rawHtml, "facebook");
+      updates.facebookEngagement = engagement;
+
+      let summary: string | undefined;
+      if (hasSignificantChanges) {
+        summary = await summarizeChanges(companyProfile.companyName, "Facebook", previousContent, newContent, changeScore);
+
+        if (!summary.toLowerCase().includes("no significant")) {
+          await storage.createActivity({
+            type: "social_update",
+            sourceType: "baseline",
+            companyProfileId: companyProfile.id,
+            competitorName: companyProfile.companyName,
+            description: `Your Facebook page was updated (${changeScore}% change detected)`,
+            summary,
+            details: { platform: "facebook", changeScore, url: companyProfile.facebookUrl },
+            date: now.toISOString(),
+            impact: changeScore > 70 ? "High" : "Medium",
+            userId,
+            tenantDomain,
+            marketId: marketId || companyProfile.marketId || undefined,
+          });
+        }
+      }
+
+      updates.facebookContent = newContent;
+      results.push({
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        platform: "facebook",
+        hasChanges: hasSignificantChanges,
+        summary,
+        status: "success",
+        engagement,
+      });
+    }
+  }
   
   await storage.updateCompanyProfile(companyProfileId, updates);
 
@@ -889,6 +1032,8 @@ export async function monitorCompanyProfileSocialMedia(
     if (updates.linkedInContent) orgSocialUpdates.linkedInContent = updates.linkedInContent;
     if (updates.instagramContent) orgSocialUpdates.instagramContent = updates.instagramContent;
     if (updates.twitterContent) orgSocialUpdates.twitterContent = updates.twitterContent;
+    if (updates.facebookContent) orgSocialUpdates.facebookContent = updates.facebookContent;
+    if (updates.facebookEngagement) orgSocialUpdates.facebookEngagement = updates.facebookEngagement;
     await storage.updateOrganization(companyProfile.organizationId, orgSocialUpdates)
       .catch(err => console.error("[Org Update] Baseline social sync failed:", err.message));
   }
@@ -900,7 +1045,7 @@ export async function monitorCompanyProfileSocialMedia(
 interface ProductSocialResult {
   productId: string;
   productName: string;
-  platform: "linkedin" | "instagram" | "twitter";
+  platform: "linkedin" | "instagram" | "twitter" | "facebook";
   hasChanges: boolean;
   summary?: string;
   status: "success" | "blocked" | "error";

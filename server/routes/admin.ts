@@ -807,6 +807,12 @@ export function registerAdminRoutes(app: Express) {
       if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
         socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
       }
+      if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
+        socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
+      }
+      if (crawlResult.socialLinks.facebook && !profile.facebookUrl) {
+        socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
+      }
       
       // Store crawl data for future reference
       socialUpdates.crawlData = {

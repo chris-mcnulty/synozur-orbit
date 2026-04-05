@@ -291,6 +291,8 @@ export async function monitorCompetitorWebsite(
       } : undefined,
       linkedInUrl: competitor.linkedInUrl || crawlResult.socialLinks.linkedIn,
       instagramUrl: competitor.instagramUrl || crawlResult.socialLinks.instagram,
+      twitterUrl: competitor.twitterUrl || crawlResult.socialLinks.twitter,
+      facebookUrl: competitor.facebookUrl || crawlResult.socialLinks.facebook,
     };
 
     await storage.updateCompetitor(competitor.id, monitorUpdates);
@@ -437,6 +439,7 @@ export async function monitorCompanyProfileWebsite(
       linkedInUrl: companyProfile.linkedInUrl || crawlResult.socialLinks.linkedIn,
       instagramUrl: companyProfile.instagramUrl || crawlResult.socialLinks.instagram,
       twitterUrl: companyProfile.twitterUrl || crawlResult.socialLinks.twitter,
+      facebookUrl: companyProfile.facebookUrl || crawlResult.socialLinks.facebook,
     };
 
     await storage.updateCompanyProfile(companyProfile.id, profileMonitorUpdates);

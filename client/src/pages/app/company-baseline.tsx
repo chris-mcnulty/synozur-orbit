@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, Facebook, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal } from "lucide-react";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { AIResearchDialog } from "@/components/AIResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -45,6 +45,7 @@ export default function CompanyBaseline() {
     linkedInUrl: "",
     instagramUrl: "",
     twitterUrl: "",
+    facebookUrl: "",
     blogUrl: "",
     description: "",
     // Directory fields
@@ -483,6 +484,7 @@ export default function CompanyBaseline() {
         linkedInUrl: companyProfile.linkedInUrl || "",
         instagramUrl: companyProfile.instagramUrl || "",
         twitterUrl: companyProfile.twitterUrl || "",
+        facebookUrl: companyProfile.facebookUrl || "",
         blogUrl: companyProfile.blogUrl || "",
         description: companyProfile.description || "",
         headquarters: companyProfile.headquarters || "",
@@ -501,6 +503,7 @@ export default function CompanyBaseline() {
         linkedInUrl: "",
         instagramUrl: "",
         twitterUrl: "",
+        facebookUrl: "",
         blogUrl: "",
         description: "",
         headquarters: "",
@@ -699,6 +702,18 @@ export default function CompanyBaseline() {
                             value={profileForm.twitterUrl}
                             onChange={(e) => setProfileForm({ ...profileForm, twitterUrl: e.target.value })}
                             data-testid="input-twitter"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="facebookUrl" className="flex items-center gap-2">
+                            <Facebook className="h-4 w-4 text-[#1877F2]" /> Facebook URL
+                          </Label>
+                          <Input
+                            id="facebookUrl"
+                            placeholder="https://facebook.com/..."
+                            value={profileForm.facebookUrl}
+                            onChange={(e) => setProfileForm({ ...profileForm, facebookUrl: e.target.value })}
+                            data-testid="input-facebook"
                           />
                         </div>
                         <div className="grid gap-2">

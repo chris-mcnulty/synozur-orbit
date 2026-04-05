@@ -314,6 +314,12 @@ async function runWebsiteCrawlJob(): Promise<void> {
             if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
               updates.instagramUrl = crawlResult.socialLinks.instagram;
             }
+            if (crawlResult.socialLinks.twitter && !competitor.twitterUrl) {
+              updates.twitterUrl = crawlResult.socialLinks.twitter;
+            }
+            if (crawlResult.socialLinks.facebook && !competitor.facebookUrl) {
+              updates.facebookUrl = crawlResult.socialLinks.facebook;
+            }
 
             if (crawlResult.blogSnapshot) {
               const previousSnapshot = competitor.blogSnapshot as any;
@@ -526,6 +532,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
             }
             if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
               updates.twitterUrl = crawlResult.socialLinks.twitter;
+            }
+            if (crawlResult.socialLinks.facebook && !profile.facebookUrl) {
+              updates.facebookUrl = crawlResult.socialLinks.facebook;
             }
 
             // Update blog snapshot if found

@@ -107,12 +107,13 @@ export function registerCompetitorRoutes(app: Express) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { linkedInUrl, instagramUrl, twitterUrl, blogUrl, blogFeedUrl, socialCheckFrequency, excludeFromCrawl, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
+      const { linkedInUrl, instagramUrl, twitterUrl, facebookUrl, blogUrl, blogFeedUrl, socialCheckFrequency, excludeFromCrawl, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
       if (instagramUrl !== undefined) updateData.instagramUrl = instagramUrl || null;
       if (twitterUrl !== undefined) updateData.twitterUrl = twitterUrl || null;
+      if (facebookUrl !== undefined) updateData.facebookUrl = facebookUrl || null;
       if (blogUrl !== undefined) updateData.blogUrl = blogUrl || null;
       if (blogFeedUrl !== undefined) updateData.blogFeedUrl = blogFeedUrl || null;
       if (socialCheckFrequency !== undefined) updateData.socialCheckFrequency = socialCheckFrequency || null;
@@ -445,6 +446,12 @@ export function registerCompetitorRoutes(app: Express) {
       }
       if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
         socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+      }
+      if (crawlResult.socialLinks.twitter && !competitor.twitterUrl) {
+        socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
+      }
+      if (crawlResult.socialLinks.facebook && !competitor.facebookUrl) {
+        socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
       }
       
       // Update blog snapshot if detected
@@ -1189,6 +1196,9 @@ Return ONLY the JSON object, no other text.`;
               }
               if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
                 updateData.instagramUrl = crawlResult.socialLinks.instagram;
+              }
+              if (crawlResult.socialLinks.facebook && !profile.facebookUrl) {
+                updateData.facebookUrl = crawlResult.socialLinks.facebook;
               }
             }
             

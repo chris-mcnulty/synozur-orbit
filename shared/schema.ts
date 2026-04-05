@@ -304,6 +304,7 @@ export const organizations = pgTable("organizations", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"),
+  facebookUrl: text("facebook_url"),
   blogUrl: text("blog_url"),
   headquarters: text("headquarters"),
   founded: text("founded"),
@@ -318,9 +319,11 @@ export const organizations = pgTable("organizations", {
   linkedInContent: text("linkedin_content"),
   instagramContent: text("instagram_content"),
   twitterContent: text("twitter_content"),
+  facebookContent: text("facebook_content"),
   linkedInEngagement: jsonb("linkedin_engagement"),
   instagramEngagement: jsonb("instagram_engagement"),
   twitterEngagement: jsonb("twitter_engagement"),
+  facebookEngagement: jsonb("facebook_engagement"),
   blogSnapshot: jsonb("blog_snapshot"),
   lastFullCrawl: timestamp("last_full_crawl"),
   lastWebsiteMonitor: timestamp("last_website_monitor"),
@@ -349,6 +352,7 @@ export const competitors = pgTable("competitors", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
+  facebookUrl: text("facebook_url"), // Facebook page URL
   blogUrl: text("blog_url"), // Blog or RSS feed URL
   faviconUrl: text("favicon_url"), // URL to stored favicon/logo
   screenshotUrl: text("screenshot_url"), // URL to stored homepage screenshot
@@ -357,9 +361,11 @@ export const competitors = pgTable("competitors", {
   linkedInContent: text("linkedin_content"), // Last crawled LinkedIn page content for diff (messaging only)
   instagramContent: text("instagram_content"), // Last crawled Instagram page content for diff (messaging only)
   twitterContent: text("twitter_content"), // Last crawled Twitter/X page content for diff
+  facebookContent: text("facebook_content"), // Last crawled Facebook page content for diff
   linkedInEngagement: jsonb("linkedin_engagement"), // Snapshot: {followers, posts, reactions, comments}
   instagramEngagement: jsonb("instagram_engagement"), // Snapshot: {followers, posts, likes, comments}
   twitterEngagement: jsonb("twitter_engagement"), // Snapshot: {followers, tweets, retweets, likes}
+  facebookEngagement: jsonb("facebook_engagement"), // Snapshot: {followers, likes, posts}
   blogSnapshot: jsonb("blog_snapshot"), // Snapshot: {postCount, latestTitles, capturedAt}
   crawlData: jsonb("crawl_data"), // Multi-page crawl results: {pages[], totalWordCount, crawledAt}
   lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
@@ -881,6 +887,7 @@ export const companyProfiles = pgTable("company_profiles", {
   linkedInUrl: text("linkedin_url"),
   instagramUrl: text("instagram_url"),
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
+  facebookUrl: text("facebook_url"), // Facebook page URL
   blogUrl: text("blog_url"), // Blog or RSS feed URL for baseline company
   description: text("description"),
   // Directory fields - stable columns for company information
@@ -897,9 +904,11 @@ export const companyProfiles = pgTable("company_profiles", {
   linkedInContent: text("linkedin_content"),
   instagramContent: text("instagram_content"),
   twitterContent: text("twitter_content"),
+  facebookContent: text("facebook_content"),
   linkedInEngagement: jsonb("linkedin_engagement"),
   instagramEngagement: jsonb("instagram_engagement"),
   twitterEngagement: jsonb("twitter_engagement"),
+  facebookEngagement: jsonb("facebook_engagement"),
   blogSnapshot: jsonb("blog_snapshot"),
   crawlData: jsonb("crawl_data"),
   lastFullCrawl: timestamp("last_full_crawl"),

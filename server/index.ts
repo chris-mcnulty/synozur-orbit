@@ -296,6 +296,18 @@ app.use((req, res, next) => {
       )
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS suggested_content_assets_tenant_idx ON suggested_content_assets(tenant_domain, market_id)`);
+
+    // Facebook social columns
+    await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS facebook_url TEXT`);
+    await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS facebook_content TEXT`);
+    await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS facebook_engagement JSONB`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS facebook_url TEXT`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS facebook_content TEXT`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS facebook_engagement JSONB`);
+    await pgPool.query(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS facebook_url TEXT`);
+    await pgPool.query(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS facebook_content TEXT`);
+    await pgPool.query(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS facebook_engagement JSONB`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

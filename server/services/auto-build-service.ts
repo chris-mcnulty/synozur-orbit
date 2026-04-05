@@ -155,6 +155,7 @@ async function runAutoBuildWithProfile(
           linkedInUrl: profile.linkedInUrl || socialLinks.linkedIn || null,
           instagramUrl: profile.instagramUrl || socialLinks.instagram || null,
           twitterUrl: profile.twitterUrl || socialLinks.twitter || null,
+          facebookUrl: profile.facebookUrl || socialLinks.facebook || null,
           blogUrl: profile.blogUrl || socialLinks.blog || null,
         };
 
@@ -324,6 +325,7 @@ Only return the JSON array, no other text.`;
           linkedInUrl: socialLinks.linkedIn || null,
           instagramUrl: socialLinks.instagram || null,
           twitterUrl: socialLinks.twitter || null,
+          facebookUrl: socialLinks.facebook || null,
           blogUrl: socialLinks.blog || null,
           blogSnapshot: crawlResult.blogSnapshot || null,
         });

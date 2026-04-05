@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Globe, Linkedin, Newspaper, Loader2, Clock, Zap, Info } from "lucide-react";
+import { Globe, Linkedin, Newspaper, Loader2, Clock, Zap, Info, Share2 } from "lucide-react";
 import { getFullStalenessInfo } from "@/lib/staleness";
 import StalenessDot from "@/components/ui/StalenessDot";
 
@@ -76,8 +76,8 @@ export default function RefreshStrategyDialog({
     availableSources.push({
       id: "social",
       label: "Social Media",
-      description: "LinkedIn profile updates",
-      icon: <Linkedin className="w-4 h-4" />,
+      description: "LinkedIn, Instagram, X/Twitter & Facebook",
+      icon: <Share2 className="w-4 h-4" />,
       lastUpdated: sources.social.lastUpdated,
       estimatedTime: "~30s",
       selected: staleness.level === "stale" || staleness.level === "aging",
