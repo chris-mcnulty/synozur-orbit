@@ -428,6 +428,8 @@ Return ONLY valid JSON.`;
     progress.currentStep = "Generating GTM plan";
     progress.stepsCompleted = 4;
 
+    const isB2C = businessType === "b2c";
+
     if (companyProfile) {
       try {
         const openai = new OpenAI({
@@ -450,8 +452,74 @@ Return ONLY valid JSON.`;
             analysisContext += `\n- ${gap.area}: ${gap.observation} (Impact: ${gap.impact})`;
           }
         }
+        const gtmPrompt = isB2C
+          ? `You are an expert go-to-market strategist specializing in B2C consumer brands. Create a comprehensive GTM plan in markdown format.
 
-        const gtmPrompt = `You are an expert go-to-market strategist. Create a comprehensive GTM plan in markdown format.
+Company: ${companyProfile.companyName}
+Website: ${companyProfile.websiteUrl}
+Description: ${companyProfile.description || "N/A"}
+Business Type: B2C (Business-to-Consumer)
+${competitorContext}
+${analysisContext}
+
+This is a B2C company selling directly to consumers. Create a detailed, actionable Go-To-Market plan focused on consumer acquisition, brand engagement, and direct-to-consumer growth with the following sections:
+
+# Go-To-Market Plan: ${companyProfile.companyName}
+
+## Executive Summary
+Brief overview of the consumer-focused GTM strategy
+
+## Target Consumer Analysis
+- Primary consumer segments and demographics
+- Market size and opportunity
+- Key consumer personas (lifestyle, motivations, buying triggers)
+
+## Value Proposition
+- Core brand promise to consumers
+- Key benefits by consumer segment
+- Emotional and functional differentiators
+
+## Brand Positioning Strategy
+- Consumer-facing positioning statement
+- Brand personality and identity
+- Competitive differentiation in the consumer's mind
+
+## Channel Strategy
+- Direct-to-consumer channels (website, app, physical locations)
+- Retail and distribution partnerships
+- Marketplace presence (Amazon, etc. if relevant)
+
+## Consumer Marketing Strategy
+- Social media marketing (Instagram, TikTok, Facebook, Pinterest)
+- Influencer and creator partnerships
+- Content marketing and storytelling
+- Email and SMS marketing
+- Local/community marketing (events, tastings, experiences)
+- Paid advertising (social ads, Google, display)
+
+## Customer Experience Strategy
+- Customer journey mapping
+- Loyalty and retention programs
+- Reviews, referrals, and word-of-mouth
+- Community building
+
+## Launch Plan
+- Phase 1: Brand Foundation (30 days)
+- Phase 2: Awareness & Acquisition (60 days)
+- Phase 3: Growth & Loyalty (90 days)
+
+## Success Metrics
+- Key performance indicators (CAC, LTV, repeat rate, NPS)
+- Revenue targets
+- Customer acquisition and retention goals
+
+## Resource Requirements
+- Team structure
+- Budget considerations
+- Technology and tools
+
+Make this practical and actionable for a consumer brand.`
+          : `You are an expert go-to-market strategist. Create a comprehensive GTM plan in markdown format.
 
 Company: ${companyProfile.companyName}
 Website: ${companyProfile.websiteUrl}
@@ -553,7 +621,53 @@ Make this practical and actionable for the team.`;
 
     if (companyProfile) {
       try {
-        const messagingPrompt = `You are an expert marketing strategist. Create a comprehensive messaging framework in markdown format.
+        const messagingPrompt = isB2C
+          ? `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
+
+Company: ${companyProfile.companyName}
+Website: ${companyProfile.websiteUrl}
+Description: ${companyProfile.description || "N/A"}
+Business Type: B2C (Business-to-Consumer)
+
+This is a B2C (business-to-consumer) company. Create a consumer-focused messaging framework with these sections:
+
+# Messaging & Positioning Framework: ${companyProfile.companyName}
+
+## Brand Positioning Statement
+Consumer-facing positioning that differentiates in the market — focus on how the brand fits into the consumer's life
+
+## Brand Promise
+The emotional and functional promise to consumers
+
+## Value Propositions
+### Primary Value Proposition (consumer benefit)
+### Secondary Value Propositions
+
+## Key Messages by Consumer Segment
+### Primary Consumer (core audience)
+### Secondary Consumer (growth audience)
+### Influencer / Advocate (word-of-mouth drivers)
+
+## Brand Story
+The narrative arc — origin, mission, and what makes the brand human and relatable
+
+## Elevator Pitch
+30-second and 60-second versions suitable for consumers
+
+## Tagline Options
+3-5 tagline options that resonate with consumers
+
+## Social Proof & Trust Signals
+Reviews, testimonials, awards, press, user-generated content
+
+## Competitive Differentiators
+What sets us apart in the consumer's mind
+
+## Brand Voice & Tone
+Guidelines for consistent consumer-facing messaging across social, email, packaging, and in-store
+
+Make this practical and ready to use across consumer marketing channels.`
+          : `You are an expert marketing strategist. Create a comprehensive messaging framework in markdown format.
 
 Company: ${companyProfile.companyName}
 Website: ${companyProfile.websiteUrl}
