@@ -119,10 +119,29 @@ export function registerIntelligenceRoutes(app: Express) {
         }
       }
 
+      // Get market business type for B2B vs B2C context
+      let businessType = "b2b";
+      if (project.marketId) {
+        const market = await storage.getMarket(project.marketId);
+        if (market?.businessType) businessType = market.businessType;
+      }
+      const isB2C = businessType === "b2c";
+
+      const b2cGuidance = isB2C ? `
+IMPORTANT: This is a B2C (Business-to-Consumer) market. Tailor the entire plan for consumer audiences:
+- Focus on consumer acquisition channels: social media, influencer partnerships, content creators, retail/e-commerce, app stores
+- Emphasize brand storytelling, emotional connection, and lifestyle positioning over feature comparisons
+- Prioritize consumer metrics: CAC, LTV, conversion rates, social engagement, NPS
+- Channel strategy should include DTC, social commerce, marketplace presence, retail partnerships
+- Marketing should emphasize visual content, UGC, influencer collaborations, brand ambassador programs
+- Consider seasonal trends, consumer behavior patterns, and purchase triggers
+` : "";
+
       const prompt = `You are an expert go-to-market strategist. Create a comprehensive Go-To-Market Plan in markdown format for the following project.
 
 Project: ${project.name}
 Client: ${project.clientName}
+Business Model: ${isB2C ? "B2C (Business-to-Consumer)" : "B2B (Business-to-Business)"}
 ${productContext}
 ${personaContext ? `\n${personaContext}\n` : ""}
 User Guidance:
@@ -131,7 +150,7 @@ User Guidance:
 - Custom Guidance: ${customGuidance || "None"}
 - Budget Considerations: ${budget || "Not specified"}
 - Timeline: ${timeline || "Not specified"}
-
+${b2cGuidance}
 Create a detailed, actionable GTM plan with the following sections:
 
 # Go-To-Market Plan: ${project.clientName}
@@ -139,30 +158,30 @@ Create a detailed, actionable GTM plan with the following sections:
 ## Executive Summary
 Brief overview of the GTM strategy
 
-## Target Market & Buyer Personas
-Define ideal customer profiles, decision-makers, and influencers
+## ${isB2C ? "Target Market & Consumer Personas" : "Target Market & Buyer Personas"}
+${isB2C ? "Define ideal consumer segments, demographics, and behavioral profiles" : "Define ideal customer profiles, decision-makers, and influencers"}
 
 ## Value Proposition & Positioning
 Core messaging and differentiation from competitors
 
-## Distribution Strategy
-${distributionChannels ? `Focus on: ${distributionChannels}` : "Recommend: Direct sales, Digital marketing, Channel partnerships"}
+## ${isB2C ? "Channel & Distribution Strategy" : "Distribution Strategy"}
+${isB2C ? "Consumer acquisition channels: social, influencer, DTC, retail, marketplace, e-commerce" : (distributionChannels ? `Focus on: ${distributionChannels}` : "Recommend: Direct sales, Digital marketing, Channel partnerships")}
 
 ## Marketing Tactics
-- Content marketing
-- Demand generation
+- ${isB2C ? "Brand storytelling and visual content" : "Content marketing"}
+- ${isB2C ? "Social media, influencer, and UGC campaigns" : "Demand generation"}
 - Campaigns and initiatives
 
-## Sales Enablement
-- Sales playbook highlights
-- Objection handling
+## ${isB2C ? "Conversion & Retention" : "Sales Enablement"}
+- ${isB2C ? "Conversion funnel optimization" : "Sales playbook highlights"}
+- ${isB2C ? "Loyalty programs and repeat purchase strategy" : "Objection handling"}
 - Competitive positioning
 
 ## Launch Timeline & Milestones
 Phased approach with key dates
 
 ## Success Metrics & KPIs
-How to measure success
+${isB2C ? "Consumer metrics: CAC, LTV, conversion rate, engagement, NPS, retention" : "How to measure success"}
 
 ## Budget Recommendations
 Resource allocation suggestions
@@ -259,10 +278,29 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
         }
       }
 
+      // Get market business type for B2B vs B2C context
+      let businessType = "b2b";
+      if (project.marketId) {
+        const market = await storage.getMarket(project.marketId);
+        if (market?.businessType) businessType = market.businessType;
+      }
+      const isB2C = businessType === "b2c";
+
+      const b2cGuidance = isB2C ? `
+IMPORTANT: This is a B2C (Business-to-Consumer) market. Tailor the entire framework for consumer audiences:
+- Position the brand around lifestyle, emotion, aspiration, and experience rather than ROI or business outcomes
+- Audience segments should be consumer demographics (age, lifestyle, interests) not job titles or departments
+- Tone of voice should be approachable, relatable, and emotionally resonant — not corporate or formal
+- Messaging pillars should emphasize brand story, community, experience, and social proof
+- Proof points should include reviews, ratings, social media engagement, influencer endorsements
+- Taglines should be catchy, memorable, and consumer-facing
+` : "";
+
       const prompt = `You are an expert brand strategist and messaging architect. Create a comprehensive Messaging & Positioning Framework in markdown format.
 
 Project: ${project.name}
 Client: ${project.clientName}
+Business Model: ${isB2C ? "B2C (Business-to-Consumer)" : "B2B (Business-to-Business)"}
 ${productContext}
 ${personaContext ? `\n${personaContext}\n` : ""}
 User Guidance:
@@ -270,7 +308,7 @@ User Guidance:
 - Tone of Voice: ${toneOfVoice || "Not specified - recommend appropriate tone based on persona preferences if available"}
 - Key Messages to Emphasize: ${keyMessages || "Not specified"}
 - Custom Guidance: ${customGuidance || "None"}
-
+${b2cGuidance}
 Create a detailed messaging framework with the following sections:
 
 # Messaging & Positioning Framework: ${project.clientName}
@@ -280,17 +318,17 @@ A clear, concise positioning statement following the format:
 "For [target audience] who [need], [product/brand] is the [category] that [key benefit] because [reason to believe]."
 
 ## Core Value Proposition
-The primary value we deliver to customers
+The primary value we deliver to ${isB2C ? "consumers" : "customers"}
 
 ## Messaging Pillars
 3-5 key themes that support the positioning
 
 ## Audience Segments & Tailored Messages
-For each key audience:
+For each key ${isB2C ? "consumer segment" : "audience"}:
 - Who they are
-- Their pain points
+- Their ${isB2C ? "motivations and desires" : "pain points"}
 - Key messages that resonate
-- Proof points
+- ${isB2C ? "Social proof and lifestyle appeal" : "Proof points"}
 
 ## Competitive Differentiation
 How we stand apart from competitors
@@ -301,7 +339,7 @@ How we stand apart from competitors
 - Example phrases
 
 ## Key Talking Points
-Elevator pitches of varying lengths:
+${isB2C ? "Brand story versions" : "Elevator pitches"} of varying lengths:
 - 10-second version
 - 30-second version
 - 2-minute version
@@ -310,12 +348,12 @@ Elevator pitches of varying lengths:
 3-5 potential taglines
 
 ## Proof Points & Evidence
-Statistics, case studies, testimonials to support claims
+${isB2C ? "Reviews, ratings, social proof, influencer endorsements, and lifestyle imagery" : "Statistics, case studies, testimonials to support claims"}
 
 ## Messaging Do's and Don'ts
 Clear guidelines on messaging boundaries
 
-Make this practical and ready for use by sales, marketing, and leadership teams.`;
+Make this practical and ready for use by ${isB2C ? "marketing, brand, and social media teams" : "sales, marketing, and leadership teams"}.`;
 
       const anthropic = new Anthropic({
         apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,

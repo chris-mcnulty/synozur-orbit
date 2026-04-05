@@ -529,9 +529,18 @@ export function registerAnalyticsDataRoutes(app: Express) {
       const selectedCategoryNames = categories.map((c: string) => categoryLabels[c] || c);
       const selectedPeriodNames = periods.map((p: string) => periodLabels[p] || p);
 
+      // Get market business type for B2B vs B2C context
+      let businessType = "b2b";
+      if (ctx.marketId) {
+        const market = await storage.getMarket(ctx.marketId);
+        if (market?.businessType) businessType = market.businessType;
+      }
+      const isB2C = businessType === "b2c";
+
       // Build context for AI
       const companyName = companyProfile?.websiteUrl?.replace(/^https?:\/\//, '').replace(/\/$/, '') || "Unknown";
       let contextInfo = `Company: ${companyName}\n`;
+      contextInfo += `Business Model: ${isB2C ? "B2C (Business-to-Consumer)" : "B2B (Business-to-Business)"}\n`;
       if (companyProfile?.description) {
         contextInfo += `Description: ${companyProfile.description}\n`;
       }
@@ -592,6 +601,19 @@ export function registerAnalyticsDataRoutes(app: Express) {
         existingTasksContext += `\nGenerate only NEW, unique tasks that are different from the above.\n`;
       }
 
+      const b2cTaskGuidance = isB2C ? `
+## B2C Market Context
+This is a B2C (Business-to-Consumer) market. Generate tasks appropriate for consumer marketing:
+- Prioritize social media campaigns, influencer partnerships, UGC strategies, and community building
+- Focus on brand awareness, emotional storytelling, and lifestyle content over whitepapers and webinars
+- For SEO/SEM, emphasize product-focused keywords, shopping ads, and consumer search intent
+- For email marketing, focus on customer lifecycle, cart abandonment, loyalty programs, and personalization
+- Events should be consumer-facing: pop-ups, sponsorships, experiential marketing — not trade shows
+- Content should be visual, shareable, and platform-native (TikTok, Instagram Reels, YouTube Shorts)
+- PR should target consumer media, lifestyle publications, and social media buzz — not trade press
+- Product marketing should emphasize reviews, ratings, unboxing, and social proof
+` : "";
+
       const prompt = `Generate marketing tasks for a ${plan.fiscalYear} marketing plan.
 
 ## Company Context
@@ -601,7 +623,7 @@ ${messagingContext}
 ${recommendationsContext}
 ${competitorInsights}
 ${existingTasksContext}
-
+${b2cTaskGuidance}
 ## Task Generation Request
 Selected Activity Categories: ${selectedCategoryNames.join(", ")}
 Time Periods: ${selectedPeriodNames.join(", ")}
@@ -613,6 +635,7 @@ Generate 2-3 specific, actionable marketing tasks for EACH selected category. Ea
 4. Include a suggested priority (High, Medium, or Low)
 5. Be assigned to one of the selected time periods (use "steady_state" for ongoing activities)
 6. BE UNIQUE - DO NOT duplicate any existing tasks listed above
+${isB2C ? "7. Be tailored for consumer audiences — avoid B2B-specific tactics like ABM, sales enablement decks, or enterprise webinars" : ""}
 
 Respond in JSON format:
 {
