@@ -4,6 +4,7 @@ import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
+import { identifySuggestedAssets } from "./asset-suggestion-service";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -127,6 +128,12 @@ async function runRegenerationInBackground(
             lastFullCrawl: new Date(),
           });
           console.log(`Full regen: Baseline website crawled - ${crawlResult.pages.length} pages`);
+
+          try {
+            await identifySuggestedAssets(crawlResult, companyProfile.id, tenantDomain, marketId);
+          } catch (assetErr: any) {
+            console.error(`Full regen: Asset suggestion failed:`, assetErr.message);
+          }
         }
       } catch (error) {
         console.error(`Full regen: Failed to crawl baseline website:`, error);

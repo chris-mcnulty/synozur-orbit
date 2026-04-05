@@ -52,7 +52,7 @@ Preferred communication style: Simple, everyday language.
 - **Enhanced Change Detection**: Website monitoring with structured AI analysis.
 - **Campaigns (Social)**: Containers for content assets, social accounts, and generated social posts, with manual post creation and scheduling.
 - **Email Newsletters**: Standalone tool for generating emails from content assets.
-- **Marketing Content Library**: Enterprise-gated asset management with AI summarization, categories, and tagging.
+- **Marketing Content Library**: Enterprise-gated asset management with AI summarization, categories, tagging, and crawl-based asset suggestions (pages discovered during baseline web crawl are flagged as candidates).
 - **Marketing Brand Library**: Enterprise-gated brand asset management with product cross-linking, categories, and tagging.
 - **Persona & ICP Builder**: Pro/Enterprise/Unlimited-gated buyer persona management with AI-assisted generation.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.

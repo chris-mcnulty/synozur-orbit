@@ -1589,6 +1589,22 @@ export const insertContentAssetSchema = createInsertSchema(contentAssets).omit({
 export type ContentAsset = typeof contentAssets.$inferSelect;
 export type InsertContentAsset = z.infer<typeof insertContentAssetSchema>;
 
+export const suggestedContentAssets = pgTable("suggested_content_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  companyProfileId: varchar("company_profile_id").notNull().references(() => companyProfiles.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  title: text("title").notNull(),
+  pageType: text("page_type"),
+  reason: text("reason"),
+  suggestedCategory: text("suggested_category"),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type SuggestedContentAsset = typeof suggestedContentAssets.$inferSelect;
+
 // Content Asset ↔ Product Tag join
 export const contentAssetProductTags = pgTable("content_asset_product_tags", {
   assetId: varchar("asset_id").notNull().references(() => contentAssets.id, { onDelete: "cascade" }),

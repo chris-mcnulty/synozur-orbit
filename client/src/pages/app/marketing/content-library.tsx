@@ -105,6 +105,7 @@ export default function ContentLibraryPage() {
   const [bulkQueuedCount, setBulkQueuedCount] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [showBrandImagePicker, setShowBrandImagePicker] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -191,6 +192,37 @@ export default function ContentLibraryPage() {
     const url = ba.fileUrl || ba.url || "";
     return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
   });
+
+  const { data: suggestions = [] } = useQuery<any[]>({
+    queryKey: ["/api/suggested-content-assets"],
+    queryFn: async () => {
+      const r = await fetch("/api/suggested-content-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const dismissSuggestion = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/suggested-content-assets/${id}/dismiss`, { method: "POST", credentials: "include" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/suggested-content-assets"] }),
+  });
+
+  const dismissAllSuggestions = useMutation({
+    mutationFn: async () => {
+      await fetch("/api/suggested-content-assets/dismiss-all", { method: "POST", credentials: "include" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/suggested-content-assets"] }),
+  });
+
+  const handleAcceptSuggestion = (suggestion: any) => {
+    setUrlInput(suggestion.url);
+    setForm(f => ({ ...f, title: suggestion.title, url: suggestion.url }));
+    setAddOpen(true);
+    extractMutation.mutate(suggestion.url);
+    dismissSuggestion.mutate(suggestion.id);
+  };
 
   useEffect(() => {
     if (isAllowed && categories.length === 0) {
@@ -1299,6 +1331,78 @@ export default function ContentLibraryPage() {
             );
           })()}
         </div>
+
+        {suggestions.length > 0 && (
+          <Collapsible open={suggestionsOpen} onOpenChange={setSuggestionsOpen}>
+            <Card className="border-primary/20 bg-primary/[0.02]">
+              <CollapsibleTrigger asChild>
+                <button className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-primary/5 transition-colors rounded-lg" data-testid="btn-toggle-suggestions">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Suggested from your website</span>
+                    <Badge variant="secondary" className="text-xs">{suggestions.length}</Badge>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${suggestionsOpen ? "rotate-180" : ""}`} />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-4 pb-3">
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Pages discovered during your website crawl that could work well as marketing content assets. Add them to your library or dismiss.
+                  </p>
+                  <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                    {suggestions.map((s: any) => (
+                      <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors group" data-testid={`suggested-asset-${s.id}`}>
+                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Globe className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{s.title}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground truncate max-w-[250px]">{s.url?.replace(/^https?:\/\//, "")}</span>
+                            {s.suggestedCategory && (
+                              <Badge variant="outline" className="text-[10px] h-4 shrink-0">{s.suggestedCategory}</Badge>
+                            )}
+                          </div>
+                          {s.reason && (
+                            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{s.reason}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="h-7 text-xs"
+                            onClick={() => handleAcceptSuggestion(s)}
+                            data-testid={`btn-accept-suggestion-${s.id}`}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground"
+                            onClick={() => dismissSuggestion.mutate(s.id)}
+                            data-testid={`btn-dismiss-suggestion-${s.id}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {suggestions.length > 3 && (
+                    <div className="flex justify-end mt-2">
+                      <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => dismissAllSuggestions.mutate()} data-testid="btn-dismiss-all-suggestions">
+                        Dismiss All
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
 
         {isLoading ? (
           <div className="text-center text-muted-foreground py-12">Loading...</div>

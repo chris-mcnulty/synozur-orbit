@@ -50,6 +50,7 @@ import {
   type InsertGeneratedEmail,
   personas,
   markets,
+  suggestedContentAssets,
   type InsertPersona,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
@@ -562,6 +563,66 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(...conditions))
       .orderBy(products.name);
     res.json(rows);
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // SUGGESTED CONTENT ASSETS (from baseline crawl)
+  // ══════════════════════════════════════════════════════════
+
+  app.get("/api/suggested-content-assets", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const existingAssetUrls = await db.select({ url: contentAssets.url })
+      .from(contentAssets)
+      .where(and(
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+        eq(contentAssets.status, "active"),
+      ));
+
+    const existingUrlSet = new Set(
+      existingAssetUrls
+        .map(a => a.url?.trim().toLowerCase().replace(/\/+$/, ""))
+        .filter(Boolean)
+    );
+
+    const rows = await db.select().from(suggestedContentAssets)
+      .where(and(
+        eq(suggestedContentAssets.tenantDomain, ctx.tenantDomain),
+        eq(suggestedContentAssets.marketId, ctx.marketId),
+        eq(suggestedContentAssets.status, "pending"),
+      ))
+      .orderBy(suggestedContentAssets.createdAt);
+
+    const filtered = rows.filter(r => {
+      const norm = r.url.trim().toLowerCase().replace(/\/+$/, "");
+      return !existingUrlSet.has(norm);
+    });
+
+    res.json(filtered);
+  });
+
+  app.post("/api/suggested-content-assets/:id/dismiss", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const { id } = req.params;
+    await db.update(suggestedContentAssets)
+      .set({ status: "dismissed" })
+      .where(eq(suggestedContentAssets.id, id));
+    res.json({ success: true });
+  });
+
+  app.post("/api/suggested-content-assets/dismiss-all", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    await db.update(suggestedContentAssets)
+      .set({ status: "dismissed" })
+      .where(and(
+        eq(suggestedContentAssets.tenantDomain, ctx.tenantDomain),
+        eq(suggestedContentAssets.marketId, ctx.marketId),
+        eq(suggestedContentAssets.status, "pending"),
+      ));
+    res.json({ success: true });
   });
 
   // ══════════════════════════════════════════════════════════

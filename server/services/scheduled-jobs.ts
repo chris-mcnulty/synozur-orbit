@@ -9,6 +9,7 @@ import { sendWeeklyDigestEmail, sendScheduledBriefingEmail } from "./email-servi
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
+import { identifySuggestedAssets } from "./asset-suggestion-service";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -587,6 +588,17 @@ async function runWebsiteCrawlJob(): Promise<void> {
               } catch (analysisError: any) {
                 console.error(`[Scheduled Job] AI analysis failed for baseline ${profile.companyName}:`, analysisError.message);
               }
+            }
+
+            try {
+              await identifySuggestedAssets(
+                crawlResult,
+                profile.id,
+                tenant.domain,
+                profile.marketId || undefined
+              );
+            } catch (assetSuggestError: any) {
+              console.error(`[Scheduled Job] Asset suggestion failed for ${profile.companyName}:`, assetSuggestError.message);
             }
 
             return {

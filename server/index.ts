@@ -279,6 +279,23 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS category TEXT`);
     // B2B/B2C market business type
     await pgPool.query(`ALTER TABLE markets ADD COLUMN IF NOT EXISTS business_type TEXT NOT NULL DEFAULT 'b2b'`);
+    // Suggested content assets from baseline crawl
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS suggested_content_assets (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        company_profile_id VARCHAR NOT NULL REFERENCES company_profiles(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        page_type TEXT,
+        reason TEXT,
+        suggested_category TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS suggested_content_assets_tenant_idx ON suggested_content_assets(tenant_domain, market_id)`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
