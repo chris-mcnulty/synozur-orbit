@@ -625,7 +625,7 @@ export default function CampaignDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
   });
 
-  const [csvFormat, setCsvFormat] = useState<string>("socialpilot");
+  const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [showExportWarning, setShowExportWarning] = useState(false);
 
   const hasUnscheduledPosts = () => {
@@ -879,6 +879,7 @@ export default function CampaignDetailPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="generic">Generic (Copy/Paste)</SelectItem>
                       <SelectItem value="socialpilot">SocialPilot</SelectItem>
                       <SelectItem value="hootsuite">Hootsuite</SelectItem>
                       <SelectItem value="sproutsocial">Sprout Social</SelectItem>
@@ -1948,8 +1949,8 @@ export default function CampaignDetailPage() {
                 const unscheduledCount = activePosts.filter(p => !p.scheduledDate).length;
                 const allUnscheduled = unscheduledCount === activePosts.length;
                 return allUnscheduled
-                  ? "None of your posts have a scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with tools like SocialPilot that require dates."
-                  : `${unscheduledCount} of ${activePosts.length} posts have no scheduled date. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with tools like SocialPilot that require dates.`;
+                  ? "None of your posts have a scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with scheduling tools that require dates."
+                  : `${unscheduledCount} of ${activePosts.length} posts have no scheduled date. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with scheduling tools that require dates.`;
               })()}
             </AlertDialogDescription>
           </AlertDialogHeader>

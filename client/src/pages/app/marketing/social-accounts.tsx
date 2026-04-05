@@ -185,8 +185,9 @@ export default function SocialAccountsPage() {
                   <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="Synozur Alliance" data-testid="input-add-account-name" />
                 </div>
                 <div>
-                  <Label>Account ID</Label>
-                  <Input value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))} placeholder="SocialPilot account number" data-testid="input-add-account-id" />
+                  <Label>Account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))} placeholder="e.g. SocialPilot or Hootsuite account ID" data-testid="input-add-account-id" />
+                  <p className="text-xs text-muted-foreground mt-1">Only needed if you export CSV files for a scheduling tool. Leave blank for manual copy/paste workflows.</p>
                 </div>
                 <div className="flex gap-4 pt-2">
                   <Button variant="outline" className="flex-1" onClick={() => setAddOpen(false)} data-testid="button-cancel-add-account">Cancel</Button>
@@ -287,8 +288,9 @@ export default function SocialAccountsPage() {
                 <Input value={editForm.accountName} onChange={e => setEditForm(f => ({ ...f, accountName: e.target.value }))} data-testid="input-edit-account-name" />
               </div>
               <div>
-                <Label>Account ID</Label>
-                <Input value={editForm.accountId} onChange={e => setEditForm(f => ({ ...f, accountId: e.target.value }))} placeholder="SocialPilot account number" data-testid="input-edit-account-id" />
+                <Label>Account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input value={editForm.accountId} onChange={e => setEditForm(f => ({ ...f, accountId: e.target.value }))} placeholder="e.g. SocialPilot or Hootsuite account ID" data-testid="input-edit-account-id" />
+                <p className="text-xs text-muted-foreground mt-1">Only needed if you export CSV files for a scheduling tool.</p>
               </div>
               <div className="flex gap-4 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit-account">Cancel</Button>

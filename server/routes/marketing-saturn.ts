@@ -1668,6 +1668,24 @@ Return ONLY a valid JSON object (no markdown fences) with:
     const now = new Date();
 
     switch (csvFormat) {
+      case "generic": {
+        lines = ["Platform,Account,Content,Hashtags,Image URL,Source URL,Scheduled Date"];
+        for (const post of posts) {
+          let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
+          if (sd && sd < now) sd = null;
+          const baseContent = (post.editedContent ?? post.content);
+          const hashtagLine = buildHashtagLine(post.hashtags as string[]);
+          const fullContent = isTwitterPost(post)
+            ? buildTwitterContent(baseContent, post.hashtags as string[], post.sourceUrl || "")
+            : baseContent;
+          const imageUrl = getPostImageUrl(post);
+          const acct = post.socialAccountId ? accountMap.get(post.socialAccountId) : null;
+          const accountName = acct?.accountName || "";
+          const dateStr = sd ? fmtSproutDate(sd) : "";
+          lines.push(`${escCsv(post.platform)},${escCsv(accountName)},${escCsv(fullContent)},${escCsv(hashtagLine)},${escCsv(imageUrl)},${escCsv(post.sourceUrl || "")},${escCsv(dateStr)}`);
+        }
+        break;
+      }
       case "hootsuite": {
         lines = ["Date,Time,Message,Media URLs,Social Profile"];
         for (const post of posts) {
