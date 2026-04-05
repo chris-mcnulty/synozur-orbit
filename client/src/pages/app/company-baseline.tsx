@@ -85,6 +85,48 @@ export default function CompanyBaseline() {
     },
   });
 
+  const { data: contextData } = useQuery<{ activeMarket?: { id: string; businessType?: string } }>({
+    queryKey: ["/api/context"],
+    queryFn: async () => {
+      const response = await fetch("/api/context", { credentials: "include" });
+      if (!response.ok) return {};
+      return response.json();
+    },
+  });
+  const marketBusinessType = contextData?.activeMarket?.businessType || "b2b";
+
+  const toggleBusinessTypeMutation = useMutation({
+    mutationFn: async (newType: string) => {
+      const marketId = contextData?.activeMarket?.id;
+      if (!marketId) throw new Error("No active market");
+      const response = await fetch(`/api/markets/${marketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessType: newType }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to update");
+      }
+      return response.json();
+    },
+    onSuccess: (_data, newType) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/scores"] });
+      toast({
+        title: `Market set to ${newType.toUpperCase()}`,
+        description: newType === "b2c"
+          ? "Scoring now prioritizes social engagement signals like Instagram."
+          : "Scoring uses standard B2B weighting.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
+    },
+  });
+
   const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null }>({
     queryKey: ["/api/markets"],
     queryFn: async () => {
@@ -782,7 +824,47 @@ export default function CompanyBaseline() {
                         </div>
                       )}
                       <div>
-                        <CardTitle className="text-xl">{companyProfile.companyName}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-xl">{companyProfile.companyName}</CardTitle>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                className="cursor-pointer"
+                                data-testid="btn-toggle-business-type"
+                              >
+                                <Badge
+                                  variant="outline"
+                                  className={marketBusinessType === "b2c"
+                                    ? "text-[11px] border-orange-400/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                                    : "text-[11px] border-blue-400/50 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                  }
+                                >
+                                  {marketBusinessType.toUpperCase()}
+                                </Badge>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              <DropdownMenuLabel className="text-xs">Business Type</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => toggleBusinessTypeMutation.mutate("b2b")}
+                                disabled={marketBusinessType === "b2b" || toggleBusinessTypeMutation.isPending}
+                              >
+                                <Building2 className="w-3.5 h-3.5 mr-2" />
+                                B2B
+                                {marketBusinessType === "b2b" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => toggleBusinessTypeMutation.mutate("b2c")}
+                                disabled={marketBusinessType === "b2c" || toggleBusinessTypeMutation.isPending}
+                              >
+                                <Users className="w-3.5 h-3.5 mr-2" />
+                                B2C
+                                {marketBusinessType === "b2c" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         <CardDescription className="flex items-center gap-2 mt-1">
                           <Globe className="w-4 h-4" />
                           <a href={companyProfile.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
