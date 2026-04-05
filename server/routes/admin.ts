@@ -1738,15 +1738,19 @@ export function registerAdminRoutes(app: Express) {
         return res.status(400).json({ error: `Market limit reached (${servicePlan.marketLimit}). Contact support to increase your limit.` });
       }
 
-      const { name, description, websiteUrl } = req.body;
+      const { name, description, websiteUrl, businessType } = req.body;
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "Market name is required" });
       }
+
+      const validBusinessTypes = ["b2b", "b2c"];
+      const resolvedBusinessType = validBusinessTypes.includes(businessType) ? businessType : "b2b";
 
       const newMarket = await storage.createMarket({
         tenantId: targetTenantId,
         name: name.trim(),
         description: description?.trim() || null,
+        businessType: resolvedBusinessType,
         isDefault: false,
         status: "active",
         createdBy: user.id,
@@ -2002,7 +2006,7 @@ Respond in JSON format:
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { name, description, status } = req.body;
+      const { name, description, status, businessType } = req.body;
       const updates: any = {};
       const wasArchived = market.status === "archived";
       
@@ -2010,6 +2014,9 @@ Respond in JSON format:
       if (description !== undefined) updates.description = description?.trim() || null;
       if (status !== undefined && ["active", "archived"].includes(status)) {
         updates.status = status;
+      }
+      if (businessType !== undefined && ["b2b", "b2c"].includes(businessType)) {
+        updates.businessType = businessType;
       }
 
       const updatedMarket = await storage.updateMarket(req.params.id, updates);

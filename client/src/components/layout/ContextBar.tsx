@@ -41,6 +41,7 @@ interface Market {
   tenantId: string;
   name: string;
   description: string | null;
+  businessType: string;
   isDefault: boolean;
   status: string;
   baselineCompanyName: string | null;
@@ -87,7 +88,9 @@ export default function ContextBar() {
   const [marketToEdit, setMarketToEdit] = useState<Market | null>(null);
   const [editMarketName, setEditMarketName] = useState("");
   const [editMarketDescription, setEditMarketDescription] = useState("");
+  const [editMarketBusinessType, setEditMarketBusinessType] = useState<"b2b" | "b2c">("b2b");
   const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
+  const [newMarketBusinessType, setNewMarketBusinessType] = useState<"b2b" | "b2c">("b2b");
 
   const { data: tenantSettingsCtx, isLoading: tenantSettingsLoading } = useQuery<{ plan: string }>({
     queryKey: ["/api/tenant/settings"],
@@ -106,6 +109,7 @@ export default function ContextBar() {
     setNewMarketDescription("");
     setIsAnalyzingUrl(false);
     setAutoBuildEnabled(true);
+    setNewMarketBusinessType("b2b");
   };
 
   const handleCloseMarketDialog = (open: boolean) => {
@@ -202,7 +206,7 @@ export default function ContextBar() {
   });
 
   const createMarketMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; websiteUrl?: string }) => {
+    mutationFn: async (data: { name: string; description?: string; websiteUrl?: string; businessType?: string }) => {
       const response = await apiRequest("POST", "/api/markets", data);
       if (!response.ok) {
         const error = await response.json();
@@ -267,6 +271,7 @@ export default function ContextBar() {
       name: newMarketName.trim(),
       description: newMarketDescription.trim() || undefined,
       websiteUrl: marketUrl.trim() || undefined,
+      businessType: newMarketBusinessType,
     });
   };
 
@@ -311,8 +316,8 @@ export default function ContextBar() {
   };
 
   const updateMarketMutation = useMutation({
-    mutationFn: async ({ marketId, name, description }: { marketId: string; name: string; description?: string }) => {
-      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description });
+    mutationFn: async ({ marketId, name, description, businessType }: { marketId: string; name: string; description?: string; businessType?: string }) => {
+      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description, businessType });
       // apiRequest already throws on error, so response.ok is guaranteed here
       return response.json();
     },
@@ -392,6 +397,7 @@ export default function ContextBar() {
     setMarketToEdit(market);
     setEditMarketName(market.name);
     setEditMarketDescription(market.description || "");
+    setEditMarketBusinessType((market.businessType as "b2b" | "b2c") || "b2b");
     setEditMarketOpen(true);
   };
 
@@ -401,6 +407,7 @@ export default function ContextBar() {
         marketId: marketToEdit.id,
         name: editMarketName.trim(),
         description: editMarketDescription.trim() || undefined,
+        businessType: editMarketBusinessType,
       });
     }
   };
@@ -499,6 +506,9 @@ export default function ContextBar() {
                         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{market.name}</span>
+                            {market.businessType === "b2c" && (
+                              <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400">B2C</Badge>
+                            )}
                             {market.isDefault && (
                               <Badge variant="outline" className="text-[10px]">Default</Badge>
                             )}
@@ -707,6 +717,9 @@ export default function ContextBar() {
                       <div className="flex flex-col flex-1 min-w-0 gap-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{market.name}</span>
+                          {market.businessType === "b2c" && (
+                            <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400">B2C</Badge>
+                          )}
                           {market.isDefault && (
                             <Badge variant="outline" className="text-[10px]">Default</Badge>
                           )}
@@ -945,6 +958,38 @@ export default function ContextBar() {
                     data-testid="input-market-description"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Business Type</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={newMarketBusinessType === "b2b" ? "default" : "outline"}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setNewMarketBusinessType("b2b")}
+                      data-testid="btn-business-type-b2b"
+                    >
+                      <Building2 className="w-3.5 h-3.5 mr-1.5" />
+                      B2B
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={newMarketBusinessType === "b2c" ? "default" : "outline"}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setNewMarketBusinessType("b2c")}
+                      data-testid="btn-business-type-b2c"
+                    >
+                      <Globe className="w-3.5 h-3.5 mr-1.5" />
+                      B2C
+                    </Button>
+                  </div>
+                  {newMarketBusinessType === "b2c" && (
+                    <p className="text-xs text-muted-foreground">
+                      B2C scoring prioritizes social signals like Instagram engagement over LinkedIn and website content depth.
+                    </p>
+                  )}
+                </div>
               </div>
               <DialogFooter>
                 <Button 
@@ -1054,6 +1099,38 @@ export default function ContextBar() {
                 rows={3}
                 data-testid="input-edit-market-description"
               />
+            </div>
+            <div className="grid gap-2">
+              <Label>Business Type</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={editMarketBusinessType === "b2b" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setEditMarketBusinessType("b2b")}
+                  data-testid="btn-edit-business-type-b2b"
+                >
+                  <Building2 className="w-3.5 h-3.5 mr-1.5" />
+                  B2B
+                </Button>
+                <Button
+                  type="button"
+                  variant={editMarketBusinessType === "b2c" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setEditMarketBusinessType("b2c")}
+                  data-testid="btn-edit-business-type-b2c"
+                >
+                  <Globe className="w-3.5 h-3.5 mr-1.5" />
+                  B2C
+                </Button>
+              </div>
+              {editMarketBusinessType === "b2c" && (
+                <p className="text-xs text-muted-foreground">
+                  B2C scoring prioritizes social signals like Instagram engagement over LinkedIn and website content depth.
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">

@@ -707,6 +707,11 @@ export function registerTenantAdminRoutes(app: Express) {
       // Get competitors
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       
+      // Get market businessType for score weighting
+      const contextFilter = toContextFilter(ctx);
+      const market = contextFilter.marketId ? await storage.getMarket(contextFilter.marketId) : null;
+      const businessType = (market as any)?.businessType || "b2b";
+      
       // Calculate baseline scores using dedicated baseline function
       let baselineScores: ScoreBreakdown | null = null;
       let baselineTrend: { previousScore: number; delta: number; direction: string } | null = null;
@@ -720,7 +725,7 @@ export function registerTenantAdminRoutes(app: Express) {
           instagramEngagement: companyProfile.instagramEngagement as any,
           lastCrawl: companyProfile.lastCrawl,
           analysisData: companyProfile.analysisData as any,
-        });
+        }, businessType);
         
         // Get trend data from score history
         const previousScore = await storage.getLatestScoreForEntity("baseline", companyProfile.id);
@@ -743,7 +748,8 @@ export function registerTenantAdminRoutes(app: Express) {
           c.instagramEngagement as any,
           c.crawlData as any,
           c.blogSnapshot as any,
-          c.lastCrawl ? new Date(c.lastCrawl) : null
+          c.lastCrawl ? new Date(c.lastCrawl) : null,
+          businessType
         );
         return {
           id: c.id,

@@ -87,6 +87,9 @@ async function runRegenerationInBackground(
     // Build context filter for market-scoped queries
     const contextFilter = { tenantId: tenant.id, tenantDomain, marketId: marketId || "" };
     
+    const marketObj = marketId ? await storage.getMarket(marketId) : null;
+    const businessType = (marketObj as any)?.businessType || "b2b";
+    
     const companyProfile = await storage.getCompanyProfileByContext(contextFilter);
     const competitors = await storage.getCompetitorsByContext(contextFilter);
     const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter, "competitive_analysis");
@@ -227,7 +230,8 @@ async function runRegenerationInBackground(
             refreshedCompetitor.instagramEngagement as any,
             refreshedCompetitor.crawlData as any,
             refreshedCompetitor.blogSnapshot as any,
-            refreshedCompetitor.lastCrawl ? new Date(refreshedCompetitor.lastCrawl) : null
+            refreshedCompetitor.lastCrawl ? new Date(refreshedCompetitor.lastCrawl) : null,
+            businessType
           );
           
           // Store the competitive score in analysisData
@@ -846,7 +850,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
           linkedInEngagement: companyProfile.linkedInEngagement as any,
           instagramEngagement: companyProfile.instagramEngagement as any,
           lastCrawl: companyProfile.lastCrawl,
-        });
+        }, businessType);
         
         // Check if already recorded this period
         const existingHistory = await storage.getScoreHistory("baseline", companyProfile.id, 1);
@@ -877,7 +881,8 @@ Only use these timeframe values: ${periods.join(", ")}`;
           competitor.instagramEngagement as any,
           competitor.crawlData as any,
           competitor.blogSnapshot as any,
-          competitor.lastCrawl
+          competitor.lastCrawl,
+          businessType
         );
         
         const existingHistory = await storage.getScoreHistory("competitor", competitor.id, 1);

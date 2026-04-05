@@ -91,7 +91,8 @@ export function calculateScores(
   instagramEngagement: SocialEngagement | null,
   crawlData: CrawlData | null,
   blogSnapshot: BlogSnapshot | null,
-  lastAnalysis: Date | string | null
+  lastAnalysis: Date | string | null,
+  businessType: string = "b2b"
 ): ScoreBreakdown {
   // Initialize factor scores
   let keywordDiversity = 0;
@@ -155,7 +156,10 @@ export function calculateScores(
   // === SOCIAL FOLLOWERS (0-100) ===
   const linkedInFollowers = linkedInEngagement?.followers || 0;
   const instagramFollowers = instagramEngagement?.followers || 0;
-  const totalFollowers = linkedInFollowers + instagramFollowers;
+  const isB2C = businessType === "b2c";
+  const totalFollowers = isB2C
+    ? (instagramFollowers * 1.5) + linkedInFollowers
+    : linkedInFollowers + instagramFollowers;
   // Logarithmic scale: 100 followers = 20, 1000 = 40, 10000 = 60, 100000 = 80, 1000000 = 100
   if (totalFollowers > 0) {
     socialFollowers = Math.min(100, 20 * Math.log10(totalFollowers));
@@ -168,7 +172,9 @@ export function calculateScores(
   const instagramPosts = instagramEngagement?.posts || 0;
   const instagramLikes = instagramEngagement?.likes || 0;
   const instagramComments = instagramEngagement?.comments || 0;
-  const totalEngagement = linkedInPosts + linkedInReactions + linkedInComments + instagramPosts + instagramLikes + instagramComments;
+  const totalEngagement = isB2C
+    ? (instagramPosts + instagramLikes + instagramComments) * 1.5 + linkedInPosts + linkedInReactions + linkedInComments
+    : linkedInPosts + linkedInReactions + linkedInComments + instagramPosts + instagramLikes + instagramComments;
   if (totalEngagement > 0) {
     socialEngagementScore = Math.min(100, 15 * Math.log10(totalEngagement + 1));
   }
@@ -215,21 +221,28 @@ export function calculateScores(
   // Check if we have meaningful social data
   const hasSocialData = socialFollowers > 0 || socialEngagementScore > 0;
 
-  // Market Presence Score with ADAPTIVE WEIGHTS based on data availability
+  // Market Presence Score with ADAPTIVE WEIGHTS based on data availability and business type
   let marketPresenceScore: number;
   
   if (hasSocialData) {
-    // Full formula when social data is available
-    marketPresenceScore = (
-      (socialFollowers * 0.25) +
-      (socialEngagementScore * 0.20) +
-      (websiteCompleteness * 0.20) +
-      (contentRichnessScore * 0.20) +
-      (brandConsistencyScore * 0.15)
-    );
+    if (isB2C) {
+      marketPresenceScore = (
+        (socialFollowers * 0.35) +
+        (socialEngagementScore * 0.30) +
+        (websiteCompleteness * 0.15) +
+        (contentRichnessScore * 0.10) +
+        (brandConsistencyScore * 0.10)
+      );
+    } else {
+      marketPresenceScore = (
+        (socialFollowers * 0.25) +
+        (socialEngagementScore * 0.20) +
+        (websiteCompleteness * 0.20) +
+        (contentRichnessScore * 0.20) +
+        (brandConsistencyScore * 0.15)
+      );
+    }
   } else {
-    // Adaptive formula when social data is NOT available
-    // Redistribute social weights to content-based factors for differentiation
     marketPresenceScore = (
       (websiteCompleteness * 0.35) +
       (contentRichnessScore * 0.35) +
@@ -251,7 +264,13 @@ export function calculateScores(
   );
 
   // Overall Orbit Score (weighted composite)
-  const overallScore = (
+  // B2C: Social engagement weighted much higher, innovation lower
+  const overallScore = isB2C ? (
+    (innovationScore * 0.15) +
+    (marketPresenceScore * 0.25) +
+    (contentActivityScore * 0.20) +
+    (socialComposite * 0.40)
+  ) : (
     (innovationScore * 0.35) +
     (marketPresenceScore * 0.35) +
     (contentActivityScore * 0.15) +
@@ -291,7 +310,8 @@ export function calculateBaselineScore(
     instagramEngagement?: SocialEngagement | null;
     lastCrawl?: Date | string | null;
     analysisData?: AnalysisData | null;
-  }
+  },
+  businessType: string = "b2b"
 ): ScoreBreakdown {
   let analysisData: AnalysisData | null = null;
   
@@ -318,7 +338,8 @@ export function calculateBaselineScore(
     companyProfile.instagramEngagement || null,
     companyProfile.crawlData || null,
     companyProfile.blogSnapshot || null,
-    companyProfile.lastCrawl || null
+    companyProfile.lastCrawl || null,
+    businessType
   );
 }
 

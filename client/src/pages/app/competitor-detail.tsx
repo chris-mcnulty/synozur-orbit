@@ -45,6 +45,16 @@ export default function CompetitorDetail() {
   const [aiResearchOpen, setAiResearchOpen] = useState(false);
   const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
 
+  const { data: contextData } = useQuery<{ activeMarket?: { businessType?: string } }>({
+    queryKey: ["/api/context"],
+    queryFn: async () => {
+      const response = await fetch("/api/context", { credentials: "include" });
+      if (!response.ok) return {};
+      return response.json();
+    },
+  });
+  const isB2C = contextData?.activeMarket?.businessType === "b2c";
+
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
     queryFn: async () => {
@@ -920,6 +930,102 @@ export default function CompetitorDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {isB2C && (
+              <Card className="border-orange-400/30 bg-gradient-to-r from-orange-50/50 to-pink-50/50 dark:from-orange-950/20 dark:to-pink-950/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Instagram className="h-4 w-4 text-[#E4405F]" />
+                    Social Engagement Insights
+                    <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400 ml-auto">B2C Priority</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const igData = competitor?.instagramEngagement as { followers?: number; posts?: number; likes?: number; comments?: number; capturedAt?: string } | null;
+                    const liData = competitor?.linkedInEngagement as { followers?: number; posts?: number; reactions?: number; comments?: number } | null;
+                    const hasIg = igData && (igData.followers || igData.posts || igData.likes);
+                    const hasLi = liData && (liData.followers || liData.posts || liData.reactions);
+                    
+                    if (!hasIg && !hasLi) {
+                      return (
+                        <div className="text-center py-4">
+                          <Instagram className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                          <p className="text-muted-foreground text-sm">No social engagement data yet.</p>
+                          <p className="text-muted-foreground text-xs mt-1">Add Instagram and LinkedIn URLs, then run a social check to capture metrics.</p>
+                        </div>
+                      );
+                    }
+                    
+                    const formatNum = (n: number) => {
+                      if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+                      if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+                      return n.toLocaleString();
+                    };
+                    
+                    return (
+                      <div className="space-y-4">
+                        {hasIg && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Instagram className="h-4 w-4 text-[#E4405F]" />
+                              <span className="text-sm font-medium">Instagram</span>
+                              {igData.capturedAt && (
+                                <span className="text-[10px] text-muted-foreground ml-auto">
+                                  Updated {new Date(igData.capturedAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <Users className="h-4 w-4 mx-auto mb-1 text-[#E4405F]" />
+                                <p className="text-lg font-bold" data-testid="text-ig-followers">{formatNum(igData.followers || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Followers</p>
+                              </div>
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <Hash className="h-4 w-4 mx-auto mb-1 text-[#E4405F]" />
+                                <p className="text-lg font-bold" data-testid="text-ig-posts">{formatNum(igData.posts || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Posts</p>
+                              </div>
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <TrendingUp className="h-4 w-4 mx-auto mb-1 text-[#E4405F]" />
+                                <p className="text-lg font-bold" data-testid="text-ig-likes">{formatNum(igData.likes || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Likes</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {hasLi && (
+                          <div className={hasIg ? "pt-3 border-t" : ""}>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Linkedin className="h-4 w-4 text-[#0A66C2]" />
+                              <span className="text-sm font-medium">LinkedIn</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <Users className="h-4 w-4 mx-auto mb-1 text-[#0A66C2]" />
+                                <p className="text-lg font-bold" data-testid="text-li-followers">{formatNum(liData.followers || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Followers</p>
+                              </div>
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <Hash className="h-4 w-4 mx-auto mb-1 text-[#0A66C2]" />
+                                <p className="text-lg font-bold" data-testid="text-li-posts">{formatNum(liData.posts || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Posts</p>
+                              </div>
+                              <div className="text-center p-3 rounded-lg bg-background/80">
+                                <TrendingUp className="h-4 w-4 mx-auto mb-1 text-[#0A66C2]" />
+                                <p className="text-lg font-bold" data-testid="text-li-reactions">{formatNum(liData.reactions || 0)}</p>
+                                <p className="text-[10px] text-muted-foreground">Reactions</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            )}
 
             <div className="grid gap-6 md:grid-cols-2">
               <Card>

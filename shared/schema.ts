@@ -163,6 +163,7 @@ export const markets = pgTable("markets", {
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
+  businessType: text("business_type").notNull().default("b2b"),
   isDefault: boolean("is_default").notNull().default(false),
   status: text("status").notNull().default("active"), // active, archived
   createdBy: varchar("created_by").notNull().references(() => users.id),

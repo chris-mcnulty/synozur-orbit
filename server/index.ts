@@ -277,6 +277,8 @@ app.use((req, res, next) => {
     // Organizations directory columns
     await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS description TEXT`);
     await pgPool.query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS category TEXT`);
+    // B2B/B2C market business type
+    await pgPool.query(`ALTER TABLE markets ADD COLUMN IF NOT EXISTS business_type TEXT NOT NULL DEFAULT 'b2b'`);
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

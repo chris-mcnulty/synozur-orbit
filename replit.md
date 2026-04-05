@@ -59,7 +59,7 @@ Preferred communication style: Simple, everyday language.
 - **Client Projects**: Facilitate product-level competitive analysis for consulting firms.
 - **Product Management MVP**: Feature catalog, quarterly roadmap view, AI-powered roadmap recommendations.
 - **Report Generation**: Branded PDF reports and CSV exports.
-- **Multi-Market Support**: Enterprise feature for managing multiple client contexts.
+- **Multi-Market Support**: Enterprise feature for managing multiple client contexts. Markets support B2B (default) or B2C business type, which adjusts Orbit Score weighting — B2C prioritizes social engagement (Instagram) over innovation/content depth.
 - **PDF Browser Pool**: Singleton Chromium instance for efficient PDF generation.
 - **SharePoint Embedded (SPE) Storage**: Tenant-isolated document storage with admin UI.
 

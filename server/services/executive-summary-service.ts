@@ -29,6 +29,9 @@ export async function generateExecutiveSummary(
 
   const contextFilter = { tenantId: tenant.id, tenantDomain, marketId: marketId || "" };
   
+  const marketObj = marketId ? await storage.getMarket(marketId) : null;
+  const businessType = (marketObj as any)?.businessType || "b2b";
+  
   const companyProfile = companyProfileId 
     ? await storage.getCompanyProfile(companyProfileId)
     : await storage.getCompanyProfileByContext(contextFilter);
@@ -93,7 +96,8 @@ Revenue Range: ${profile.revenue || "Not specified"}
         comp.instagramEngagement,
         comp.crawlData,
         comp.blogSnapshot,
-        comp.lastCrawl || comp.lastAnalysis
+        comp.lastCrawl || comp.lastAnalysis,
+        businessType
       );
       overallScore = Math.round(calculatedScores.overallScore * 100) / 100;
       contentScore = Math.round(calculatedScores.contentActivityScore * 100) / 100;
