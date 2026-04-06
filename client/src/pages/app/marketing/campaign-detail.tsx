@@ -122,6 +122,7 @@ interface GeneratedPost {
   overrideBrandAssetId?: string;
   sourceUrl?: string;
   scheduledDate?: string;
+  socialAccountId?: string;
 }
 
 
@@ -553,15 +554,29 @@ export default function CampaignDetailPage() {
         }
       }
 
-      await Promise.all(activePosts.map(async (post, i) => {
-        const slotIndex = i % slots.length;
-        const r = await fetch(`/api/campaigns/${id}/generated-posts/${post.id}`, {
+      const postsByAccount = new Map<string, GeneratedPost[]>();
+      for (const post of activePosts) {
+        const key = post.socialAccountId || post.platform;
+        if (!postsByAccount.has(key)) postsByAccount.set(key, []);
+        postsByAccount.get(key)!.push(post);
+      }
+
+      const assignments: { postId: string; slot: string }[] = [];
+      for (const [, accountPosts] of postsByAccount) {
+        for (let i = 0; i < accountPosts.length; i++) {
+          const slotIndex = i % slots.length;
+          assignments.push({ postId: accountPosts[i].id, slot: slots[slotIndex] });
+        }
+      }
+
+      await Promise.all(assignments.map(async ({ postId, slot }) => {
+        const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ scheduledDate: slots[slotIndex] }),
+          body: JSON.stringify({ scheduledDate: slot }),
         });
-        if (!r.ok) throw new Error(`Failed to schedule post ${post.id}`);
+        if (!r.ok) throw new Error(`Failed to schedule post ${postId}`);
         return r.json();
       }));
     },
@@ -628,13 +643,14 @@ export default function CampaignDetailPage() {
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [showExportWarning, setShowExportWarning] = useState(false);
 
-  const hasUnscheduledPosts = () => {
-    const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
-    return activePosts.some(p => !p.scheduledDate);
+  const getUndatedPostCount = () => {
+    const now = new Date();
+    const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
+    return active.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now).length;
   };
 
   const handleExportClick = () => {
-    if (hasUnscheduledPosts()) {
+    if (getUndatedPostCount() > 0) {
       setShowExportWarning(true);
     } else {
       exportCsvMutation.mutate();
@@ -1946,11 +1962,11 @@ export default function CampaignDetailPage() {
             <AlertDialogDescription data-testid="text-export-warning-description">
               {(() => {
                 const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
-                const unscheduledCount = activePosts.filter(p => !p.scheduledDate).length;
-                const allUnscheduled = unscheduledCount === activePosts.length;
-                return allUnscheduled
-                  ? "None of your posts have a scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with scheduling tools that require dates."
-                  : `${unscheduledCount} of ${activePosts.length} posts have no scheduled date. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with scheduling tools that require dates.`;
+                const undatedCount = getUndatedPostCount();
+                const allUndated = undatedCount === activePosts.length;
+                return allUndated
+                  ? "None of your posts have a valid scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with scheduling tools that require dates."
+                  : `${undatedCount} of ${activePosts.length} posts have no scheduled date or have a date in the past. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with scheduling tools that require dates.`;
               })()}
             </AlertDialogDescription>
           </AlertDialogHeader>

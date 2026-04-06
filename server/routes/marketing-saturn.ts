@@ -1568,6 +1568,18 @@ Return ONLY a valid JSON object (no markdown fences) with:
       for (const ca of cas) if (ca.url) contentAssetByUrl.set(ca.url, ca);
     }
 
+    const now = new Date();
+    const sortedPosts = [...posts].sort((a, b) => {
+      const aDate = a.scheduledDate ? new Date(a.scheduledDate) : null;
+      const bDate = b.scheduledDate ? new Date(b.scheduledDate) : null;
+      const aEffective = aDate && aDate >= now ? aDate : null;
+      const bEffective = bDate && bDate >= now ? bDate : null;
+      if (aEffective && bEffective) return aEffective.getTime() - bEffective.getTime();
+      if (aEffective && !bEffective) return -1;
+      if (!aEffective && bEffective) return 1;
+      return 0;
+    });
+
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);
     let lines: string[];
@@ -1665,12 +1677,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
       return full.substring(0, TWITTER_CHAR_LIMIT - 1) + "…";
     };
 
-    const now = new Date();
-
     switch (csvFormat) {
       case "generic": {
         lines = ["Platform,Account,Content,Hashtags,Image URL,Source URL,Scheduled Date"];
-        for (const post of posts) {
+        for (const post of sortedPosts) {
           let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
@@ -1688,7 +1698,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       }
       case "hootsuite": {
         lines = ["Date,Time,Message,Media URLs,Social Profile"];
-        for (const post of posts) {
+        for (const post of sortedPosts) {
           let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
@@ -1705,7 +1715,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       }
       case "sproutsocial": {
         lines = ["Post Text,Image URL,Scheduled Date/Time,Network,Profile"];
-        for (const post of posts) {
+        for (const post of sortedPosts) {
           let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
@@ -1721,7 +1731,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       }
       default: {
         lines = ["Post Content,Image URL,Date/Time,Account ID,First Comment,Tags"];
-        for (const post of posts) {
+        for (const post of sortedPosts) {
           let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           if (sd && sd < now) sd = null;
           const baseContent = (post.editedContent ?? post.content);
