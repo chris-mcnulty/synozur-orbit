@@ -144,7 +144,7 @@ export function registerObjectStorageRoutes(app: Express): void {
       res.set({
         "Content-Type": result.contentType,
         "Content-Length": String(result.buffer.length),
-        "Cache-Control": "public, max-age=86400, immutable",
+        "Cache-Control": "private, max-age=86400, immutable",
         Vary: "Accept",
       });
       return res.send(result.buffer);
