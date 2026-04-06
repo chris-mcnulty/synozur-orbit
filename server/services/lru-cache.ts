@@ -18,6 +18,9 @@ export class LRUCache<T> {
   }
 
   set(key: string, value: T, size: number): void {
+    // Skip caching entries that exceed the total budget to preserve the maxBytes invariant
+    if (size > this.maxBytes) return;
+
     // Remove existing entry if present
     const existing = this.map.get(key);
     if (existing) {
