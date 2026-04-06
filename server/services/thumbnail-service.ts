@@ -23,14 +23,20 @@ export function isResizableContentType(contentType: string | undefined): boolean
 
 /**
  * Snap a requested width to the nearest allowed width.
- * Returns undefined if the value is outside the supported range.
+ * Clamps to the range [min, max] of ALLOWED_WIDTHS for out-of-range values.
  */
-export function snapWidth(requested: number): AllowedWidth | undefined {
+export function snapWidth(requested: number): AllowedWidth {
   if (!Number.isFinite(requested) || requested <= 0) return ALLOWED_WIDTHS[0];
+  let nearest = ALLOWED_WIDTHS[0];
+  let minDist = Math.abs(requested - nearest);
   for (const w of ALLOWED_WIDTHS) {
-    if (requested <= w) return w;
+    const dist = Math.abs(requested - w);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = w;
+    }
   }
-  return ALLOWED_WIDTHS[ALLOWED_WIDTHS.length - 1];
+  return nearest;
 }
 
 /**
