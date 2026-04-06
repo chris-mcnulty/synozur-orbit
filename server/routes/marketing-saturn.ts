@@ -1595,14 +1595,14 @@ Return ONLY a valid JSON object (no markdown fences) with:
     const fmtSocialPilotDate = (d: Date | null | undefined) => {
       if (!d) return "";
       const dt = toClientTime(new Date(d));
-      const mon = MONTHS[dt.getUTCMonth()];
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
       const dd = String(dt.getUTCDate()).padStart(2, "0");
       const yyyy = dt.getUTCFullYear();
       let hh = dt.getUTCHours();
       const min = String(dt.getUTCMinutes()).padStart(2, "0");
       const ampm = hh >= 12 ? "PM" : "AM";
       hh = hh % 12 || 12;
-      return `${mon} ${dd}, ${yyyy} ${String(hh).padStart(2, "0")}:${min} ${ampm}`;
+      return `${mm}/${dd}/${yyyy} ${hh}:${min} ${ampm}`;
     };
 
     const fmtHootsuiteDate = (d: Date | null | undefined) => {
