@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import { generateThumbnail, snapWidth, isResizableContentType } from "../../services/thumbnail-service";
 
 const ALLOWED_DOCUMENT_TYPES = [
   "application/pdf",
@@ -95,6 +96,64 @@ export function registerObjectStorageRoutes(app: Express): void {
     } catch (error) {
       console.error("Error generating upload URL:", error);
       res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  /**
+   * Serve resized thumbnail images for asset list views.
+   * Query params:
+   *   w - desired width (snapped to nearest allowed size: 160, 320, 480, 640, 960)
+   *
+   * Returns WebP image with aggressive caching.  Falls through to the full
+   * object endpoint for non-image types.
+   *
+   * GET /api/thumbnails/:objectPath(*)
+   */
+  app.get("/api/thumbnails/:objectPath(*)", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const requestedWidth = parseInt(req.query.w as string, 10) || 320;
+      const width = snapWidth(requestedWidth);
+      if (!width) {
+        return res.status(400).json({ error: "Invalid width" });
+      }
+
+      // Reconstruct the /objects/ path the storage service expects
+      const objectPath = `/objects/${req.params.objectPath}`;
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+
+      // Check content type — only resize images
+      const [metadata] = await objectFile.getMetadata();
+      const contentType = metadata.contentType as string | undefined;
+      if (!isResizableContentType(contentType)) {
+        // Not an image we can resize — redirect to the original
+        return res.redirect(`${objectPath}`);
+      }
+
+      const cacheKey = objectPath;
+      const stream = objectFile.createReadStream();
+      const result = await generateThumbnail(stream, contentType!, cacheKey, width);
+
+      if (!result) {
+        return res.redirect(`${objectPath}`);
+      }
+
+      res.set({
+        "Content-Type": result.contentType,
+        "Content-Length": String(result.buffer.length),
+        "Cache-Control": "public, max-age=86400, immutable",
+        Vary: "Accept",
+      });
+      return res.send(result.buffer);
+    } catch (error) {
+      console.error("Error generating thumbnail:", error);
+      if (error instanceof ObjectNotFoundError) {
+        return res.status(404).json({ error: "Object not found" });
+      }
+      return res.status(500).json({ error: "Failed to generate thumbnail" });
     }
   });
 
