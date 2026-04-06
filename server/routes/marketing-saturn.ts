@@ -1596,7 +1596,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       if (!d) return "";
       const dt = toClientTime(new Date(d));
       const mon = MONTHS[dt.getUTCMonth()];
-      const dd = String(dt.getUTCDate()).padStart(2, "0");
+      const dd = dt.getUTCDate();
       const yyyy = dt.getUTCFullYear();
       let hh = dt.getUTCHours();
       const min = String(dt.getUTCMinutes()).padStart(2, "0");
