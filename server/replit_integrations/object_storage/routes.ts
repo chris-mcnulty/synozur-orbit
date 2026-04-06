@@ -115,11 +115,15 @@ export function registerObjectStorageRoutes(app: Express): void {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const requestedWidth = parseInt(req.query.w as string, 10) || 320;
-      const width = snapWidth(requestedWidth);
-      if (!width) {
-        return res.status(400).json({ error: "Invalid width" });
+      const rawWidth = req.query.w as string | undefined;
+      let requestedWidth = 320;
+      if (rawWidth !== undefined) {
+        requestedWidth = Number.parseInt(rawWidth, 10);
+        if (Number.isNaN(requestedWidth)) {
+          return res.status(400).json({ error: "Invalid width" });
+        }
       }
+      const width = snapWidth(requestedWidth);
 
       // Reconstruct the /objects/ path the storage service expects
       const objectPath = `/objects/${req.params.objectPath}`;
