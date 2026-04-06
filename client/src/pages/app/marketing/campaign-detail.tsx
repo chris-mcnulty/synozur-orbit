@@ -561,11 +561,16 @@ export default function CampaignDetailPage() {
         postsByAccount.get(key)!.push(post);
       }
 
-      const assignments: { postId: string; slot: string }[] = [];
+      const assignments: { postId: string; slot: string | null }[] = [];
+      let overflowCount = 0;
       for (const [, accountPosts] of postsByAccount) {
         for (let i = 0; i < accountPosts.length; i++) {
-          const slotIndex = i % slots.length;
-          assignments.push({ postId: accountPosts[i].id, slot: slots[slotIndex] });
+          if (i < slots.length) {
+            assignments.push({ postId: accountPosts[i].id, slot: slots[i] });
+          } else {
+            assignments.push({ postId: accountPosts[i].id, slot: null });
+            overflowCount++;
+          }
         }
       }
 
@@ -579,11 +584,21 @@ export default function CampaignDetailPage() {
         if (!r.ok) throw new Error(`Failed to schedule post ${postId}`);
         return r.json();
       }));
+
+      return { overflowCount };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setShowScheduleDialog(false);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
-      toast({ title: "Posts scheduled across campaign timeline" });
+      if (result?.overflowCount && result.overflowCount > 0) {
+        toast({
+          title: "Not enough timeslots",
+          description: `${result.overflowCount} post${result.overflowCount > 1 ? "s" : ""} could not be scheduled because there are more posts per account than available timeslots. Consider increasing the campaign duration, adding more posts per day, or reducing the number of posts.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Posts scheduled across campaign timeline" });
+      }
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -642,25 +657,35 @@ export default function CampaignDetailPage() {
 
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [showExportWarning, setShowExportWarning] = useState(false);
+  const [includeUndated, setIncludeUndated] = useState(false);
+  const [exportPreview, setExportPreview] = useState<{ totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number } | null>(null);
 
-  const getUndatedPostCount = () => {
-    const now = new Date();
-    const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
-    return active.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now).length;
-  };
-
-  const handleExportClick = () => {
-    if (getUndatedPostCount() > 0) {
-      setShowExportWarning(true);
-    } else {
-      exportCsvMutation.mutate();
+  const handleExportClick = async () => {
+    try {
+      const r = await fetch(`/api/campaigns/${id}/export-preview`, { credentials: "include" });
+      if (!r.ok) throw new Error("Preview failed");
+      const preview = await r.json();
+      setExportPreview(preview);
+      if (preview.undatedPosts > 0 || preview.collisions > 0) {
+        setIncludeUndated(false);
+        setShowExportWarning(true);
+      } else {
+        doExport(false);
+      }
+    } catch {
+      doExport(false);
     }
   };
 
+  const doExport = (withUndated: boolean) => {
+    exportCsvMutation.mutate({ includeUndated: withUndated });
+  };
+
   const exportCsvMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ includeUndated: inclUndated }: { includeUndated: boolean }) => {
       const tzOffset = new Date().getTimezoneOffset();
-      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}`, {
+      const excludeParam = inclUndated ? "false" : "true";
+      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}&excludeUndated=${excludeParam}`, {
         method: "POST",
         credentials: "include",
       });
@@ -1958,21 +1983,72 @@ export default function CampaignDetailPage() {
       <AlertDialog open={showExportWarning} onOpenChange={setShowExportWarning}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle data-testid="text-export-warning-title">Unscheduled Posts Detected</AlertDialogTitle>
-            <AlertDialogDescription data-testid="text-export-warning-description">
-              {(() => {
-                const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
-                const undatedCount = getUndatedPostCount();
-                const allUndated = undatedCount === activePosts.length;
-                return allUndated
-                  ? "None of your posts have a valid scheduled date. The exported CSV will have empty Date/Time columns, which may cause issues with scheduling tools that require dates."
-                  : `${undatedCount} of ${activePosts.length} posts have no scheduled date or have a date in the past. The exported CSV will have empty Date/Time columns for those posts, which may cause issues with scheduling tools that require dates.`;
-              })()}
+            <AlertDialogTitle data-testid="text-export-warning-title">Export Review</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3" data-testid="text-export-warning-description">
+                {exportPreview && (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Total active posts:</span>
+                      <span className="font-medium">{exportPreview.totalPosts}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Posts with valid dates:</span>
+                      <span className="font-medium text-green-600">{exportPreview.datedPosts}</span>
+                    </div>
+                    {exportPreview.undatedPosts > 0 && (
+                      <div className="flex justify-between">
+                        <span>Posts without dates:</span>
+                        <span className="font-medium text-amber-600">{exportPreview.undatedPosts}</span>
+                      </div>
+                    )}
+                    {exportPreview.collisions > 0 && (
+                      <div className="flex justify-between">
+                        <span>Time slot collisions:</span>
+                        <span className="font-medium text-amber-600">{exportPreview.collisions} (auto-staggered by 15 min)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {exportPreview && exportPreview.undatedPosts > 0 && (
+                  <div className="rounded-md border p-3 bg-muted/50">
+                    <p className="text-sm mb-2">
+                      {exportPreview.undatedPosts} post{exportPreview.undatedPosts > 1 ? "s" : ""} {exportPreview.undatedPosts > 1 ? "have" : "has"} no scheduled date or {exportPreview.undatedPosts > 1 ? "have" : "has"} a date in the past. Undated posts can cause import failures in scheduling tools.
+                    </p>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeUndated}
+                        onChange={(e) => setIncludeUndated(e.target.checked)}
+                        className="rounded"
+                        data-testid="checkbox-include-undated"
+                      />
+                      Include undated posts anyway (not recommended)
+                    </label>
+                  </div>
+                )}
+                {exportPreview && exportPreview.undatedPosts > 0 && !includeUndated && (
+                  <p className="text-sm text-muted-foreground">
+                    Export will include only the {exportPreview.datedPosts} post{exportPreview.datedPosts !== 1 ? "s" : ""} with valid future dates.
+                  </p>
+                )}
+                {exportPreview && exportPreview.datedPosts === 0 && !includeUndated && (
+                  <p className="text-sm text-destructive font-medium">
+                    No posts with valid dates to export. Use the Schedule Posts button first, or check the box above to include undated posts.
+                  </p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-export">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => exportCsvMutation.mutate()} data-testid="button-export-anyway">Export Anyway</AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => { setShowExportWarning(false); doExport(includeUndated); }}
+              disabled={exportPreview !== null && exportPreview.datedPosts === 0 && !includeUndated}
+              data-testid="button-export-confirm"
+            >
+              Export {includeUndated ? `All ${exportPreview?.totalPosts ?? 0}` : `${exportPreview?.datedPosts ?? 0} Scheduled`} Posts
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

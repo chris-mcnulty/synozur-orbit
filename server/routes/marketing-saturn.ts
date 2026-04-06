@@ -1520,6 +1520,68 @@ Return ONLY a valid JSON object (no markdown fences) with:
     res.json({ status: job?.status ?? "unknown", jobId: campaign.postGenerationJobId });
   });
 
+  app.get("/api/campaigns/:id/export-preview", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    const ctx = await getRequestContext(req);
+    const [campaign] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+    const allPosts = await db.select().from(generatedPosts)
+      .where(and(
+        eq(generatedPosts.campaignId, campaign.id),
+        notInArray(generatedPosts.status, ["deleted", "rejected"]),
+      ));
+
+    const now = new Date();
+    const dated = allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
+    const undated = allPosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
+
+    const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
+      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+    const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
+    const allAccountIds = Array.from(new Set([
+      ...allPosts.map(p => p.socialAccountId).filter(Boolean),
+      ...campaignAccountIds,
+    ])) as string[];
+    const accountMap = new Map<string, any>();
+    if (allAccountIds.length) {
+      const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, allAccountIds));
+      for (const a of accts) accountMap.set(a.id, a);
+    }
+    const platformAccountFallback = new Map<string, string>();
+    for (const link of campaignAccountLinks) {
+      const acct = accountMap.get(link.socialAccountId);
+      if (acct?.accountId && acct.platform && !platformAccountFallback.has(acct.platform)) {
+        platformAccountFallback.set(acct.platform, acct.accountId);
+      }
+    }
+
+    const getAcctId = (post: any) => {
+      if (post.socialAccountId) {
+        const acct = accountMap.get(post.socialAccountId);
+        if (acct?.accountId) return acct.accountId;
+      }
+      return platformAccountFallback.get(post.platform) || post.platform;
+    };
+
+    let collisions = 0;
+    const slotMap = new Map<string, number>();
+    for (const p of dated) {
+      const key = `${new Date(p.scheduledDate!).toISOString()}|${getAcctId(p)}`;
+      const count = (slotMap.get(key) || 0) + 1;
+      slotMap.set(key, count);
+      if (count > 1) collisions++;
+    }
+
+    res.json({
+      totalPosts: allPosts.length,
+      datedPosts: dated.length,
+      undatedPosts: undated.length,
+      collisions,
+    });
+  });
+
   app.post("/api/campaigns/:id/export-csv", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     const ctx = await getRequestContext(req);
@@ -1527,11 +1589,18 @@ Return ONLY a valid JSON object (no markdown fences) with:
       .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
-    const posts = await db.select().from(generatedPosts)
+    const excludeUndated = req.query.excludeUndated !== "false";
+
+    const allPosts = await db.select().from(generatedPosts)
       .where(and(
         eq(generatedPosts.campaignId, campaign.id),
         notInArray(generatedPosts.status, ["deleted", "rejected"]),
       ));
+
+    const now_filter = new Date();
+    const posts = excludeUndated
+      ? allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now_filter)
+      : allPosts;
 
     const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
       .where(eq(campaignSocialAccounts.campaignId, campaign.id));
@@ -1579,6 +1648,34 @@ Return ONLY a valid JSON object (no markdown fences) with:
       if (!aEffective && bEffective) return 1;
       return 0;
     });
+
+    const COLLISION_STAGGER_MINUTES = 15;
+    const slotUsed = new Map<string, Date>();
+    for (const post of sortedPosts) {
+      if (!post.scheduledDate) continue;
+      const sd = new Date(post.scheduledDate);
+      if (sd < now) continue;
+      const acctId = (() => {
+        if (post.socialAccountId) {
+          const acct = accountMap.get(post.socialAccountId);
+          if (acct?.accountId) return acct.accountId;
+        }
+        return platformAccountFallback.get(post.platform) || post.platform;
+      })();
+      const key = `${sd.toISOString()}|${acctId}`;
+      if (slotUsed.has(key)) {
+        let bumped = new Date(slotUsed.get(key)!.getTime() + COLLISION_STAGGER_MINUTES * 60000);
+        let bumpKey = `${bumped.toISOString()}|${acctId}`;
+        while (slotUsed.has(bumpKey)) {
+          bumped = new Date(bumped.getTime() + COLLISION_STAGGER_MINUTES * 60000);
+          bumpKey = `${bumped.toISOString()}|${acctId}`;
+        }
+        (post as any).scheduledDate = bumped;
+        slotUsed.set(bumpKey, bumped);
+      } else {
+        slotUsed.set(key, sd);
+      }
+    }
 
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);
