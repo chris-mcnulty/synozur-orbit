@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -14,11 +14,20 @@ import { Map, Wand2, Save, Loader2 } from "lucide-react";
 const AXIS_OPTIONS = [
   "Market Presence",
   "Innovation",
-  "Price",
+  "Content Activity",
+  "Social Engagement",
   "Feature Breadth",
-  "Brand Awareness",
-  "Customer Focus",
+  "Overall Score",
 ];
+
+const AXIS_TO_SCORE_FIELD: Record<string, string> = {
+  "Market Presence": "marketPresenceScore",
+  "Innovation": "innovationScore",
+  "Content Activity": "contentActivityScore",
+  "Social Engagement": "socialEngagementScore",
+  "Feature Breadth": "featureBreadthScore",
+  "Overall Score": "overallScore",
+};
 
 interface PositionEntry {
   competitorId?: string;
@@ -30,16 +39,6 @@ interface PositionEntry {
   yValue: number;
 }
 
-function autoPosition(entries: PositionEntry[]): PositionEntry[] {
-  // Simple auto-position: spread entries evenly with some randomness
-  return entries.map((entry, i) => ({
-    ...entry,
-    xValue: Math.round(20 + (i * 60) / Math.max(entries.length - 1, 1) + (Math.random() * 15 - 7.5)),
-    yValue: Math.round(20 + Math.random() * 60),
-  }));
-}
-
-// Custom tooltip for the scatter chart
 function CustomTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const data = payload[0].payload;
@@ -47,13 +46,12 @@ function CustomTooltip({ active, payload }: any) {
     <div className="bg-popover border rounded-lg shadow-lg p-3 text-sm">
       <p className="font-semibold">{data.label}</p>
       <p className="text-muted-foreground">
-        X: {data.xValue} / Y: {data.yValue}
+        {data.xAxis}: {data.xValue} &middot; {data.yAxis}: {data.yValue}
       </p>
     </div>
   );
 }
 
-// Custom dot to show labels on chart
 function CustomDot(props: any) {
   const { cx, cy, payload } = props;
   const isBaseline = !!payload.companyProfileId;
@@ -89,7 +87,6 @@ export default function PositioningMapPage() {
   const [localPositions, setLocalPositions] = useState<PositionEntry[]>([]);
   const [dirty, setDirty] = useState(false);
 
-  // Fetch saved positions
   const { data: posData, isLoading: posLoading } = useQuery({
     queryKey: ["/api/positioning-map"],
     queryFn: async () => {
@@ -99,7 +96,15 @@ export default function PositioningMapPage() {
     },
   });
 
-  // Fetch competitors + baseline for initial seeding
+  const { data: dashScores } = useQuery({
+    queryKey: ["/api/dashboard/scores"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/scores", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
     queryFn: async () => {
@@ -118,8 +123,22 @@ export default function PositioningMapPage() {
     },
   });
 
-  // Initialize local positions from API data or seed from competitors
-  // Only seed when: (a) we have saved positions to load, (b) local state is empty and not dirty
+  const getScoreValue = (entityId: string, isBaseline: boolean, axisLabel: string): number => {
+    const field = AXIS_TO_SCORE_FIELD[axisLabel] || "overallScore";
+    if (!dashScores) return 50;
+
+    if (isBaseline && dashScores.baselineScores) {
+      return Math.round(dashScores.baselineScores[field] ?? 50);
+    }
+
+    if (!isBaseline && dashScores.competitorScores) {
+      const match = dashScores.competitorScores.find((c: any) => c.id === entityId);
+      if (match) return Math.round(match[field] ?? 50);
+    }
+
+    return 50;
+  };
+
   useEffect(() => {
     if (posData?.positions?.length > 0) {
       setLocalPositions(
@@ -140,11 +159,11 @@ export default function PositioningMapPage() {
       if (companyProfile) {
         seed.push({
           companyProfileId: companyProfile.id,
-          label: companyProfile.name || "Our Company",
+          label: companyProfile.name || companyProfile.companyName || "Our Company",
           xAxis,
           yAxis,
-          xValue: 50,
-          yValue: 50,
+          xValue: getScoreValue(companyProfile.id, true, xAxis),
+          yValue: getScoreValue(companyProfile.id, true, yAxis),
         });
       }
       competitors.forEach((c: any) => {
@@ -153,13 +172,13 @@ export default function PositioningMapPage() {
           label: c.name,
           xAxis,
           yAxis,
-          xValue: 30 + Math.round(Math.random() * 40),
-          yValue: 30 + Math.round(Math.random() * 40),
+          xValue: getScoreValue(c.id, false, xAxis),
+          yValue: getScoreValue(c.id, false, yAxis),
         });
       });
       setLocalPositions(seed);
     }
-  }, [posData, competitors, companyProfile]);
+  }, [posData, competitors, companyProfile, dashScores]);
 
   const saveMutation = useMutation({
     mutationFn: async (positions: PositionEntry[]) => {
@@ -201,8 +220,21 @@ export default function PositioningMapPage() {
   };
 
   const handleAutoPosition = () => {
-    setLocalPositions((prev) => autoPosition(prev));
+    if (!dashScores) {
+      toast({ title: "No score data available", description: "Run an analysis first to generate positioning data.", variant: "destructive" });
+      return;
+    }
+    setLocalPositions((prev) =>
+      prev.map((entry) => ({
+        ...entry,
+        xAxis: xAxis,
+        yAxis: yAxis,
+        xValue: getScoreValue(entry.competitorId || entry.companyProfileId || "", !!entry.companyProfileId, xAxis),
+        yValue: getScoreValue(entry.competitorId || entry.companyProfileId || "", !!entry.companyProfileId, yAxis),
+      }))
+    );
     setDirty(true);
+    toast({ title: "Positions updated from Orbit Scores", description: `Mapped to ${xAxis} vs ${yAxis} from latest analysis data.` });
   };
 
   const handleSave = () => {
@@ -220,7 +252,7 @@ export default function PositioningMapPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
               <Map className="w-6 h-6 text-primary" />
               Competitive Positioning Map
             </h1>
@@ -229,14 +261,15 @@ export default function PositioningMapPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleAutoPosition}>
+            <Button variant="outline" size="sm" onClick={handleAutoPosition} data-testid="button-auto-position">
               <Wand2 className="w-4 h-4 mr-1.5" />
-              Auto-position
+              Auto-position from Scores
             </Button>
             <Button
               size="sm"
               onClick={handleSave}
               disabled={!dirty || saveMutation.isPending}
+              data-testid="button-save-positions"
             >
               {saveMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
@@ -248,18 +281,17 @@ export default function PositioningMapPage() {
           </div>
         </div>
 
-        {/* Axis selectors */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Chart Axes</CardTitle>
-            <CardDescription>Choose which dimensions to compare</CardDescription>
+            <CardDescription>Choose which Orbit Score dimensions to compare</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-6">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">X Axis</Label>
                 <Select value={xAxis} onValueChange={(v) => handleAxisChange("x", v)}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-48" data-testid="select-x-axis">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -272,7 +304,7 @@ export default function PositioningMapPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Y Axis</Label>
                 <Select value={yAxis} onValueChange={(v) => handleAxisChange("y", v)}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-48" data-testid="select-y-axis">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -286,7 +318,6 @@ export default function PositioningMapPage() {
           </CardContent>
         </Card>
 
-        {/* Chart */}
         <Card>
           <CardContent className="pt-6">
             {posLoading ? (
@@ -318,12 +349,11 @@ export default function PositioningMapPage() {
           </CardContent>
         </Card>
 
-        {/* Editable table */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Position Values</CardTitle>
             <CardDescription>
-              Adjust positions (0–100) for each entity. Higher = further right / top.
+              Values (0–100) derived from Orbit Scores. Adjust manually or use Auto-position to refresh from latest data.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -337,6 +367,7 @@ export default function PositioningMapPage() {
                 <div
                   key={p.competitorId || p.companyProfileId || i}
                   className="grid grid-cols-[1fr_100px_100px] gap-3 items-center"
+                  data-testid={`row-position-${p.competitorId || p.companyProfileId || i}`}
                 >
                   <div className="flex items-center gap-2">
                     <div
@@ -359,6 +390,7 @@ export default function PositioningMapPage() {
                     value={p.xValue}
                     onChange={(e) => handleValueChange(i, "xValue", parseInt(e.target.value) || 0)}
                     className="h-8 text-sm"
+                    data-testid={`input-x-${i}`}
                   />
                   <Input
                     type="number"
@@ -367,6 +399,7 @@ export default function PositioningMapPage() {
                     value={p.yValue}
                     onChange={(e) => handleValueChange(i, "yValue", parseInt(e.target.value) || 0)}
                     className="h-8 text-sm"
+                    data-testid={`input-y-${i}`}
                   />
                 </div>
               ))}
