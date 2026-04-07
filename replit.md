@@ -10,6 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Design Principles
 - **Multi-Tenant Architecture**: Tenant isolation, RBAC, tenant-specific plan/usage limits.
+- **CRITICAL — Tenant Data Boundary Protection**: Every API route, database query, and background job MUST enforce tenant isolation by filtering on `tenantDomain`. Never allow data from one tenant to leak to another. All new endpoints must include `tenantDomain` checks (via `getRequestContext` or equivalent). All storage queries must scope to the requesting tenant. Cross-tenant access is only permitted for the Consultant role (read-only) and Global Admin. This is a non-negotiable security requirement — violations can expose customer data.
 - **Service Plans**: Database-driven plans with flexible feature gating. All premium API routes enforced server-side via `guardFeature()` helper in `server/routes/helpers.ts`, using `plan-policy.ts` FEATURE_REGISTRY as single source of truth. Returns 403 with `upgradeRequired: true` when blocked. Frontend auto-intercepts upgrade-required errors via `UpgradeModalProvider` (global query/mutation error interception).
 - **Authorization**: Role hierarchy (Global Admin > Domain Admin > Standard User > Consultant).
 - **Canonical Organization Layer**: Centralizes public company data in the `organizations` table with URL normalization.
