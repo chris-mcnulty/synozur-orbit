@@ -653,5 +653,55 @@ Return ONLY valid JSON, no markdown or explanations.`;
     }
   });
 
+  // ==================== UX3: BATTLECARD ROLLBACK ====================
+
+  app.post("/api/battlecards/:id/rollback", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const bc = await storage.getBattlecard(req.params.id);
+      if (!bc) {
+        return res.status(404).json({ error: "Battlecard not found" });
+      }
+
+      if (!validateResourceContext(bc, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const prev = bc.previousContent as any;
+      if (!prev) {
+        return res.status(400).json({ error: "No previous version available" });
+      }
+
+      // Snapshot current before restoring
+      const currentSnapshot = {
+        strengths: bc.strengths,
+        weaknesses: bc.weaknesses,
+        ourAdvantages: bc.ourAdvantages,
+        comparison: bc.comparison,
+        objections: bc.objections,
+        talkTracks: bc.talkTracks,
+        quickStats: bc.quickStats,
+      };
+
+      await storage.updateBattlecard(req.params.id, {
+        strengths: prev.strengths ?? bc.strengths,
+        weaknesses: prev.weaknesses ?? bc.weaknesses,
+        ourAdvantages: prev.ourAdvantages ?? bc.ourAdvantages,
+        comparison: prev.comparison ?? bc.comparison,
+        objections: prev.objections ?? bc.objections,
+        talkTracks: prev.talkTracks ?? bc.talkTracks,
+        quickStats: prev.quickStats ?? bc.quickStats,
+        previousContent: currentSnapshot,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      console.error("Battlecard rollback error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
 }

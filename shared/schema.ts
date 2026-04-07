@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -463,6 +463,7 @@ export const analysis = pgTable("analysis", {
   themes: jsonb("themes").notNull(),
   messaging: jsonb("messaging").notNull(),
   gaps: jsonb("gaps").notNull(),
+  previousContent: jsonb("previous_content"), // UX3: Snapshot of prior {themes, messaging, gaps} before regeneration
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -480,6 +481,7 @@ export const battlecards = pgTable("battlecards", {
   talkTracks: jsonb("talk_tracks"), // Sales conversation guides: [{scenario, script}]
   quickStats: jsonb("quick_stats"), // {pricing, marketPosition, targetAudience, keyProducts}
   customNotes: text("custom_notes"), // Free-form notes
+  previousContent: jsonb("previous_content"), // UX3: Snapshot of prior battlecard data before regeneration
   status: text("status").notNull().default("draft"), // draft, published
   lastGeneratedAt: timestamp("last_generated_at"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
@@ -1177,6 +1179,34 @@ export const insertExecutiveSummarySchema = createInsertSchema(executiveSummarie
 
 export type ExecutiveSummary = typeof executiveSummaries.$inferSelect;
 export type InsertExecutiveSummary = z.infer<typeof insertExecutiveSummarySchema>;
+
+// F2: Competitive Positioning Map — stores x/y positions per competitor/baseline per tenant
+export const competitorPositions = pgTable("competitor_positions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  // Either competitorId (for a tracked competitor) or companyProfileId (for the baseline)
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "cascade" }),
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
+  label: text("label").notNull(), // Display name on chart
+  xAxis: text("x_axis").notNull().default("Market Presence"), // Which dimension for X
+  yAxis: text("y_axis").notNull().default("Innovation"), // Which dimension for Y
+  xValue: integer("x_value").notNull().default(50), // 0–100 position
+  yValue: integer("y_value").notNull().default(50), // 0–100 position
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  // Enforce exactly one entity per row: either a tracked competitor OR the company baseline
+  check("competitor_positions_entity_xor", sql`(${t.competitorId} IS NOT NULL AND ${t.companyProfileId} IS NULL) OR (${t.competitorId} IS NULL AND ${t.companyProfileId} IS NOT NULL)`),
+]);
+
+export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type CompetitorPosition = typeof competitorPositions.$inferSelect;
+export type InsertCompetitorPosition = z.infer<typeof insertCompetitorPositionSchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AI Provider & Model Management

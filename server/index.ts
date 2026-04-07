@@ -308,6 +308,47 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS facebook_content TEXT`);
     await pgPool.query(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS facebook_engagement JSONB`);
 
+    // UX3: Rollback snapshot columns for analysis and battlecards
+    await pgPool.query(`ALTER TABLE analysis ADD COLUMN IF NOT EXISTS previous_content JSONB`);
+    await pgPool.query(`ALTER TABLE battlecards ADD COLUMN IF NOT EXISTS previous_content JSONB`);
+
+    // F2: Competitive positioning map table
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS competitor_positions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        competitor_id VARCHAR REFERENCES competitors(id) ON DELETE CASCADE,
+        company_profile_id VARCHAR REFERENCES company_profiles(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        x_axis TEXT NOT NULL DEFAULT 'Market Presence',
+        y_axis TEXT NOT NULL DEFAULT 'Innovation',
+        x_value INTEGER NOT NULL DEFAULT 50,
+        y_value INTEGER NOT NULL DEFAULT 50,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT competitor_positions_entity_xor CHECK (
+          (competitor_id IS NOT NULL AND company_profile_id IS NULL) OR
+          (competitor_id IS NULL AND company_profile_id IS NOT NULL)
+        )
+      )
+    `);
+    // Add CHECK constraint to existing tables that were created without it
+    await pgPool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'competitor_positions_entity_xor'
+            AND conrelid = 'competitor_positions'::regclass
+        ) THEN
+          ALTER TABLE competitor_positions ADD CONSTRAINT competitor_positions_entity_xor CHECK (
+            (competitor_id IS NOT NULL AND company_profile_id IS NULL) OR
+            (competitor_id IS NULL AND company_profile_id IS NOT NULL)
+          );
+        END IF;
+      END $$;
+    `);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

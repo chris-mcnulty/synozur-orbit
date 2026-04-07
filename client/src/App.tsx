@@ -64,6 +64,7 @@ import AdminOrganizationsPage from "@/pages/app/admin/organizations";
 import AISettingsPage from "@/pages/app/admin/ai-settings";
 import SpeStoragePage from "@/pages/app/admin/spe-storage";
 import CompanyRosterPage from "@/pages/app/company-roster";
+import PositioningMapPage from "@/pages/app/positioning-map";
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -142,7 +143,8 @@ function Router() {
       <Route path="/app/action-items" component={ActionItems} />
       <Route path="/app/intelligence">{() => <PageFeatureGate featureKey="intelligenceBriefings" label="Intelligence Briefings" description="AI-synthesized periodic market intelligence reports. Upgrade to unlock this feature."><IntelligenceBriefingPage /></PageFeatureGate>}</Route>
       <Route path="/app/getting-started" component={GettingStartedPage} />
-      
+      <Route path="/app/positioning-map" component={PositioningMapPage} />
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>

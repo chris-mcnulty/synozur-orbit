@@ -8,6 +8,8 @@ import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerW
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
 import type { Competitor, User } from "@shared/schema";
+import { getCacheStats, invalidateTenantCache, clearCache as clearAICache } from "../services/ai-cache";
+import { getDeadLetterJobs, dismissDeadLetterJob } from "../services/job-queue";
 
 export function registerOperationsRoutes(app: Express) {
   // ==================== SCHEDULED JOBS (GLOBAL ADMIN) ====================
@@ -1044,5 +1046,61 @@ Generate a comprehensive battlecard in this JSON format:
     }
   });
 
+  // ==================== AI CACHE ADMIN ====================
+
+  app.get("/api/admin/ai-cache/stats", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied" });
+      res.json(getCacheStats());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/ai-cache/invalidate", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied" });
+      const { tenantDomain } = req.body as { tenantDomain?: string };
+      if (tenantDomain) {
+        const removed = invalidateTenantCache(tenantDomain);
+        res.json({ removed, scope: tenantDomain });
+      } else {
+        const removed = clearAICache();
+        res.json({ removed, scope: "all" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== JOB DEAD-LETTER QUEUE ====================
+
+  app.get("/api/admin/queue-dead-letter", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied" });
+      res.json(getDeadLetterJobs());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/admin/queue-dead-letter/:jobId", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") return res.status(403).json({ error: "Access denied" });
+      const removed = dismissDeadLetterJob(req.params.jobId);
+      if (!removed) return res.status(404).json({ error: "Job not found in dead-letter queue" });
+      res.json({ dismissed: true, jobId: req.params.jobId });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
 }

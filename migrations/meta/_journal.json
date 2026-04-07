@@ -29,6 +29,13 @@
       "when": 1775132369155,
       "tag": "0003_fix_missing_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775579452464,
+      "tag": "0004_add_positioning_map_and_rollback_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -410,5 +410,51 @@ export function registerReportsAnalysisRoutes(app: Express) {
     }
   });
 
+  // ==================== UX3: ANALYSIS ROLLBACK ====================
+
+  app.post("/api/analysis/rollback", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const { analysisId } = req.body as { analysisId?: string };
+      if (!analysisId) {
+        return res.status(400).json({ error: "analysisId is required" });
+      }
+
+      const existing = await storage.getAnalysis(analysisId);
+      if (!existing) {
+        return res.status(404).json({ error: "Analysis not found" });
+      }
+
+      if (!validateResourceContext(existing, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const prev = existing.previousContent as any;
+      if (!prev) {
+        return res.status(400).json({ error: "No previous version available" });
+      }
+
+      // Restore previous content; current becomes the new previousContent
+      const currentSnapshot = {
+        themes: existing.themes,
+        messaging: existing.messaging,
+        gaps: existing.gaps,
+      };
+
+      await storage.updateAnalysis(analysisId, {
+        themes: prev.themes ?? existing.themes,
+        messaging: prev.messaging ?? existing.messaging,
+        gaps: prev.gaps ?? existing.gaps,
+        previousContent: currentSnapshot,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
 
 }
