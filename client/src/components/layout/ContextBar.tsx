@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
+import NotificationCentre from "@/components/layout/NotificationCentre";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/userContext";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -424,14 +425,15 @@ export default function ContextBar() {
   const showCreateMarketOption = marketsData?.multiMarketEnabled && isMarketAdmin;
   const hasUnlimitedMarkets = !marketsData?.marketLimit;
 
-  if (!canSwitchTenants && !showMarketSelector) {
-    return null;
-  }
+  const showDesktopBar = canSwitchTenants || showMarketSelector;
 
   return (
     <>
-      {/* Desktop Context Bar - aligned with sidebar header */}
-      <div className="h-14 hidden lg:flex items-center gap-4 px-6 bg-muted/30 border-b border-border">
+      {/* Desktop Context Bar - always rendered for notification access; dropdowns shown conditionally */}
+      <div className={cn(
+        "hidden lg:flex items-center gap-4 px-6 border-b border-border",
+        showDesktopBar ? "h-14 bg-muted/30" : "h-10 bg-transparent"
+      )}>
         {canSwitchTenants && accessibleTenants && accessibleTenants.tenants.length > 1 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -608,25 +610,11 @@ export default function ContextBar() {
 
         <div className="flex-1" />
 
-        {/* Refresh Status Indicator */}
-        <RefreshStatusIndicator />
-
-        {context?.activeTenant && (
-          <div className="text-xs text-muted-foreground flex items-center gap-2">
-            <span>Viewing:</span>
-            <Badge variant="outline" className="text-xs font-normal">{context.activeTenant.name}</Badge>
-            {context.activeMarket && showMarketSelector && (
-              <>
-                <span>/</span>
-                <Badge variant="outline" className="text-xs font-normal">{context.activeMarket.name}</Badge>
-              </>
-            )}
-          </div>
-        )}
+        <NotificationCentre />
       </div>
 
-      {/* Mobile Context Bar - shown in sidebar */}
-      <div className="lg:hidden px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30 space-y-2" data-testid="mobile-context-bar">
+      {/* Mobile Context Bar - shown in sidebar, only if tenant/market switching available */}
+      {showDesktopBar && <div className="lg:hidden px-4 py-3 border-b border-sidebar-border bg-sidebar-accent/30 space-y-2" data-testid="mobile-context-bar">
         {/* Current context display */}
         <div className="text-xs text-sidebar-foreground/60 flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5" />
@@ -761,7 +749,7 @@ export default function ContextBar() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-      </div>
+      </div>}
 
       <Dialog open={createMarketOpen} onOpenChange={handleCloseMarketDialog}>
         <DialogContent className="sm:max-w-md">

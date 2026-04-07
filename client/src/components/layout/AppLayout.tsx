@@ -504,7 +504,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="font-semibold text-lg tracking-tight text-sidebar-foreground">Orbit</span>
           </Link>
           <div className="ml-auto hidden lg:flex items-center gap-1">
-            <NotificationCentre />
             <RefreshStatusIndicator />
           </div>
           <button 
