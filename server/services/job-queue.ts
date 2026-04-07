@@ -247,6 +247,8 @@ function startJob(job: QueuedJob): void {
             pendingQueue.push(job);
           }
         }, delay);
+        // Free the concurrency slot so other pending jobs can start immediately
+        processQueue();
         return;
       }
 

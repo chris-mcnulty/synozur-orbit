@@ -525,23 +525,36 @@ export async function completeForFeature(
   userPrompt: string,
   options?: AICompletionOptions & { tenantDomain?: string },
 ): Promise<AICompletionResult> {
-  // P1: AI Response Caching — check cache before calling provider
-  const tenantDomain = options?.tenantDomain ?? "__global__";
-  const cached = getCachedResponse(tenantDomain, feature, userPrompt);
-  if (cached) {
-    console.log(`[ai-provider] Cache HIT for ${feature} (tenant: ${tenantDomain})`);
-    return cached;
-  }
-
+  // P1: AI Response Caching — resolve provider first so model is included in cache key.
+  // Skip caching entirely when no tenantDomain is provided to prevent cross-tenant pollution.
+  const tenantDomain = options?.tenantDomain;
   const resolved = await getProviderForFeature(feature);
   const opts = {
     ...options,
     maxTokens: options?.maxTokens ?? resolved.maxTokens ?? 8192,
   };
 
+  const cacheOptions = {
+    systemPrompt: options?.systemPrompt,
+    temperature: options?.temperature,
+    maxTokens: opts.maxTokens,
+    model: resolved.model,
+    providerKey: resolved.providerKey,
+  };
+
+  if (tenantDomain) {
+    const cached = getCachedResponse(tenantDomain, feature, userPrompt, cacheOptions);
+    if (cached) {
+      console.log(`[ai-provider] Cache HIT for ${feature} (tenant: ${tenantDomain})`);
+      return cached;
+    }
+  }
+
   const MAX_RETRIES = 2;
   const cacheAndReturn = (result: AICompletionResult): AICompletionResult => {
-    setCachedResponse(tenantDomain, feature, userPrompt, result);
+    if (tenantDomain) {
+      setCachedResponse(tenantDomain, feature, userPrompt, result, cacheOptions);
+    }
     return result;
   };
 

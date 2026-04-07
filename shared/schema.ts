@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -1195,7 +1195,10 @@ export const competitorPositions = pgTable("competitor_positions", {
   yValue: integer("y_value").notNull().default(50), // 0–100 position
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  // Enforce exactly one entity per row: either a tracked competitor OR the company baseline
+  check("competitor_positions_entity_xor", sql`(${t.competitorId} IS NOT NULL AND ${t.companyProfileId} IS NULL) OR (${t.competitorId} IS NULL AND ${t.companyProfileId} IS NOT NULL)`),
+]);
 
 export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({
   id: true,

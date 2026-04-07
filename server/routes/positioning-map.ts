@@ -40,6 +40,17 @@ export function registerPositioningMapRoutes(app: Express) {
         return res.status(400).json({ error: "positions array is required" });
       }
 
+      // Validate that each entry targets exactly one entity (competitorId XOR companyProfileId)
+      for (const p of positions) {
+        const hasCompetitor = !!p.competitorId;
+        const hasProfile = !!p.companyProfileId;
+        if (hasCompetitor === hasProfile) {
+          return res.status(400).json({
+            error: "Each position must reference exactly one entity: provide either competitorId or companyProfileId, not both and not neither",
+          });
+        }
+      }
+
       const toUpsert = positions.map((p) => ({
         tenantDomain: ctxFilter.tenantDomain,
         marketId: ctxFilter.marketId,

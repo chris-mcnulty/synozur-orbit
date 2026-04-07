@@ -4,7 +4,7 @@ import type { AICompletionResult } from "./ai-provider";
 
 // ---------------------------------------------------------------------------
 // P1 — AI Response Cache
-// In-memory TTL cache keyed by tenantDomain:feature:promptHash.
+// In-memory TTL cache keyed by tenantDomain:feature:promptHash:optionsHash.
 // Cache hits bypass the AI provider entirely, saving cost and latency.
 // ---------------------------------------------------------------------------
 
@@ -13,6 +13,14 @@ interface CacheEntry {
   createdAt: number;
   ttlMs: number;
   hits: number;
+}
+
+export interface CacheOptions {
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  model?: string;
+  providerKey?: string;
 }
 
 /** Per-feature TTLs (milliseconds). Conservative defaults avoid stale output. */
@@ -29,7 +37,7 @@ const FEATURE_TTL_MS: Partial<Record<string, number>> = {
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 min default
 
-/** The cache store. Key format: `tenantDomain:feature:sha256(prompt)`. */
+/** The cache store. Key format: `tenantDomain:feature:sha256(prompt):sha256(options)`. */
 const cache = new Map<string, CacheEntry>();
 
 /** Max entries to prevent unbounded memory growth. */
@@ -43,8 +51,19 @@ function hashPrompt(prompt: string): string {
   return crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16);
 }
 
-function buildKey(tenantDomain: string, feature: string, promptHash: string): string {
-  return `${tenantDomain}:${feature}:${promptHash}`;
+function hashOptions(options: CacheOptions): string {
+  const normalized = JSON.stringify({
+    sys: options.systemPrompt ?? "",
+    temp: options.temperature ?? "",
+    tok: options.maxTokens ?? "",
+    model: options.model ?? "",
+    provider: options.providerKey ?? "",
+  });
+  return crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 8);
+}
+
+function buildKey(tenantDomain: string, feature: string, promptHash: string, optionsHash: string): string {
+  return `${tenantDomain}:${feature}:${promptHash}:${optionsHash}`;
 }
 
 function evictExpired(): void {
@@ -58,7 +77,7 @@ function evictExpired(): void {
 
 /** LRU-style eviction when we exceed MAX_ENTRIES. */
 function evictIfFull(): void {
-  if (cache.size <= MAX_ENTRIES) return;
+  if (cache.size < MAX_ENTRIES) return;
   // Remove oldest entries first
   const entries = [...cache.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
   const toRemove = entries.slice(0, cache.size - MAX_ENTRIES + 100); // remove a batch
@@ -79,8 +98,9 @@ export function getCachedResponse(
   tenantDomain: string,
   feature: AIFeature | string,
   prompt: string,
+  options?: CacheOptions,
 ): AICompletionResult | undefined {
-  const key = buildKey(tenantDomain, feature, hashPrompt(prompt));
+  const key = buildKey(tenantDomain, feature, hashPrompt(prompt), hashOptions(options ?? {}));
   const entry = cache.get(key);
   if (!entry) return undefined;
 
@@ -102,11 +122,10 @@ export function setCachedResponse(
   feature: AIFeature | string,
   prompt: string,
   result: AICompletionResult,
+  options?: CacheOptions,
 ): void {
-  evictIfFull();
-
   const ttlMs = FEATURE_TTL_MS[feature] ?? DEFAULT_TTL_MS;
-  const key = buildKey(tenantDomain, feature, hashPrompt(prompt));
+  const key = buildKey(tenantDomain, feature, hashPrompt(prompt), hashOptions(options ?? {}));
 
   cache.set(key, {
     result,
@@ -114,6 +133,9 @@ export function setCachedResponse(
     ttlMs,
     hits: 0,
   });
+
+  // Evict after insertion to enforce the MAX_ENTRIES bound strictly
+  evictIfFull();
 }
 
 /**

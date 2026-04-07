@@ -119,6 +119,7 @@ export default function PositioningMapPage() {
   });
 
   // Initialize local positions from API data or seed from competitors
+  // Only seed when: (a) we have saved positions to load, (b) local state is empty and not dirty
   useEffect(() => {
     if (posData?.positions?.length > 0) {
       setLocalPositions(
@@ -134,7 +135,7 @@ export default function PositioningMapPage() {
       );
       if (posData.positions[0]?.xAxis) setXAxis(posData.positions[0].xAxis);
       if (posData.positions[0]?.yAxis) setYAxis(posData.positions[0].yAxis);
-    } else if (competitors.length > 0 || companyProfile) {
+    } else if (localPositions.length === 0 && !dirty && (competitors.length > 0 || companyProfile)) {
       const seed: PositionEntry[] = [];
       if (companyProfile) {
         seed.push({

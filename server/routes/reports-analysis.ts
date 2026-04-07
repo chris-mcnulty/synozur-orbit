@@ -425,7 +425,9 @@ export function registerReportsAnalysisRoutes(app: Express) {
         return res.status(404).json({ error: "Analysis not found" });
       }
 
-      validateResourceContext(existing, ctx);
+      if (!validateResourceContext(existing, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
 
       const prev = existing.previousContent as any;
       if (!prev) {

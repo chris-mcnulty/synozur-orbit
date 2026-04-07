@@ -326,8 +326,27 @@ app.use((req, res, next) => {
         x_value INTEGER NOT NULL DEFAULT 50,
         y_value INTEGER NOT NULL DEFAULT 50,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT competitor_positions_entity_xor CHECK (
+          (competitor_id IS NOT NULL AND company_profile_id IS NULL) OR
+          (competitor_id IS NULL AND company_profile_id IS NOT NULL)
+        )
       )
+    `);
+    // Add CHECK constraint to existing tables that were created without it
+    await pgPool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'competitor_positions_entity_xor'
+            AND conrelid = 'competitor_positions'::regclass
+        ) THEN
+          ALTER TABLE competitor_positions ADD CONSTRAINT competitor_positions_entity_xor CHECK (
+            (competitor_id IS NOT NULL AND company_profile_id IS NULL) OR
+            (competitor_id IS NULL AND company_profile_id IS NOT NULL)
+          );
+        END IF;
+      END $$;
     `);
 
     log("Startup migrations completed");
