@@ -51,13 +51,18 @@ function hashPrompt(prompt: string): string {
   return crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16);
 }
 
+/** Extra entries to remove per eviction cycle to amortize the cost of sorting. */
+const EVICTION_BATCH_EXTRA = 100;
+
 function hashOptions(options: CacheOptions): string {
+  // Normalize to defined values only so that omitted and explicitly-undefined options
+  // produce the same hash (avoiding spurious cache misses).
   const normalized = JSON.stringify({
-    sys: options.systemPrompt ?? "",
-    temp: options.temperature ?? "",
-    tok: options.maxTokens ?? "",
-    model: options.model ?? "",
-    provider: options.providerKey ?? "",
+    sys: options.systemPrompt ?? null,
+    temp: options.temperature ?? null,
+    tok: options.maxTokens ?? null,
+    model: options.model ?? null,
+    provider: options.providerKey ?? null,
   });
   return crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 8);
 }
@@ -78,9 +83,10 @@ function evictExpired(): void {
 /** LRU-style eviction when we exceed MAX_ENTRIES. */
 function evictIfFull(): void {
   if (cache.size < MAX_ENTRIES) return;
-  // Remove oldest entries first
+  // Remove oldest entries first; remove an extra EVICTION_BATCH_EXTRA to reduce
+  // how often this sort is triggered under write-heavy loads.
   const entries = [...cache.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
-  const toRemove = entries.slice(0, cache.size - MAX_ENTRIES + 100); // remove a batch
+  const toRemove = entries.slice(0, cache.size - MAX_ENTRIES + EVICTION_BATCH_EXTRA);
   for (const [key] of toRemove) {
     cache.delete(key);
   }
