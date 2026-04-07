@@ -16,7 +16,6 @@ const AXIS_OPTIONS = [
   "Innovation",
   "Content Activity",
   "Social Engagement",
-  "Feature Breadth",
   "Overall Score",
 ];
 
@@ -25,7 +24,6 @@ const AXIS_TO_SCORE_FIELD: Record<string, string> = {
   "Innovation": "innovationScore",
   "Content Activity": "contentActivityScore",
   "Social Engagement": "socialEngagementScore",
-  "Feature Breadth": "featureBreadthScore",
   "Overall Score": "overallScore",
 };
 
@@ -127,12 +125,12 @@ export default function PositioningMapPage() {
     const field = AXIS_TO_SCORE_FIELD[axisLabel] || "overallScore";
     if (!dashScores) return 50;
 
-    if (isBaseline && dashScores.baselineScores) {
-      return Math.round(dashScores.baselineScores[field] ?? 50);
+    if (isBaseline && dashScores.baseline) {
+      return Math.round(dashScores.baseline[field] ?? 50);
     }
 
-    if (!isBaseline && dashScores.competitorScores) {
-      const match = dashScores.competitorScores.find((c: any) => c.id === entityId);
+    if (!isBaseline && dashScores.competitors) {
+      const match = dashScores.competitors.find((c: any) => c.id === entityId);
       if (match) return Math.round(match[field] ?? 50);
     }
 
@@ -154,7 +152,7 @@ export default function PositioningMapPage() {
       );
       if (posData.positions[0]?.xAxis) setXAxis(posData.positions[0].xAxis);
       if (posData.positions[0]?.yAxis) setYAxis(posData.positions[0].yAxis);
-    } else if (localPositions.length === 0 && !dirty && (competitors.length > 0 || companyProfile)) {
+    } else if (localPositions.length === 0 && !dirty && dashScores && (competitors.length > 0 || companyProfile)) {
       const seed: PositionEntry[] = [];
       if (companyProfile) {
         seed.push({
