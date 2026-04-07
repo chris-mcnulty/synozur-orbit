@@ -297,9 +297,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // UX1: Track last-visited page for post-login redirect and per-page freshness
   useEffect(() => {
     const path = location;
     localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
+    // Persist last app page so login can redirect back
+    if (path.startsWith("/app")) {
+      localStorage.setItem("orbit_last_page", path);
+    }
   }, [location]);
 
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
@@ -416,6 +421,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         { label: "Activity", icon: Activity, href: "/app/activity" },
         { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
         { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
+        { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
       ]
     },
     {

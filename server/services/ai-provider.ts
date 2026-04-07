@@ -5,6 +5,7 @@ import { AzureKeyCredential } from "@azure/core-auth";
 import { db } from "../db";
 import { aiConfiguration, aiFeatureModelAssignments, AI_PROVIDERS, AI_MODELS, AZURE_FOUNDRY_MODEL_ENDPOINT, type AIFeature, type AIProviderKey } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { getCachedResponse, setCachedResponse } from "./ai-cache";
 
 export interface AICompletionOptions {
   maxTokens?: number;
@@ -522,8 +523,16 @@ export function getAvailableModelsByProvider(): Record<string, string[]> {
 export async function completeForFeature(
   feature: AIFeature,
   userPrompt: string,
-  options?: AICompletionOptions,
+  options?: AICompletionOptions & { tenantDomain?: string },
 ): Promise<AICompletionResult> {
+  // P1: AI Response Caching — check cache before calling provider
+  const tenantDomain = options?.tenantDomain ?? "__global__";
+  const cached = getCachedResponse(tenantDomain, feature, userPrompt);
+  if (cached) {
+    console.log(`[ai-provider] Cache HIT for ${feature} (tenant: ${tenantDomain})`);
+    return cached;
+  }
+
   const resolved = await getProviderForFeature(feature);
   const opts = {
     ...options,
@@ -531,9 +540,14 @@ export async function completeForFeature(
   };
 
   const MAX_RETRIES = 2;
+  const cacheAndReturn = (result: AICompletionResult): AICompletionResult => {
+    setCachedResponse(tenantDomain, feature, userPrompt, result);
+    return result;
+  };
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await resolved.provider.complete(resolved.model, userPrompt, opts);
+      return cacheAndReturn(await resolved.provider.complete(resolved.model, userPrompt, opts));
     } catch (err: any) {
       const is429 = err?.status === 429 || err?.statusCode === 429 ||
         (err?.message && /429|rate.?limit|too many requests|high demand/i.test(err.message));
@@ -547,7 +561,7 @@ export async function completeForFeature(
           if (fallback?.isAvailable()) {
             console.warn(`[ai-provider] Falling back to Replit Anthropic for ${feature}`);
             try {
-              return await fallback.complete("claude-sonnet-4-5", userPrompt, opts);
+              return cacheAndReturn(await fallback.complete("claude-sonnet-4-5", userPrompt, opts));
             } catch { /* fall through to final retry with original provider */ }
           }
         }
@@ -556,5 +570,5 @@ export async function completeForFeature(
       throw err;
     }
   }
-  return resolved.provider.complete(resolved.model, userPrompt, opts);
+  return cacheAndReturn(await resolved.provider.complete(resolved.model, userPrompt, opts));
 }

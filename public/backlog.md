@@ -551,3 +551,34 @@ Features:
 - [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
 - [ ] **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
 **Effort**: MVP Complete, additional features ongoing
+
+---
+
+## Pending Approval: New Features (F1, F3, F4, F5, F6)
+
+The following brand-new features have been scoped and are ready for development once approved. F2 (Competitive Positioning Map) has been shipped.
+
+### F1 — Win/Loss Tracker
+Track deal outcomes against competitors. Capture win/loss reasons, competitor involvement, and deal metadata. Dashboard with win-rate trends over time and per-competitor breakdowns.
+- **Effort**: Medium
+- **Dependencies**: Competitor data, CRM integration (optional)
+
+### F3 — Competitive News Feed (AI-Curated)
+A dedicated feed page aggregating competitor news, product launches, funding rounds, and hiring signals. AI ranks items by relevance and impact to your business, with configurable alert thresholds.
+- **Effort**: Medium-Large
+- **Dependencies**: News monitoring service, AI provider
+
+### F4 — Stakeholder Sharing Portal
+Read-only shareable links for specific analyses, battlecards, or reports. Allows sales teams and executives to view content without an Orbit login. Supports password protection and expiry.
+- **Effort**: Medium
+- **Dependencies**: Auth system, report generation
+
+### F5 — Custom Scoring Models
+Let users define custom weighted scoring dimensions beyond the built-in set. Supports per-tenant scoring templates, dimension weights, and automated score recalculation when data refreshes.
+- **Effort**: Medium
+- **Dependencies**: Scoring service, competitor data
+
+### F6 — Slack / Teams Integration
+Push competitor alerts, analysis summaries, and intelligence briefings to Slack channels or Microsoft Teams. Configurable per-tenant with channel mapping and message frequency controls.
+- **Effort**: Medium
+- **Dependencies**: Alert dispatch service, webhook infrastructure

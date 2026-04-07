@@ -55,9 +55,11 @@ export default function AuthPage() {
     }
   }, [location]);
 
+  // UX1: Redirect to last-visited page (or /app by default)
   useEffect(() => {
     if (user) {
-      setLocation("/app");
+      const lastPage = localStorage.getItem("orbit_last_page");
+      setLocation(lastPage && lastPage.startsWith("/app") ? lastPage : "/app");
     }
   }, [user, setLocation]);
 
@@ -68,7 +70,8 @@ export default function AuthPage() {
 
     try {
       await login(signinData.email, signinData.password);
-      setLocation("/app");
+      const lastPage = localStorage.getItem("orbit_last_page");
+      setLocation(lastPage && lastPage.startsWith("/app") ? lastPage : "/app");
     } catch (err: any) {
       setError(err.message || "Login failed");
     } finally {

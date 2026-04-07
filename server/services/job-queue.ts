@@ -25,6 +25,37 @@ interface QueuedJob<T = any> {
   /** DB row id when persistence is enabled. */
   dbRowId?: string;
   ctx?: JobContext;
+  /** P3: Retry tracking */
+  attempt: number;
+  maxRetries: number;
+}
+
+// ---------------------------------------------------------------------------
+// P3 — Dead-Letter Queue
+// Jobs that exhaust retries land here for admin inspection / dismissal.
+// ---------------------------------------------------------------------------
+export interface DeadLetterEntry {
+  jobId: string;
+  type: JobType;
+  label: string;
+  error: string;
+  attempts: number;
+  failedAt: number;
+  ctx?: JobContext;
+}
+
+const deadLetterStore: DeadLetterEntry[] = [];
+const MAX_DLQ_SIZE = 200;
+
+export function getDeadLetterJobs(): DeadLetterEntry[] {
+  return [...deadLetterStore];
+}
+
+export function dismissDeadLetterJob(jobId: string): boolean {
+  const idx = deadLetterStore.findIndex(e => e.jobId === jobId);
+  if (idx === -1) return false;
+  deadLetterStore.splice(idx, 1);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,11 +231,45 @@ function startJob(job: QueuedJob): void {
     .catch(err => {
       clearTimeout(timeoutHandle);
       if (job.status === "timeout") return;
+      activeJobs.delete(job.id);
+
+      // P3: Retry with exponential back-off (2s -> 4s -> 8s)
+      if (job.attempt < job.maxRetries) {
+        const nextAttempt = job.attempt + 1;
+        const delay = 2000 * Math.pow(2, job.attempt); // 2s, 4s, 8s
+        console.warn(`[JobQueue] Retrying ${job.type}/${job.label} (attempt ${nextAttempt}/${job.maxRetries}) in ${delay}ms — ${err.message}`);
+        job.attempt = nextAttempt;
+        job.status = "pending";
+        setTimeout(() => {
+          if (canStartJob(job.type)) {
+            startJob(job);
+          } else {
+            pendingQueue.push(job);
+          }
+        }, delay);
+        return;
+      }
+
+      // Exhausted retries — move to dead-letter queue
       job.status = "failed";
       job.completedAt = Date.now();
-      activeJobs.delete(job.id);
       failedCount++;
-      console.error(`[JobQueue] Failed ${job.type}/${job.label}: ${err.message}`);
+      console.error(`[JobQueue] Failed ${job.type}/${job.label} after ${job.attempt + 1} attempts: ${err.message}`);
+
+      if (deadLetterStore.length >= MAX_DLQ_SIZE) {
+        deadLetterStore.shift(); // evict oldest
+      }
+      deadLetterStore.push({
+        jobId: job.id,
+        type: job.type,
+        label: job.label,
+        error: err.message || String(err),
+        attempts: job.attempt + 1,
+        failedAt: Date.now(),
+        ctx: job.ctx,
+      });
+      console.warn(`[JobQueue] Job ${job.id} moved to dead-letter queue (${deadLetterStore.length} entries)`);
+
       if (persistenceHooks && job.dbRowId) {
         persistenceHooks.onComplete(job.dbRowId, "failed", err.message).catch(() => {});
       }
@@ -217,10 +282,11 @@ export function enqueue<T>(
   type: JobType,
   label: string,
   work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
-  options?: { priority?: number; timeoutMs?: number; ctx?: JobContext }
+  options?: { priority?: number; timeoutMs?: number; ctx?: JobContext; maxRetries?: number }
 ): Promise<T> {
   const priority = options?.priority ?? PRIORITY[type] ?? PRIORITY.other;
   const timeoutMs = options?.timeoutMs ?? config.defaultTimeoutMs;
+  const maxRetries = options?.maxRetries ?? 3;
 
   return new Promise<T>((resolve, reject) => {
     const job: QueuedJob<T> = {
@@ -235,6 +301,8 @@ export function enqueue<T>(
       enqueuedAt: Date.now(),
       timeoutMs,
       ctx: options?.ctx,
+      attempt: 0,
+      maxRetries,
     };
 
     if (canStartJob(type)) {

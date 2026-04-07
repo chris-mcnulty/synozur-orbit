@@ -131,9 +131,13 @@ import {
   personas,
   type Persona,
   type InsertPersona,
+  competitorPositions,
+  type CompetitorPosition,
+  type InsertCompetitorPosition,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
+import { timedQuery } from "./utils/query-timer";
 
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -235,7 +239,9 @@ export interface IStorage {
   getLatestAnalysisByTenant(tenantDomain: string): Promise<Analysis | undefined>;
   getLatestAnalysisByContext(ctx: ContextFilter): Promise<Analysis | undefined>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
-  
+  getAnalysis(id: string): Promise<Analysis | undefined>;
+  updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis>;
+
   // Grounding Document methods
   getGroundingDocument(id: string): Promise<GroundingDocument | undefined>;
   getGroundingDocumentsByTenant(tenantDomain: string): Promise<GroundingDocument[]>;
@@ -513,6 +519,10 @@ export interface IStorage {
   createPersona(persona: InsertPersona): Promise<Persona>;
   updatePersona(id: string, data: Partial<Persona>): Promise<Persona>;
   deletePersona(id: string): Promise<void>;
+
+  // F2: Competitive Positioning Map
+  getPositionsByContext(ctx: ContextFilter): Promise<CompetitorPosition[]>;
+  upsertPositions(positions: InsertCompetitorPosition[]): Promise<CompetitorPosition[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -951,6 +961,16 @@ export class DatabaseStorage implements IStorage {
     return newAnalysis;
   }
 
+  async getAnalysis(id: string): Promise<Analysis | undefined> {
+    const [row] = await db.select().from(analysis).where(eq(analysis.id, id));
+    return row || undefined;
+  }
+
+  async updateAnalysis(id: string, data: Partial<Analysis>): Promise<Analysis> {
+    const [updated] = await db.update(analysis).set(data).where(eq(analysis.id, id)).returning();
+    return updated;
+  }
+
   // Grounding Document methods
   async getGroundingDocument(id: string): Promise<GroundingDocument | undefined> {
     const [doc] = await db.select().from(groundingDocuments).where(eq(groundingDocuments.id, id));
@@ -1275,11 +1295,30 @@ export class DatabaseStorage implements IStorage {
     await db.delete(markets).where(eq(markets.tenantId, id));
     await db.delete(consultantAccess).where(eq(consultantAccess.tenantId, id));
     
-    // Delete users that belong to this tenant (by email domain matching tenant domain)
-    const allUsers = await db.select().from(users);
-    const tenantUsers = allUsers.filter(u => u.email.split("@")[1]?.toLowerCase() === tenantDomain.toLowerCase());
-    for (const user of tenantUsers) {
-      await this.deleteUser(user.id);
+    // P2: Batch user deletion — single query to find tenant users, then batch delete
+    const allUsers = await timedQuery("deleteTenant:findUsers", () =>
+      db.select({ id: users.id, email: users.email }).from(users)
+    );
+    const tenantUserIds = allUsers
+      .filter(u => u.email.split("@")[1]?.toLowerCase() === tenantDomain.toLowerCase())
+      .map(u => u.id);
+    if (tenantUserIds.length > 0) {
+      // Delete user-owned records in batch using inArray
+      await timedQuery("deleteTenant:batchDeleteUserRecords", async () => {
+        await db.delete(groundingDocuments).where(inArray(groundingDocuments.uploadedBy, tenantUserIds));
+        await db.delete(globalGroundingDocuments).where(inArray(globalGroundingDocuments.uploadedBy, tenantUserIds));
+        await db.delete(tenantInvites).where(inArray(tenantInvites.invitedBy, tenantUserIds));
+        await db.delete(assessments).where(inArray(assessments.userId, tenantUserIds));
+        await db.delete(battlecards).where(inArray(battlecards.createdBy, tenantUserIds));
+        await db.delete(productBattlecards).where(inArray(productBattlecards.createdBy, tenantUserIds));
+        await db.delete(products).where(inArray(products.createdBy, tenantUserIds));
+        await db.delete(companyProfiles).where(inArray(companyProfiles.userId, tenantUserIds));
+        await db.delete(competitors).where(inArray(competitors.userId, tenantUserIds));
+        await db.delete(markets).where(inArray(markets.createdBy, tenantUserIds));
+        await db.delete(clientProjects).where(inArray(clientProjects.ownerUserId, tenantUserIds));
+        await db.delete(consultantAccess).where(inArray(consultantAccess.grantedBy, tenantUserIds));
+        await db.delete(users).where(inArray(users.id, tenantUserIds));
+      });
     }
     
     // Finally delete the tenant itself
@@ -2133,16 +2172,21 @@ export class DatabaseStorage implements IStorage {
       const grants = await this.getConsultantAccessByUser(userId);
       const grantedTenantIds = grants.map(g => g.tenantId);
       const userTenant = await this.getTenantByDomain(userTenantDomain);
-      
+
       const accessibleTenants: Tenant[] = [];
       if (userTenant) {
         accessibleTenants.push(userTenant);
       }
-      
-      for (const tenantId of grantedTenantIds) {
-        const tenant = await this.getTenant(tenantId);
-        if (tenant && !accessibleTenants.find(t => t.id === tenant.id)) {
-          accessibleTenants.push(tenant);
+
+      // P2: Batch fetch — single query replaces serial getTenant() loop
+      if (grantedTenantIds.length > 0) {
+        const grantedTenants = await timedQuery("getAccessibleTenants:batchFetch", () =>
+          db.select().from(tenants).where(inArray(tenants.id, grantedTenantIds))
+        );
+        for (const tenant of grantedTenants) {
+          if (!accessibleTenants.find(t => t.id === tenant.id)) {
+            accessibleTenants.push(tenant);
+          }
         }
       }
       return accessibleTenants;
@@ -3464,6 +3508,51 @@ export class DatabaseStorage implements IStorage {
 
   async deletePersona(id: string): Promise<void> {
     await db.delete(personas).where(eq(personas.id, id));
+  }
+
+  // F2: Competitive Positioning Map
+  async getPositionsByContext(ctx: ContextFilter): Promise<CompetitorPosition[]> {
+    return await db.select().from(competitorPositions)
+      .where(
+        and(
+          eq(competitorPositions.tenantDomain, ctx.tenantDomain),
+          eq(competitorPositions.marketId, ctx.marketId)
+        )
+      );
+  }
+
+  async upsertPositions(positions: InsertCompetitorPosition[]): Promise<CompetitorPosition[]> {
+    const results: CompetitorPosition[] = [];
+    for (const pos of positions) {
+      // Try to find existing position for this entity in this tenant/market
+      const existing = pos.competitorId
+        ? await db.select().from(competitorPositions).where(
+            and(
+              eq(competitorPositions.tenantDomain, pos.tenantDomain),
+              eq(competitorPositions.marketId!, pos.marketId!),
+              eq(competitorPositions.competitorId!, pos.competitorId)
+            )
+          )
+        : await db.select().from(competitorPositions).where(
+            and(
+              eq(competitorPositions.tenantDomain, pos.tenantDomain),
+              eq(competitorPositions.marketId!, pos.marketId!),
+              eq(competitorPositions.companyProfileId!, pos.companyProfileId!)
+            )
+          );
+
+      if (existing.length > 0) {
+        const [updated] = await db.update(competitorPositions)
+          .set({ xAxis: pos.xAxis, yAxis: pos.yAxis, xValue: pos.xValue, yValue: pos.yValue, label: pos.label, updatedAt: new Date() })
+          .where(eq(competitorPositions.id, existing[0].id))
+          .returning();
+        results.push(updated);
+      } else {
+        const [created] = await db.insert(competitorPositions).values(pos).returning();
+        results.push(created);
+      }
+    }
+    return results;
   }
 }
 
