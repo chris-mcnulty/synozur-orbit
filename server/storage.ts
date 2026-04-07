@@ -1295,13 +1295,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(markets).where(eq(markets.tenantId, id));
     await db.delete(consultantAccess).where(eq(consultantAccess.tenantId, id));
     
-    // P2: Batch user deletion — single query to find tenant users, then batch delete
-    const allUsers = await timedQuery("deleteTenant:findUsers", () =>
-      db.select({ id: users.id, email: users.email }).from(users)
+    // P2: Batch user deletion — query only tenant users, then batch delete
+    const tenantUsers = await timedQuery("deleteTenant:findUsers", () =>
+      db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          sql`lower(split_part(${users.email}, '@', 2)) = lower(${tenantDomain})`
+        )
     );
-    const tenantUserIds = allUsers
-      .filter(u => u.email.split("@")[1]?.toLowerCase() === tenantDomain.toLowerCase())
-      .map(u => u.id);
+    const tenantUserIds = tenantUsers.map(u => u.id);
     if (tenantUserIds.length > 0) {
       // Delete user-owned records in batch using inArray
       await timedQuery("deleteTenant:batchDeleteUserRecords", async () => {
