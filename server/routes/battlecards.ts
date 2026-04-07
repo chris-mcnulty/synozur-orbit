@@ -663,7 +663,9 @@ Return ONLY valid JSON, no markdown or explanations.`;
         return res.status(404).json({ error: "Battlecard not found" });
       }
 
-      validateResourceContext(bc, ctx);
+      if (!validateResourceContext(bc, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
 
       const prev = bc.previousContent as any;
       if (!prev) {
