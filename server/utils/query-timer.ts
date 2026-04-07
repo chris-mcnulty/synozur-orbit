@@ -3,7 +3,14 @@
 // Wraps any async DB operation and logs a warning when it exceeds a threshold.
 // ---------------------------------------------------------------------------
 
-const SLOW_QUERY_THRESHOLD_MS = parseInt(process.env.SLOW_QUERY_THRESHOLD_MS || "200", 10);
+const DEFAULT_SLOW_QUERY_THRESHOLD_MS = 200;
+const rawSlowQueryThresholdMs = process.env.SLOW_QUERY_THRESHOLD_MS;
+const parsedSlowQueryThresholdMs = rawSlowQueryThresholdMs == null
+  ? DEFAULT_SLOW_QUERY_THRESHOLD_MS
+  : Number.parseInt(rawSlowQueryThresholdMs, 10);
+const SLOW_QUERY_THRESHOLD_MS = Number.isFinite(parsedSlowQueryThresholdMs)
+  ? Math.max(0, parsedSlowQueryThresholdMs)
+  : DEFAULT_SLOW_QUERY_THRESHOLD_MS;
 
 /**
  * Execute an async DB operation and log a warning if it takes longer than
