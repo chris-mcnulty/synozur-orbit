@@ -3521,38 +3521,77 @@ export class DatabaseStorage implements IStorage {
       );
   }
 
-  async upsertPositions(positions: InsertCompetitorPosition[]): Promise<CompetitorPosition[]> {
-    const results: CompetitorPosition[] = [];
-    for (const pos of positions) {
-      // Try to find existing position for this entity in this tenant/market
-      const existing = pos.competitorId
-        ? await db.select().from(competitorPositions).where(
-            and(
-              eq(competitorPositions.tenantDomain, pos.tenantDomain),
-              eq(competitorPositions.marketId!, pos.marketId!),
-              eq(competitorPositions.competitorId!, pos.competitorId)
-            )
-          )
-        : await db.select().from(competitorPositions).where(
-            and(
-              eq(competitorPositions.tenantDomain, pos.tenantDomain),
-              eq(competitorPositions.marketId!, pos.marketId!),
-              eq(competitorPositions.companyProfileId!, pos.companyProfileId!)
-            )
-          );
+  private buildCompetitorPositionKey(position: Pick<InsertCompetitorPosition, "tenantDomain" | "marketId" | "competitorId" | "companyProfileId">): string {
+    const entityType = position.competitorId ? "competitor" : "companyProfile";
+    const entityId = position.competitorId ?? position.companyProfileId;
+    return `${position.tenantDomain}:${position.marketId}:${entityType}:${entityId}`;
+  }
 
-      if (existing.length > 0) {
-        const [updated] = await db.update(competitorPositions)
-          .set({ xAxis: pos.xAxis, yAxis: pos.yAxis, xValue: pos.xValue, yValue: pos.yValue, label: pos.label, updatedAt: new Date() })
-          .where(eq(competitorPositions.id, existing[0].id))
-          .returning();
-        results.push(updated);
-      } else {
-        const [created] = await db.insert(competitorPositions).values(pos).returning();
-        results.push(created);
-      }
+  async upsertPositions(positions: InsertCompetitorPosition[]): Promise<CompetitorPosition[]> {
+    if (positions.length === 0) {
+      return [];
     }
-    return results;
+
+    return await db.transaction(async (tx) => {
+      const uniqueLockKeys = Array.from(new Set(positions.map((pos) => this.buildCompetitorPositionKey(pos))));
+
+      for (const lockKey of uniqueLockKeys.sort()) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+      }
+
+      const matchConditions = positions.map((pos) =>
+        pos.competitorId
+          ? and(
+              eq(competitorPositions.tenantDomain, pos.tenantDomain),
+              eq(competitorPositions.marketId, pos.marketId!),
+              eq(competitorPositions.competitorId, pos.competitorId),
+              isNull(competitorPositions.companyProfileId)
+            )
+          : and(
+              eq(competitorPositions.tenantDomain, pos.tenantDomain),
+              eq(competitorPositions.marketId, pos.marketId!),
+              eq(competitorPositions.companyProfileId, pos.companyProfileId!),
+              isNull(competitorPositions.competitorId)
+            )
+      );
+
+      const existingRows = await tx.select().from(competitorPositions).where(or(...matchConditions));
+      const existingByKey = new Map<string, CompetitorPosition>();
+
+      for (const row of existingRows) {
+        existingByKey.set(this.buildCompetitorPositionKey(row), row);
+      }
+
+      const results: CompetitorPosition[] = [];
+
+      for (const pos of positions) {
+        const key = this.buildCompetitorPositionKey(pos);
+        const existing = existingByKey.get(key);
+
+        if (existing) {
+          const [updated] = await tx.update(competitorPositions)
+            .set({
+              xAxis: pos.xAxis,
+              yAxis: pos.yAxis,
+              xValue: pos.xValue,
+              yValue: pos.yValue,
+              label: pos.label,
+              updatedAt: new Date(),
+            })
+            .where(eq(competitorPositions.id, existing.id))
+            .returning();
+
+          existingByKey.set(key, updated);
+          results.push(updated);
+        } else {
+          const [created] = await tx.insert(competitorPositions).values(pos).returning();
+          existingByKey.set(key, created);
+          results.push(created);
+        }
+      }
+
+      return results;
+    });
   }
 }
 
