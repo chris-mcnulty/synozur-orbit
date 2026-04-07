@@ -3515,11 +3515,18 @@ export class DatabaseStorage implements IStorage {
 
   // F2: Competitive Positioning Map
   async getPositionsByContext(ctx: ContextFilter): Promise<CompetitorPosition[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(
+          eq(competitorPositions.marketId, ctx.marketId),
+          isNull(competitorPositions.marketId)
+        )
+      : eq(competitorPositions.marketId, ctx.marketId);
+
     return await db.select().from(competitorPositions)
       .where(
         and(
           eq(competitorPositions.tenantDomain, ctx.tenantDomain),
-          eq(competitorPositions.marketId, ctx.marketId)
+          marketCondition
         )
       );
   }
