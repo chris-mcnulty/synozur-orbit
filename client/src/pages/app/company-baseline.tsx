@@ -844,22 +844,20 @@ export default function CompanyBaseline() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
-                                className="cursor-pointer"
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium cursor-pointer transition-colors ${
+                                  marketBusinessType === "b2c"
+                                    ? "border-orange-400/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                                    : "border-blue-400/50 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                }`}
                                 data-testid="btn-toggle-business-type"
+                                title="Change market type (B2B / B2C)"
                               >
-                                <Badge
-                                  variant="outline"
-                                  className={marketBusinessType === "b2c"
-                                    ? "text-[11px] border-orange-400/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
-                                    : "text-[11px] border-blue-400/50 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
-                                  }
-                                >
-                                  {marketBusinessType.toUpperCase()}
-                                </Badge>
+                                {marketBusinessType.toUpperCase()}
+                                <ChevronDown className="w-3 h-3 opacity-60" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start">
-                              <DropdownMenuLabel className="text-xs">Business Type</DropdownMenuLabel>
+                              <DropdownMenuLabel className="text-xs">Market Type (affects Orbit scoring)</DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => toggleBusinessTypeMutation.mutate("b2b")}
