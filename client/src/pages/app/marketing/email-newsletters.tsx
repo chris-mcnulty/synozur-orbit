@@ -22,6 +22,7 @@ import {
   Calendar,
   Eye,
   Tag,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -78,6 +79,70 @@ interface PreviewEmail {
   platform: string;
   subjectLineSuggestions?: string[];
   coachingTips?: string[];
+}
+
+function buildWixHtml(htmlBody: string, subject: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${subject.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</title>
+<style>
+  .wix-email-container {
+    max-width: 620px;
+    margin: 0 auto;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1a1a2e;
+    line-height: 1.6;
+    padding: 24px;
+  }
+  .wix-email-container img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+  }
+  .wix-email-container table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 100%;
+  }
+  .wix-email-container td {
+    word-break: break-word;
+  }
+  .wix-email-container a {
+    color: inherit;
+  }
+  .wix-email-container h1,
+  .wix-email-container h2,
+  .wix-email-container h3 {
+    margin: 1em 0 0.5em;
+    line-height: 1.3;
+  }
+  .wix-email-container p {
+    margin: 0 0 1em;
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;">
+<div class="wix-email-container">
+${htmlBody}
+</div>
+</body>
+</html>`;
+}
+
+function downloadHtmlFile(html: string, filename: string) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export default function EmailNewslettersPage() {
@@ -703,6 +768,23 @@ export default function EmailNewslettersPage() {
                     <Copy className="w-3.5 h-3.5" />
                     {previewEmail.platform === "hubspot-marketing" ? "Copy HTML" : "Copy Text"}
                   </Button>
+                  {previewEmail.platform === "hubspot-marketing" && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs shadow-sm"
+                      onClick={() => {
+                        const wixHtml = buildWixHtml(previewEmail.htmlBody, previewEmail.subject);
+                        const filename = `${previewEmail.subject.replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase()}-wix.html`;
+                        downloadHtmlFile(wixHtml, filename);
+                        toast({ title: "Wix Export downloaded", description: "Paste the HTML into a Wix HTML embed widget" });
+                      }}
+                      data-testid="button-wix-export-preview"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Wix Export
+                    </Button>
+                  )}
                 </div>
                 {previewEmail.platform === "hubspot-marketing" ? (
                   <div
@@ -844,6 +926,23 @@ export default function EmailNewslettersPage() {
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
+                      {email.platform === "hubspot-marketing" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Wix Export — download HTML for Wix embed"
+                          onClick={e => {
+                            e.stopPropagation();
+                            const wixHtml = buildWixHtml(email.htmlBody, email.subject);
+                            const filename = `${email.subject.replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase()}-wix.html`;
+                            downloadHtmlFile(wixHtml, filename);
+                            toast({ title: "Wix Export downloaded", description: "Paste the HTML into a Wix HTML embed widget" });
+                          }}
+                          data-testid={`button-wix-export-${email.id}`}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
