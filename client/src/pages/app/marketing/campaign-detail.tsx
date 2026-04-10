@@ -163,6 +163,9 @@ export default function CampaignDetailPage() {
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const [brandCategoryFilter, setBrandCategoryFilter] = useState<string>("all");
   const [brandPage, setBrandPage] = useState(0);
+  const [generateMode, setGenerateMode] = useState<"asset" | "thematic">("asset");
+  const [thematicBrief, setThematicBrief] = useState("");
+  const [thematicUrl, setThematicUrl] = useState("");
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
@@ -243,12 +246,12 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds }: { brandImageIds?: string[]; personaIds?: string[] }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [] }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "" }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -257,6 +260,9 @@ export default function CampaignDetailPage() {
       setGenerateDialogOpen(false);
       setSelectedBrandImageIds([]);
       setSelectedPersonaIds([]);
+      setThematicBrief("");
+      setThematicUrl("");
+      setGenerateMode("asset");
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
     },
@@ -1289,7 +1295,7 @@ export default function CampaignDetailPage() {
             {availableAssets.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">Add from Content Library</h3>
+                  <h3 className="text-sm font-medium">Add from Digital/Web Assets</h3>
                   {!addingAssets ? (
                     <Button variant="outline" size="sm" onClick={() => setAddingAssets(true)} data-testid="button-add-assets">
                       Add Assets
@@ -1339,7 +1345,7 @@ export default function CampaignDetailPage() {
             {campaign.assets.length === 0 && availableAssets.length === 0 && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-assets">
-                  No content assets available. Add assets to the Content Library first.
+                  No content assets available. Add assets to Digital/Web Assets first.
                 </CardContent>
               </Card>
             )}
@@ -1431,7 +1437,7 @@ export default function CampaignDetailPage() {
             </Button>
 
             {brandAssets.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in the Brand Library first.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in Visual/Brand Assets first.</p>
             ) : (() => {
               const imageAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
               const pickerCategories = [...new Set(imageAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
@@ -1749,24 +1755,74 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Generate Social Posts</DialogTitle>
             <DialogDescription>
-              Optionally select brand images to rotate across your generated posts. Each day and platform will get a unique text + image combination.
+              Choose how to source the content for your generated posts.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+
+            {/* Mode Toggle */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setGenerateMode("asset")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "asset" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-asset"
+              >
+                <span className="text-sm font-semibold">From Digital Assets</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Use content from your Digital/Web Assets library</span>
+              </button>
+              <button
+                onClick={() => setGenerateMode("thematic")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "thematic" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-thematic"
+              >
+                <span className="text-sm font-semibold">Thematic Brief</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Start from your own text summary + optional URL</span>
+              </button>
+            </div>
+
+            {/* Thematic Brief Fields */}
+            {generateMode === "thematic" && (
+              <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
+                <div>
+                  <Label className="text-sm font-medium">Campaign Brief</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Describe the theme, story, or message you want to share. AI will rewrite this into platform-native posts — don't worry about polish.</p>
+                  <textarea
+                    value={thematicBrief}
+                    onChange={e => setThematicBrief(e.target.value)}
+                    placeholder="e.g. I recently shot a series of photos previewing my spring collection — bright colours, outdoor settings, early blooms. This is a teaser before the full summer announcement. I want to build excitement and drive people to follow along."
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[100px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    data-testid="input-thematic-brief"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Reference URL (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">A link to include with a call-to-action (e.g. your website, event page, or portfolio). Leave blank to omit links.</p>
+                  <input
+                    type="url"
+                    value={thematicUrl}
+                    onChange={e => setThematicUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    data-testid="input-thematic-url"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
-              <Label className="text-sm font-medium">Brand Images (optional)</Label>
+              <Label className="text-sm font-medium">Visual/Brand Assets (optional)</Label>
               <p className="text-xs text-muted-foreground mt-1 mb-3">
                 Select up to {Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3)} images. More images = more unique combinations per day.
               </p>
               {(() => {
                 const imageBrandAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
                 if (imageBrandAssets.length === 0) {
-                  return <p className="text-sm text-muted-foreground text-center py-4">No brand images available. Add images in the Brand Library first.</p>;
+                  return <p className="text-sm text-muted-foreground text-center py-4">No brand images available. Add images in Visual/Brand Assets first.</p>;
                 }
                 const maxImages = Math.max(3, campaign?.socialAccounts?.length ? campaign.socialAccounts.length * 3 : 3);
                 const brandCategories = [...new Set(imageBrandAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
@@ -1864,10 +1920,15 @@ export default function CampaignDetailPage() {
             )}
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
-              onClick={() => generatePostsMutation.mutate({ brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined, personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined })}
-              disabled={generatePostsMutation.isPending || isGenerating}
+              onClick={() => generatePostsMutation.mutate({
+                brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
+                personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
+                thematicBrief: generateMode === "thematic" ? thematicBrief : undefined,
+                thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
+              })}
+              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim())}
               className="gap-2"
               data-testid="button-confirm-generate"
             >

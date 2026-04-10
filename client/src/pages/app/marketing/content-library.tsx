@@ -511,7 +511,7 @@ export default function ContentLibraryPage() {
       return r.json();
     },
     onSuccess: () => {
-      toast({ title: "Image saved to Brand Library" });
+      toast({ title: "Image saved to Visual/Brand Assets" });
       queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -826,12 +826,12 @@ export default function ContentLibraryPage() {
               <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
                 <Lock className="w-10 h-10 text-primary" />
               </div>
-              <CardTitle>Content Library</CardTitle>
-              <CardDescription>Available on the Enterprise plan. Manage marketing content assets to power your campaigns, social posts, and email generation.</CardDescription>
+              <CardTitle>Digital/Web Assets</CardTitle>
+              <CardDescription>Available on the Enterprise plan. Manage URLs, articles, and web-based content assets to power your campaigns, social posts, and email generation.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild className="w-full" data-testid="button-contact-sales-content">
-                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Content Library">Contact Sales</a>
+                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Digital Web Assets">Contact Sales</a>
               </Button>
             </CardContent>
           </Card>
@@ -847,7 +847,7 @@ export default function ContentLibraryPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-content-library-title">
-                <Library className="w-6 h-6" /> Asset Library
+                <Library className="w-6 h-6" /> Digital/Web Assets
               </h1>
               <p className="text-muted-foreground text-sm mt-1">
                 Manage web content used to generate posts.
@@ -1543,7 +1543,7 @@ export default function ContentLibraryPage() {
                             data-testid="button-save-to-brand"
                           >
                             <ImageIcon className="w-3.5 h-3.5 mr-1" />
-                            {saveLeadImageMutation.isPending ? "Saving..." : "Save to Brand Library"}
+                            {saveLeadImageMutation.isPending ? "Saving..." : "Save to Visual/Brand Assets"}
                           </Button>
                           <Button
                             variant="destructive"
@@ -1573,12 +1573,12 @@ export default function ContentLibraryPage() {
                         data-testid="button-pick-brand-image"
                       >
                         <Library className="w-3.5 h-3.5" />
-                        {showBrandImagePicker ? "Hide" : "Brand Library"}
+                        {showBrandImagePicker ? "Hide" : "Visual/Brand Assets"}
                       </Button>
                     </div>
                     {showBrandImagePicker && (
                       <div className="border rounded-lg p-3 mt-2 bg-muted/30 space-y-2">
-                        <Label className="text-xs text-muted-foreground">Select an image from Brand Library</Label>
+                        <Label className="text-xs text-muted-foreground">Select an image from Visual/Brand Assets</Label>
                         {brandImages.length > 0 ? (
                           <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
                             {brandImages.map(ba => {
@@ -1603,7 +1603,7 @@ export default function ContentLibraryPage() {
                             })}
                           </div>
                         ) : (
-                          <p className="text-xs text-muted-foreground">No images found in Brand Library.</p>
+                          <p className="text-xs text-muted-foreground">No images found in Visual/Brand Assets.</p>
                         )}
                       </div>
                     )}

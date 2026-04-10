@@ -130,8 +130,8 @@ function Router() {
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
-      <Route path="/app/marketing/content-library">{() => <PageFeatureGate featureKey="contentLibrary" label="Content Library" description="Manage marketing content assets. Upgrade to unlock this feature."><ContentLibraryPage /></PageFeatureGate>}</Route>
-      <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Brand Library" description="Manage brand-approved visual assets. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/content-library">{() => <PageFeatureGate featureKey="contentLibrary" label="Digital/Web Assets" description="Manage URLs, articles, and web-based content assets. Upgrade to unlock this feature."><ContentLibraryPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Visual/Brand Assets" description="Manage approved images, logos, and visual brand identity. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />

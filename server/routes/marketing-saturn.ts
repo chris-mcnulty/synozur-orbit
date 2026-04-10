@@ -1478,6 +1478,9 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
     const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
     const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
+    const thematicBrief: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
+    const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
+    const useThematicMode: boolean = !!(thematicBrief);
 
     await db.delete(generatedPosts)
       .where(and(
@@ -1501,7 +1504,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       .where(eq(campaigns.id, campaign.id));
 
     // Kick off async generation (fire-and-forget)
-    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds).catch(err => {
+    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds, useThematicMode ? thematicBrief : "", useThematicMode ? thematicUrl : "").catch(err => {
       console.error("[Saturn] Post generation error:", err.message);
     });
 
@@ -2743,6 +2746,8 @@ async function generatePostsAsync(
   jobId: string,
   brandImageIds: string[] = [],
   personaIds: string[] = [],
+  thematicBrief: string = "",
+  thematicUrl: string = "",
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
@@ -2829,27 +2834,36 @@ async function generatePostsAsync(
 
     const generatedRows: InsertGeneratedPost[] = [];
 
-    const assetGroups = selectedAssets.length > 0
-      ? selectedAssets.map(a => ({ assets: [a], context: buildAssetContext(a), url: a.url || null }))
-      : [{ assets: [], context: "(no specific assets provided — draw from your knowledge of best practices)", url: null }];
+    const isThematic = !!(thematicBrief);
+    const assetGroups = isThematic
+      ? [{
+          assets: [],
+          context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}`,
+          url: thematicUrl || null,
+          thematic: true,
+        }]
+      : selectedAssets.length > 0
+        ? selectedAssets.map(a => ({ assets: [a], context: buildAssetContext(a), url: a.url || null, thematic: false }))
+        : [{ assets: [], context: "(no specific assets provided — draw from your knowledge of best practices)", url: null, thematic: false }];
 
-    const VARIANTS_PER_COMBO = selectedAssets.length > 3 ? 1 : selectedAssets.length > 1 ? 2 : 3;
+    const VARIANTS_PER_COMBO = isThematic ? 3 : selectedAssets.length > 3 ? 1 : selectedAssets.length > 1 ? 2 : 3;
 
     for (const assetGroup of assetGroups) {
       for (const account of platformTargets) {
         const platformGuide = getPlatformGuide(account.platform);
         const variantGroupId = randomUUID();
-        const prompt = `You are an expert B2B social media copywriter. Generate ${VARIANTS_PER_COMBO} variant ${account.platform} post${VARIANTS_PER_COMBO > 1 ? "s" : ""} for the account "${account.accountName}" based on the following content.
+        const isThematicGroup = assetGroup.thematic;
+        const prompt = `You are an expert social media copywriter. Generate ${VARIANTS_PER_COMBO} variant ${account.platform} post${VARIANTS_PER_COMBO > 1 ? "s" : ""} for the account "${account.accountName}" based on the following${isThematicGroup ? " campaign theme brief" : " content"}.
 
 IMPORTANT RULES — follow these strictly:
-1. Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate "About Us", social sharing button text, comment sections. Only use the actual article substance and key messages.
-2. The content asset has a URL — include the asset URL ONCE in the post body so readers can click through. Place it at the end or with a CTA (e.g. "Read more: <url>"). NEVER include the URL more than once.
+1. ${isThematicGroup ? "The brief below is the creative starting point — rewrite and adapt it into compelling social copy. Do NOT copy it verbatim. Bring your own angle, voice, and structure." : "Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate \"About Us\", social sharing button text, comment sections. Only use the actual article substance and key messages."}
+2. ${isThematicGroup ? (assetGroup.url ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${assetGroup.url}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below.") : "The content asset has a URL — include the asset URL ONCE in the post body so readers can click through. Place it at the end or with a CTA (e.g. \"Read more: <url>\"). NEVER include the URL more than once."}
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}## Content Asset\n${assetGroup.context}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${isThematicGroup ? assetGroup.context : `## Content Asset\n${assetGroup.context}`}
 
 ## Platform Guidelines
 ${platformGuide}

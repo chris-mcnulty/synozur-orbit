@@ -477,7 +477,7 @@ export default function CampaignsPage() {
                     </select>
                   </div>
                   {activeAssets.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-6">No content assets available. Add assets in the Content Library first.</p>
+                    <p className="text-sm text-muted-foreground text-center py-6">No content assets available. Add assets in Digital/Web Assets first.</p>
                   ) : filteredAssets.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">No assets match your filters.</p>
                   ) : (

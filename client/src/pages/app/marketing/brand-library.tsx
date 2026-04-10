@@ -549,12 +549,12 @@ export default function BrandLibraryPage() {
               <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
                 <Lock className="w-10 h-10 text-primary" />
               </div>
-              <CardTitle>Brand Library</CardTitle>
+              <CardTitle>Visual/Brand Assets</CardTitle>
               <CardDescription>Available on the Enterprise plan. Store approved logos, visuals, and brand templates to maintain consistency across all marketing output.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild className="w-full" data-testid="button-contact-sales-brand">
-                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Brand Library">Contact Sales</a>
+                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Visual Brand Assets">Contact Sales</a>
               </Button>
             </CardContent>
           </Card>
@@ -570,7 +570,7 @@ export default function BrandLibraryPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-brand-library-title">
-                <ImageIcon className="w-6 h-6" /> Brand Assets
+                <ImageIcon className="w-6 h-6" /> Visual/Brand Assets
               </h1>
               <p className="text-muted-foreground text-sm mt-1">Approved visuals for your marketing campaigns.</p>
             </div>

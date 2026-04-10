@@ -182,7 +182,7 @@ export default function BrowserExtensionPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">Browser Extension</h1>
             <p className="text-muted-foreground mt-1" data-testid="text-page-description">
-              Install the Saturn Capture extension to save web pages and images directly to your Content Library.
+              Install the Saturn Capture extension to save web pages and images directly to your Digital/Web Assets library.
             </p>
           </div>
           <Badge variant="secondary" className="gap-1">
@@ -313,7 +313,7 @@ export default function BrowserExtensionPage() {
               <div className="space-y-1">
                 <p className="text-sm font-medium">Destination</p>
                 <p className="text-sm text-muted-foreground">
-                  Captured items appear in your Content Library, scoped to your active tenant and market.
+                  Captured items appear in your Digital/Web Assets library, scoped to your active tenant and market.
                 </p>
               </div>
             </div>
