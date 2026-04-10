@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Gem, Lock, ArrowRight, ShieldAlert } from "lucide-react";
 import { ApiError, queryClient } from "@/lib/queryClient";
+import AppLayout from "@/components/layout/AppLayout";
 
 interface UpgradePromptProps {
   feature: string;
@@ -157,13 +158,15 @@ export function PageFeatureGate({ featureKey, label, description, children }: {
 
   if (!isAllowed) {
     return (
-      <div className="container mx-auto p-8" data-testid={`feature-gate-${featureKey}`}>
-        <UpgradePrompt
-          feature={label}
-          requiredPlan={requiredPlan}
-          description={description}
-        />
-      </div>
+      <AppLayout>
+        <div className="container mx-auto p-8" data-testid={`feature-gate-${featureKey}`}>
+          <UpgradePrompt
+            feature={label}
+            requiredPlan={requiredPlan}
+            description={description}
+          />
+        </div>
+      </AppLayout>
     );
   }
 
