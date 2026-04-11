@@ -8,11 +8,6 @@ export interface FieldHelpProps {
    * Short explanation shown in the tooltip. Keep to 1-2 sentences.
    */
   content: React.ReactNode;
-  /**
-   * Optional id that the trigger's aria-describedby points to, so screen
-   * readers announce the help text alongside the associated field.
-   */
-  describedBy?: string;
   className?: string;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
@@ -21,12 +16,10 @@ export interface FieldHelpProps {
 /**
  * Inline help icon with a tooltip. Place next to form field labels or section
  * headings to give users context without leaving the page. The underlying
- * button exposes the help text to screen readers via aria-label and, if
- * provided, aria-describedby for the anchored field.
+ * button exposes the help text to screen readers via aria-label.
  */
 export default function FieldHelp({
   content,
-  describedBy,
   className,
   side = "top",
   align = "center",
@@ -38,7 +31,6 @@ export default function FieldHelp({
           <button
             type="button"
             aria-label="Help"
-            aria-describedby={describedBy}
             data-testid="field-help-trigger"
             className={cn(
               "inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
@@ -81,7 +73,7 @@ export function LabelWithHelp({
       <label htmlFor={htmlFor} className="text-sm font-medium">
         {children}
       </label>
-      <FieldHelp content={help} describedBy={htmlFor} />
+      <FieldHelp content={help} />
     </div>
   );
 }

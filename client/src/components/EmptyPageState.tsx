@@ -34,7 +34,22 @@ export interface EmptyPageStateProps {
 
 function renderActionButton(action: EmptyAction | undefined, defaultVariant: "default" | "outline") {
   if (!action) return null;
-  const content = (
+  if (action.href) {
+    return (
+      <Button
+        variant={action.variant ?? defaultVariant}
+        asChild
+        data-testid={action.testId}
+        className="gap-2"
+      >
+        <Link href={action.href}>
+          {action.icon}
+          {action.label}
+        </Link>
+      </Button>
+    );
+  }
+  return (
     <Button
       variant={action.variant ?? defaultVariant}
       onClick={action.onClick}
@@ -45,14 +60,6 @@ function renderActionButton(action: EmptyAction | undefined, defaultVariant: "de
       {action.label}
     </Button>
   );
-  if (action.href) {
-    return (
-      <Link href={action.href} className="inline-flex">
-        {content}
-      </Link>
-    );
-  }
-  return content;
 }
 
 /**

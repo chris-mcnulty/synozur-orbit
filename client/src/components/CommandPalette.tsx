@@ -104,7 +104,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   // Fetch competitors for live search
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["commandPalette", "/api/competitors"],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -114,7 +114,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["commandPalette", "/api/company-profile"],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -124,7 +124,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: activityData = [] } = useQuery({
-    queryKey: ["/api/activity"],
+    queryKey: ["commandPalette", "/api/activity"],
     queryFn: async () => {
       const res = await fetch("/api/activity", { credentials: "include" });
       if (!res.ok) return [];
@@ -134,7 +134,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: newsData } = useQuery({
-    queryKey: ["/api/data-sources/news"],
+    queryKey: ["commandPalette", "/api/data-sources/news"],
     queryFn: async () => {
       const res = await fetch("/api/data-sources/news", { credentials: "include" });
       if (!res.ok) return null;
@@ -145,8 +145,9 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   // Products, documents, battle cards, and campaigns for global content search.
   // Fetched only when the palette is open to avoid unnecessary load.
+  // Namespaced query keys prevent cache collisions with other consumers.
   const { data: products = [] } = useQuery({
-    queryKey: ["/api/products"],
+    queryKey: ["commandPalette", "/api/products"],
     queryFn: async () => {
       const res = await fetch("/api/products", { credentials: "include" });
       if (!res.ok) return [];
@@ -156,7 +157,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: documents = [] } = useQuery({
-    queryKey: ["/api/documents"],
+    queryKey: ["commandPalette", "/api/documents"],
     queryFn: async () => {
       const res = await fetch("/api/documents", { credentials: "include" });
       if (!res.ok) return [];
@@ -166,7 +167,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: battlecards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["commandPalette", "/api/battlecards"],
     queryFn: async () => {
       const res = await fetch("/api/battlecards", { credentials: "include" });
       if (!res.ok) return [];
@@ -176,7 +177,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: campaigns = [] } = useQuery({
-    queryKey: ["/api/campaigns"],
+    queryKey: ["commandPalette", "/api/campaigns"],
     queryFn: async () => {
       const res = await fetch("/api/campaigns", { credentials: "include" });
       if (!res.ok) return [];
@@ -186,7 +187,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ["/api/reports"],
+    queryKey: ["commandPalette", "/api/reports"],
     queryFn: async () => {
       const res = await fetch("/api/reports", { credentials: "include" });
       if (!res.ok) return [];

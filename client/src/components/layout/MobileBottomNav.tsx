@@ -13,9 +13,9 @@ type TabItem =
   | { kind: "action"; label: string; icon: React.ComponentType<{ className?: string }>; onClick: () => void; testId: string };
 
 /**
- * Persistent bottom tab bar rendered only on small screens.
+ * Persistent bottom tab bar rendered only on small and medium screens.
  * Provides 1-tap access to the 3 most common sections plus a Search action and
- * the full sidebar menu. Hidden on md+ where the full sidebar is always visible.
+ * the full sidebar menu. Hidden on lg+ where the full sidebar is always visible.
  */
 export default function MobileBottomNav({ onOpenMenu, onOpenCommandPalette }: MobileBottomNavProps) {
   const [location] = useLocation();
