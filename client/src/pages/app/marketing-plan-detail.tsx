@@ -420,9 +420,14 @@ export default function MarketingPlanDetail() {
     );
   };
 
+  const planBreadcrumbs = [
+    { label: "Marketing Planner", href: "/app/marketing-planner" },
+    { label: plan?.name || "Loading..." },
+  ];
+
   if (planLoading) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={planBreadcrumbs}>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
@@ -432,7 +437,7 @@ export default function MarketingPlanDetail() {
 
   if (!plan) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={[{ label: "Marketing Planner", href: "/app/marketing-planner" }, { label: "Not Found" }]}>
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold mb-2">Plan Not Found</h2>
           <p className="text-muted-foreground mb-4">The marketing plan you're looking for doesn't exist.</p>
@@ -447,7 +452,7 @@ export default function MarketingPlanDetail() {
 
   if (!isConfigured && !isConfiguring) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={planBreadcrumbs}>
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing-planner")}>
@@ -491,7 +496,7 @@ export default function MarketingPlanDetail() {
 
   if (isConfiguring) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={planBreadcrumbs}>
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => setIsConfiguring(false)}>
@@ -677,7 +682,7 @@ export default function MarketingPlanDetail() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout breadcrumbs={planBreadcrumbs}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">

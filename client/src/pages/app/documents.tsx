@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Badge } from "@/components/ui/badge";
 import { GROUNDING_DOC_CONTEXTS, GROUNDING_DOC_CONTEXT_LABELS, GROUNDING_DOC_CONTEXT_PRESETS } from "@shared/schema";
+import EmptyPageState from "@/components/EmptyPageState";
 
 interface GroundingDocument {
   id: string;
@@ -471,16 +472,18 @@ export default function Documents() {
       </div>
 
       {documents.length === 0 ? (
-        <Card className="p-12 text-center">
-          <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-lg font-medium mb-2">No documents yet</h3>
-          <p className="text-muted-foreground mb-4">
-            Upload positioning documents, strategy briefs, or competitor analyses to enhance AI recommendations.
-          </p>
-          <Button onClick={() => setIsDialogOpen(true)} data-testid="button-upload-first">
-            <Upload className="w-4 h-4 mr-2" /> Upload Your First Document
-          </Button>
-        </Card>
+        <EmptyPageState
+          icon={<FileText className="h-5 w-5" />}
+          title="No documents yet"
+          description="Upload positioning documents, strategy briefs, or competitor analyses to enhance AI recommendations."
+          primaryAction={{
+            label: "Upload Your First Document",
+            icon: <Upload className="h-4 w-4" />,
+            onClick: () => setIsDialogOpen(true),
+            testId: "button-upload-first",
+          }}
+          learnMoreHref="/app/guide"
+        />
       ) : (
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
           {documents.map((doc) => {

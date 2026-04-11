@@ -1136,9 +1136,14 @@ export default function ProductDetail() {
   const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
   const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
+  const productBreadcrumbs = [
+    { label: "Products", href: "/app/products" },
+    { label: project?.name || "Loading..." },
+  ];
+
   if (projectLoading) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={productBreadcrumbs}>
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -1148,7 +1153,7 @@ export default function ProductDetail() {
 
   if (!project) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={[{ label: "Products", href: "/app/products" }, { label: "Not Found" }]}>
         <div className="flex-1 p-4 md:p-8">
           <div className="max-w-6xl mx-auto">
             <Card>
@@ -1166,7 +1171,7 @@ export default function ProductDetail() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout breadcrumbs={productBreadcrumbs}>
       <div className="flex-1 p-4 md:p-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-6">

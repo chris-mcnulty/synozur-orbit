@@ -443,9 +443,14 @@ export default function CompetitorDetail() {
   const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl || competitor?.facebookUrl;
   const isPremium = monitoringSettings?.isPremium;
 
+  const breadcrumbs = [
+    { label: "Competitors", href: "/app/competitors" },
+    { label: competitor?.name || "Loading..." },
+  ];
+
   if (isLoading) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={breadcrumbs}>
         <div className="flex items-center justify-center h-[50vh]">
           <p className="text-muted-foreground">Loading competitor...</p>
         </div>
@@ -455,7 +460,7 @@ export default function CompetitorDetail() {
 
   if (error || !competitor) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={[{ label: "Competitors", href: "/app/competitors" }, { label: "Not Found" }]}>
         <div className="flex flex-col items-center justify-center h-[50vh]">
           <h2 className="text-2xl font-bold mb-2">Competitor Not Found</h2>
           <Link href="/app/competitors" className="text-primary hover:underline flex items-center">
@@ -467,7 +472,7 @@ export default function CompetitorDetail() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout breadcrumbs={breadcrumbs}>
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="mb-8">
           <Link href="/app/competitors" className="text-sm text-muted-foreground hover:text-foreground flex items-center mb-4 transition-colors">

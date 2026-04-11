@@ -17,6 +17,7 @@ import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
+import EmptyPageState from "@/components/EmptyPageState";
 import {
   Select,
   SelectContent,
@@ -369,21 +370,18 @@ export default function BattleCardsPage() {
         })()}
 
         {competitors.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <Target className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Competitors Yet</h3>
-              <p className="text-muted-foreground text-center max-w-md mb-4">
-                Add competitors to generate battle cards that help your sales team win deals.
-              </p>
-              <Link href="/app/competitors">
-                <Button data-testid="button-add-competitors">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Competitors
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <EmptyPageState
+            icon={<Target className="h-5 w-5" />}
+            title="No Competitors Yet"
+            description="Add competitors to generate battle cards that help your sales team win deals."
+            primaryAction={{
+              label: "Add Competitors",
+              href: "/app/competitors",
+              icon: <Plus className="h-4 w-4" />,
+              testId: "button-add-competitors",
+            }}
+            learnMoreHref="/app/guide"
+          />
         ) : battleCards.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-16">

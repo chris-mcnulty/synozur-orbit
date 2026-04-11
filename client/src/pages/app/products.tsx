@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useUser } from "@/lib/userContext";
+import EmptyPageState, { CardGridSkeleton } from "@/components/EmptyPageState";
 
 interface ClientProject {
   id: string;
@@ -518,23 +519,20 @@ export default function Products() {
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <CardGridSkeleton cards={6} />
           ) : projects.length === 0 ? (
-            <Card className="border-dashed border-2 bg-card/50">
-              <CardContent className="flex flex-col items-center justify-center py-16">
-                <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Products Yet</h3>
-                <p className="text-muted-foreground text-center max-w-md mb-4">
-                  Create your first product to manage features and roadmap with competitive insights.
-                </p>
-                <Button data-testid="button-create-first-product" onClick={() => setIsDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Your First Product
-                </Button>
-              </CardContent>
-            </Card>
+            <EmptyPageState
+              icon={<Package className="h-5 w-5" />}
+              title="No Products Yet"
+              description="Create your first product to manage features and roadmap with competitive insights."
+              primaryAction={{
+                label: "Create Your First Product",
+                icon: <Plus className="h-4 w-4" />,
+                onClick: () => setIsDialogOpen(true),
+                testId: "button-create-first-product",
+              }}
+              learnMoreHref="/app/guide"
+            />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {projects.map((project) => (

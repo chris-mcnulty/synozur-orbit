@@ -67,6 +67,8 @@ import SmartSuggestions from "@/components/SmartSuggestions";
 import WhatsNewModal from "@/components/WhatsNewModal";
 import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 import { calculateStaleness } from "@/lib/staleness";
+import PageBreadcrumbs, { type BreadcrumbCrumb } from "@/components/layout/PageBreadcrumbs";
+import MobileBottomNav from "@/components/layout/MobileBottomNav";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -84,7 +86,17 @@ interface NavItem {
 // Default expanded sections - Setup, Insights, and Help are expanded by default
 const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights', 'Help'];
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export interface AppLayoutProps {
+  children: React.ReactNode;
+  /**
+   * Optional explicit breadcrumb trail. When omitted, AppLayout derives a
+   * sensible default from the current route via PageBreadcrumbs.
+   * Pass an empty array to suppress the trail entirely on a page.
+   */
+  breadcrumbs?: BreadcrumbCrumb[];
+}
+
+export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
@@ -675,8 +687,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}
         <ContextBar />
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-16 lg:pb-0">
           <div className="container max-w-7xl mx-auto p-4 md:p-8 lg:p-10 space-y-8">
+            {breadcrumbs === undefined ? (
+              <PageBreadcrumbs />
+            ) : breadcrumbs.length > 0 ? (
+              <PageBreadcrumbs items={breadcrumbs} />
+            ) : null}
             {children}
           </div>
           
@@ -697,6 +714,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </footer>
         </div>
+        <MobileBottomNav onOpenMenu={() => setSidebarOpen(true)} onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
       </main>
 
       <CompanySetupDialog 
