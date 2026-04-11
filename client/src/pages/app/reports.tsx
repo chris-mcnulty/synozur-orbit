@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { getTimeAgo, calculateStaleness, checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { RefreshCw } from "lucide-react";
+import EmptyPageState from "@/components/EmptyPageState";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 type ReportSections = {
@@ -594,11 +595,12 @@ export default function Reports() {
       </div>
 
       {reports.length === 0 ? (
-        <Card className="p-8 text-center">
-          <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
-          <p className="text-muted-foreground">No reports generated yet</p>
-          <p className="text-sm text-muted-foreground">Your report history will appear here</p>
-        </Card>
+        <EmptyPageState
+          icon={<FileText className="h-5 w-5" />}
+          title="No reports generated yet"
+          description="Generate a branded PDF report to share competitive insights with your team. Reports you create will appear here."
+          learnMoreHref="/app/guide"
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {reports.map((report: any) => (

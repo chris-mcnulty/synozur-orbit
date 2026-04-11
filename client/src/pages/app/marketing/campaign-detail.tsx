@@ -764,9 +764,15 @@ export default function CampaignDetailPage() {
     );
   };
 
+  const campaignBreadcrumbs = [
+    { label: "Marketing", href: "/app/marketing" },
+    { label: "Campaigns", href: "/app/marketing/campaigns" },
+    { label: campaign?.name || "Loading..." },
+  ];
+
   if (isLoading) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={campaignBreadcrumbs}>
         <div className="p-6 flex items-center justify-center min-h-[60vh]">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
@@ -776,14 +782,14 @@ export default function CampaignDetailPage() {
 
   if (!campaign) {
     return (
-      <AppLayout>
+      <AppLayout breadcrumbs={[{ label: "Marketing", href: "/app/marketing" }, { label: "Campaigns", href: "/app/marketing/campaigns" }, { label: "Not Found" }]}>
         <div className="p-6 text-center text-muted-foreground">Campaign not found.</div>
       </AppLayout>
     );
   }
 
   return (
-    <AppLayout>
+    <AppLayout breadcrumbs={campaignBreadcrumbs}>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <div>

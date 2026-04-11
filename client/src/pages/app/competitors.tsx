@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import StalenessDot from "@/components/ui/StalenessDot";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
+import EmptyPageState from "@/components/EmptyPageState";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -960,12 +961,24 @@ export default function Competitors() {
             )}
           </div>
           {competitors.length === 0 ? (
-            <Card className="p-12 text-center">
-              <p className="text-muted-foreground mb-4">No competitors tracked yet</p>
-              <Button onClick={() => setIsDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" /> Add Your First Competitor
-              </Button>
-            </Card>
+            <EmptyPageState
+              icon={<Target className="h-5 w-5" />}
+              title="No competitors tracked yet"
+              description="Add competitors to start monitoring their activity, generating battlecards, and benchmarking your go-to-market strategy."
+              primaryAction={{
+                label: "Add Your First Competitor",
+                icon: <Plus className="h-4 w-4" />,
+                onClick: () => setIsDialogOpen(true),
+                testId: "button-empty-add-competitor",
+              }}
+              secondaryAction={{
+                label: "Suggest Competitors",
+                icon: <Sparkles className="h-4 w-4" />,
+                onClick: () => setIsSuggestDialogOpen(true),
+                testId: "button-empty-suggest-competitors",
+              }}
+              learnMoreHref="/app/guide"
+            />
           ) : (
             <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
               {competitors.map((competitor: any) => {

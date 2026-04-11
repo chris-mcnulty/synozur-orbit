@@ -11,6 +11,7 @@ import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import FieldHelp from "@/components/FieldHelp";
 
 type LongFormRecommendation = {
   id: string;
@@ -165,6 +166,10 @@ export default function GtmPlanPage() {
                 <CardTitle className="flex items-center gap-2">
                   <Rocket className="h-5 w-5 text-primary" />
                   Go-To-Market Plan
+                  <FieldHelp
+                    content="A structured plan covering target segments, positioning, channels, launch phases, and success metrics. Uses your company baseline, personas, and competitive analysis as inputs."
+                    side="right"
+                  />
                 </CardTitle>
                 <CardDescription>
                   AI-generated strategic plan based on your baseline analysis

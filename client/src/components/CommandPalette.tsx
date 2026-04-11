@@ -104,7 +104,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   // Fetch competitors for live search
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["commandPalette", "/api/competitors"],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -114,7 +114,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["commandPalette", "/api/company-profile"],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -124,7 +124,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: activityData = [] } = useQuery({
-    queryKey: ["/api/activity"],
+    queryKey: ["commandPalette", "/api/activity"],
     queryFn: async () => {
       const res = await fetch("/api/activity", { credentials: "include" });
       if (!res.ok) return [];
@@ -134,10 +134,63 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: newsData } = useQuery({
-    queryKey: ["/api/data-sources/news"],
+    queryKey: ["commandPalette", "/api/data-sources/news"],
     queryFn: async () => {
       const res = await fetch("/api/data-sources/news", { credentials: "include" });
       if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  // Products, documents, battle cards, and campaigns for global content search.
+  // Fetched only when the palette is open to avoid unnecessary load.
+  // Namespaced query keys prevent cache collisions with other consumers.
+  const { data: products = [] } = useQuery({
+    queryKey: ["commandPalette", "/api/products"],
+    queryFn: async () => {
+      const res = await fetch("/api/products", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const { data: documents = [] } = useQuery({
+    queryKey: ["commandPalette", "/api/documents"],
+    queryFn: async () => {
+      const res = await fetch("/api/documents", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const { data: battlecards = [] } = useQuery({
+    queryKey: ["commandPalette", "/api/battlecards"],
+    queryFn: async () => {
+      const res = await fetch("/api/battlecards", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const { data: campaigns = [] } = useQuery({
+    queryKey: ["commandPalette", "/api/campaigns"],
+    queryFn: async () => {
+      const res = await fetch("/api/campaigns", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const { data: reports = [] } = useQuery({
+    queryKey: ["commandPalette", "/api/reports"],
+    queryFn: async () => {
+      const res = await fetch("/api/reports", { credentials: "include" });
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: open,
@@ -197,6 +250,71 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
       keywords: [c.name?.toLowerCase(), c.websiteUrl?.toLowerCase()].filter(Boolean),
     })),
   [competitors, nav]);
+
+  // -- Product search --
+  const productActions: CommandAction[] = useMemo(() =>
+    products.map((p: any) => ({
+      id: `product-${p.id}`,
+      label: p.name,
+      description: p.companyName || p.clientName || "Product",
+      icon: <Package className="w-4 h-4" />,
+      category: "Products",
+      action: () => nav(`/app/products/${p.id}`, `product-${p.id}`),
+      keywords: [p.name?.toLowerCase(), p.companyName?.toLowerCase(), p.clientName?.toLowerCase()].filter(Boolean),
+    })),
+  [products, nav]);
+
+  // -- Document search --
+  const documentActions: CommandAction[] = useMemo(() =>
+    documents.slice(0, 25).map((d: any) => ({
+      id: `doc-${d.id}`,
+      label: d.title || d.fileName || "Document",
+      description: d.description || d.fileName || "Grounding document",
+      icon: <BookOpen className="w-4 h-4" />,
+      category: "Documents",
+      action: () => nav("/app/documents", `doc-${d.id}`),
+      keywords: [d.title?.toLowerCase(), d.fileName?.toLowerCase(), d.description?.toLowerCase()].filter(Boolean),
+    })),
+  [documents, nav]);
+
+  // -- Battle card search --
+  const battleCardActions: CommandAction[] = useMemo(() =>
+    battlecards.slice(0, 25).map((b: any) => ({
+      id: `bc-${b.id}`,
+      label: b.title || b.competitorName || "Battle Card",
+      description: b.competitorName ? `Battle card — ${b.competitorName}` : "Battle card",
+      icon: <Swords className="w-4 h-4" />,
+      category: "Battle Cards",
+      action: () => nav("/app/battlecards", `bc-${b.id}`),
+      keywords: [b.title?.toLowerCase(), b.competitorName?.toLowerCase()].filter(Boolean),
+    })),
+  [battlecards, nav]);
+
+  // -- Campaign search --
+  const campaignActions: CommandAction[] = useMemo(() =>
+    campaigns.slice(0, 25).map((c: any) => ({
+      id: `camp-${c.id}`,
+      label: c.name || "Campaign",
+      description: c.description?.slice(0, 80) || c.status || "Marketing campaign",
+      icon: <LayoutList className="w-4 h-4" />,
+      category: "Campaigns",
+      action: () => nav(`/app/marketing/campaigns/${c.id}`, `camp-${c.id}`),
+      keywords: [c.name?.toLowerCase(), c.description?.toLowerCase()].filter(Boolean),
+    })),
+  [campaigns, nav]);
+
+  // -- Report search --
+  const reportActions: CommandAction[] = useMemo(() =>
+    reports.slice(0, 15).map((r: any) => ({
+      id: `report-${r.id}`,
+      label: r.title || r.name || "Report",
+      description: r.type || "PDF report",
+      icon: <FileText className="w-4 h-4" />,
+      category: "Reports",
+      action: () => nav("/app/reports", `report-${r.id}`),
+      keywords: [r.title?.toLowerCase(), r.name?.toLowerCase()].filter(Boolean),
+    })),
+  [reports, nav]);
 
   // -- Quick actions --
   const quickActions: CommandAction[] = useMemo(() => [
@@ -312,9 +430,14 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
     ...quickActions,
     ...navigationActions,
     ...competitorActions,
+    ...productActions,
+    ...documentActions,
+    ...battleCardActions,
+    ...campaignActions,
+    ...reportActions,
     ...refreshActions,
     ...recentActivityActions,
-  ], [quickActions, navigationActions, competitorActions, refreshActions, recentActivityActions]);
+  ], [quickActions, navigationActions, competitorActions, productActions, documentActions, battleCardActions, campaignActions, reportActions, refreshActions, recentActivityActions]);
 
   const recentActionObjects = useMemo(() =>
     recentActions.map(id => allActions.find(a => a.id === id)).filter(Boolean) as CommandAction[],
@@ -322,7 +445,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search pages, competitors, actions..." />
+      <CommandInput placeholder="Search pages, competitors, products, documents, campaigns..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
@@ -361,6 +484,91 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
           <>
             <CommandGroup heading="Competitors">
               {competitorActions.map((action) => (
+                <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
+                  {action.icon}
+                  <div className="flex-1">
+                    <div className="font-medium">{action.label}</div>
+                    {action.description && <div className="text-xs text-muted-foreground">{action.description}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {productActions.length > 0 && (
+          <>
+            <CommandGroup heading="Products">
+              {productActions.map((action) => (
+                <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
+                  {action.icon}
+                  <div className="flex-1">
+                    <div className="font-medium">{action.label}</div>
+                    {action.description && <div className="text-xs text-muted-foreground">{action.description}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {documentActions.length > 0 && (
+          <>
+            <CommandGroup heading="Documents">
+              {documentActions.map((action) => (
+                <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
+                  {action.icon}
+                  <div className="flex-1">
+                    <div className="font-medium">{action.label}</div>
+                    {action.description && <div className="text-xs text-muted-foreground">{action.description}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {battleCardActions.length > 0 && (
+          <>
+            <CommandGroup heading="Battle Cards">
+              {battleCardActions.map((action) => (
+                <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
+                  {action.icon}
+                  <div className="flex-1">
+                    <div className="font-medium">{action.label}</div>
+                    {action.description && <div className="text-xs text-muted-foreground">{action.description}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {campaignActions.length > 0 && (
+          <>
+            <CommandGroup heading="Campaigns">
+              {campaignActions.map((action) => (
+                <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
+                  {action.icon}
+                  <div className="flex-1">
+                    <div className="font-medium">{action.label}</div>
+                    {action.description && <div className="text-xs text-muted-foreground">{action.description}</div>}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+        {reportActions.length > 0 && (
+          <>
+            <CommandGroup heading="Reports">
+              {reportActions.map((action) => (
                 <CommandItem key={action.id} onSelect={action.action} className="flex items-center gap-3" keywords={action.keywords}>
                   {action.icon}
                   <div className="flex-1">

@@ -11,6 +11,7 @@ import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import FieldHelp from "@/components/FieldHelp";
 
 type LongFormRecommendation = {
   id: string;
@@ -165,6 +166,10 @@ export default function MessagingFrameworkPage() {
                 <CardTitle className="flex items-center gap-2">
                   <MessageCircle className="h-5 w-5 text-primary" />
                   Messaging & Positioning Rewrite
+                  <FieldHelp
+                    content="Synthesizes a clear value prop, three messaging pillars, and proof points from your company profile, documents, and competitive gap analysis. Regenerate whenever your positioning or competitors change."
+                    side="right"
+                  />
                 </CardTitle>
                 <CardDescription>
                   AI-generated messaging framework based on competitive gaps
@@ -221,7 +226,13 @@ export default function MessagingFrameworkPage() {
                     </CollapsibleTrigger>
                   </div>
                   <CollapsibleContent className="mt-4">
-                    <div className="border rounded-lg p-4 bg-muted/30">
+                    <div className="border rounded-lg p-4 bg-muted/30 space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Custom Guidance</span>
+                        <FieldHelp
+                          content="Optional freeform instructions that shape the generated framework. Great for locking in tone of voice, non-negotiable phrases, or target audience specifics."
+                        />
+                      </div>
                       <Textarea
                         placeholder="Add any specific requirements, target audience, tone of voice, key messages to emphasize, or brand guidelines..."
                         value={guidance}
