@@ -1830,7 +1830,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
         break;
       }
       default: {
-        lines = ["Post Content,Image URL,Date/Time,Account ID,First Comment,Tags"];
+        lines = [];
         for (const post of sortedPosts) {
           let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
           if (sd && sd < now) sd = null;
