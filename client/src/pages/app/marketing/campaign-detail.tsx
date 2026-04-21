@@ -1762,14 +1762,14 @@ export default function CampaignDetailPage() {
       </Dialog>
 
       <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); } else { setGenerateDialogOpen(true); } }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
             <DialogDescription>
               Choose how to source the content for your generated posts.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-1">
 
             {/* Mode Toggle */}
             <div className="grid grid-cols-2 gap-2">
@@ -1925,7 +1925,7 @@ export default function CampaignDetailPage() {
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="flex justify-end gap-2 pt-4 border-t flex-shrink-0">
             <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
