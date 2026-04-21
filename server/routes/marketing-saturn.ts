@@ -1001,29 +1001,34 @@ export function registerSaturnMarketingRoutes(app: Express) {
   });
 
   app.patch("/api/campaigns/:id", async (req, res) => {
-    if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags } = req.body;
-    const updateData: any = { updatedAt: new Date() };
-    if (name !== undefined) updateData.name = name;
-    if (description !== undefined) updateData.description = description;
-    if (status !== undefined) updateData.status = status;
-    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
-    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
-    if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
-    if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
-    if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
-    if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
-    if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
-    const [row] = await db.update(campaigns)
-      .set(updateData)
-      .where(and(
-        eq(campaigns.id, req.params.id),
-        eq(campaigns.tenantDomain, ctx.tenantDomain),
-      ))
-      .returning();
-    if (!row) return res.status(404).json({ error: "Not found" });
-    res.json(row);
+    try {
+      if (!await guardFeature(req, res, "campaigns")) return;
+      const ctx = await getRequestContext(req);
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags } = req.body;
+      const updateData: any = { updatedAt: new Date() };
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (status !== undefined) updateData.status = status;
+      if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
+      if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+      if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
+      if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
+      if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
+      if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
+      if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
+      const [row] = await db.update(campaigns)
+        .set(updateData)
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (err: any) {
+      console.error("[PATCH /api/campaigns/:id]", err);
+      res.status(500).json({ error: "Failed to update campaign", detail: err?.message });
+    }
   });
 
   app.delete("/api/campaigns/:id", async (req, res) => {

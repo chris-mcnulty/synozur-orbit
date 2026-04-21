@@ -350,6 +350,11 @@ app.use((req, res, next) => {
       END $$;
     `);
 
+    await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS always_hashtags JSONB DEFAULT '[]'`);
+    await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS thematic_brief TEXT`);
+    await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS thematic_url TEXT`);
+    await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS post_generation_job_id VARCHAR`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
