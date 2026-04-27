@@ -60,8 +60,8 @@
 - [x] Trial nudge cadence emails (60-day trial with reminders at days 7, 30, 46, 53, 57, 59, 60)
 - [x] Centralized email text management system (`server/config/email-copy.ts` - all subjects, headings, body content)
 - [x] Weekly competitor update digest (scheduled job runs Sundays, user opt-in/out in Settings)
-- [ ] Alert emails for significant changes (backlogged for future)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Alert emails for significant changes (`server/services/alert-dispatch.ts` dispatches in-app notifications and `sendCompetitorAlertEmail` based on per-user threshold and the `competitorAlerts` plan feature)
+**Effort**: Medium - COMPLETED
 
 ### 2.2 Dark/Light Mode Toggle ✅
 **Status**: Implemented
@@ -296,11 +296,13 @@ Generate competitive battlecards for sales enablement:
 - [x] Styled with `page-header-gradient-bar`, Enterprise badges on gated cards, "Set up profile" prompt when company profile is missing
 **Effort**: Low-Medium - COMPLETED
 
-### Real-Time Competitor Alerts (Q1)
-- [ ] Real-time notifications for competitor changes
-- [ ] Social media monitoring (LinkedIn)
-- [ ] Customizable alert preferences
-- [ ] Weekly digest emails
+### Real-Time Competitor Alerts ✅
+**Status**: Implemented
+- [x] Real-time in-app notifications for competitor changes (`server/services/notification-service.ts`)
+- [x] Social media monitoring (LinkedIn, Instagram, Twitter/X, Facebook) with AI summarization
+- [x] Customizable alert preferences (per-user significance threshold: high / medium / all)
+- [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
+- [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
 ### CRM Integration - HubSpot (Q2)
 - [ ] Competitor sync from HubSpot
@@ -462,14 +464,16 @@ Dashboard view showing all action items across baseline and projects for a tenan
 - [ ] Comments on action items (future phase)
 **Effort**: High - Phase 2 COMPLETED
 
-#### Wire AI Usage Logging
-**Status**: Not implemented
-Connect logAiUsage() calls to all AI service entry points:
-- [ ] Competitor analysis
-- [ ] Battlecard generation
-- [ ] Executive summaries
-- [ ] All other AI operations
-**Effort**: Low
+#### Wire AI Usage Logging ✅
+**Status**: Implemented
+`logAiUsage()` (in `server/routes/helpers.ts`) is invoked at all major AI entry points:
+- [x] Battlecard generation (`server/routes/battlecards.ts`)
+- [x] Gap analysis, messaging framework, GTM plan, executive summaries (`server/routes/intelligence.ts`)
+- [x] Marketing task generation (`server/routes/analytics-data.ts`)
+- [x] Product battlecards / one-sheets (`server/routes/products.ts`, `server/routes/intelligence.ts`)
+- [x] Baseline messaging framework regeneration (`server/routes/executive-regen.ts`)
+- [x] Briefings, podcast generation, persona extraction (`server/routes/platform.ts`, `marketing-saturn.ts`)
+**Effort**: Low - COMPLETED
 
 #### reCAPTCHA for Signups
 **Status**: Not implemented
@@ -481,14 +485,14 @@ Connect logAiUsage() calls to all AI service entry points:
 - [ ] Add Google OAuth as alternative to Microsoft Entra ID
 **Effort**: Medium
 
-#### Per-Tenant Branding
-**Status**: Not implemented
-- [ ] Custom logos per tenant
-- [ ] Custom colors per tenant
-**Effort**: Medium
+#### Per-Tenant Branding ✅
+**Status**: Implemented
+- [x] Custom logos per tenant (`tenants.logoUrl` with upload UI in Settings and Admin pages)
+- [x] Custom primary color per tenant (`tenants.primaryColor`, used in PDF exports and battlecard branding)
+**Effort**: Medium - COMPLETED
 
 #### Active Social/Blog Monitoring ✅
-**Status**: Substantially implemented
+**Status**: Implemented
 Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] Manual blog URL input for competitors and baseline company
 - [x] Blog/RSS feed parsing (RSS, Atom, HTML scraping)
@@ -497,13 +501,15 @@ Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] SSRF protection on all URL inputs
 - [x] Change detection for website content
 - [x] AI-summarized diffs highlighting what changed
-- [ ] Configurable check intervals (uses tenant-level frequency settings)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Configurable check intervals (per-row `socialCheckFrequency` on competitors and company profile: hourly / daily / weekly; honored by `server/services/scheduled-jobs.ts`)
+**Effort**: Medium - COMPLETED
 
-#### Domain Blocklist
-**Status**: Not implemented
-- [ ] Prevent signups from specific email domains
-**Effort**: Low
+#### Domain Blocklist ✅
+**Status**: Implemented
+- [x] `domain_blocklist` table with admin CRUD (`/api/admin/domain-blocklist` endpoints in `server/routes/consultant-plans.ts`)
+- [x] Admin UI for managing blocked domains (`client/src/pages/app/admin.tsx`)
+- [x] Enforced during Entra ID self-service signup (`server/auth/entra-routes.ts` calls `storage.isdomainBlocked` before provisioning)
+**Effort**: Low - COMPLETED
 
 ### Deferred (Pending User Demand)
 
@@ -544,8 +550,8 @@ Features:
 - [x] **AI Roadmap Recommendations**: AI-powered recommendations based on competitive intelligence (gap analysis, opportunities, priorities, risks)
 - [x] **Recommendation Actions**: Accept/dismiss workflow for AI-generated recommendations
 - [ ] **Feature Ingestion - CSV Upload**: Bulk import features from CSV files
-- [ ] **Feature Ingestion - Paste Text Parsing**: AI extraction of features from pasted text
-- [ ] **Feature Ingestion - Web Scraping**: Extract features from product pages
+- [x] **Feature Ingestion - Paste Text Parsing**: AI extraction of features from pasted text (`POST /api/products/:productId/features/import-text` via `extractFeaturesFromContent`)
+- [x] **Feature Ingestion - Web Scraping**: Extract features from product pages (`POST /api/products/:productId/features/import-url` fetches and AI-extracts)
 - [ ] **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
 - [ ] **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
 - [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
