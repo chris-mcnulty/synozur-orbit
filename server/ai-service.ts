@@ -513,6 +513,8 @@ export interface CompanyResearchResult {
   revenueRange: string | null;
   fundingRaised: string | null;
   industry: string | null;
+  category: string | null;
+  sicCode: string | null;
   linkedInUrl: string | null;
   blogUrl: string | null;
   description: string | null;
@@ -538,6 +540,8 @@ Return a JSON object with this structure:
   "revenueRange": "Revenue range if known (e.g., '$10M-$50M', '$100M+', 'Pre-revenue')",
   "fundingRaised": "Total funding raised if venture-backed (e.g., '$25M', '$150M Series C', 'Bootstrapped')",
   "industry": "Primary industry/sector (e.g., 'SaaS', 'FinTech', 'Healthcare Tech', 'MarTech')",
+  "category": "Business category for directory typeahead (e.g., 'Marketing Software', 'Sales Enablement', 'Cybersecurity', 'E-commerce Platform')",
+  "sicCode": "4-digit SIC code if known (e.g., '7372' for Prepackaged Software)",
   "linkedInUrl": "LinkedIn company page URL (e.g., 'https://www.linkedin.com/company/example')",
   "blogUrl": "Company blog URL (e.g., 'https://example.com/blog')",
   "description": "One-line description of what the company does (max 150 chars)"
@@ -553,33 +557,26 @@ Return ONLY valid JSON, no additional text.`;
 
   const result = await completeForFeature(AI_FEATURES.COMPANY_RESEARCH, prompt, { maxTokens: 1024 });
 
+  const fallback: CompanyResearchResult = {
+    companyName,
+    headquarters: null,
+    foundedYear: null,
+    employeeCount: null,
+    revenueRange: null,
+    fundingRaised: null,
+    industry: null,
+    category: null,
+    sicCode: null,
+    linkedInUrl: null,
+    blogUrl: null,
+    description: null,
+  };
+
   try {
-    return parseJsonResponse<CompanyResearchResult>(result.text, {
-      companyName: companyName,
-      headquarters: null,
-      foundedYear: null,
-      employeeCount: null,
-      revenueRange: null,
-      fundingRaised: null,
-      industry: null,
-      linkedInUrl: null,
-      blogUrl: null,
-      description: null,
-    });
+    return parseJsonResponse<CompanyResearchResult>(result.text, fallback);
   } catch (e) {
     console.error("Failed to parse company research response:", result.text, e);
-    return {
-      companyName: companyName,
-      headquarters: null,
-      foundedYear: null,
-      employeeCount: null,
-      revenueRange: null,
-      fundingRaised: null,
-      industry: null,
-      linkedInUrl: null,
-      blogUrl: null,
-      description: null,
-    };
+    return fallback;
   }
 }
 

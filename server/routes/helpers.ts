@@ -2,7 +2,13 @@ import type { Request, Response } from "express";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { type RequestContext } from "../context";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import {
+  checkFeatureAccessAsync,
+  checkCompetitorLimitAsync,
+  checkAnalysisLimitAsync,
+  getTenantCompetitorCount,
+  getMonthlyAnalysisCount,
+} from "../services/plan-policy";
 import { calculateEstimatedCost } from "../services/ai-pricing";
 import { z } from "zod";
 
@@ -244,6 +250,78 @@ export async function guardFeature(
     } else if (err && typeof err === "object" && "status" in err) {
       const status = (err as any).status as number;
       res.status(status).json({ error: status === 401 ? "Not authenticated" : status === 403 ? "Forbidden" : "Request failed" });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+    return false;
+  }
+}
+
+export async function guardCompetitorLimit(
+  req: Request,
+  res: Response,
+  options: { skipForProject?: boolean } = {}
+): Promise<boolean> {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  try {
+    const ctx = await getRequestContext(req);
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    if (!tenant) return true;
+
+    if (options.skipForProject) return true;
+
+    const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
+    const gate = await checkCompetitorLimitAsync(tenant.plan, currentCount);
+    if (!gate.allowed) {
+      res.status(403).json({
+        error: gate.reason,
+        upgradeRequired: true,
+        requiredPlan: gate.requiredPlan,
+        currentUsage: gate.currentUsage,
+        limit: gate.limit,
+      });
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    if (err instanceof ContextError) {
+      res.status(err.status).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+    return false;
+  }
+}
+
+export async function guardAnalysisLimit(req: Request, res: Response): Promise<boolean> {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  try {
+    const ctx = await getRequestContext(req);
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    if (!tenant) return true;
+
+    const monthlyCount = await getMonthlyAnalysisCount(ctx.tenantDomain);
+    const gate = await checkAnalysisLimitAsync(tenant.plan, monthlyCount);
+    if (!gate.allowed) {
+      res.status(403).json({
+        error: gate.reason,
+        upgradeRequired: true,
+        requiredPlan: gate.requiredPlan,
+        currentUsage: gate.currentUsage,
+        limit: gate.limit,
+      });
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    if (err instanceof ContextError) {
+      res.status(err.status).json({ error: err.message });
     } else {
       res.status(500).json({ error: "Internal server error" });
     }

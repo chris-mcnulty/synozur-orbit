@@ -116,26 +116,26 @@
 **Effort**: Medium - COMPLETED
 
 ### 3.4 Trial & Feature Gating System ✅
-**Status**: Trial system implemented (60-day trial with email reminders)
+**Status**: Implemented (April 2026)
 **Spec Requirement**: "60-day trial, then Free tier with limited functionality"
 - [x] Add `trialStartDate` and `trialEndsAt` to tenants (60-day trial period)
 - [x] Implement trial countdown and expiration logic
 - [x] Automatic plan reversion to Free tier when trial expires
 - [x] Trial reminder emails (day 7, 30, 46, 53, 57, 59, 60) with contact CTA in final 14 days
 - [x] Scheduled job to check trial status and send reminders every 6 hours
-- [ ] Feature gating middleware on API routes (backlogged)
-- [ ] UI upgrade prompts when hitting limits (backlogged)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Feature gating middleware on API routes (`guardFeature`, `guardCompetitorLimit`, `guardAnalysisLimit` in `server/routes/helpers.ts`; applied across competitor, analysis, regenerate, marketing, briefing routes)
+- [x] UI upgrade prompts when hitting limits (`UpgradeModalProvider` auto-handles 403s with `upgradeRequired`; proactive `PlanLimitBanner` on competitors and analysis pages when usage ≥ 80% of plan limit)
+**Effort**: Medium - COMPLETED
 
-### 3.5 Global Company Directory
-**Status**: Not implemented
+### 3.5 Global Company Directory ✅
+**Status**: Implemented (April 2026)
 **Spec Requirement**: Build a shared company database for competitor suggestions
-- [ ] Create global `companyDirectory` table (not tenant-scoped)
-- [ ] Capture: name, company, category, SIC code (if available), brief description
-- [ ] Auto-populate when users add competitors (extract via AI during profiling)
-- [ ] Use directory for typeahead suggestions when adding new competitors
-- [ ] Deduplicate entries by domain/company name
-**Effort**: Medium
+- [x] Global directory table (uses `organizations` table — non-tenant-scoped, reference-counted)
+- [x] Capture name, company URL, category, SIC code, brief description, industry
+- [x] Auto-populate when users add competitors (AI extraction in `POST /api/competitors` and `/api/competitors/:id/ai-research` backfill `description`, `category`, `sicCode`, `industry` on the org row)
+- [x] Use directory for typeahead suggestions when adding competitors (`/api/organizations/search` powers the dropdown in the Add Competitor dialog; rows now show category and description)
+- [x] Deduplicate by canonical domain (`findOrCreateOrganization` keys on normalized domain)
+**Effort**: Medium - COMPLETED
 
 ### 3.6 Visual Competitor Assets ✅
 **Status**: Implemented
@@ -286,15 +286,15 @@ Generate competitive battlecards for sales enablement:
 - [x] Company Profile fields (headquarters, founded, revenue, funding) with UI editing
 - [x] Company Snapshot section in PDF exports
 
-### Marketing Section Landing Page (Backlog)
-**Status**: Not implemented
-**Description**: Central landing page at `/app/marketing` that ties together all marketing sub-features (GTM Plan, Messaging Framework, Marketing Planner, Social Posts, Email Newsletters). Shows at-a-glance content status cards with quick-action buttons for generating missing content.
-- [ ] Create page component at `client/src/pages/app/marketing/index.tsx`
-- [ ] Summary cards for each marketing sub-feature with generated/not-generated status
-- [ ] Quick-action buttons for generating missing content
-- [ ] Register route in `App.tsx` and add as Marketing nav group entry point
-- [ ] Style with Aurora theme, page-header-gradient-bar, consistent with app patterns
-**Effort**: Low-Medium
+### Marketing Section Landing Page ✅
+**Status**: Implemented
+**Description**: Central landing page at `/app/marketing` ties together all marketing sub-features (GTM Plan, Messaging Framework, Marketing Planner, Social Campaigns, Email Newsletters, Digital/Web Assets, Visual/Brand Assets, Social Accounts) with at-a-glance status cards and quick-action buttons.
+- [x] Page component at `client/src/pages/app/marketing/index.tsx`
+- [x] Summary cards for each marketing sub-feature with generated/not-generated status (queries `/api/baseline/recommendations/gtm_plan`, `/api/baseline/recommendations/messaging_framework`, `/api/marketing-plans`)
+- [x] Quick-action buttons for generating missing content (deep-links to each sub-feature)
+- [x] Route registered in `App.tsx` (`/app/marketing`) with "Marketing Home" entry in `AppLayout.tsx` nav group
+- [x] Styled with `page-header-gradient-bar`, Enterprise badges on gated cards, "Set up profile" prompt when company profile is missing
+**Effort**: Low-Medium - COMPLETED
 
 ### Real-Time Competitor Alerts (Q1)
 - [ ] Real-time notifications for competitor changes
