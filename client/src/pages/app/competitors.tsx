@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban } from "lucide-react";
-import { PlanLimitBadge } from "@/components/UpgradePrompt";
+import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -620,6 +620,7 @@ export default function Competitors() {
 
   return (
     <AppLayout>
+      <PlanLimitBanner kind="competitors" className="mb-4" />
       <div className="mb-8 flex justify-between items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Competitors</h1>
@@ -702,8 +703,13 @@ export default function Competitors() {
                               <div className="font-medium truncate">{org.name}</div>
                               <div className="text-xs text-muted-foreground truncate">
                                 {org.canonicalDomain}
-                                {org.industry && ` · ${org.industry}`}
+                                {org.category ? ` · ${org.category}` : org.industry ? ` · ${org.industry}` : ""}
                               </div>
+                              {org.description && (
+                                <div className="text-xs text-muted-foreground/80 truncate mt-0.5">
+                                  {org.description}
+                                </div>
+                              )}
                             </div>
                           </button>
                         ))}

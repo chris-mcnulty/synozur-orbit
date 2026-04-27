@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
-import { checkCompetitorLimitAsync, checkFeatureAccessAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, checkAnalysisLimitAsync } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature, guardCompetitorLimit, guardAnalysisLimit } from "./helpers";
+import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
@@ -311,20 +311,7 @@ export function registerCompetitorRoutes(app: Express) {
       }
 
       if (!projectId) {
-        const tenant = await storage.getTenant(ctx.tenantId);
-        if (tenant) {
-          const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
-          const limitCheck = await checkCompetitorLimitAsync(tenant.plan, currentCount);
-          if (!limitCheck.allowed) {
-            return res.status(403).json({
-              error: limitCheck.reason,
-              upgradeRequired: true,
-              requiredPlan: limitCheck.requiredPlan,
-              currentUsage: limitCheck.currentUsage,
-              limit: limitCheck.limit,
-            });
-          }
-        }
+        if (!await guardCompetitorLimit(req, res)) return;
       }
 
       // Validate and normalize URL using comprehensive security validator
@@ -368,6 +355,26 @@ export function registerCompetitorRoutes(app: Express) {
       });
 
       await storage.incrementOrgRefCount(org.id);
+
+      // Auto-populate global directory metadata for new orgs (description / category / sicCode).
+      // Fire-and-forget so the create response stays fast.
+      if (org.wasCreated || !org.description || !org.category || !org.sicCode) {
+        (async () => {
+          try {
+            const research = await aiCompanyResearch(parsed.data.name, normalizedUrl);
+            const directoryUpdates: Record<string, string> = {};
+            if (!org.description && research.description) directoryUpdates.description = research.description;
+            if (!org.category && research.category) directoryUpdates.category = research.category;
+            if (!org.sicCode && research.sicCode) directoryUpdates.sicCode = research.sicCode;
+            if (!org.industry && research.industry) directoryUpdates.industry = research.industry;
+            if (Object.keys(directoryUpdates).length > 0) {
+              await storage.updateOrganization(org.id, directoryUpdates);
+            }
+          } catch (err) {
+            console.error("[Directory] AI enrichment failed:", err);
+          }
+        })();
+      }
 
       res.json(competitor);
     } catch (error: any) {
@@ -859,6 +866,25 @@ Return ONLY the JSON object, no other text.`;
 
       if (Object.keys(fieldsToPopulate).length > 0) {
         await storage.updateCompetitor(competitor.id, fieldsToPopulate);
+      }
+
+      // Backfill the global directory entry (organization) with directory fields.
+      if (competitor.organizationId) {
+        try {
+          const org = await storage.getOrganization(competitor.organizationId);
+          if (org) {
+            const orgUpdates: Record<string, string> = {};
+            if (!org.description && research.description) orgUpdates.description = research.description;
+            if (!org.category && research.category) orgUpdates.category = research.category;
+            if (!org.sicCode && research.sicCode) orgUpdates.sicCode = research.sicCode;
+            if (!org.industry && research.industry) orgUpdates.industry = research.industry;
+            if (Object.keys(orgUpdates).length > 0) {
+              await storage.updateOrganization(org.id, orgUpdates);
+            }
+          }
+        } catch (err) {
+          console.error("[Directory] AI research backfill failed:", err);
+        }
       }
 
       await storage.createActivity({
@@ -1423,19 +1449,7 @@ Return ONLY the JSON object, no other text.`;
       }
 
       // Plan gating: check monthly analysis limit
-      if (tenant) {
-        const monthlyCount = await getMonthlyAnalysisCount(tenantDomain);
-        const analysisCheck = await checkAnalysisLimitAsync(tenant.plan, monthlyCount);
-        if (!analysisCheck.allowed) {
-          return res.status(403).json({
-            error: analysisCheck.reason,
-            upgradeRequired: true,
-            requiredPlan: analysisCheck.requiredPlan,
-            currentUsage: analysisCheck.currentUsage,
-            limit: analysisCheck.limit,
-          });
-        }
-      }
+      if (!await guardAnalysisLimit(req, res)) return;
 
       // Get context-scoped competitors (includes market filtering)
       const userCompetitors = await storage.getCompetitorsByContext(toContextFilter(ctx));

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardAnalysisLimit } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
@@ -542,10 +542,11 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
   // Start full regeneration of all analysis (runs in background, emails when complete)
   app.post("/api/baseline/full-regenerate", async (req, res) => {
     if (!await guardFeature(req, res, "recommendations")) return;
+    if (!await guardAnalysisLimit(req, res)) return;
     try {
       const ctx = await getRequestContext(req);
       const user = await storage.getUser(ctx.userId);
-      
+
       // Check prerequisites
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       if (!companyProfile) {

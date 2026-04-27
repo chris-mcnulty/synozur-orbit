@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, ChevronDown, Zap, Globe, Sparkles, Rocket, MessageCircle, Check, Clock, Download, FileText, ChevronRight, FileStack, Mail, RotateCcw, Filter, Table, X, Lock, Activity, Eye, Users, CheckCircle2 } from "lucide-react";
-import { PlanLimitBadge } from "@/components/UpgradePrompt";
+import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, checkArtifactFreshness, formatShortDate, type StalenessLevel } from "@/lib/staleness";
@@ -306,6 +306,7 @@ export default function Analysis() {
 
   return (
     <AppLayout>
+      <PlanLimitBanner kind="analyses" className="mb-4" />
       <Dialog open={regenerationDialogOpen} onOpenChange={setRegenerationDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

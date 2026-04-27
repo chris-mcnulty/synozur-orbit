@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Gem, Lock, ArrowRight, ShieldAlert } from "lucide-react";
+import { Gem, Lock, ArrowRight, ShieldAlert, AlertTriangle } from "lucide-react";
 import { ApiError, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/layout/AppLayout";
 
@@ -75,6 +75,81 @@ export function PlanLimitBadge({ current, limit, label, visibleCount }: PlanLimi
     >
       {current}/{limit} {label}{showCrossMarketHint ? " (all markets)" : ""}
     </Badge>
+  );
+}
+
+interface TenantInfoUsage {
+  plan: string;
+  features?: Record<string, boolean | number>;
+  usage?: { competitorCount: number; monthlyAnalysisCount: number };
+  limits?: { competitorLimit: number; analysisLimit: number };
+}
+
+type LimitKind = "competitors" | "analyses";
+
+interface PlanLimitBannerProps {
+  kind: LimitKind;
+  className?: string;
+  warnThreshold?: number;
+}
+
+const PLAN_TIER_ORDER = ["free", "trial", "pro", "enterprise"];
+
+function nextPlanLabel(currentPlan: string): string {
+  const normalized = currentPlan === "professional" ? "pro" : currentPlan;
+  const idx = PLAN_TIER_ORDER.indexOf(normalized);
+  if (idx === -1 || idx >= PLAN_TIER_ORDER.length - 1) return "Enterprise";
+  const next = PLAN_TIER_ORDER[idx + 1];
+  return next.charAt(0).toUpperCase() + next.slice(1);
+}
+
+export function PlanLimitBanner({ kind, className, warnThreshold = 0.8 }: PlanLimitBannerProps) {
+  const { data } = useQuery<TenantInfoUsage>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch tenant info");
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+
+  if (!data?.limits || !data.usage) return null;
+
+  const limit = kind === "competitors" ? data.limits.competitorLimit : data.limits.analysisLimit;
+  const current = kind === "competitors" ? data.usage.competitorCount : data.usage.monthlyAnalysisCount;
+
+  if (limit === undefined || limit === -1) return null;
+  if (current < limit * warnThreshold) return null;
+
+  const atLimit = current >= limit;
+  const noun = kind === "competitors" ? "competitor" : "analysis";
+  const nounPlural = kind === "competitors" ? "competitors" : "analyses";
+  const periodLabel = kind === "analyses" ? " this month" : " across all markets";
+  const requiredPlan = nextPlanLabel(data.plan);
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm ${
+        atLimit ? "border-destructive/50 bg-destructive/5" : "border-amber-500/40 bg-amber-500/5"
+      } ${className || ""}`}
+      data-testid={`plan-limit-banner-${kind}`}
+    >
+      <div className="flex items-center gap-2">
+        <AlertTriangle className={`h-4 w-4 shrink-0 ${atLimit ? "text-destructive" : "text-amber-500"}`} />
+        <span>
+          {atLimit
+            ? `You've reached your ${data.plan} plan limit of ${limit} ${limit === 1 ? noun : nounPlural}${periodLabel}.`
+            : `Approaching limit: ${current} of ${limit} ${nounPlural}${periodLabel} used on the ${data.plan} plan.`}
+        </span>
+      </div>
+      <Button size="sm" variant={atLimit ? "default" : "outline"} className="shrink-0" asChild data-testid={`button-upgrade-${kind}`}>
+        <a href="mailto:contactus@synozur.com">
+          Upgrade to {requiredPlan}
+          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+        </a>
+      </Button>
+    </div>
   );
 }
 

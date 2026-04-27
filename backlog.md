@@ -60,8 +60,8 @@
 - [x] Trial nudge cadence emails (60-day trial with reminders at days 7, 30, 46, 53, 57, 59, 60)
 - [x] Centralized email text management system (`server/config/email-copy.ts` - all subjects, headings, body content)
 - [x] Weekly competitor update digest (scheduled job runs Sundays, user opt-in/out in Settings)
-- [ ] Alert emails for significant changes (backlogged for future)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Alert emails for significant changes (`server/services/alert-dispatch.ts` dispatches in-app notifications and `sendCompetitorAlertEmail` based on per-user threshold and the `competitorAlerts` plan feature)
+**Effort**: Medium - COMPLETED
 
 ### 2.2 Dark/Light Mode Toggle ✅
 **Status**: Implemented
@@ -116,26 +116,26 @@
 **Effort**: Medium - COMPLETED
 
 ### 3.4 Trial & Feature Gating System ✅
-**Status**: Trial system implemented (60-day trial with email reminders)
+**Status**: Implemented (April 2026)
 **Spec Requirement**: "60-day trial, then Free tier with limited functionality"
 - [x] Add `trialStartDate` and `trialEndsAt` to tenants (60-day trial period)
 - [x] Implement trial countdown and expiration logic
 - [x] Automatic plan reversion to Free tier when trial expires
 - [x] Trial reminder emails (day 7, 30, 46, 53, 57, 59, 60) with contact CTA in final 14 days
 - [x] Scheduled job to check trial status and send reminders every 6 hours
-- [ ] Feature gating middleware on API routes (backlogged)
-- [ ] UI upgrade prompts when hitting limits (backlogged)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Feature gating middleware on API routes (`guardFeature`, `guardCompetitorLimit`, `guardAnalysisLimit` in `server/routes/helpers.ts`; applied across competitor, analysis, regenerate, marketing, briefing routes)
+- [x] UI upgrade prompts when hitting limits (`UpgradeModalProvider` auto-handles 403s with `upgradeRequired`; proactive `PlanLimitBanner` on competitors and analysis pages when usage ≥ 80% of plan limit)
+**Effort**: Medium - COMPLETED
 
-### 3.5 Global Company Directory
-**Status**: Not implemented
+### 3.5 Global Company Directory ✅
+**Status**: Implemented (April 2026)
 **Spec Requirement**: Build a shared company database for competitor suggestions
-- [ ] Create global `companyDirectory` table (not tenant-scoped)
-- [ ] Capture: name, company, category, SIC code (if available), brief description
-- [ ] Auto-populate when users add competitors (extract via AI during profiling)
-- [ ] Use directory for typeahead suggestions when adding new competitors
-- [ ] Deduplicate entries by domain/company name
-**Effort**: Medium
+- [x] Global directory table (uses `organizations` table — non-tenant-scoped, reference-counted)
+- [x] Capture name, company URL, category, SIC code, brief description, industry
+- [x] Auto-populate when users add competitors (AI extraction in `POST /api/competitors` and `/api/competitors/:id/ai-research` backfill `description`, `category`, `sicCode`, `industry` on the org row)
+- [x] Use directory for typeahead suggestions when adding competitors (`/api/organizations/search` powers the dropdown in the Add Competitor dialog; rows now show category and description)
+- [x] Deduplicate by canonical domain (`findOrCreateOrganization` keys on normalized domain)
+**Effort**: Medium - COMPLETED
 
 ### 3.6 Visual Competitor Assets ✅
 **Status**: Implemented
@@ -286,21 +286,23 @@ Generate competitive battlecards for sales enablement:
 - [x] Company Profile fields (headquarters, founded, revenue, funding) with UI editing
 - [x] Company Snapshot section in PDF exports
 
-### Marketing Section Landing Page (Backlog)
-**Status**: Not implemented
-**Description**: Central landing page at `/app/marketing` that ties together all marketing sub-features (GTM Plan, Messaging Framework, Marketing Planner, Social Posts, Email Newsletters). Shows at-a-glance content status cards with quick-action buttons for generating missing content.
-- [ ] Create page component at `client/src/pages/app/marketing/index.tsx`
-- [ ] Summary cards for each marketing sub-feature with generated/not-generated status
-- [ ] Quick-action buttons for generating missing content
-- [ ] Register route in `App.tsx` and add as Marketing nav group entry point
-- [ ] Style with Aurora theme, page-header-gradient-bar, consistent with app patterns
-**Effort**: Low-Medium
+### Marketing Section Landing Page ✅
+**Status**: Implemented
+**Description**: Central landing page at `/app/marketing` ties together all marketing sub-features (GTM Plan, Messaging Framework, Marketing Planner, Social Campaigns, Email Newsletters, Digital/Web Assets, Visual/Brand Assets, Social Accounts) with at-a-glance status cards and quick-action buttons.
+- [x] Page component at `client/src/pages/app/marketing/index.tsx`
+- [x] Summary cards for each marketing sub-feature with generated/not-generated status (queries `/api/baseline/recommendations/gtm_plan`, `/api/baseline/recommendations/messaging_framework`, `/api/marketing-plans`)
+- [x] Quick-action buttons for generating missing content (deep-links to each sub-feature)
+- [x] Route registered in `App.tsx` (`/app/marketing`) with "Marketing Home" entry in `AppLayout.tsx` nav group
+- [x] Styled with `page-header-gradient-bar`, Enterprise badges on gated cards, "Set up profile" prompt when company profile is missing
+**Effort**: Low-Medium - COMPLETED
 
-### Real-Time Competitor Alerts (Q1)
-- [ ] Real-time notifications for competitor changes
-- [ ] Social media monitoring (LinkedIn)
-- [ ] Customizable alert preferences
-- [ ] Weekly digest emails
+### Real-Time Competitor Alerts ✅
+**Status**: Implemented
+- [x] Real-time in-app notifications for competitor changes (`server/services/notification-service.ts`)
+- [x] Social media monitoring (LinkedIn, Instagram, Twitter/X, Facebook) with AI summarization
+- [x] Customizable alert preferences (per-user significance threshold: high / medium / all)
+- [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
+- [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
 ### CRM Integration - HubSpot (Q2)
 - [ ] Competitor sync from HubSpot
@@ -462,14 +464,16 @@ Dashboard view showing all action items across baseline and projects for a tenan
 - [ ] Comments on action items (future phase)
 **Effort**: High - Phase 2 COMPLETED
 
-#### Wire AI Usage Logging
-**Status**: Not implemented
-Connect logAiUsage() calls to all AI service entry points:
-- [ ] Competitor analysis
-- [ ] Battlecard generation
-- [ ] Executive summaries
-- [ ] All other AI operations
-**Effort**: Low
+#### Wire AI Usage Logging ✅
+**Status**: Implemented
+`logAiUsage()` (in `server/routes/helpers.ts`) is invoked at all major AI entry points:
+- [x] Battlecard generation (`server/routes/battlecards.ts`)
+- [x] Gap analysis, messaging framework, GTM plan, executive summaries (`server/routes/intelligence.ts`)
+- [x] Marketing task generation (`server/routes/analytics-data.ts`)
+- [x] Product battlecards / one-sheets (`server/routes/products.ts`, `server/routes/intelligence.ts`)
+- [x] Baseline messaging framework regeneration (`server/routes/executive-regen.ts`)
+- [x] Briefings, podcast generation, persona extraction (`server/routes/platform.ts`, `marketing-saturn.ts`)
+**Effort**: Low - COMPLETED
 
 #### reCAPTCHA for Signups
 **Status**: Not implemented
@@ -481,14 +485,14 @@ Connect logAiUsage() calls to all AI service entry points:
 - [ ] Add Google OAuth as alternative to Microsoft Entra ID
 **Effort**: Medium
 
-#### Per-Tenant Branding
-**Status**: Not implemented
-- [ ] Custom logos per tenant
-- [ ] Custom colors per tenant
-**Effort**: Medium
+#### Per-Tenant Branding ✅
+**Status**: Implemented
+- [x] Custom logos per tenant (`tenants.logoUrl` with upload UI in Settings and Admin pages)
+- [x] Custom primary color per tenant (`tenants.primaryColor`, used in PDF exports and battlecard branding)
+**Effort**: Medium - COMPLETED
 
 #### Active Social/Blog Monitoring ✅
-**Status**: Substantially implemented
+**Status**: Implemented
 Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] Manual blog URL input for competitors and baseline company
 - [x] Blog/RSS feed parsing (RSS, Atom, HTML scraping)
@@ -497,13 +501,15 @@ Scheduled monitoring of competitor social media accounts and blog posts:
 - [x] SSRF protection on all URL inputs
 - [x] Change detection for website content
 - [x] AI-summarized diffs highlighting what changed
-- [ ] Configurable check intervals (uses tenant-level frequency settings)
-**Effort**: Medium - CORE FUNCTIONALITY COMPLETED
+- [x] Configurable check intervals (per-row `socialCheckFrequency` on competitors and company profile: hourly / daily / weekly; honored by `server/services/scheduled-jobs.ts`)
+**Effort**: Medium - COMPLETED
 
-#### Domain Blocklist
-**Status**: Not implemented
-- [ ] Prevent signups from specific email domains
-**Effort**: Low
+#### Domain Blocklist ✅
+**Status**: Implemented
+- [x] `domain_blocklist` table with admin CRUD (`/api/admin/domain-blocklist` endpoints in `server/routes/consultant-plans.ts`)
+- [x] Admin UI for managing blocked domains (`client/src/pages/app/admin.tsx`)
+- [x] Enforced during Entra ID self-service signup (`server/auth/entra-routes.ts` calls `storage.isdomainBlocked` before provisioning)
+**Effort**: Low - COMPLETED
 
 ### Deferred (Pending User Demand)
 
@@ -544,8 +550,8 @@ Features:
 - [x] **AI Roadmap Recommendations**: AI-powered recommendations based on competitive intelligence (gap analysis, opportunities, priorities, risks)
 - [x] **Recommendation Actions**: Accept/dismiss workflow for AI-generated recommendations
 - [ ] **Feature Ingestion - CSV Upload**: Bulk import features from CSV files
-- [ ] **Feature Ingestion - Paste Text Parsing**: AI extraction of features from pasted text
-- [ ] **Feature Ingestion - Web Scraping**: Extract features from product pages
+- [x] **Feature Ingestion - Paste Text Parsing**: AI extraction of features from pasted text (`POST /api/products/:productId/features/import-text` via `extractFeaturesFromContent`)
+- [x] **Feature Ingestion - Web Scraping**: Extract features from product pages (`POST /api/products/:productId/features/import-url` fetches and AI-extracts)
 - [ ] **Draft Product One-Sheets**: AI-generated product marketing one-pagers summarizing key features, benefits, and differentiators
 - [ ] **Draft PowerPoint Slides**: Auto-generate product overview presentation slides
 - [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases

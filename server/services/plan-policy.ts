@@ -256,6 +256,16 @@ export function normalizePlanName(plan: string): string {
   return PLAN_ALIASES[plan] || plan;
 }
 
+const PLAN_TIER_ORDER = ["free", "trial", "pro", "enterprise"];
+
+export function nextPlanForLimit(currentPlan: string): string {
+  const normalized = normalizePlanName(currentPlan);
+  const idx = PLAN_TIER_ORDER.indexOf(normalized);
+  if (idx === -1 || idx >= PLAN_TIER_ORDER.length - 1) return "Enterprise";
+  const next = PLAN_TIER_ORDER[idx + 1];
+  return next.charAt(0).toUpperCase() + next.slice(1);
+}
+
 function buildUnlimitedFeatures(): PlanFeatures {
   const allTrue: Record<string, boolean> = {};
   for (const feat of FEATURE_REGISTRY) {
@@ -339,7 +349,7 @@ export async function checkCompetitorLimitAsync(plan: string, currentCount: numb
       allowed: false,
       reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"} across all markets (currently using ${currentCount}). Upgrade your plan to add more.`,
       upgradeRequired: true,
-      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      requiredPlan: nextPlanForLimit(plan),
       currentUsage: currentCount,
       limit,
     };
@@ -359,7 +369,7 @@ export function checkCompetitorLimit(plan: string, currentCount: number): PlanGa
       allowed: false,
       reason: `Your ${plan} plan allows up to ${limit} competitor${limit === 1 ? "" : "s"} across all markets (currently using ${currentCount}). Upgrade your plan to add more.`,
       upgradeRequired: true,
-      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      requiredPlan: nextPlanForLimit(plan),
       currentUsage: currentCount,
       limit,
     };
@@ -379,7 +389,7 @@ export async function checkAnalysisLimitAsync(plan: string, monthlyCount: number
       allowed: false,
       reason: `Your ${plan} plan allows ${limit} analysis generation${limit === 1 ? "" : "s"} per month. Upgrade your plan for more.`,
       upgradeRequired: true,
-      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      requiredPlan: nextPlanForLimit(plan),
       currentUsage: monthlyCount,
       limit,
     };
@@ -399,7 +409,7 @@ export function checkAnalysisLimit(plan: string, monthlyCount: number): PlanGate
       allowed: false,
       reason: `Your ${plan} plan allows ${limit} analysis generation${limit === 1 ? "" : "s"} per month. Upgrade your plan for more.`,
       upgradeRequired: true,
-      requiredPlan: plan === "free" ? "Trial" : "Pro",
+      requiredPlan: nextPlanForLimit(plan),
       currentUsage: monthlyCount,
       limit,
     };
