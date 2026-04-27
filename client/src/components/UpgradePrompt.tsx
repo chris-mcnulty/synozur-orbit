@@ -80,9 +80,9 @@ export function PlanLimitBadge({ current, limit, label, visibleCount }: PlanLimi
 
 interface TenantInfoUsage {
   plan: string;
-  features: Record<string, boolean | number>;
-  usage: { competitorCount: number; monthlyAnalysisCount: number };
-  limits: { competitorLimit: number; analysisLimit: number };
+  features?: Record<string, boolean | number>;
+  usage?: { competitorCount: number; monthlyAnalysisCount: number };
+  limits?: { competitorLimit: number; analysisLimit: number };
 }
 
 type LimitKind = "competitors" | "analyses";
@@ -91,6 +91,16 @@ interface PlanLimitBannerProps {
   kind: LimitKind;
   className?: string;
   warnThreshold?: number;
+}
+
+const PLAN_TIER_ORDER = ["free", "trial", "pro", "enterprise"];
+
+function nextPlanLabel(currentPlan: string): string {
+  const normalized = currentPlan === "professional" ? "pro" : currentPlan;
+  const idx = PLAN_TIER_ORDER.indexOf(normalized);
+  if (idx === -1 || idx >= PLAN_TIER_ORDER.length - 1) return "Enterprise";
+  const next = PLAN_TIER_ORDER[idx + 1];
+  return next.charAt(0).toUpperCase() + next.slice(1);
 }
 
 export function PlanLimitBanner({ kind, className, warnThreshold = 0.8 }: PlanLimitBannerProps) {
@@ -104,19 +114,19 @@ export function PlanLimitBanner({ kind, className, warnThreshold = 0.8 }: PlanLi
     staleTime: 60_000,
   });
 
-  if (!data) return null;
+  if (!data?.limits || !data.usage) return null;
 
   const limit = kind === "competitors" ? data.limits.competitorLimit : data.limits.analysisLimit;
   const current = kind === "competitors" ? data.usage.competitorCount : data.usage.monthlyAnalysisCount;
 
-  if (limit === -1 || limit === undefined) return null;
+  if (limit === undefined || limit === -1) return null;
   if (current < limit * warnThreshold) return null;
 
   const atLimit = current >= limit;
   const noun = kind === "competitors" ? "competitor" : "analysis";
   const nounPlural = kind === "competitors" ? "competitors" : "analyses";
   const periodLabel = kind === "analyses" ? " this month" : " across all markets";
-  const requiredPlan = data.plan === "free" ? "Trial" : "Pro";
+  const requiredPlan = nextPlanLabel(data.plan);
 
   return (
     <div
@@ -133,12 +143,12 @@ export function PlanLimitBanner({ kind, className, warnThreshold = 0.8 }: PlanLi
             : `Approaching limit: ${current} of ${limit} ${nounPlural}${periodLabel} used on the ${data.plan} plan.`}
         </span>
       </div>
-      <a href="mailto:contactus@synozur.com" className="shrink-0">
-        <Button size="sm" variant={atLimit ? "default" : "outline"} data-testid={`button-upgrade-${kind}`}>
+      <Button size="sm" variant={atLimit ? "default" : "outline"} className="shrink-0" asChild data-testid={`button-upgrade-${kind}`}>
+        <a href="mailto:contactus@synozur.com">
           Upgrade to {requiredPlan}
           <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-        </Button>
-      </a>
+        </a>
+      </Button>
     </div>
   );
 }

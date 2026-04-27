@@ -268,13 +268,13 @@ export async function guardCompetitorLimit(
   }
   try {
     const ctx = await getRequestContext(req);
-    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-    if (!tenant) return true;
-
     if (options.skipForProject) return true;
 
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    const plan = tenant?.plan ?? "free";
+
     const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
-    const gate = await checkCompetitorLimitAsync(tenant.plan, currentCount);
+    const gate = await checkCompetitorLimitAsync(plan, currentCount);
     if (!gate.allowed) {
       res.status(403).json({
         error: gate.reason,
@@ -304,10 +304,10 @@ export async function guardAnalysisLimit(req: Request, res: Response): Promise<b
   try {
     const ctx = await getRequestContext(req);
     const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-    if (!tenant) return true;
+    const plan = tenant?.plan ?? "free";
 
     const monthlyCount = await getMonthlyAnalysisCount(ctx.tenantDomain);
-    const gate = await checkAnalysisLimitAsync(tenant.plan, monthlyCount);
+    const gate = await checkAnalysisLimitAsync(plan, monthlyCount);
     if (!gate.allowed) {
       res.status(403).json({
         error: gate.reason,

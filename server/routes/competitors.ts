@@ -361,7 +361,7 @@ export function registerCompetitorRoutes(app: Express) {
       if (org.wasCreated || !org.description || !org.category || !org.sicCode) {
         (async () => {
           try {
-            const research = await aiCompanyResearch(competitorData.name, normalizedUrl);
+            const research = await aiCompanyResearch(parsed.data.name, normalizedUrl);
             const directoryUpdates: Record<string, string> = {};
             if (!org.description && research.description) directoryUpdates.description = research.description;
             if (!org.category && research.category) directoryUpdates.category = research.category;
