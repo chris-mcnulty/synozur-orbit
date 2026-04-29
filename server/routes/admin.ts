@@ -58,7 +58,14 @@ export function registerAdminRoutes(app: Express) {
   app.get("/api/documents", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const documents = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
+      const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
+      const competitorId = typeof req.query.competitorId === "string" ? req.query.competitorId : undefined;
+      const forContext = typeof req.query.forContext === "string" ? req.query.forContext : undefined;
+      const documents = await storage.getGroundingDocumentsByContext(
+        toContextFilter(ctx),
+        forContext,
+        { productId, competitorId },
+      );
       res.json(documents);
     } catch (error: any) {
       if (error instanceof ContextError) {
