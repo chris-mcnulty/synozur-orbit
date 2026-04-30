@@ -1,8 +1,8 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Trash2, Upload, FileType, Calendar, Building2, Brain } from "lucide-react";
+import { FileText, Trash2, Upload, FileType, Calendar, Building2, Brain, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ interface GroundingDocument {
   useCase: string;
   contexts: string[] | null;
   competitorId: string | null;
+  productId: string | null;
   tenantDomain: string;
   createdAt: string;
 }
@@ -37,6 +38,13 @@ interface Competitor {
   name: string;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  competitorId: string | null;
+  isBaseline: boolean | null;
+}
+
 const CONTEXT_DESCRIPTIONS: Record<string, string> = {
   competitive_analysis: "Grounds AI competitor website analysis and scoring",
   recommendations: "Grounds AI-generated strategic recommendations",
@@ -44,6 +52,8 @@ const CONTEXT_DESCRIPTIONS: Record<string, string> = {
   intelligence_briefing: "Grounds periodic intelligence briefing reports",
   marketing_content: "Grounds social post and content summary generation",
   email_generation: "Grounds email drafts across all platforms",
+  product_features: "Grounds the product features tab and feature analysis",
+  product_roadmap: "Grounds the product roadmap tab and recommendations",
 };
 
 export default function Documents() {
@@ -54,6 +64,7 @@ export default function Documents() {
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("tenant");
   const [competitorId, setCompetitorId] = useState<string | null>(null);
+  const [productId, setProductId] = useState<string | null>(null);
   const [selectedContexts, setSelectedContexts] = useState<string[]>([...GROUNDING_DOC_CONTEXT_PRESETS.intelligence]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; url: string; size: number; type: string } | null>(null);
   const pendingUploadPathRef = useRef<string | null>(null);
@@ -80,6 +91,31 @@ export default function Documents() {
     },
   });
 
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+    queryFn: async () => {
+      const response = await fetch("/api/products", {
+        credentials: "include",
+      });
+      if (response.status === 403) return [];
+      if (!response.ok) throw new Error("Failed to fetch products");
+      return response.json();
+    },
+  });
+
+  const competitorById = useMemo(
+    () => new Map(competitors.map((c) => [c.id, c])),
+    [competitors],
+  );
+  const productById = useMemo(
+    () => new Map(products.map((p) => [p.id, p])),
+    [products],
+  );
+  const productsForCompetitor = useMemo(
+    () => (competitorId ? products.filter((p) => p.competitorId === competitorId) : []),
+    [products, competitorId],
+  );
+
   const addDocument = useMutation({
     mutationFn: async (data: {
       name: string;
@@ -91,6 +127,7 @@ export default function Documents() {
       useCase?: string;
       contexts?: string[];
       competitorId?: string | null;
+      productId?: string | null;
     }) => {
       const response = await fetch("/api/documents", {
         method: "POST",
@@ -143,6 +180,7 @@ export default function Documents() {
     setScope("tenant");
     setSelectedContexts([...GROUNDING_DOC_CONTEXT_PRESETS.intelligence]);
     setCompetitorId(null);
+    setProductId(null);
     setUploadedFile(null);
     pendingUploadPathRef.current = null;
   };
@@ -169,7 +207,11 @@ export default function Documents() {
     const hasMarketing = contexts.some(c =>
       ["marketing_content", "email_generation"].includes(c)
     );
-    if (hasMarketing && !hasIntelligence) return "marketing";
+    const hasProduct = contexts.some(c =>
+      ["product_features", "product_roadmap"].includes(c)
+    );
+    if (hasMarketing && !hasIntelligence && !hasProduct) return "marketing";
+    if (hasProduct && !hasIntelligence && !hasMarketing) return "product";
     return "intelligence";
   };
 
@@ -193,6 +235,15 @@ export default function Documents() {
       return;
     }
 
+    if (scope === "competitor" && !competitorId) {
+      toast({
+        title: "Error",
+        description: "Please select a competitor when scope is set to Specific Competitor.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     addDocument.mutate({
       name: name || uploadedFile.name,
       description: description || undefined,
@@ -203,6 +254,7 @@ export default function Documents() {
       useCase: deriveUseCase(selectedContexts),
       contexts: selectedContexts,
       competitorId: scope === "competitor" ? competitorId : null,
+      productId: scope === "competitor" ? productId : null,
     });
   };
 
@@ -381,7 +433,13 @@ export default function Documents() {
                 {scope === "competitor" && (
                   <div className="grid gap-2">
                     <Label>Competitor</Label>
-                    <Select value={competitorId || ""} onValueChange={setCompetitorId}>
+                    <Select
+                      value={competitorId || ""}
+                      onValueChange={(value) => {
+                        setCompetitorId(value);
+                        setProductId(null);
+                      }}
+                    >
                       <SelectTrigger data-testid="select-competitor">
                         <SelectValue placeholder="Select a competitor" />
                       </SelectTrigger>
@@ -393,6 +451,39 @@ export default function Documents() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                )}
+
+                {scope === "competitor" && competitorId && (
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-1.5">
+                      <Package className="w-4 h-4" />
+                      Product (optional)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Pin this document to a specific product so it grounds Features, Roadmap, and other product analytics.
+                    </p>
+                    <Select
+                      value={productId || "none"}
+                      onValueChange={(value) => setProductId(value === "none" ? null : value)}
+                    >
+                      <SelectTrigger data-testid="select-product">
+                        <SelectValue placeholder="No specific product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No specific product</SelectItem>
+                        {productsForCompetitor.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {productsForCompetitor.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        This competitor has no products yet. Add one from the Products page first.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -435,6 +526,16 @@ export default function Documents() {
                     >
                       Marketing
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => applyPreset("product")}
+                      className={JSON.stringify([...selectedContexts].sort()) === JSON.stringify([...GROUNDING_DOC_CONTEXT_PRESETS.product].sort()) ? "border-primary bg-primary/5" : ""}
+                      data-testid="button-preset-product"
+                    >
+                      Product
+                    </Button>
                   </div>
                   <div className="border rounded-lg p-3 space-y-3 max-h-[200px] overflow-y-auto">
                     {GROUNDING_DOC_CONTEXTS.map((ctx) => (
@@ -462,7 +563,7 @@ export default function Documents() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={addDocument.isPending || !uploadedFile || selectedContexts.length === 0} data-testid="button-submit-document">
+                <Button type="submit" disabled={addDocument.isPending || !uploadedFile || selectedContexts.length === 0 || (scope === "competitor" && !competitorId)} data-testid="button-submit-document">
                   {addDocument.isPending ? "Uploading..." : "Add Document"}
                 </Button>
               </DialogFooter>
@@ -488,6 +589,8 @@ export default function Documents() {
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
           {documents.map((doc) => {
             const docContexts = getDocContexts(doc);
+            const linkedCompetitor = doc.competitorId ? competitorById.get(doc.competitorId) : null;
+            const linkedProduct = doc.productId ? productById.get(doc.productId) : null;
             return (
               <Card key={doc.id} className="hover:border-primary/30 transition-colors" data-testid={`card-document-${doc.id}`}>
                 <CardContent className="flex items-center justify-between p-6">
@@ -512,6 +615,18 @@ export default function Documents() {
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{doc.description}</p>
                       )}
                       <div className="flex flex-wrap gap-1 mt-2">
+                        {linkedCompetitor && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0" data-testid={`badge-competitor-${doc.id}`}>
+                            <Building2 className="w-3 h-3 mr-1" />
+                            {linkedCompetitor.name}
+                          </Badge>
+                        )}
+                        {linkedProduct && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0" data-testid={`badge-product-${doc.id}`}>
+                            <Package className="w-3 h-3 mr-1" />
+                            {linkedProduct.name}
+                          </Badge>
+                        )}
                         {docContexts.map((ctx) => (
                           <Badge key={ctx} variant="outline" className="text-[10px] px-1.5 py-0">
                             {GROUNDING_DOC_CONTEXT_LABELS[ctx] || ctx}

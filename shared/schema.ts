@@ -783,6 +783,8 @@ export const GROUNDING_DOC_CONTEXTS = [
   "intelligence_briefing",
   "marketing_content",
   "email_generation",
+  "product_features",
+  "product_roadmap",
 ] as const;
 
 export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
@@ -792,12 +794,15 @@ export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
   intelligence_briefing: "Intelligence Briefing",
   marketing_content: "Social Posts & Content Summaries",
   email_generation: "Email Generation",
+  product_features: "Product Features",
+  product_roadmap: "Product Roadmap",
 };
 
 export const GROUNDING_DOC_CONTEXT_PRESETS: Record<string, string[]> = {
   all: [...GROUNDING_DOC_CONTEXTS],
   intelligence: ["competitive_analysis", "recommendations", "executive_summary", "intelligence_briefing"],
   marketing: ["marketing_content", "email_generation"],
+  product: ["product_features", "product_roadmap"],
 };
 
 export const groundingDocuments = pgTable("grounding_documents", {
@@ -812,6 +817,7 @@ export const groundingDocuments = pgTable("grounding_documents", {
   useCase: text("use_case").notNull().default("intelligence"),
   contexts: jsonb("contexts").$type<string[]>(),
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "set null" }),
   userId: varchar("user_id").notNull().references(() => users.id),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
@@ -829,6 +835,10 @@ export const groundingDocumentsRelations = relations(groundingDocuments, ({ one 
   competitor: one(competitors, {
     fields: [groundingDocuments.competitorId],
     references: [competitors.id],
+  }),
+  product: one(products, {
+    fields: [groundingDocuments.productId],
+    references: [products.id],
   }),
 }));
 

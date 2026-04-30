@@ -58,7 +58,14 @@ export function registerAdminRoutes(app: Express) {
   app.get("/api/documents", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
-      const documents = await storage.getGroundingDocumentsByContext(toContextFilter(ctx));
+      const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
+      const competitorId = typeof req.query.competitorId === "string" ? req.query.competitorId : undefined;
+      const forContext = typeof req.query.forContext === "string" ? req.query.forContext : undefined;
+      const documents = await storage.getGroundingDocumentsByContext(
+        toContextFilter(ctx),
+        forContext,
+        { productId, competitorId },
+      );
       res.json(documents);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -103,7 +110,24 @@ export function registerAdminRoutes(app: Express) {
           return res.status(400).json({ error: `Invalid context values: ${invalid.join(", ")}` });
         }
       }
-      
+
+      if (req.body.competitorId) {
+        const competitor = await storage.getCompetitorByIdWithContext(req.body.competitorId, toContextFilter(ctx));
+        if (!competitor) {
+          return res.status(400).json({ error: "competitorId does not belong to the current tenant/market" });
+        }
+      }
+
+      if (req.body.productId) {
+        const product = await storage.getProduct(req.body.productId);
+        if (!product || !validateResourceContext(product, ctx)) {
+          return res.status(400).json({ error: "productId does not belong to the current tenant/market" });
+        }
+        if (req.body.competitorId && product.competitorId !== req.body.competitorId) {
+          return res.status(400).json({ error: "productId does not belong to the specified competitor" });
+        }
+      }
+
       const parsed = insertGroundingDocumentSchema.safeParse({
         ...req.body,
         userId: ctx.userId,
