@@ -414,7 +414,7 @@ export interface IStorage {
   getRecommendationsByContext(ctx: ContextFilter): Promise<Recommendation[]>;
   clearRecommendationsByContext(ctx: ContextFilter): Promise<number>;
   getActivityByContext(ctx: ContextFilter): Promise<Activity[]>;
-  getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string, filters?: { productId?: string; competitorId?: string }): Promise<GroundingDocument[]>;
+  getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string, filters?: { productId?: string; competitorId?: string; productIdInclusive?: string }): Promise<GroundingDocument[]>;
   getBattlecardsByContext(ctx: ContextFilter): Promise<Battlecard[]>;
   
   // AI usage tracking methods
@@ -2479,7 +2479,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(activity.createdAt));
   }
 
-  async getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string, filters?: { productId?: string; competitorId?: string }): Promise<GroundingDocument[]> {
+  async getGroundingDocumentsByContext(ctx: ContextFilter, forContext?: string, filters?: { productId?: string; competitorId?: string; productIdInclusive?: string }): Promise<GroundingDocument[]> {
     const marketCondition = ctx.isDefaultMarket
       ? or(eq(groundingDocuments.marketId, ctx.marketId), isNull(groundingDocuments.marketId))
       : eq(groundingDocuments.marketId, ctx.marketId);
@@ -2497,6 +2497,13 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.productId) {
       conditions.push(eq(groundingDocuments.productId, filters.productId));
+    } else if (filters?.productIdInclusive) {
+      conditions.push(
+        or(
+          eq(groundingDocuments.productId, filters.productIdInclusive),
+          isNull(groundingDocuments.productId),
+        )!
+      );
     }
 
     if (filters?.competitorId) {

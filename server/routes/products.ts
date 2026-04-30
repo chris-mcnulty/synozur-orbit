@@ -9,6 +9,21 @@ import { crawlCompetitorWebsite } from "../services/web-crawler";
 import { z } from "zod";
 import { contentAssets, projectProducts as projectProductsTable } from "@shared/schema";
 import { generateRoadmapRecommendations } from "../ai-service";
+import { documentExtractionService } from "../services/document-extraction";
+import type { ContextFilter } from "../storage";
+
+async function buildProductGroundingContext(
+  ctx: ContextFilter,
+  productId: string,
+  forContext: string,
+): Promise<string> {
+  const docs = await storage.getGroundingDocumentsByContext(ctx, forContext, {
+    productIdInclusive: productId,
+  });
+  return documentExtractionService.prepareGroundingContext(
+    docs.map((d) => ({ name: d.name, extractedText: d.extractedText, scope: d.scope })),
+  );
+}
 
 export function registerProductRoutes(app: Express) {
   // ==================== PRODUCT MANAGEMENT ====================
@@ -283,6 +298,13 @@ export function registerProductRoutes(app: Express) {
       const features = await storage.getProductFeaturesByProduct(product.id);
       const featureList = features.slice(0, 10).map(f => f.name).join(", ");
 
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "competitive_analysis",
+      );
+      const groundingSection = groundingContext ? `\n\n${groundingContext}` : "";
+
       const prompt = `Write a concise 2-3 sentence competitive position summary for this product.
 
 Product: ${product.name}
@@ -293,7 +315,7 @@ ${featureList ? `Key Features: ${featureList}` : ""}
 ${product.isBaseline ? "This is the user's own product." : `This is a competitor product from ${product.companyName || "an unknown company"}.`}
 
 Competitive Landscape:${competitorContext || " No competitor data available."}
-
+${groundingSection}
 Write 2-3 sentences that capture:
 1. What this product does and who it serves
 2. Its key differentiators or competitive position
@@ -682,7 +704,12 @@ Provide analysis in this JSON format:
       console.log(`[Feature Import] URL: ${url}, HTML length: ${html.length}, Text length: ${textContent.length}`);
       console.log(`[Feature Import] Text preview: ${textContent.slice(0, 500)}...`);
       
-      const extractedFeatures = await extractFeaturesFromContent(textContent, "url", product.name);
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "product_features",
+      );
+      const extractedFeatures = await extractFeaturesFromContent(textContent, "url", product.name, groundingContext);
       console.log(`[Feature Import] Extracted ${extractedFeatures.length} features`);
       
       if (extractedFeatures.length === 0) {
@@ -728,7 +755,12 @@ Provide analysis in this JSON format:
       }
       
       const { extractFeaturesFromContent } = await import("../ai-service");
-      const extractedFeatures = await extractFeaturesFromContent(text, "text", product.name);
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "product_features",
+      );
+      const extractedFeatures = await extractFeaturesFromContent(text, "text", product.name, groundingContext);
       
       if (extractedFeatures.length === 0) {
         return res.status(400).json({ error: "No features could be extracted from the provided text. Try reformatting the content or breaking it into smaller sections." });
@@ -883,8 +915,13 @@ Provide analysis in this JSON format:
         .replace(/\s+/g, " ")
         .trim();
       
-      const extractedItems = await extractRoadmapFromContent(textContent, "url", product.name);
-      
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "product_roadmap",
+      );
+      const extractedItems = await extractRoadmapFromContent(textContent, "url", product.name, groundingContext);
+
       const createdItems = [];
       const currentYear = new Date().getFullYear();
       for (const item of extractedItems) {
@@ -901,7 +938,7 @@ Provide analysis in this JSON format:
         });
         createdItems.push(created);
       }
-      
+
       res.json({ imported: createdItems.length, items: createdItems });
     } catch (error: any) {
       console.error("Roadmap import from URL failed:", error);
@@ -925,7 +962,12 @@ Provide analysis in this JSON format:
       }
       
       const { extractRoadmapFromContent } = await import("../ai-service");
-      const extractedItems = await extractRoadmapFromContent(text, "text", product.name);
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "product_roadmap",
+      );
+      const extractedItems = await extractRoadmapFromContent(text, "text", product.name, groundingContext);
       
       const createdItems = [];
       const currentYear = new Date().getFullYear();
@@ -1112,13 +1154,20 @@ Provide analysis in this JSON format:
         status: r.status,
       }));
 
+      const groundingContext = await buildProductGroundingContext(
+        toContextFilter(ctx),
+        product.id,
+        "product_roadmap",
+      );
+
       // Generate recommendations using AI
       const recommendations = await generateRoadmapRecommendations(
         product.name,
         product.description || "",
         featuresContext,
         competitorData,
-        existingForRoadmapAI.length > 0 ? existingForRoadmapAI : undefined
+        existingForRoadmapAI.length > 0 ? existingForRoadmapAI : undefined,
+        groundingContext,
       );
       
       // Save recommendations to database

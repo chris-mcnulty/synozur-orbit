@@ -434,7 +434,8 @@ export async function generateRoadmapRecommendations(
   productDescription: string,
   existingFeatures: { name: string; status: string; category: string | null }[],
   competitorData: { name: string; analysis: string }[],
-  existingRecommendations?: { title: string; status: string }[]
+  existingRecommendations?: { title: string; status: string }[],
+  groundingContext?: string,
 ): Promise<RoadmapRecommendation[]> {
   const featuresContext = existingFeatures.length > 0
     ? existingFeatures.map(f => `- ${f.name} (${f.status}${f.category ? `, ${f.category}` : ""})`).join("\n")
@@ -458,11 +459,15 @@ ${active.map(r => `- "${r.title}"`).join("\n")}`;
     }
   }
 
+  const groundingSection = groundingContext && groundingContext.trim().length > 0
+    ? `\n\n${groundingContext}`
+    : "";
+
   const prompt = `You are a product strategy advisor. Based on competitive intelligence, suggest roadmap recommendations for the following product.
 
 PRODUCT: ${productName}
 ${productDescription ? `Description: ${productDescription}` : ""}
-
+${groundingSection}
 CURRENT FEATURES:
 ${featuresContext}
 
@@ -590,11 +595,16 @@ export interface ExtractedFeature {
 export async function extractFeaturesFromContent(
   content: string,
   sourceType: "url" | "text",
-  productName?: string
+  productName?: string,
+  groundingContext?: string,
 ): Promise<ExtractedFeature[]> {
   const contextInfo = productName ? `for the product "${productName}"` : "";
-  
+  const groundingSection = groundingContext && groundingContext.trim().length > 0
+    ? `\n${groundingContext}\n`
+    : "";
+
   const prompt = `You are a product analyst extracting ALL product features and capabilities from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+${groundingSection}
 
 IMPORTANT: Be thorough and extract EVERY distinct feature, capability, module, and functionality mentioned. Marketing pages often describe many features - capture them all.
 
@@ -648,11 +658,16 @@ export interface ExtractedRoadmapItem {
 export async function extractRoadmapFromContent(
   content: string,
   sourceType: "url" | "text",
-  productName?: string
+  productName?: string,
+  groundingContext?: string,
 ): Promise<ExtractedRoadmapItem[]> {
   const contextInfo = productName ? `for the product "${productName}"` : "";
-  
+  const groundingSection = groundingContext && groundingContext.trim().length > 0
+    ? `\n${groundingContext}\n`
+    : "";
+
   const prompt = `You are a product analyst extracting roadmap items from ${sourceType === "url" ? "a website" : "provided text"} ${contextInfo}.
+${groundingSection}
 
 Analyze the following content and extract roadmap items, upcoming features, or planned work. For each item:
 1. A clear title (max 80 characters)
