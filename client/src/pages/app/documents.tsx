@@ -115,6 +115,10 @@ export default function Documents() {
     () => (competitorId ? products.filter((p) => p.competitorId === competitorId) : []),
     [products, competitorId],
   );
+  const baselineProducts = useMemo(
+    () => products.filter((p) => p.isBaseline),
+    [products],
+  );
 
   const addDocument = useMutation({
     mutationFn: async (data: {
@@ -254,7 +258,7 @@ export default function Documents() {
       useCase: deriveUseCase(selectedContexts),
       contexts: selectedContexts,
       competitorId: scope === "competitor" ? competitorId : null,
-      productId: scope === "competitor" ? productId : null,
+      productId: productId,
     });
   };
 
@@ -419,7 +423,7 @@ export default function Documents() {
 
                 <div className="grid gap-2">
                   <Label>Scope</Label>
-                  <Select value={scope} onValueChange={setScope}>
+                  <Select value={scope} onValueChange={(v) => { setScope(v); setCompetitorId(null); setProductId(null); }}>
                     <SelectTrigger data-testid="select-scope">
                       <SelectValue />
                     </SelectTrigger>
@@ -429,6 +433,34 @@ export default function Documents() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {scope !== "competitor" && baselineProducts.length > 0 && (
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-1.5">
+                      <Package className="w-4 h-4" />
+                      Pin to Product (optional)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Optionally scope this document to one of your own products so it grounds that product's Features and Roadmap AI analysis.
+                    </p>
+                    <Select
+                      value={productId || "none"}
+                      onValueChange={(value) => setProductId(value === "none" ? null : value)}
+                    >
+                      <SelectTrigger data-testid="select-baseline-product">
+                        <SelectValue placeholder="No specific product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No specific product</SelectItem>
+                        {baselineProducts.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {scope === "competitor" && (
                   <div className="grid gap-2">
