@@ -355,6 +355,21 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS thematic_url TEXT`);
     await pgPool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS post_generation_job_id VARCHAR`);
 
+    await pgPool.query(`ALTER TABLE grounding_documents ADD COLUMN IF NOT EXISTS product_id VARCHAR`);
+    await pgPool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'grounding_documents_product_id_products_id_fk'
+        ) THEN
+          ALTER TABLE grounding_documents
+            ADD CONSTRAINT grounding_documents_product_id_products_id_fk
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
