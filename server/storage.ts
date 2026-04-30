@@ -2498,12 +2498,13 @@ export class DatabaseStorage implements IStorage {
     if (filters?.productId) {
       conditions.push(eq(groundingDocuments.productId, filters.productId));
     } else if (filters?.productIdInclusive) {
-      conditions.push(
-        or(
-          eq(groundingDocuments.productId, filters.productIdInclusive),
-          isNull(groundingDocuments.productId),
-        )!
+      const productInclusive = or(
+        eq(groundingDocuments.productId, filters.productIdInclusive),
+        isNull(groundingDocuments.productId),
       );
+      if (productInclusive) {
+        conditions.push(productInclusive);
+      }
     }
 
     if (filters?.competitorId) {

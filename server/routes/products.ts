@@ -17,11 +17,23 @@ async function buildProductGroundingContext(
   productId: string,
   forContext: string,
 ): Promise<string> {
+  const product = await storage.getProduct(productId);
+  const productCompetitorId = product?.competitorId ?? null;
+
   const docs = await storage.getGroundingDocumentsByContext(ctx, forContext, {
     productIdInclusive: productId,
   });
+
+  // Avoid pollution from other competitors' org-level docs: keep org-wide
+  // (no competitor) docs and docs scoped to the same competitor as this product.
+  const scopedDocs = docs.filter((d) => {
+    const docCompetitorId = d.competitorId ?? null;
+    if (docCompetitorId === null) return true;
+    return productCompetitorId !== null && docCompetitorId === productCompetitorId;
+  });
+
   return documentExtractionService.prepareGroundingContext(
-    docs.map((d) => ({ name: d.name, extractedText: d.extractedText, scope: d.scope })),
+    scopedDocs.map((d) => ({ name: d.name, extractedText: d.extractedText, scope: d.scope })),
   );
 }
 

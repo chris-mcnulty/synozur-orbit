@@ -110,7 +110,24 @@ export function registerAdminRoutes(app: Express) {
           return res.status(400).json({ error: `Invalid context values: ${invalid.join(", ")}` });
         }
       }
-      
+
+      if (req.body.competitorId) {
+        const competitor = await storage.getCompetitorByIdWithContext(req.body.competitorId, toContextFilter(ctx));
+        if (!competitor) {
+          return res.status(400).json({ error: "competitorId does not belong to the current tenant/market" });
+        }
+      }
+
+      if (req.body.productId) {
+        const product = await storage.getProduct(req.body.productId);
+        if (!product || !validateResourceContext(product, ctx)) {
+          return res.status(400).json({ error: "productId does not belong to the current tenant/market" });
+        }
+        if (req.body.competitorId && product.competitorId !== req.body.competitorId) {
+          return res.status(400).json({ error: "productId does not belong to the specified competitor" });
+        }
+      }
+
       const parsed = insertGroundingDocumentSchema.safeParse({
         ...req.body,
         userId: ctx.userId,

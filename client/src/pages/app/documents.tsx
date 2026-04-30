@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,14 +97,24 @@ export default function Documents() {
       const response = await fetch("/api/products", {
         credentials: "include",
       });
+      if (response.status === 403) return [];
       if (!response.ok) throw new Error("Failed to fetch products");
       return response.json();
     },
   });
 
-  const productsForCompetitor = competitorId
-    ? products.filter((p) => p.competitorId === competitorId)
-    : [];
+  const competitorById = useMemo(
+    () => new Map(competitors.map((c) => [c.id, c])),
+    [competitors],
+  );
+  const productById = useMemo(
+    () => new Map(products.map((p) => [p.id, p])),
+    [products],
+  );
+  const productsForCompetitor = useMemo(
+    () => (competitorId ? products.filter((p) => p.competitorId === competitorId) : []),
+    [products, competitorId],
+  );
 
   const addDocument = useMutation({
     mutationFn: async (data: {
@@ -220,6 +230,15 @@ export default function Documents() {
       toast({
         title: "Error",
         description: "Please select at least one AI context.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (scope === "competitor" && !competitorId) {
+      toast({
+        title: "Error",
+        description: "Please select a competitor when scope is set to Specific Competitor.",
         variant: "destructive",
       });
       return;
@@ -544,7 +563,7 @@ export default function Documents() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="submit" disabled={addDocument.isPending || !uploadedFile || selectedContexts.length === 0} data-testid="button-submit-document">
+                <Button type="submit" disabled={addDocument.isPending || !uploadedFile || selectedContexts.length === 0 || (scope === "competitor" && !competitorId)} data-testid="button-submit-document">
                   {addDocument.isPending ? "Uploading..." : "Add Document"}
                 </Button>
               </DialogFooter>
@@ -570,8 +589,8 @@ export default function Documents() {
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
           {documents.map((doc) => {
             const docContexts = getDocContexts(doc);
-            const linkedCompetitor = doc.competitorId ? competitors.find((c) => c.id === doc.competitorId) : null;
-            const linkedProduct = doc.productId ? products.find((p) => p.id === doc.productId) : null;
+            const linkedCompetitor = doc.competitorId ? competitorById.get(doc.competitorId) : null;
+            const linkedProduct = doc.productId ? productById.get(doc.productId) : null;
             return (
               <Card key={doc.id} className="hover:border-primary/30 transition-colors" data-testid={`card-document-${doc.id}`}>
                 <CardContent className="flex items-center justify-between p-6">
