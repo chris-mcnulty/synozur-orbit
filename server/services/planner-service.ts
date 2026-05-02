@@ -66,14 +66,32 @@ const PRIORITY_MAP: Record<string, number> = {
 
 // ---- Planner → Orbit mappings ----
 
+/** Statuses that map to "not started" — all use percentComplete=0 when pushed
+ *  to Planner.  We never pull Planner's 0% back and downgrade an "accepted"
+ *  task to "planned"; 0% only matters when coming from a task that was
+ *  previously in_progress or completed. */
+const NOT_STARTED_STATUSES = new Set(["suggested", "planned", "accepted"]);
+
+/**
+ * Statuses set by admins that should never be overridden by a Planner pull.
+ */
+const PRESERVED_STATUSES = new Set(["cancelled", "removed"]);
+
 /**
  * Map a Planner `percentComplete` value (0-100) back to an Orbit task status.
- * We use a conservative mapping: only promote/demote when the value clearly
- * signals completion or active work.
+ * Only promotes/demotes when Planner signals active work (>0%) or completion
+ * (100%); 0% is only applied if the current status is not already a
+ * "not started" variant (avoids regressing "accepted" → "planned").
+ *
+ * @param percent       Planner percentComplete
+ * @param currentStatus Current Orbit status (used to avoid no-op regressions)
  */
-function percentToStatus(percent: number): string {
+function percentToStatus(percent: number, currentStatus: string | null | undefined): string | null {
   if (percent >= 100) return "completed";
   if (percent > 0) return "in_progress";
+  // 0%: only update if the task was already marked as actively progressing,
+  // otherwise leave the existing "not started" variant intact.
+  if (NOT_STARTED_STATUSES.has(currentStatus ?? "")) return null; // no change
   return "planned";
 }
 
@@ -151,7 +169,7 @@ export async function syncMarketingPlanToPlanner(
   //         any changes back into Orbit.
   // ---------------------------------------------------------------
 
-  let plannerTaskMap: Map<string, PlannerTask> = new Map();
+  const plannerTaskMap: Map<string, PlannerTask> = new Map();
   try {
     const plannerTasks = await listPlanTasks(token, plan.plannerPlanId);
     for (const pt of plannerTasks) {
@@ -184,23 +202,18 @@ export async function syncMarketingPlanToPlanner(
         updates.priority = incomingPriority;
       }
 
-      // Due date — compare ISO strings
-      const incomingDue = pt.dueDateTime
-        ? new Date(pt.dueDateTime).toISOString()
-        : null;
-      const existingDue = task.dueDate
-        ? new Date(task.dueDate).toISOString()
-        : null;
-      if (incomingDue !== existingDue) {
-        updates.dueDate = pt.dueDateTime ? new Date(pt.dueDateTime) : null;
+      // Due date — compare milliseconds to avoid double-parsing
+      const incomingDueMs = pt.dueDateTime ? new Date(pt.dueDateTime).getTime() : null;
+      const existingDueMs = task.dueDate ? new Date(task.dueDate).getTime() : null;
+      if (incomingDueMs !== existingDueMs) {
+        updates.dueDate = incomingDueMs !== null ? new Date(incomingDueMs) : null;
       }
 
-      // Completion / status
-      const incomingStatus = percentToStatus(pt.percentComplete);
-      // Only update status if the Planner side represents a meaningful change.
-      // Avoid overriding "cancelled" or "removed" (admin-set states).
-      const preservedStatuses = new Set(["cancelled", "removed"]);
-      if (incomingStatus !== task.status && !preservedStatuses.has(task.status ?? "")) {
+      // Completion / status — pass current status so we don't regress no-op variants
+      const incomingStatus = percentToStatus(pt.percentComplete, task.status);
+      // Only update status if there is a meaningful change and the current
+      // status is not admin-locked (cancelled/removed).
+      if (incomingStatus !== null && incomingStatus !== task.status && !PRESERVED_STATUSES.has(task.status ?? "")) {
         updates.status = incomingStatus;
       }
 
