@@ -454,16 +454,18 @@ export async function generateBattlecardPdf(
   tenant?: Tenant | null,
   generatedAt?: Date | string | null,
   competitorLogoUrl?: string | null,
-  companyProfile?: CompanyProfile | null
+  companyProfile?: CompanyProfile | null,
+  reportProgress?: (patch: { phase?: string; percent?: number }) => void,
 ): Promise<Buffer> {
-  // Convert external logo URL to base64 for Puppeteer compatibility
+  reportProgress?.({ phase: "Loading assets", percent: 10 });
   let logoBase64: string | null = null;
   if (competitorLogoUrl) {
     logoBase64 = await fetchImageAsBase64(competitorLogoUrl);
   }
-  
+
+  reportProgress?.({ phase: "Rendering pages", percent: 35 });
   const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64, companyProfile);
-  
+
   const startTime = Date.now();
   console.log(`[Battlecard PDF] Starting generation for ${competitorName} via PDF pool`);
 
@@ -471,6 +473,7 @@ export async function generateBattlecardPdf(
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15000 });
     console.log(`[Battlecard PDF] Content loaded in ${Date.now() - startTime}ms`);
+    reportProgress?.({ phase: "Printing PDF", percent: 75 });
     await new Promise(resolve => setTimeout(resolve, 200));
     return await page.pdf({
       format: "Letter",
@@ -480,6 +483,7 @@ export async function generateBattlecardPdf(
     });
   });
 
+  reportProgress?.({ phase: "Finalising", percent: 98 });
   console.log(`[Battlecard PDF] PDF generated in ${Date.now() - startTime}ms, size: ${Math.round(pdfBuffer.length / 1024)}KB`);
   return Buffer.from(pdfBuffer);
 }

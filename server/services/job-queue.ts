@@ -8,13 +8,30 @@ export interface JobContext {
   targetName?: string;
 }
 
+/** Live progress data published by a running job. */
+export interface JobProgress {
+  /** 0..100 percent complete. Undefined when indeterminate. */
+  percent?: number;
+  /** Human-readable phase label, e.g. "Synthesising sections". */
+  phase?: string;
+  /** When iterating over a list of items, which item are we on (1-indexed). */
+  currentItem?: number;
+  /** Total number of items being processed. */
+  totalItems?: number;
+  /** Display name of the item currently being processed. */
+  currentItemName?: string;
+}
+
+/** A function jobs can call to publish their current phase / percent. */
+export type ProgressReporter = (patch: Partial<JobProgress>) => void;
+
 interface QueuedJob<T = any> {
   id: string;
   type: JobType;
   priority: number;
   label: string;
   status: JobStatus;
-  work: (signal?: AbortSignal) => Promise<T>;
+  work: (signal?: AbortSignal, reportProgress?: ProgressReporter) => Promise<T>;
   resolve: (value: T) => void;
   reject: (reason: any) => void;
   enqueuedAt: number;
@@ -28,6 +45,8 @@ interface QueuedJob<T = any> {
   /** P3: Retry tracking */
   attempt: number;
   maxRetries: number;
+  /** Live progress reported by the running job. */
+  progress?: JobProgress;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +115,7 @@ interface QueueStats {
   failed: number;
   activeByType: Record<string, number>;
   pendingByType: Record<string, number>;
-  activeJobs: Array<{ id: string; type: JobType; label: string; runningSec: number }>;
+  activeJobs: Array<{ id: string; type: JobType; label: string; runningSec: number; progress?: JobProgress }>;
   pendingJobs: Array<{ id: string; type: JobType; label: string; waitingSec: number; priority: number }>;
   paused: boolean;
 }
@@ -212,7 +231,11 @@ function startJob(job: QueuedJob): void {
 
   console.log(`[JobQueue] Starting ${job.type}/${job.label} (active: ${activeJobs.size}/${config.maxConcurrent}, pending: ${pendingQueue.length})`);
 
-  job.work(abortController.signal)
+  const reportProgress: ProgressReporter = (patch) => {
+    job.progress = { ...(job.progress || {}), ...patch };
+  };
+
+  job.work(abortController.signal, reportProgress)
     .then(result => {
       clearTimeout(timeoutHandle);
       if (job.status === "timeout") return;
@@ -283,7 +306,7 @@ function startJob(job: QueuedJob): void {
 export function enqueue<T>(
   type: JobType,
   label: string,
-  work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
+  work: ((signal?: AbortSignal, reportProgress?: ProgressReporter) => Promise<T>) | ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
   options?: { priority?: number; timeoutMs?: number; ctx?: JobContext; maxRetries?: number }
 ): Promise<T> {
   const priority = options?.priority ?? PRIORITY[type] ?? PRIORITY.other;
@@ -316,7 +339,15 @@ export function enqueue<T>(
   });
 }
 
-export function enqueuePdf<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
+export function enqueuePdf<T>(
+  label: string,
+  work:
+    | ((signal?: AbortSignal, reportProgress?: ProgressReporter) => Promise<T>)
+    | ((signal?: AbortSignal) => Promise<T>)
+    | (() => Promise<T>),
+  timeoutMs?: number,
+  ctx?: JobContext,
+): Promise<T> {
   return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000, ctx });
 }
 
@@ -326,6 +357,64 @@ export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => 
 
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
   return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
+}
+
+/**
+ * Update the live progress of an active job. Safe to call repeatedly; values
+ * are merged into the existing progress record. Unknown jobs are ignored.
+ */
+export function updateJobProgress(jobId: string, patch: Partial<JobProgress>): void {
+  const job = activeJobs.get(jobId);
+  if (!job) return;
+  job.progress = { ...(job.progress || {}), ...patch };
+}
+
+export interface JobStatusByLabel {
+  status: "active" | "pending" | "not_found";
+  progress?: JobProgress;
+  runningSec?: number;
+  queuePosition?: number;
+  pendingAhead?: number;
+  type?: JobType;
+}
+
+/**
+ * Look up the queue status for the first job whose label matches `labelPrefix`.
+ * When `tenantDomain` is provided, only jobs whose ctx.tenantDomain matches
+ * are considered — this scopes the lookup to the caller's tenant.
+ */
+export function getJobStatusByLabel(labelPrefix: string, tenantDomain?: string): JobStatusByLabel {
+  const matches = (job: QueuedJob) =>
+    job.label.startsWith(labelPrefix) &&
+    (!tenantDomain || job.ctx?.tenantDomain === tenantDomain);
+
+  const now = Date.now();
+  for (const job of activeJobs.values()) {
+    if (matches(job)) {
+      return {
+        status: "active",
+        progress: job.progress,
+        runningSec: Math.round((now - (job.startedAt || now)) / 1000),
+        type: job.type,
+      };
+    }
+  }
+  const sortedPending = [...pendingQueue].sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return a.enqueuedAt - b.enqueuedAt;
+  });
+  const idx = sortedPending.findIndex(matches);
+  if (idx !== -1) {
+    const target = sortedPending[idx];
+    const pendingAhead = sortedPending.slice(0, idx).filter(j => j.type === target.type).length;
+    return {
+      status: "pending",
+      queuePosition: idx + 1,
+      pendingAhead,
+      type: target.type,
+    };
+  }
+  return { status: "not_found" };
 }
 
 export function getQueueStatus(): QueueStats {
@@ -352,6 +441,7 @@ export function getQueueStatus(): QueueStats {
       type: j.type,
       label: j.label,
       runningSec: Math.round((now - (j.startedAt || now)) / 1000),
+      progress: j.progress,
     })),
     pendingJobs: pendingQueue
       .sort((a, b) => b.priority - a.priority || a.enqueuedAt - b.enqueuedAt)

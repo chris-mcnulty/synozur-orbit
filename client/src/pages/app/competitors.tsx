@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +34,11 @@ export default function Competitors() {
   const [expandedCompetitors, setExpandedCompetitors] = useState<Set<string>>(new Set());
   const [selectedCompetitors, setSelectedCompetitors] = useState<Set<string>>(new Set());
   const [batchRefreshing, setBatchRefreshing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{
+    current: number;
+    total: number;
+    currentName: string;
+  } | null>(null);
 
   const [faviconErrors, setFaviconErrors] = useState<Set<string>>(new Set());
   const [isSuggestDialogOpen, setIsSuggestDialogOpen] = useState(false);
@@ -507,15 +513,23 @@ export default function Competitors() {
 
   const batchRefreshCompetitors = async () => {
     if (selectedCompetitors.size === 0) return;
-    
+
     setBatchRefreshing(true);
     const selectedIds = Array.from(selectedCompetitors);
+    const total = selectedIds.length;
+    const nameById = new Map<string, string>(
+      (competitors as Array<{ id: string; name?: string }>).map((c) => [c.id, c.name || "competitor"]),
+    );
     let successCount = 0;
     let errorCount = 0;
 
+    setBatchProgress({ current: 0, total, currentName: nameById.get(selectedIds[0]) || "" });
+
     try {
-      // Refresh competitors sequentially to avoid overloading
-      for (const competitorId of selectedIds) {
+      for (let i = 0; i < selectedIds.length; i++) {
+        const competitorId = selectedIds[i];
+        const currentName = nameById.get(competitorId) || "competitor";
+        setBatchProgress({ current: i + 1, total, currentName });
         try {
           const response = await fetch(`/api/competitors/${competitorId}/crawl`, {
             method: "POST",
@@ -546,6 +560,7 @@ export default function Competitors() {
       });
     } finally {
       setBatchRefreshing(false);
+      setBatchProgress(null);
     }
   };
 
@@ -909,6 +924,28 @@ export default function Competitors() {
         )}
 
         <div className="space-y-4">
+          {batchRefreshing && batchProgress && (
+            <Card data-testid="card-batch-refresh-progress">
+              <CardContent className="py-4 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span data-testid="text-batch-refresh-status">
+                      Refreshing competitor {batchProgress.current} of {batchProgress.total}
+                      {batchProgress.currentName ? ` — ${batchProgress.currentName}` : ""}
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground" data-testid="text-batch-refresh-percent">
+                    {Math.round((batchProgress.current / Math.max(batchProgress.total, 1)) * 100)}%
+                  </span>
+                </div>
+                <Progress
+                  value={(batchProgress.current / Math.max(batchProgress.total, 1)) * 100}
+                  data-testid="progress-batch-refresh"
+                />
+              </CardContent>
+            </Card>
+          )}
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Tracked Competitors</h2>
             {competitors.length > 0 && (
@@ -934,7 +971,9 @@ export default function Competitors() {
                         ) : (
                           <RefreshCw className="w-4 h-4 mr-2" />
                         )}
-                        Refresh Selected
+                        {batchRefreshing && batchProgress
+                          ? `Refreshing ${batchProgress.current}/${batchProgress.total}`
+                          : "Refresh Selected"}
                       </Button>
                     </ActionCostTooltip>
                     <Button

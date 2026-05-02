@@ -33,6 +33,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 type HarveyBall = "full" | "three-quarter" | "half" | "quarter" | "empty";
 
@@ -87,6 +88,10 @@ export default function BattleCardsPage() {
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "txt" | null>(null);
+  const pdfJobStatus = useJobStatus(
+    selectedCard ? `battlecard-pdf:${selectedCard.id}` : null,
+    downloading === "pdf",
+  );
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -818,7 +823,9 @@ export default function BattleCardsPage() {
               ) : (
                 <FileDown className="w-4 h-4 mr-2" />
               )}
-              PDF
+              {downloading === "pdf"
+                ? jobStatusLabel(pdfJobStatus, "Generating…")
+                : "PDF"}
             </Button>
             </div>
           </div>

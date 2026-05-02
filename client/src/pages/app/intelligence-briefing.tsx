@@ -75,6 +75,8 @@ import {
 import SharedSourceFreshnessRow, { type SourceFreshnessItem as SharedSourceFreshnessItem, type SourceFreshnessData as SharedSourceFreshnessData } from "@/components/SourceFreshnessRow";
 import { BriefingPanelSkeleton } from "@/components/ui/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 interface BriefingTheme {
   title: string;
@@ -114,6 +116,12 @@ interface NewsArticleBrief {
   matchedEntity: string;
 }
 
+interface BriefingProgress {
+  phase: string;
+  phaseLabel: string;
+  percent: number;
+}
+
 interface BriefingData {
   executiveSummary: string;
   keyThemes: BriefingTheme[];
@@ -129,6 +137,7 @@ interface BriefingData {
   newsArticles?: NewsArticleBrief[];
   periodLabel: string;
   generatedAt: string;
+  progress?: BriefingProgress;
 }
 
 interface IntelligenceBriefing {
@@ -209,6 +218,7 @@ export default function IntelligenceBriefingPage() {
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [pdfBriefingId, setPdfBriefingId] = useState<string | null>(null);
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [refreshSelections, setRefreshSelections] = useState<Record<string, boolean>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -231,6 +241,7 @@ export default function IntelligenceBriefingPage() {
   const handleDownloadPdf = async () => {
     if (!activeBriefingId) return;
     setIsDownloading(true);
+    setPdfBriefingId(activeBriefingId);
     try {
       const response = await fetch(`/api/intelligence-briefings/${activeBriefingId}/pdf`, {
         credentials: "include",
@@ -262,8 +273,14 @@ export default function IntelligenceBriefingPage() {
       });
     } finally {
       setIsDownloading(false);
+      setPdfBriefingId(null);
     }
   };
+
+  const pdfJobStatus = useJobStatus(
+    pdfBriefingId ? `briefing-pdf:${pdfBriefingId}` : null,
+    isDownloading,
+  );
 
   useEffect(() => {
     if (idFromUrl) setSelectedBriefingId(idFromUrl);
@@ -288,46 +305,46 @@ export default function IntelligenceBriefingPage() {
       return res.json();
     },
     enabled: !!activeBriefingId,
+    // While the active briefing is generating, refetch every 2s so progress
+    // phase + percent flow into the UI even when the user navigates back to
+    // an already-running briefing they didn't start in this session.
+    refetchInterval: (query) =>
+      (query.state.data?.status === "generating" ? 2000 : false),
   });
+
+  const generationProgress: BriefingProgress | null =
+    briefing?.status === "generating"
+      ? briefing.briefingData?.progress ?? null
+      : null;
 
   const [generatingBriefingId, setGeneratingBriefingId] = useState<string | null>(null);
   const [generationStartTime, setGenerationStartTime] = useState<number | null>(null);
 
+  // Watches a briefing this session triggered: handles success/failure toasts
+  // and timing out. Live progress is sourced from the briefing query above.
   useEffect(() => {
-    if (!generatingBriefingId) return;
+    if (!generatingBriefingId || !briefing || briefing.id !== generatingBriefingId) return;
     const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
-    const interval = setInterval(async () => {
-      try {
-        if (generationStartTime && Date.now() - generationStartTime > GENERATION_TIMEOUT_MS) {
-          clearInterval(interval);
-          setGeneratingBriefingId(null);
-          setGenerationStartTime(null);
-          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
-          toast({ title: "Generation Timed Out", description: "Briefing generation is taking longer than expected. Please check back or try again.", variant: "destructive" });
-          return;
-        }
-        const res = await fetch(`/api/intelligence-briefings/${generatingBriefingId}`, { credentials: "include" });
-        if (!res.ok) return;
-        const briefing = await res.json();
-        if (briefing.status === "published") {
-          clearInterval(interval);
-          setGeneratingBriefingId(null);
-          setGenerationStartTime(null);
-          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
-          setSelectedBriefingId(briefing.id);
-          toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
-        } else if (briefing.status === "failed") {
-          clearInterval(interval);
-          setGeneratingBriefingId(null);
-          setGenerationStartTime(null);
-          queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
-          toast({ title: "Generation Failed", description: "The briefing could not be generated. Please try again.", variant: "destructive" });
-        }
-      } catch {
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [generatingBriefingId, generationStartTime, queryClient, toast]);
+    if (generationStartTime && Date.now() - generationStartTime > GENERATION_TIMEOUT_MS) {
+      setGeneratingBriefingId(null);
+      setGenerationStartTime(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+      toast({ title: "Generation Timed Out", description: "Briefing generation is taking longer than expected. Please check back or try again.", variant: "destructive" });
+      return;
+    }
+    if (briefing.status === "published") {
+      setGeneratingBriefingId(null);
+      setGenerationStartTime(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+      setSelectedBriefingId(briefing.id);
+      toast({ title: "Briefing Generated", description: "Your intelligence briefing is ready." });
+    } else if (briefing.status === "failed") {
+      setGeneratingBriefingId(null);
+      setGenerationStartTime(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings"] });
+      toast({ title: "Generation Failed", description: "The briefing could not be generated. Please try again.", variant: "destructive" });
+    }
+  }, [generatingBriefingId, generationStartTime, briefing, queryClient, toast]);
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -775,7 +792,7 @@ export default function IntelligenceBriefingPage() {
                   ) : (
                     <Download className="w-4 h-4 mr-2" />
                   )}
-                  PDF
+                  {isDownloading ? jobStatusLabel(pdfJobStatus, "Generating…") : "PDF"}
                 </Button>
                 <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
                   <DialogTrigger asChild>
@@ -907,7 +924,11 @@ export default function IntelligenceBriefingPage() {
                   ) : (
                     <Sparkles className="w-4 h-4 mr-2" />
                   )}
-                  {generatingBriefingId ? "Generating..." : "Generate"}
+                  {generatingBriefingId
+                    ? generationProgress
+                      ? `${generationProgress.phaseLabel} ${Math.round(generationProgress.percent)}%`
+                      : "Generating…"
+                    : "Generate"}
                 </Button>
               </div>
             )}
@@ -936,13 +957,33 @@ export default function IntelligenceBriefingPage() {
 
         {briefing && briefing.status === "generating" && (
           <div className="space-y-4">
-            <Card>
-              <CardContent className="flex items-center gap-3 py-4">
-                <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
-                <div>
+            <Card data-testid="card-briefing-generating">
+              <CardContent className="flex items-start gap-3 py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-semibold">Generating Intelligence Briefing</h3>
-                  <p className="text-muted-foreground text-xs">
-                    Your briefing is being generated. This typically takes 1-2 minutes. You can navigate away — the briefing will be ready when you return.
+                  <p
+                    className="text-muted-foreground text-xs"
+                    data-testid="text-briefing-phase"
+                  >
+                    {generationProgress?.phaseLabel || "Preparing…"}
+                  </p>
+                  <div className="w-full max-w-md mt-2">
+                    <Progress
+                      value={generationProgress?.percent ?? 0}
+                      data-testid="progress-briefing"
+                    />
+                  </div>
+                  <p
+                    className="text-xs text-muted-foreground mt-1"
+                    data-testid="text-briefing-percent"
+                  >
+                    {generationProgress
+                      ? `${Math.round(generationProgress.percent)}% complete`
+                      : "Starting up…"}
+                  </p>
+                  <p className="text-muted-foreground text-xs mt-2">
+                    You can navigate away — the briefing will keep generating and be ready when you return.
                   </p>
                 </div>
               </CardContent>

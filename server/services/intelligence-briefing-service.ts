@@ -384,15 +384,65 @@ Rules:
   return briefing;
 }
 
+/** Briefing generation phases reported to the UI for progress tracking. */
+export type BriefingPhase =
+  | "queued"
+  | "loading_signals"
+  | "fetching_news"
+  | "synthesising"
+  | "finalising"
+  | "complete";
+
+export interface BriefingProgress {
+  phase: BriefingPhase;
+  phaseLabel: string;
+  percent: number;
+}
+
+export type BriefingProgressReporter = (progress: BriefingProgress) => void;
+
+const PHASE_LABELS: Record<BriefingPhase, string> = {
+  queued: "Queued",
+  loading_signals: "Loading recent signals",
+  fetching_news: "Fetching market news",
+  synthesising: "Synthesising sections",
+  finalising: "Finalising briefing",
+  complete: "Complete",
+};
+
+const PHASE_PERCENT: Record<BriefingPhase, number> = {
+  queued: 2,
+  loading_signals: 10,
+  fetching_news: 25,
+  synthesising: 60,
+  finalising: 92,
+  complete: 100,
+};
+
+function buildProgress(phase: BriefingPhase): BriefingProgress {
+  return { phase, phaseLabel: PHASE_LABELS[phase], percent: PHASE_PERCENT[phase] };
+}
+
 export async function generateBriefingData(
   tenantDomain: string,
   periodDays: number = 7,
   marketId?: string,
-  ctx?: ContextFilter
+  ctx?: ContextFilter,
+  onProgress?: BriefingProgressReporter,
 ): Promise<{ briefingData: BriefingData; signalCount: number; competitorCount: number }> {
   const now = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - periodDays);
+
+  const reportPhase = (phase: BriefingPhase) => {
+    try {
+      onProgress?.(buildProgress(phase));
+    } catch (err) {
+      console.error("[Intelligence Briefing] Progress reporter error:", err);
+    }
+  };
+
+  reportPhase("loading_signals");
 
   let activities: Activity[];
   let competitors: Competitor[];
@@ -411,6 +461,8 @@ export async function generateBriefingData(
       storage.getCompanyProfileByTenant(tenantDomain),
     ]);
   }
+
+  reportPhase("fetching_news");
 
   let newsArticles: NewsArticle[] = [];
   try {
@@ -518,6 +570,7 @@ Rules:
   let briefingData: BriefingData;
 
   try {
+    reportPhase("synthesising");
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 8192,
@@ -530,6 +583,8 @@ Rules:
     raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     const parsed = JSON.parse(raw);
+
+    reportPhase("finalising");
 
     const byType: Record<string, number> = {};
     const byImpact: Record<string, number> = {};
@@ -577,6 +632,8 @@ Rules:
       periodLabel,
       generatedAt: now.toISOString(),
     };
+
+    reportPhase("complete");
   } catch (error: any) {
     console.error("Error generating intelligence briefing data:", error);
     throw error;

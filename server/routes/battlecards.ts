@@ -478,20 +478,26 @@ Return ONLY valid JSON, no markdown or explanations.`;
       
       const { generateBattlecardPdf } = await import("../services/battlecard-export");
       const { enqueuePdf } = await import("../services/job-queue");
-      const pdfBuffer = await enqueuePdf(`battlecard-pdf:${req.params.id}`, () => generateBattlecardPdf(
-        battlecard,
-        competitor?.name || "Competitor",
-        companyProfile?.companyName || "Your Company",
-        tenant,
-        battlecard.lastGeneratedAt || battlecard.createdAt,
-        competitor?.faviconUrl || null,
-        competitor ? {
-          headquarters: competitor.headquarters,
-          founded: competitor.founded,
-          revenue: competitor.revenue,
-          fundingRaised: competitor.fundingRaised,
-        } : null
-      ));
+      const pdfBuffer = await enqueuePdf(
+        `battlecard-pdf:${req.params.id}`,
+        (_signal, reportProgress) => generateBattlecardPdf(
+          battlecard,
+          competitor?.name || "Competitor",
+          companyProfile?.companyName || "Your Company",
+          tenant,
+          battlecard.lastGeneratedAt || battlecard.createdAt,
+          competitor?.faviconUrl || null,
+          competitor ? {
+            headquarters: competitor.headquarters,
+            founded: competitor.founded,
+            revenue: competitor.revenue,
+            fundingRaised: competitor.fundingRaised,
+          } : null,
+          reportProgress,
+        ),
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: req.params.id, targetName: competitor?.name },
+      );
       
       const filename = `Battlecard_${competitor?.name || "Competitor"}_${new Date().toISOString().split('T')[0]}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
@@ -580,12 +586,17 @@ Return ONLY valid JSON, no markdown or explanations.`;
       
       const { generateProductBattlecardPdf } = await import("../services/battlecard-export");
       const { enqueuePdf } = await import("../services/job-queue");
-      const pdfBuffer = await enqueuePdf(`product-battlecard-pdf:${req.params.id}`, () => generateProductBattlecardPdf(
-        battlecard,
-        competitorProduct?.name || "Competitor Product",
-        baselineProduct?.name || "Your Product",
-        tenant
-      ));
+      const pdfBuffer = await enqueuePdf(
+        `product-battlecard-pdf:${req.params.id}`,
+        () => generateProductBattlecardPdf(
+          battlecard,
+          competitorProduct?.name || "Competitor Product",
+          baselineProduct?.name || "Your Product",
+          tenant,
+        ),
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: req.params.id },
+      );
       
       const filename = `Battlecard_${competitorProduct?.name || "Product"}_${new Date().toISOString().split('T')[0]}.pdf`;
       res.setHeader("Content-Type", "application/pdf");

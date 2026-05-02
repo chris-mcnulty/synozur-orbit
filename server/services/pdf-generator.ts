@@ -2051,8 +2051,10 @@ function generateIntelligenceBriefingHtml(data: IntelligenceBriefingPdfData): st
 export async function generateIntelligenceBriefingPdf(
   briefingId: string,
   tenantDomain: string,
-  userId: string
+  userId: string,
+  reportProgress?: (patch: { phase?: string; percent?: number }) => void,
 ): Promise<{ pdfBuffer: Buffer; briefing: IntelligenceBriefing }> {
+  reportProgress?.({ phase: "Loading briefing", percent: 5 });
   const user = await storage.getUser(userId);
   if (!user) throw new Error("User not found");
 
@@ -2068,6 +2070,7 @@ export async function generateIntelligenceBriefingPdf(
     marketName = market?.name;
   }
 
+  reportProgress?.({ phase: "Gathering source data", percent: 20 });
   const companyProfile = await storage.getCompanyProfileByContext({
     tenantDomain,
     marketId: briefing.marketId || undefined,
@@ -2096,6 +2099,7 @@ export async function generateIntelligenceBriefingPdf(
     author: user.name || user.email,
   };
 
+  reportProgress?.({ phase: "Rendering pages", percent: 45 });
   const html = generateIntelligenceBriefingHtml(data);
   const startTime = Date.now();
   console.log(`[Briefing PDF] Starting generation via PDF pool`);
@@ -2103,6 +2107,7 @@ export async function generateIntelligenceBriefingPdf(
   const pdfBuffer = await withPdfPage(async (page) => {
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    reportProgress?.({ phase: "Printing PDF", percent: 80 });
     return await page.pdf({
       format: "A4",
       printBackground: true,
@@ -2110,6 +2115,7 @@ export async function generateIntelligenceBriefingPdf(
     });
   });
 
+  reportProgress?.({ phase: "Finalising", percent: 98 });
   console.log(`[Briefing PDF] Generated in ${Date.now() - startTime}ms`);
   return { pdfBuffer: Buffer.from(pdfBuffer), briefing };
 }

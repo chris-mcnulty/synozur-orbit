@@ -192,6 +192,25 @@ export function registerPlatformRoutes(app: Express) {
     }
   });
 
+  // Per-job queue lookup, scoped to the caller's tenant. Returns "not_found"
+  // for jobs in other tenants so progress/queue metadata cannot leak across.
+  app.get("/api/queue/job-status", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const labelRaw = req.query.label;
+      if (typeof labelRaw !== "string" || labelRaw.length === 0 || labelRaw.length > 200) {
+        return res.status(400).json({ error: "label query parameter is required" });
+      }
+      const { getJobStatusByLabel } = await import("../services/job-queue");
+      res.json(getJobStatusByLabel(labelRaw, ctx.tenantDomain));
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== ADMIN: JOB QUEUE STATUS ====================
 
   app.get("/api/admin/queue-status", async (req, res) => {

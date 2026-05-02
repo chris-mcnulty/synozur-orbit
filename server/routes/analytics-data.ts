@@ -895,7 +895,13 @@ Only use these timeframe values: ${periods.join(", ")}`;
 
       const { generateIntelligenceBriefingPdf } = await import("../services/pdf-generator");
       const { enqueuePdf } = await import("../services/job-queue");
-      const { pdfBuffer } = await enqueuePdf(`briefing-pdf:${briefingId}`, () => generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId));
+      const { pdfBuffer } = await enqueuePdf(
+        `briefing-pdf:${briefingId}`,
+        (_signal, reportProgress) =>
+          generateIntelligenceBriefingPdf(briefingId, ctx.tenantDomain, ctx.userId, reportProgress),
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: briefingId },
+      );
 
       let contextName = "";
       const marketId = briefing.marketId || undefined;
@@ -986,7 +992,33 @@ Only use these timeframe values: ${periods.join(", ")}`;
       (async () => {
         try {
           const { generateBriefingData } = await import("../services/intelligence-briefing-service");
-          const result = await generateBriefingData(capturedCtx.tenantDomain, periodDays, capturedCtx.marketId, capturedFilter);
+
+          // Throttled progress writer — updates briefingData.progress so the
+          // existing /api/intelligence-briefings/:id poller picks up the
+          // current phase + percent without any new infrastructure.
+          let lastProgressWrite = 0;
+          const writeProgress = async (progress: { phase: string; phaseLabel: string; percent: number }) => {
+            const nowTs = Date.now();
+            // Always allow the first/last writes; otherwise throttle to 1s
+            if (progress.percent === 100 || nowTs - lastProgressWrite > 1000) {
+              lastProgressWrite = nowTs;
+              try {
+                await storage.updateIntelligenceBriefing(placeholder.id, {
+                  briefingData: { progress } as any,
+                });
+              } catch (err: any) {
+                console.warn(`[Intelligence Briefing] Progress write failed: ${err.message}`);
+              }
+            }
+          };
+
+          const result = await generateBriefingData(
+            capturedCtx.tenantDomain,
+            periodDays,
+            capturedCtx.marketId,
+            capturedFilter,
+            (progress) => { void writeProgress(progress); },
+          );
           
           const saveWithRetry = async (retries = 3, delayMs = 2000) => {
             for (let attempt = 1; attempt <= retries; attempt++) {
