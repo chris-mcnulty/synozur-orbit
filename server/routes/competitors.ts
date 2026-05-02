@@ -41,19 +41,23 @@ export function registerCompetitorRoutes(app: Express) {
   }
 
   app.get("/api/competitors", async (req, res) => {
+    const startedAt = Date.now();
     try {
       const ctx = await getRequestContext(req);
       const competitorsList = await storage.getCompetitorsByContext(toContextFilter(ctx));
 
-      const orgIds = [...new Set(competitorsList.map(c => c.organizationId).filter(Boolean))];
-      const orgMap = new Map<string, any>();
-      for (const orgId of orgIds) {
-        const org = await storage.getOrganization(orgId!);
-        if (org) orgMap.set(orgId!, org);
-      }
+      const orgIds = competitorsList
+        .map(c => c.organizationId)
+        .filter((id): id is string => Boolean(id));
+      const orgMap = await storage.getOrganizationsByIds(orgIds);
 
       const enriched = competitorsList.map(c =>
         c.organizationId ? enrichWithOrgData(c, orgMap.get(c.organizationId)) : c
+      );
+
+      const elapsedMs = Date.now() - startedAt;
+      console.log(
+        `[Perf] GET /api/competitors items=${competitorsList.length} orgs=${orgMap.size} took=${elapsedMs}ms`
       );
 
       res.json(enriched);
@@ -1695,13 +1699,8 @@ Return ONLY the JSON object, no other text.`;
       const allOrgIds = [
         ...eligibleCompetitors.map(c => c.organizationId),
         companyProfile?.organizationId,
-      ].filter(Boolean) as string[];
-      const orgIds = Array.from(new Set(allOrgIds));
-      const orgMap = new Map<string, any>();
-      for (const orgId of orgIds) {
-        const org = await storage.getOrganization(orgId);
-        if (org) orgMap.set(orgId, org);
-      }
+      ].filter((id): id is string => Boolean(id));
+      const orgMap = await storage.getOrganizationsByIds(allOrgIds);
 
       const pickFresher = (a: any, b: any) => {
         if (a && b) return new Date(b) > new Date(a) ? b : a;

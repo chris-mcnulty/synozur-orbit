@@ -1030,15 +1030,18 @@ export function registerTenantAdminRoutes(app: Express) {
         marketNameMap.set(m.id, m.name);
       }
 
+      const allOrgIds = [
+        ...allCompetitors.map(c => c.organizationId),
+        ...allProfiles.map(p => p.organizationId),
+      ].filter((id): id is string => Boolean(id));
+      const orgMap = await storage.getOrganizationsByIds(allOrgIds);
+
       for (const comp of allCompetitors) {
         if (comp.status !== "Active") continue;
         const domain = normalizeToCanonicalDomain(comp.url);
         let entry = rosterMap.get(domain);
         if (!entry) {
-          let org: any = null;
-          if (comp.organizationId) {
-            org = await storage.getOrganization(comp.organizationId);
-          }
+          const org: any = comp.organizationId ? orgMap.get(comp.organizationId) || null : null;
           entry = {
             id: comp.id,
             name: comp.name,
@@ -1073,10 +1076,7 @@ export function registerTenantAdminRoutes(app: Express) {
         const domain = normalizeToCanonicalDomain(profile.websiteUrl);
         let entry = rosterMap.get(domain);
         if (!entry) {
-          let org: any = null;
-          if (profile.organizationId) {
-            org = await storage.getOrganization(profile.organizationId);
-          }
+          const org: any = profile.organizationId ? orgMap.get(profile.organizationId) || null : null;
           entry = {
             id: profile.id,
             name: profile.companyName,

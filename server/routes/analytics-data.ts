@@ -771,15 +771,11 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
       const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
 
-      const orgIds = [...new Set([
+      const orgIds = [
         ...competitorsList.map(c => c.organizationId),
         companyProfile?.organizationId,
-      ].filter(Boolean))];
-      const orgMap = new Map<string, any>();
-      for (const orgId of orgIds) {
-        const org = await storage.getOrganization(orgId!);
-        if (org) orgMap.set(orgId!, org);
-      }
+      ].filter((id): id is string => Boolean(id));
+      const orgMap = await storage.getOrganizationsByIds(orgIds);
 
       const pickFresher = (a: any, b: any) => {
         if (a && b) return new Date(b) > new Date(a) ? b : a;

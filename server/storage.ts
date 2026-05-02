@@ -484,6 +484,7 @@ export interface IStorage {
 
   // Organization methods
   getOrganization(id: string): Promise<Organization | undefined>;
+  getOrganizationsByIds(ids: string[]): Promise<Map<string, Organization>>;
   getOrganizationByDomain(canonicalDomain: string): Promise<Organization | undefined>;
   getCompetitorsByOrganizationId(organizationId: string): Promise<Competitor[]>;
   createOrganization(data: InsertOrganization): Promise<Organization>;
@@ -3117,6 +3118,16 @@ export class DatabaseStorage implements IStorage {
   async getOrganization(id: string): Promise<Organization | undefined> {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
     return org || undefined;
+  }
+
+  async getOrganizationsByIds(ids: string[]): Promise<Map<string, Organization>> {
+    const result = new Map<string, Organization>();
+    if (!ids.length) return result;
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (!uniqueIds.length) return result;
+    const rows = await db.select().from(organizations).where(inArray(organizations.id, uniqueIds));
+    for (const row of rows) result.set(row.id, row);
+    return result;
   }
 
   async getCompetitorsByOrganizationId(organizationId: string): Promise<Competitor[]> {
