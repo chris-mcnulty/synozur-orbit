@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportBrandAssetsToCSV, parseCSV } from "@/lib/csv-export";
+import { BrandGridSkeleton } from "@/components/ui/skeletons";
 
 interface BrandAsset {
   id: string;
@@ -792,7 +793,7 @@ export default function BrandLibraryPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center text-muted-foreground py-12">Loading...</div>
+          <BrandGridSkeleton count={8} />
         ) : filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-brand">

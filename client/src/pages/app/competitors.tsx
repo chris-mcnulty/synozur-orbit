@@ -21,6 +21,7 @@ import StalenessDot from "@/components/ui/StalenessDot";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import EmptyPageState from "@/components/EmptyPageState";
+import { CompetitorListSkeleton } from "@/components/ui/skeletons";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -608,15 +609,7 @@ export default function Competitors() {
     getSuggestions();
   };
 
-  if (isLoading || isLoadingProfile) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </AppLayout>
-    );
-  }
+  const isInitialLoading = isLoading || isLoadingProfile;
 
   return (
     <AppLayout>
@@ -868,7 +861,7 @@ export default function Competitors() {
       </Dialog>
 
       <div className="space-y-6">
-        {!companyProfile && (
+        {!isInitialLoading && !companyProfile && (
           <Card className="border-dashed border-2 border-amber-500/30 bg-amber-500/5">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
@@ -892,7 +885,7 @@ export default function Competitors() {
           </Card>
         )}
 
-        {companyProfile && (
+        {!isInitialLoading && companyProfile && (
           <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
             <CardContent className="py-3">
               <div className="flex items-center justify-between">
@@ -966,7 +959,9 @@ export default function Competitors() {
               </div>
             )}
           </div>
-          {competitors.length === 0 ? (
+          {isInitialLoading ? (
+            <CompetitorListSkeleton count={4} />
+          ) : competitors.length === 0 ? (
             <EmptyPageState
               icon={<Target className="h-5 w-5" />}
               title="No competitors tracked yet"

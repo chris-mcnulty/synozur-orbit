@@ -27,6 +27,7 @@ import {
   X,
   ClipboardPaste,
 } from "lucide-react";
+import { PersonaGridSkeleton } from "@/components/ui/skeletons";
 
 interface Persona {
   id: string;
@@ -432,9 +433,7 @@ export default function PersonasPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+        <PersonaGridSkeleton count={6} />
       ) : personas.length === 0 ? (
         <Card className="max-w-lg mx-auto" data-testid="card-empty-state">
           <CardContent className="pt-8 text-center space-y-4">

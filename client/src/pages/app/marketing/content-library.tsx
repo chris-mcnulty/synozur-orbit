@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
+import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
 
 interface ContentAsset {
   id: string;
@@ -1405,7 +1406,11 @@ export default function ContentLibraryPage() {
         )}
 
         {isLoading ? (
-          <div className="text-center text-muted-foreground py-12">Loading...</div>
+          viewMode === "table" ? (
+            <ContentTableSkeleton count={6} />
+          ) : (
+            <ContentCardGridSkeleton count={6} />
+          )
         ) : filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-content">

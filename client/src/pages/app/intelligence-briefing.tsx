@@ -73,6 +73,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import SharedSourceFreshnessRow, { type SourceFreshnessItem as SharedSourceFreshnessItem, type SourceFreshnessData as SharedSourceFreshnessData } from "@/components/SourceFreshnessRow";
+import { BriefingPanelSkeleton } from "@/components/ui/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface BriefingTheme {
   title: string;
@@ -736,7 +738,9 @@ export default function IntelligenceBriefingPage() {
           )}
 
           <div className="flex items-center gap-2">
-            {briefings.length > 1 && (
+            {loadingList && briefings.length === 0 ? (
+              <Skeleton className="h-10 w-[220px] rounded-md" data-testid="skeleton-briefing-history" />
+            ) : briefings.length > 1 ? (
               <Select
                 value={activeBriefingId || ""}
                 onValueChange={(val) => setSelectedBriefingId(val)}
@@ -754,7 +758,7 @@ export default function IntelligenceBriefingPage() {
                   ))}
                 </SelectContent>
               </Select>
-            )}
+            ) : null}
 
             {briefing && (
               <div className="flex items-center gap-2">
@@ -910,11 +914,7 @@ export default function IntelligenceBriefingPage() {
           </div>
         </div>
 
-        {isLoading && !bd && (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          </div>
-        )}
+        {isLoading && !bd && <BriefingPanelSkeleton />}
 
         {!isLoading && !bd && briefings.length === 0 && (
           <Card className="border-dashed">
@@ -935,15 +935,20 @@ export default function IntelligenceBriefingPage() {
         )}
 
         {briefing && briefing.status === "generating" && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Generating Intelligence Briefing</h3>
-              <p className="text-muted-foreground text-sm max-w-md">
-                Your briefing is being generated. This typically takes 1-2 minutes. You can navigate away — the briefing will be ready when you return.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="flex items-center gap-3 py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
+                <div>
+                  <h3 className="text-sm font-semibold">Generating Intelligence Briefing</h3>
+                  <p className="text-muted-foreground text-xs">
+                    Your briefing is being generated. This typically takes 1-2 minutes. You can navigate away — the briefing will be ready when you return.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <BriefingPanelSkeleton />
+          </div>
         )}
 
         {briefing && briefing.status === "failed" && (
