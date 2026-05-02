@@ -143,8 +143,20 @@ export function registerPlannerRoutes(app: Express) {
         return res.redirect("/app/marketing-planner?planner_error=token_exchange_failed");
       }
       const returnTo = state.returnTo || "/app/marketing-planner";
-      // Prevent open-redirect: only allow relative paths within /app/
-      const safeReturnTo = /^\/app\//.test(returnTo) ? returnTo : "/app/marketing-planner";
+      // Prevent open-redirect: use URL constructor to confirm the path stays on
+      // the same origin and within /app/. Any value that doesn't parse as a
+      // same-origin /app/ path falls back to the default.
+      let safeReturnTo = "/app/marketing-planner";
+      try {
+        if (!returnTo.includes("://") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
+          const parsed = new URL(returnTo, "https://localhost");
+          if (parsed.origin === "https://localhost" && parsed.pathname.startsWith("/app/")) {
+            safeReturnTo = parsed.pathname + (parsed.search || "");
+          }
+        }
+      } catch {
+        // Unparseable — keep the fallback
+      }
       res.redirect(`${safeReturnTo}?planner_connected=1`);
     } catch (err: any) {
       console.error("[Planner] Callback exception:", err);

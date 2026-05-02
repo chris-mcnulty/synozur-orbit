@@ -138,6 +138,10 @@ async function refreshGraphToken(user: User): Promise<string | null> {
 }
 
 async function graphRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+  // Guard against path injection — all Graph paths must be relative
+  if (!path.startsWith("/")) {
+    throw new Error(`[Planner] Invalid Graph path — must start with '/': ${path}`);
+  }
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
