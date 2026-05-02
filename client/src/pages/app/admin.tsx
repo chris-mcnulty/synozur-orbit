@@ -157,14 +157,6 @@ function AdminSupportCard() {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [replyMessage, setReplyMessage] = useState("");
   const [isInternal, setIsInternal] = useState(false);
-  // Filter / search / bulk-select state
-  const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active"); // "active" excludes closed/resolved
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [assigneeFilter, setAssigneeFilter] = useState("all"); // user id, "_unassigned", or "all"
-  const [tenantFilter, setTenantFilter] = useState("all");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: supportData, isLoading } = useQuery({
     queryKey: ["/api/admin/support/tickets"],
@@ -202,19 +194,6 @@ function AdminSupportCard() {
     },
   });
 
-  const bulkUpdate = async (data: any) => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    await Promise.all(ids.map(id => fetch(`/api/support/tickets/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(data),
-    })));
-    setSelectedIds(new Set());
-    queryClient.invalidateQueries({ queryKey: ["/api/admin/support/tickets"] });
-  };
-
   const replyMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/support/tickets/${selectedTicketId}/replies`, {
@@ -232,91 +211,9 @@ function AdminSupportCard() {
     },
   });
 
-  const allTickets = supportData?.tickets || [];
+  const tickets = supportData?.tickets || [];
   const users = supportData?.users || {};
   const adminUsers = supportData?.adminUsers || [];
-
-  const tenantDomains = Array.from(new Set(allTickets.map((t: any) => t.tenantDomain))).sort() as string[];
-
-  const filteredTickets = allTickets.filter((t: any) => {
-    if (statusFilter === "active" && (t.status === "closed" || t.status === "resolved")) return false;
-    if (statusFilter !== "all" && statusFilter !== "active" && t.status !== statusFilter) return false;
-    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
-    if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
-    if (assigneeFilter === "_unassigned" && t.assignedTo) return false;
-    if (assigneeFilter !== "all" && assigneeFilter !== "_unassigned" && t.assignedTo !== assigneeFilter) return false;
-    if (tenantFilter !== "all" && t.tenantDomain !== tenantFilter) return false;
-    if (searchText.trim()) {
-      const q = searchText.toLowerCase();
-      const submitterName = users[t.userId]?.name?.toLowerCase() || "";
-      const matches = String(t.ticketNumber).includes(q)
-        || (t.subject || "").toLowerCase().includes(q)
-        || (t.description || "").toLowerCase().includes(q)
-        || submitterName.includes(q)
-        || (t.tenantDomain || "").toLowerCase().includes(q);
-      if (!matches) return false;
-    }
-    return true;
-  });
-
-  const visibleIds = filteredTickets.map((t: any) => t.id);
-  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id: string) => selectedIds.has(id));
-
-  const toggleSelectAllVisible = () => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (allVisibleSelected) {
-        for (const id of visibleIds) next.delete(id);
-      } else {
-        for (const id of visibleIds) next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelected = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const ageDays = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
-  const ageBadgeClass = (days: number) => days >= 14
-    ? "bg-red-500/10 text-red-400 border-red-500/30"
-    : days >= 7
-    ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
-    : "bg-muted text-muted-foreground border-muted";
-
-  const exportCsv = () => {
-    const headers = ["Ticket #", "Subject", "Submitter", "Tenant", "Category", "Priority", "Status", "Assigned To", "Age (days)", "Created", "Updated"];
-    const rows = filteredTickets.map((t: any) => [
-      t.ticketNumber,
-      `"${(t.subject || "").replace(/"/g, '""')}"`,
-      `"${(users[t.userId]?.name || "Unknown").replace(/"/g, '""')}"`,
-      t.tenantDomain,
-      t.category,
-      t.priority,
-      t.status,
-      t.assignedTo ? (users[t.assignedTo]?.name || "Unknown") : "",
-      ageDays(t.createdAt),
-      new Date(t.createdAt).toISOString(),
-      new Date(t.updatedAt || t.createdAt).toISOString(),
-    ].join(","));
-    const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `support-tickets-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Backwards-compat alias used by detail view below
-  const tickets = filteredTickets;
 
   return (
     <Card data-testid="card-admin-support">
@@ -332,7 +229,7 @@ function AdminSupportCard() {
       <CardContent>
         {isLoading ? (
           <div className="text-center py-4 text-muted-foreground">Loading tickets...</div>
-        ) : allTickets.length === 0 ? (
+        ) : tickets.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No support tickets yet</div>
         ) : selectedTicketId && ticketDetail ? (
           <div className="space-y-4">
@@ -428,201 +325,41 @@ function AdminSupportCard() {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            {/* Filter bar */}
-            <div className="flex flex-wrap gap-2 items-center">
-              <Input
-                placeholder="Search by #, subject, submitter, tenant..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                className="w-64"
-                data-testid="input-admin-ticket-search"
-              />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36" data-testid="select-admin-ticket-status-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="waiting">Waiting</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                <SelectTrigger className="w-32" data-testid="select-admin-ticket-priority-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All priorities</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-36" data-testid="select-admin-ticket-category-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  <SelectItem value="bug">Bug</SelectItem>
-                  <SelectItem value="feature_request">Feature Request</SelectItem>
-                  <SelectItem value="question">Question</SelectItem>
-                  <SelectItem value="feedback">Feedback</SelectItem>
-                  <SelectItem value="account">Account</SelectItem>
-                  <SelectItem value="billing">Billing</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                <SelectTrigger className="w-40" data-testid="select-admin-ticket-assignee-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All assignees</SelectItem>
-                  <SelectItem value="_unassigned">Unassigned</SelectItem>
-                  {adminUsers.map((au: any) => (
-                    <SelectItem key={au.id} value={au.id}>{au.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {tenantDomains.length > 1 && (
-                <Select value={tenantFilter} onValueChange={setTenantFilter}>
-                  <SelectTrigger className="w-44" data-testid="select-admin-ticket-tenant-filter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All tenants</SelectItem>
-                    {tenantDomains.map((d) => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <div className="flex-1" />
-              <span className="text-xs text-muted-foreground">
-                {filteredTickets.length} of {allTickets.length}
-              </span>
-              <Button variant="outline" size="sm" onClick={exportCsv} data-testid="button-admin-ticket-export-csv">
-                Export CSV
-              </Button>
-            </div>
-
-            {/* Bulk action toolbar */}
-            {selectedIds.size > 0 && (
-              <div className="flex flex-wrap items-center gap-2 p-2 bg-muted/40 border border-border rounded-md" data-testid="admin-ticket-bulk-toolbar">
-                <span className="text-sm font-medium">{selectedIds.size} selected</span>
-                <Select onValueChange={(v) => bulkUpdate({ status: v })}>
-                  <SelectTrigger className="w-36 h-8" data-testid="select-bulk-status">
-                    <SelectValue placeholder="Set status..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="waiting">Waiting</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select onValueChange={(v) => bulkUpdate({ priority: v })}>
-                  <SelectTrigger className="w-36 h-8" data-testid="select-bulk-priority">
-                    <SelectValue placeholder="Set priority..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select onValueChange={(v) => bulkUpdate({ assignedTo: v === "_unassigned" ? null : v })}>
-                  <SelectTrigger className="w-44 h-8" data-testid="select-bulk-assignee">
-                    <SelectValue placeholder="Assign to..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_unassigned">Unassigned</SelectItem>
-                    {adminUsers.map((au: any) => (
-                      <SelectItem key={au.id} value={au.id}>{au.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())} data-testid="button-bulk-clear">
-                  Clear selection
-                </Button>
-              </div>
-            )}
-
-            {filteredTickets.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No tickets match the current filters</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8">
-                      <input
-                        type="checkbox"
-                        checked={allVisibleSelected}
-                        onChange={toggleSelectAllVisible}
-                        aria-label="Select all visible tickets"
-                        data-testid="checkbox-select-all-visible"
-                      />
-                    </TableHead>
-                    <TableHead>#</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Submitter</TableHead>
-                    <TableHead>Tenant</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Age</TableHead>
-                    <TableHead>Updated</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTickets.map((ticket: any) => {
-                    const days = ageDays(ticket.createdAt);
-                    return (
-                      <TableRow
-                        key={ticket.id}
-                        className="cursor-pointer hover:bg-muted/30"
-                        data-testid={`admin-ticket-row-${ticket.id}`}
-                      >
-                        <TableCell onClick={(e) => { e.stopPropagation(); toggleSelected(ticket.id); }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(ticket.id)}
-                            onChange={() => toggleSelected(ticket.id)}
-                            aria-label={`Select ticket ${ticket.ticketNumber}`}
-                            data-testid={`checkbox-select-${ticket.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground" onClick={() => setSelectedTicketId(ticket.id)}>{ticket.ticketNumber}</TableCell>
-                        <TableCell className="font-medium" onClick={() => setSelectedTicketId(ticket.id)}>{ticket.subject}</TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}>{users[ticket.userId]?.name || "Unknown"}</TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}>{ticket.tenantDomain}</TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}><Badge variant="outline" className="text-xs">{ticket.category.replace("_", " ")}</Badge></TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}><Badge variant="outline" className={`text-xs ${priorityColors[ticket.priority] || ""}`}>{ticket.priority}</Badge></TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}><Badge variant="outline" className={`text-xs ${statusColors[ticket.status] || ""}`}>{ticket.status.replace("_", " ")}</Badge></TableCell>
-                        <TableCell className="text-muted-foreground text-xs" onClick={() => setSelectedTicketId(ticket.id)}>{ticket.assignedTo ? (users[ticket.assignedTo]?.name || "Unknown") : "—"}</TableCell>
-                        <TableCell onClick={() => setSelectedTicketId(ticket.id)}>
-                          <Badge variant="outline" className={`text-xs ${ageBadgeClass(days)}`}>{days}d</Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs" onClick={() => setSelectedTicketId(ticket.id)}>
-                          {new Date(ticket.updatedAt || ticket.createdAt).toLocaleDateString()}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Submitter</TableHead>
+                <TableHead>Tenant</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets.map((ticket: any) => (
+                <TableRow
+                  key={ticket.id}
+                  className="cursor-pointer hover:bg-muted/30"
+                  onClick={() => setSelectedTicketId(ticket.id)}
+                  data-testid={`admin-ticket-row-${ticket.id}`}
+                >
+                  <TableCell className="text-muted-foreground">{ticket.ticketNumber}</TableCell>
+                  <TableCell className="font-medium">{ticket.subject}</TableCell>
+                  <TableCell>{users[ticket.userId]?.name || "Unknown"}</TableCell>
+                  <TableCell>{ticket.tenantDomain}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-xs">{ticket.category.replace("_", " ")}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-xs ${priorityColors[ticket.priority] || ""}`}>{ticket.priority}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-xs ${statusColors[ticket.status] || ""}`}>{ticket.status.replace("_", " ")}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{ticket.assignedTo ? (users[ticket.assignedTo]?.name || "Unknown") : "—"}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </CardContent>
     </Card>

@@ -1033,30 +1033,6 @@ The Matrix View provides a visual overview of your marketing plan organized in a
 - **Cells**: Task counts and quick-add buttons
 - Matches the Synozur marketing plan format for consistency
 
-### Microsoft Planner Integration (one-way push)
-
-Push the tasks in an Orbit marketing plan into a Microsoft Planner plan so your team can execute in Teams while you keep planning in Orbit.
-
-**Prerequisites:**
-- Your tenant must have Microsoft Entra SSO configured
-- You must be a member of the target Microsoft 365 group
-- First use prompts a Microsoft consent screen for the `Tasks.ReadWrite` and `Group.Read.All` scopes
-
-**To connect a marketing plan:**
-1. Open the marketing plan and click **Connect Planner**
-2. If prompted, click **Connect to Microsoft Planner** to grant consent
-3. Pick the **Microsoft 365 group** that owns the destination Planner plan
-4. Pick the **Plan**
-5. Pick the **Bucket** where Orbit tasks should land — you can choose an existing bucket (any column in the plan) or click **Create new bucket** to make a dedicated "Orbit" bucket
-6. Click **Save mapping**
-
-**To push tasks:**
-- Click **Sync to Planner** in the plan header. Orbit creates Planner tasks for any Orbit task that hasn't been synced yet, and updates titles, priorities, due dates, and completion percentages on previously synced tasks.
-- A status banner at the top of the plan shows the connected group/plan/bucket and the last sync time. If a sync had errors, the banner shows a summary.
-- To stop syncing, open **Planner Settings** and click **Disconnect**.
-
-Phase 1 is **one-way (Orbit → Planner)**. Changes you make to a task inside Planner are not pulled back into Orbit yet — that's planned for phase 2.
-
 ### AI Task Suggestions
 
 Get AI-generated task recommendations informed by your competitive intelligence:
@@ -1558,9 +1534,8 @@ The Support Ticket system lets you report issues, request features, or ask quest
 3. Fill in the form:
    - **Subject**: Brief description of your issue or request
    - **Description**: Detailed explanation with steps to reproduce (for bugs)
-   - **Category**: Bug, Feature Request, Question, Feedback, Account, Billing, or Other
+   - **Category**: Bug, Feature Request, Question, or Feedback
    - **Priority**: Low, Medium, High, or Urgent
-   - **Attachments**: Optional — attach screenshots or PDFs/DOCX/TXT (10 MB max each) to help triage
 4. Click "Submit"
 
 ### Tracking Tickets
@@ -1572,8 +1547,8 @@ The Support Ticket system lets you report issues, request features, or ask quest
 
 **Ticket Discussion:**
 - Reply to support team messages
-- Add additional context or screenshots (each reply can carry attachments)
-- Receive email notifications when support responds (and an in-app notification badge in the header)
+- Add additional context or screenshots
+- Receive email notifications when support responds
 
 ### Admin Ticket Management
 

@@ -25,12 +25,6 @@ export const users = pgTable("users", {
   alertThreshold: text("alert_threshold").default("high"), // "high" | "medium" | "all" — minimum significance to trigger alert
   alertEmailEnabled: boolean("alert_email_enabled").default(false), // Opt-in for competitor change alert emails
   lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version"),
-  // Microsoft Graph delegated tokens for user-context Graph operations
-  // (Planner sync, mailbox actions). Captured via incremental consent.
-  graphAccessToken: text("graph_access_token"),
-  graphRefreshToken: text("graph_refresh_token"),
-  graphTokenExpiresAt: timestamp("graph_token_expires_at"),
-  graphScopes: text("graph_scopes"), // space-separated scopes granted
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -1415,17 +1409,6 @@ export const marketingPlans = pgTable("marketing_plans", {
   configMatrix: jsonb("config_matrix"), // Stores activity group × timeframe × priority selections
   status: text("status").notNull().default("draft"), // draft, active, archived
   createdBy: varchar("created_by").notNull().references(() => users.id),
-  // Microsoft Planner integration — links this Orbit plan to an M365 group/plan/bucket
-  plannerGroupId: text("planner_group_id"),
-  plannerGroupName: text("planner_group_name"),
-  plannerPlanId: text("planner_plan_id"),
-  plannerPlanName: text("planner_plan_name"),
-  plannerBucketId: text("planner_bucket_id"),
-  plannerBucketName: text("planner_bucket_name"),
-  plannerConnectedBy: varchar("planner_connected_by").references(() => users.id, { onDelete: "set null" }),
-  plannerSyncEnabled: boolean("planner_sync_enabled").default(false),
-  plannerLastSyncAt: timestamp("planner_last_sync_at"),
-  plannerLastSyncError: text("planner_last_sync_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1458,8 +1441,6 @@ export const marketingTasks = pgTable("marketing_tasks", {
   assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
   dueDate: timestamp("due_date"),
   plannerTaskId: text("planner_task_id"), // Microsoft Planner task ID for sync
-  plannerEtag: text("planner_etag"), // Graph optimistic-concurrency token for the Planner task
-  plannerLastSyncedAt: timestamp("planner_last_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1965,35 +1946,15 @@ export const supportTicketReplies = pgTable("support_ticket_replies", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const supportTicketAttachments = pgTable("support_ticket_attachments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ticketId: varchar("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }),
-  replyId: varchar("reply_id").references(() => supportTicketReplies.id, { onDelete: "cascade" }),
-  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
-  fileName: text("file_name").notNull(),
-  fileSize: integer("file_size").notNull(),
-  contentType: text("content_type").notNull(),
-  objectPath: text("object_path").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   user: one(users, { fields: [supportTickets.userId], references: [users.id] }),
   assignedUser: one(users, { fields: [supportTickets.assignedTo], references: [users.id] }),
   replies: many(supportTicketReplies),
-  attachments: many(supportTicketAttachments),
 }));
 
-export const supportTicketRepliesRelations = relations(supportTicketReplies, ({ one, many }) => ({
+export const supportTicketRepliesRelations = relations(supportTicketReplies, ({ one }) => ({
   ticket: one(supportTickets, { fields: [supportTicketReplies.ticketId], references: [supportTickets.id] }),
   user: one(users, { fields: [supportTicketReplies.userId], references: [users.id] }),
-  attachments: many(supportTicketAttachments),
-}));
-
-export const supportTicketAttachmentsRelations = relations(supportTicketAttachments, ({ one }) => ({
-  ticket: one(supportTickets, { fields: [supportTicketAttachments.ticketId], references: [supportTickets.id] }),
-  reply: one(supportTicketReplies, { fields: [supportTicketAttachments.replyId], references: [supportTicketReplies.id] }),
-  uploader: one(users, { fields: [supportTicketAttachments.uploadedBy], references: [users.id] }),
 }));
 
 export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
@@ -2007,12 +1968,6 @@ export const insertSupportTicketReplySchema = createInsertSchema(supportTicketRe
 });
 export type SupportTicketReply = typeof supportTicketReplies.$inferSelect;
 export type InsertSupportTicketReply = z.infer<typeof insertSupportTicketReplySchema>;
-
-export const insertSupportTicketAttachmentSchema = createInsertSchema(supportTicketAttachments).omit({
-  id: true, createdAt: true,
-});
-export type SupportTicketAttachment = typeof supportTicketAttachments.$inferSelect;
-export type InsertSupportTicketAttachment = z.infer<typeof insertSupportTicketAttachmentSchema>;
 
 export const TICKET_CATEGORIES = ["question", "bug", "feature_request", "feedback", "account", "billing", "other"] as const;
 export const TICKET_PRIORITIES = ["low", "medium", "high", "urgent"] as const;

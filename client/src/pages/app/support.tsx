@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TicketIcon, Plus, ArrowLeft, Send, Clock, CheckCircle2,
-  AlertCircle, MessageSquare, Edit2, X, ChevronRight, Paperclip, Download, Trash2,
+  AlertCircle, MessageSquare, Edit2, X, ChevronRight
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,158 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/layout/AppLayout";
-import { ObjectUploader } from "@/components/ObjectUploader";
 import { apiRequest } from "@/lib/queryClient";
-import { useUser } from "@/lib/userContext";
-
-interface PendingAttachment {
-  fileName: string;
-  fileSize: number;
-  contentType: string;
-  objectPath: string;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function AttachmentList({
-  ticketId,
-  attachments,
-  users,
-  canDelete,
-  onDeleted,
-}: {
-  ticketId: string;
-  attachments: any[];
-  users: Record<string, { name: string }>;
-  canDelete: (a: any) => boolean;
-  onDeleted: () => void;
-}) {
-  const { toast } = useToast();
-  if (!attachments || attachments.length === 0) return null;
-  return (
-    <div className="space-y-2 mt-3">
-      {attachments.map((a) => (
-        <div key={a.id} className="flex items-center gap-2 p-2 border border-border rounded-md text-sm" data-testid={`attachment-${a.id}`}>
-          <Paperclip size={14} className="text-muted-foreground shrink-0" />
-          <a
-            href={`/api/support/tickets/${ticketId}/attachments/${a.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 truncate hover:underline"
-            data-testid={`attachment-link-${a.id}`}
-          >
-            {a.fileName}
-          </a>
-          <span className="text-xs text-muted-foreground shrink-0">{formatBytes(a.fileSize)}</span>
-          <span className="text-xs text-muted-foreground hidden sm:inline shrink-0">
-            by {users[a.uploadedBy]?.name || "Unknown"}
-          </span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-6 w-6 text-muted-foreground"
-            asChild
-            data-testid={`button-download-attachment-${a.id}`}
-          >
-            <a href={`/api/support/tickets/${ticketId}/attachments/${a.id}`} download={a.fileName}>
-              <Download size={12} />
-            </a>
-          </Button>
-          {canDelete(a) && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 text-destructive"
-              data-testid={`button-delete-attachment-${a.id}`}
-              onClick={async () => {
-                const res = await fetch(`/api/support/tickets/${ticketId}/attachments/${a.id}`, {
-                  method: "DELETE",
-                  credentials: "include",
-                });
-                if (res.ok) {
-                  toast({ title: "Attachment removed" });
-                  onDeleted();
-                } else {
-                  toast({ title: "Error", description: "Failed to delete attachment", variant: "destructive" });
-                }
-              }}
-            >
-              <Trash2 size={12} />
-            </Button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AttachmentUploader({
-  onUploaded,
-  buttonLabel = "Attach file",
-}: {
-  onUploaded: (a: PendingAttachment) => void;
-  buttonLabel?: string;
-}) {
-  const pendingPathRef = useRef<{ path: string; name: string; size: number; type: string } | null>(null);
-  return (
-    <ObjectUploader
-      maxNumberOfFiles={1}
-      maxFileSize={10 * 1024 * 1024}
-      onGetUploadParameters={async (file) => {
-        const res = await fetch("/api/uploads/request-url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "Failed to get upload URL");
-        }
-        const { uploadURL, objectPath } = await res.json();
-        pendingPathRef.current = {
-          path: objectPath,
-          name: file.name || "attachment",
-          size: file.size || 0,
-          type: file.type || "application/octet-stream",
-        };
-        return {
-          method: "PUT" as const,
-          url: uploadURL,
-          headers: { "Content-Type": file.type || "application/octet-stream" },
-        };
-      }}
-      onComplete={(result) => {
-        const file = result.successful?.[0];
-        if (file && pendingPathRef.current) {
-          onUploaded({
-            fileName: pendingPathRef.current.name,
-            fileSize: pendingPathRef.current.size,
-            contentType: pendingPathRef.current.type,
-            objectPath: pendingPathRef.current.path,
-          });
-          pendingPathRef.current = null;
-        }
-      }}
-      buttonClassName="!bg-transparent !text-muted-foreground hover:!text-foreground !border !border-border !h-8 !px-3 !text-xs"
-    >
-      <Paperclip size={12} className="mr-1" /> {buttonLabel}
-    </ObjectUploader>
-  );
-}
 
 const categoryOptions = [
   { value: "bug", label: "Bug Report" },
   { value: "feature_request", label: "Feature Request" },
   { value: "question", label: "Question" },
   { value: "feedback", label: "Feedback" },
-  { value: "account", label: "Account" },
-  { value: "billing", label: "Billing" },
-  { value: "other", label: "Other" },
 ];
 
 const priorityOptions = [
@@ -195,17 +50,11 @@ function NewTicketForm({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("question");
   const [priority, setPriority] = useState("medium");
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/support/tickets", { subject, description, category, priority });
-      const ticket = await res.json();
-      // Register any pre-uploaded attachments to the new ticket
-      for (const a of pendingAttachments) {
-        await apiRequest("POST", `/api/support/tickets/${ticket.id}/attachments`, a);
-      }
-      return ticket;
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
@@ -275,34 +124,6 @@ function NewTicketForm({ onClose }: { onClose: () => void }) {
             data-testid="input-ticket-description"
           />
         </div>
-        <div>
-          <label className="text-sm font-medium mb-2 block">Attachments</label>
-          {pendingAttachments.length > 0 && (
-            <div className="space-y-2 mb-2">
-              {pendingAttachments.map((a, i) => (
-                <div key={i} className="flex items-center gap-2 p-2 border border-border rounded-md text-sm" data-testid={`pending-attachment-${i}`}>
-                  <Paperclip size={14} className="text-muted-foreground shrink-0" />
-                  <span className="flex-1 truncate">{a.fileName}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">{formatBytes(a.fileSize)}</span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive"
-                    onClick={() => setPendingAttachments(p => p.filter((_, idx) => idx !== i))}
-                    data-testid={`button-remove-pending-${i}`}
-                  >
-                    <Trash2 size={12} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-          <AttachmentUploader
-            onUploaded={(a) => setPendingAttachments(p => [...p, a])}
-            buttonLabel="Attach screenshot or document"
-          />
-          <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, or images. Max 10 MB each.</p>
-        </div>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} data-testid="button-cancel-ticket">Cancel</Button>
           <Button
@@ -321,14 +142,10 @@ function NewTicketForm({ onClose }: { onClose: () => void }) {
 function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user: currentUser } = useUser();
-  const adminRoles = new Set(["Global Admin", "Domain Admin"]);
-  const isAdmin = currentUser ? adminRoles.has(currentUser.role) : false;
   const [replyMessage, setReplyMessage] = useState("");
   const [editing, setEditing] = useState(false);
   const [editSubject, setEditSubject] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [pendingReplyAttachments, setPendingReplyAttachments] = useState<PendingAttachment[]>([]);
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ["/api/support/tickets", ticketId],
@@ -339,34 +156,18 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
     },
   });
 
-  const refreshTicket = () => queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticketId] });
-
   const replyMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/support/tickets/${ticketId}/replies`, { message: replyMessage });
-      const reply = await res.json();
-      for (const a of pendingReplyAttachments) {
-        await apiRequest("POST", `/api/support/tickets/${ticketId}/attachments`, { ...a, replyId: reply.id });
-      }
-      return reply;
+      return res.json();
     },
     onSuccess: () => {
-      refreshTicket();
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticketId] });
       setReplyMessage("");
-      setPendingReplyAttachments([]);
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
-  });
-
-  const attachToTicketMutation = useMutation({
-    mutationFn: async (a: PendingAttachment) => {
-      const res = await apiRequest("POST", `/api/support/tickets/${ticketId}/attachments`, a);
-      return res.json();
-    },
-    onSuccess: () => refreshTicket(),
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -443,26 +244,6 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
           ) : (
             <div>
               <p className="whitespace-pre-wrap text-sm" data-testid="text-ticket-description">{ticket.description}</p>
-              {(() => {
-                const ticketLevel = (ticket.attachments || []).filter((a: any) => !a.replyId);
-                return (
-                  <AttachmentList
-                    ticketId={ticket.id}
-                    attachments={ticketLevel}
-                    users={ticket.users || {}}
-                    canDelete={(a) => isAdmin || (a.uploadedBy === currentUser?.id && ticket.status === "open")}
-                    onDeleted={refreshTicket}
-                  />
-                );
-              })()}
-              {ticket.status !== "closed" && (
-                <div className="mt-3">
-                  <AttachmentUploader
-                    onUploaded={(a) => attachToTicketMutation.mutate(a)}
-                    buttonLabel="Attach to ticket"
-                  />
-                </div>
-              )}
               {ticket.status === "open" && (
                 <div className="flex gap-2 mt-4">
                   <Button size="sm" variant="outline" onClick={startEditing} data-testid="button-edit-ticket">
@@ -489,70 +270,34 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
           {ticket.replies?.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-4">No replies yet</p>
           )}
-          {ticket.replies?.map((reply: any) => {
-            const replyAttachments = (ticket.attachments || []).filter((a: any) => a.replyId === reply.id);
-            return (
-              <div key={reply.id} className="border border-border rounded-lg p-4" data-testid={`reply-${reply.id}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{ticket.users?.[reply.userId]?.name || "Unknown"}</span>
-                  <span className="text-xs text-muted-foreground">{new Date(reply.createdAt).toLocaleString()}</span>
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{reply.message}</p>
-                <AttachmentList
-                  ticketId={ticket.id}
-                  attachments={replyAttachments}
-                  users={ticket.users || {}}
-                  canDelete={(a) => isAdmin || (a.uploadedBy === currentUser?.id && ticket.status === "open")}
-                  onDeleted={refreshTicket}
-                />
+          {ticket.replies?.map((reply: any) => (
+            <div key={reply.id} className="border border-border rounded-lg p-4" data-testid={`reply-${reply.id}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">{ticket.users?.[reply.userId]?.name || "Unknown"}</span>
+                <span className="text-xs text-muted-foreground">{new Date(reply.createdAt).toLocaleString()}</span>
               </div>
-            );
-          })}
+              <p className="text-sm whitespace-pre-wrap">{reply.message}</p>
+            </div>
+          ))}
 
           {ticket.status !== "closed" && (
-            <div className="space-y-2 mt-4">
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Write a reply..."
-                  value={replyMessage}
-                  onChange={(e) => setReplyMessage(e.target.value)}
-                  rows={3}
-                  className="flex-1"
-                  data-testid="input-reply-message"
-                />
-                <Button
-                  onClick={() => replyMutation.mutate()}
-                  disabled={!replyMessage.trim() || replyMutation.isPending}
-                  className="self-end"
-                  data-testid="button-send-reply"
-                >
-                  <Send size={16} />
-                </Button>
-              </div>
-              {pendingReplyAttachments.length > 0 && (
-                <div className="space-y-2">
-                  {pendingReplyAttachments.map((a, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2 border border-border rounded-md text-sm" data-testid={`pending-reply-attachment-${i}`}>
-                      <Paperclip size={14} className="text-muted-foreground shrink-0" />
-                      <span className="flex-1 truncate">{a.fileName}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">{formatBytes(a.fileSize)}</span>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 text-destructive"
-                        onClick={() => setPendingReplyAttachments(p => p.filter((_, idx) => idx !== i))}
-                        data-testid={`button-remove-pending-reply-${i}`}
-                      >
-                        <Trash2 size={12} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <AttachmentUploader
-                onUploaded={(a) => setPendingReplyAttachments(p => [...p, a])}
-                buttonLabel="Attach to reply"
+            <div className="flex gap-2 mt-4">
+              <Textarea
+                placeholder="Write a reply..."
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                rows={3}
+                className="flex-1"
+                data-testid="input-reply-message"
               />
+              <Button
+                onClick={() => replyMutation.mutate()}
+                disabled={!replyMessage.trim() || replyMutation.isPending}
+                className="self-end"
+                data-testid="button-send-reply"
+              >
+                <Send size={16} />
+              </Button>
             </div>
           )}
         </CardContent>

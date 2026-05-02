@@ -11,11 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Microsoft Planner integration (Marketing Planner, phase 1)**: One-way push from Orbit marketing plans to a Microsoft Planner plan. Per-plan picker for Microsoft 365 group → Planner plan → bucket, with the option to select an existing bucket or create a dedicated "Orbit" bucket. Delegated OAuth with `Tasks.ReadWrite Group.Read.All offline_access`; refresh tokens stored per user. Sync creates new Planner tasks and updates previously synced tasks (title, priority, due date, % complete) using `If-Match` etags. Status banner on the plan detail surfaces last sync time and any errors.
-- **Support ticket attachments**: Attach screenshots and documents (PDF, DOCX, TXT, images up to 10 MB) to a new ticket or to any reply, on both the user and admin views. Attachments tied to internal-only replies are hidden from non-admins.
-- **Support ticket reply notifications**: Email and in-app notifications now fire on non-internal replies — admin replies notify the ticket owner; owner replies notify the assignee (or all admins if unassigned).
-- **Admin support triage UX**: Search, filters (status / priority / category / assignee / tenant), Age column with staleness colouring, CSV export, and bulk status / priority / assignee updates.
-- **Account / Billing / Other ticket categories**: New Ticket form now exposes the `account`, `billing`, and `other` categories.
 - **Persona text ingestion**: Paste text from CRM records, research reports, strategy documents, meeting notes, or any source — AI extracts a structured persona with name, role, industry, pain points, goals, objections, and preferred channels. Available via "Import from Text" button on the Personas page.
 - **Email newsletter product filter**: Content asset picker now includes a Product filter dropdown alongside the existing Category filter, with product badges on each asset row.
 
