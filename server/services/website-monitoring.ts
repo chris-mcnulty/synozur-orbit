@@ -1,7 +1,7 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
-import { dispatchCompetitorAlerts } from "./alert-dispatch";
+import { notifications } from "./notifications";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -261,13 +261,12 @@ export async function monitorCompetitorWebsite(
           : impactLevel === "Medium" ? "medium" as const
           : "low" as const;
 
-        dispatchCompetitorAlerts({
+        notifications.dispatch(resolvedTenantDomain, "competitor_change", {
           competitorId: competitor.id,
           competitorName: competitor.name,
           summary: summary || `Website content changed (${changeScore}% change detected)`,
           significance: highestSignificance,
-          tenantDomain: resolvedTenantDomain,
-        }).catch(err => console.error("[WebsiteMonitoring] Alert dispatch failed:", err));
+        }).catch(err => console.error("[WebsiteMonitoring] Notification dispatch failed:", err));
       }
     }
     

@@ -381,6 +381,23 @@ Rules:
     competitorCount: uniqueCompetitorIds.size,
   });
 
+  // Canonical fan-out point for "briefing ready" — every code path that
+  // produces a briefing flows through here, so on-demand and scheduled
+  // briefings both notify configured channels exactly once.
+  try {
+    const { notifications } = await import("./notifications");
+    await notifications.dispatch(tenantDomain, "briefing_ready", {
+      briefingId: briefing.id,
+      marketId: marketId || null,
+      periodLabel: briefingData.periodLabel,
+      executiveSummary: briefingData.executiveSummary,
+      actionItemCount: (briefingData.actionItems || []).length,
+      riskAlertCount: (briefingData.riskAlerts || []).length,
+    });
+  } catch (notifyErr) {
+    console.error("[Intelligence Briefing] Notification dispatch failed:", notifyErr);
+  }
+
   return briefing;
 }
 

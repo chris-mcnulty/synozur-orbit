@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap, Webhook, Plus, Edit, MessageSquare } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -1017,6 +1018,8 @@ export default function Settings() {
           </Card>
         )}
 
+        {isAdmin && <WebhookIntegrationsCard tenantPlan={tenant?.plan} />}
+
         <Card>
           <CardHeader>
             <CardTitle>Integrations</CardTitle>
@@ -1034,5 +1037,426 @@ export default function Settings() {
         </Card>
       </div>
     </AppLayout>
+  );
+}
+
+// =====================================================================
+// Webhook Integrations (Slack & Teams)
+// =====================================================================
+
+interface WebhookConfig {
+  id: string;
+  kind: "slack" | "teams";
+  name: string;
+  eventCategories: string[];
+  enabled: boolean;
+  webhookHostHint: string | null;
+  lastUsedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const EVENT_CATEGORY_OPTIONS: Array<{ value: string; label: string; description: string }> = [
+  { value: "competitor_change", label: "Competitor changes", description: "When monitored competitors update or change significantly." },
+  { value: "briefing_ready", label: "Intelligence briefings", description: "When a scheduled intelligence briefing is generated." },
+  { value: "weekly_digest", label: "Weekly digest", description: "Once per week, a recap of competitor activity." },
+  { value: "job_failed", label: "Job failures", description: "When a scheduled monitoring or briefing job fails." },
+];
+
+function WebhookIntegrationsCard({ tenantPlan }: { tenantPlan?: string }) {
+  const queryClient = useQueryClient();
+  const allowedPlans = ["enterprise", "unlimited"];
+  const planEligible = !!tenantPlan && allowedPlans.includes(tenantPlan);
+
+  const [editing, setEditing] = useState<WebhookConfig | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<{ kind: "slack" | "teams"; name: string; webhookUrl: string; eventCategories: string[]; enabled: boolean }>({
+    kind: "slack",
+    name: "",
+    webhookUrl: "",
+    eventCategories: ["competitor_change", "briefing_ready"],
+    enabled: true,
+  });
+
+  const { data: webhooks = [], isLoading } = useQuery<WebhookConfig[]>({
+    queryKey: ["/api/integrations/webhooks"],
+    enabled: planEligible,
+  });
+
+  const resetForm = () => {
+    setForm({
+      kind: "slack",
+      name: "",
+      webhookUrl: "",
+      eventCategories: ["competitor_change", "briefing_ready"],
+      enabled: true,
+    });
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setEditing(null);
+    setCreating(true);
+  };
+
+  const openEdit = (wh: WebhookConfig) => {
+    setForm({
+      kind: wh.kind,
+      name: wh.name,
+      webhookUrl: "",
+      eventCategories: wh.eventCategories,
+      enabled: wh.enabled,
+    });
+    setEditing(wh);
+    setCreating(false);
+  };
+
+  const closeDialog = () => {
+    setEditing(null);
+    setCreating(false);
+    resetForm();
+  };
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/integrations/webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create webhook");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/webhooks"] });
+      toast.success("Webhook added");
+      closeDialog();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editing) throw new Error("Nothing to update");
+      const body: Record<string, any> = {
+        name: form.name,
+        eventCategories: form.eventCategories,
+        enabled: form.enabled,
+      };
+      if (form.webhookUrl.trim().length > 0) body.webhookUrl = form.webhookUrl;
+      const res = await fetch(`/api/integrations/webhooks/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update webhook");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/webhooks"] });
+      toast.success("Webhook updated");
+      closeDialog();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/integrations/webhooks/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete webhook");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/webhooks"] });
+      toast.success("Webhook removed");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/integrations/webhooks/${id}/test`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Test message failed");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/webhooks"] });
+      toast.success("Test message sent");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleCategory = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      eventCategories: prev.eventCategories.includes(value)
+        ? prev.eventCategories.filter((c) => c !== value)
+        : [...prev.eventCategories, value],
+    }));
+  };
+
+  const dialogOpen = creating || editing !== null;
+  const submitDisabled =
+    !form.name.trim() ||
+    form.eventCategories.length === 0 ||
+    (creating && !form.webhookUrl.trim()) ||
+    createMutation.isPending ||
+    updateMutation.isPending;
+
+  return (
+    <Card data-testid="card-webhook-integrations">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Webhook className="h-5 w-5" />
+              Slack & Teams Notifications
+            </CardTitle>
+            <CardDescription>
+              Send Orbit alerts to Slack channels or Microsoft Teams via incoming webhooks.
+            </CardDescription>
+          </div>
+          {planEligible && (
+            <Button size="sm" onClick={openCreate} data-testid="button-add-webhook">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Webhook
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!planEligible ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <Zap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="font-medium mb-1">Available on Enterprise & Unlimited plans</p>
+            <p className="text-sm text-muted-foreground">
+              Upgrade to send Orbit notifications directly to Slack and Microsoft Teams.
+            </p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : webhooks.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <MessageSquare className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="font-medium mb-1">No webhooks configured yet</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Connect a Slack channel or Teams workflow to start receiving Orbit notifications.
+            </p>
+            <Button size="sm" onClick={openCreate} data-testid="button-add-first-webhook">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Webhook
+            </Button>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Destination</TableHead>
+                <TableHead>Events</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Used</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {webhooks.map((wh) => (
+                <TableRow key={wh.id} data-testid={`row-webhook-${wh.id}`}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="uppercase text-[10px]">{wh.kind}</Badge>
+                      <div>
+                        <div className="font-medium" data-testid={`text-webhook-name-${wh.id}`}>{wh.name}</div>
+                        {wh.webhookHostHint && (
+                          <div className="text-xs text-muted-foreground">{wh.webhookHostHint}</div>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {wh.eventCategories.map((c) => (
+                        <Badge key={c} variant="outline" className="text-xs">
+                          {EVENT_CATEGORY_OPTIONS.find((o) => o.value === c)?.label || c}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {wh.lastError ? (
+                      <Badge variant="destructive" className="text-xs">Error</Badge>
+                    ) : wh.enabled ? (
+                      <Badge className="bg-green-500/20 text-green-500 text-xs">Enabled</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                    )}
+                    {wh.lastError && (
+                      <div className="text-xs text-destructive mt-1 max-w-[240px] truncate" title={wh.lastError}>
+                        {wh.lastError}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {wh.lastUsedAt ? new Date(wh.lastUsedAt).toLocaleString() : "Never"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => testMutation.mutate(wh.id)}
+                        disabled={testMutation.isPending}
+                        data-testid={`button-test-webhook-${wh.id}`}
+                      >
+                        {testMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(wh)}
+                        data-testid={`button-edit-webhook-${wh.id}`}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          if (confirm(`Remove webhook "${wh.name}"?`)) {
+                            deleteMutation.mutate(wh.id);
+                          }
+                        }}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-webhook-${wh.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Webhook" : "Add Webhook"}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? "Leave the webhook URL blank to keep the existing one."
+                : "Paste an incoming webhook URL from Slack or a Teams workflow connector."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Destination type</Label>
+              <Select
+                value={form.kind}
+                onValueChange={(v) => setForm((prev) => ({ ...prev, kind: v as "slack" | "teams" }))}
+                disabled={!!editing}
+              >
+                <SelectTrigger data-testid="select-webhook-kind">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="slack">Slack</SelectItem>
+                  <SelectItem value="teams">Microsoft Teams</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                placeholder="e.g. #competitive-intel"
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                data-testid="input-webhook-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Webhook URL {editing && <span className="text-xs text-muted-foreground">(leave blank to keep current)</span>}</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder={
+                  form.kind === "slack"
+                    ? "https://hooks.slack.com/services/..."
+                    : "https://prod-xx.westus.logic.azure.com/workflows/..."
+                }
+                value={form.webhookUrl}
+                onChange={(e) => setForm((prev) => ({ ...prev, webhookUrl: e.target.value }))}
+                data-testid="input-webhook-url"
+              />
+              <p className="text-xs text-muted-foreground">
+                The URL is encrypted at rest and never displayed again after saving.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Events to send</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                {EVENT_CATEGORY_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="flex items-start gap-3 cursor-pointer" data-testid={`checkbox-event-${opt.value}`}>
+                    <Checkbox
+                      checked={form.eventCategories.includes(opt.value)}
+                      onCheckedChange={() => toggleCategory(opt.value)}
+                      className="mt-0.5"
+                    />
+                    <div className="text-sm">
+                      <div className="font-medium">{opt.label}</div>
+                      <div className="text-xs text-muted-foreground">{opt.description}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label>Enabled</Label>
+              <Switch
+                checked={form.enabled}
+                onCheckedChange={(v) => setForm((prev) => ({ ...prev, enabled: v }))}
+                data-testid="switch-webhook-enabled"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button
+              onClick={() => (editing ? updateMutation.mutate() : createMutation.mutate())}
+              disabled={submitDisabled}
+              data-testid="button-save-webhook"
+            >
+              {(createMutation.isPending || updateMutation.isPending) && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {editing ? "Save Changes" : "Add Webhook"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }

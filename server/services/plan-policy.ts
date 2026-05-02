@@ -35,6 +35,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "competitorAlerts", label: "Competitor Change Alerts", description: "Real-time in-app and email alerts when competitors make significant changes", category: "monitoring" },
   { key: "personaBuilder", label: "Persona & ICP Builder", description: "Define buyer personas and inject audience context into AI content", category: "marketing" },
   { key: "autoBuild", label: "Auto Build", description: "Automatically discover competitors, crawl data, and generate full analytics for a new market", category: "platform" },
+  { key: "webhookIntegrations", label: "Slack & Teams Notifications", description: "Send tenant-scoped event notifications to Slack and Microsoft Teams via incoming webhooks", category: "platform" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -85,6 +86,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorAlerts: false,
     personaBuilder: false,
     autoBuild: false,
+    webhookIntegrations: false,
   },
   trial: {
     battlecards: true,
@@ -114,6 +116,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorAlerts: false,
     personaBuilder: false,
     autoBuild: false,
+    webhookIntegrations: false,
   },
   pro: {
     battlecards: true,
@@ -143,6 +146,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorAlerts: true,
     personaBuilder: true,
     autoBuild: false,
+    webhookIntegrations: false,
   },
   enterprise: {
     battlecards: true,
@@ -172,6 +176,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorAlerts: true,
     personaBuilder: true,
     autoBuild: true,
+    webhookIntegrations: true,
   },
   unlimited: {
     battlecards: true,
@@ -201,6 +206,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorAlerts: true,
     personaBuilder: true,
     autoBuild: true,
+    webhookIntegrations: true,
   },
 };
 

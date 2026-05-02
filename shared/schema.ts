@@ -2206,6 +2206,50 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Webhook integrations (Slack & Teams) — Task #71
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const INTEGRATION_KINDS = ["slack", "teams"] as const;
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
+
+export const WEBHOOK_EVENT_CATEGORIES = [
+  "competitor_change",
+  "briefing_ready",
+  "weekly_digest",
+  "job_failed",
+] as const;
+export type WebhookEventCategory = (typeof WEBHOOK_EVENT_CATEGORIES)[number];
+
+export const integrationConfigs = pgTable("integration_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  encryptedWebhookUrl: text("encrypted_webhook_url").notNull(),
+  webhookHostHint: text("webhook_host_hint"),
+  eventCategories: text("event_categories").array().notNull().default(sql`ARRAY[]::text[]`),
+  enabled: boolean("enabled").notNull().default(true),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at"),
+  lastError: text("last_error"),
+});
+
+export const integrationConfigsRelations = relations(integrationConfigs, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [integrationConfigs.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertIntegrationConfigSchema = createInsertSchema(integrationConfigs).omit({
+  id: true, createdAt: true, updatedAt: true, lastUsedAt: true, lastError: true,
+});
+export type IntegrationConfig = typeof integrationConfigs.$inferSelect;
+export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSchema>;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

@@ -662,7 +662,7 @@ interface ActivitySummary {
   summary?: string;
 }
 
-interface BriefingActionItem {
+export interface BriefingActionItem {
   title: string;
   description: string;
   urgency: string;
@@ -670,14 +670,14 @@ interface BriefingActionItem {
   relatedCompetitors: string[];
 }
 
-interface BriefingRiskAlert {
+export interface BriefingRiskAlert {
   title: string;
   description: string;
   severity: string;
   source: string;
 }
 
-interface BriefingDigestData {
+export interface BriefingDigestData {
   executiveSummary: string;
   actionItems: BriefingActionItem[];
   riskAlerts: BriefingRiskAlert[];

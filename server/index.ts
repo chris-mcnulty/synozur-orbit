@@ -439,6 +439,26 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE marketing_tasks ADD COLUMN IF NOT EXISTS planner_etag TEXT`);
     await pgPool.query(`ALTER TABLE marketing_tasks ADD COLUMN IF NOT EXISTS planner_last_synced_at TIMESTAMP`);
 
+    // integration_configs — Slack/Teams webhook destinations
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS integration_configs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        encrypted_webhook_url TEXT NOT NULL,
+        webhook_host_hint TEXT,
+        event_categories TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now(),
+        last_used_at TIMESTAMP,
+        last_error TEXT
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_integration_configs_tenant ON integration_configs(tenant_domain)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
@@ -465,11 +485,22 @@ app.use((req, res, next) => {
     async onComplete(dbRowId, status, errorMessage) {
       if (!dbRowId) return;
       try {
-        await storage.updateScheduledJobRun(dbRowId, {
+        const updated = await storage.updateScheduledJobRun(dbRowId, {
           status,
           completedAt: new Date(),
           errorMessage: errorMessage || null,
         });
+        // Fan-out failed queued jobs (crawl/monitor/analysis/pdf) through
+        // the central notifications dispatcher.
+        if (status === "failed" && updated?.tenantDomain) {
+          const { notifications } = await import("./services/notifications");
+          await notifications.dispatch(updated.tenantDomain, "job_failed", {
+            jobType: updated.jobType || "queued_job",
+            targetName: updated.targetName || undefined,
+            error: errorMessage || "Unknown error",
+            attempts: 1,
+          });
+        }
       } catch (err) {
         console.error("[JobQueue persistence] updateScheduledJobRun failed:", err);
       }

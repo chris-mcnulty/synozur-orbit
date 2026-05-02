@@ -5,8 +5,9 @@ import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitor
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
-import { sendWeeklyDigestEmail, sendScheduledBriefingEmail } from "./email-service";
+import { sendWeeklyDigestEmail, sendScheduledBriefingEmail, type BriefingDigestData } from "./email-service";
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
+import { notifications } from "./notifications";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
@@ -86,12 +87,21 @@ async function trackJobComplete(
 ): Promise<void> {
   if (!jobRunId) return;
   try {
-    await storage.updateScheduledJobRun(jobRunId, {
+    const updated = await storage.updateScheduledJobRun(jobRunId, {
       status,
       completedAt: new Date(),
       result: result || null,
       errorMessage: errorMessage || null,
     });
+
+    if (status === "failed" && updated?.tenantDomain) {
+      await notifications.dispatch(updated.tenantDomain, "job_failed", {
+        jobType: updated.jobType || "scheduled_job",
+        targetName: updated.targetName || undefined,
+        error: errorMessage || "Unknown error",
+        attempts: 1,
+      });
+    }
   } catch (error) {
     console.error(`[Job Tracking] Failed to track job completion:`, error);
   }
@@ -1285,33 +1295,40 @@ async function runWeeklyDigestJob(): Promise<void> {
   });
 
   try {
-    const baseUrl = getBaseUrl();
-    
     const usersWithDigest = await storage.getUsersWithDigestEnabled();
     console.log(`[Scheduled Job] Found ${usersWithDigest.length} users with digest enabled`);
-    
+
     tenantBriefingCache.clear();
-    
-    let sentCount = 0;
-    let errorCount = 0;
-    
+
+    // Group recipients by tenant so the central dispatcher emails each
+    // user and fires the tenant webhook exactly once per tenant per run.
+    const tenantsToDigest = new Set<string>();
     for (const user of usersWithDigest) {
+      const domain = user.email.split("@")[1];
+      if (domain) tenantsToDigest.add(domain);
+    }
+
+    let dispatched = 0;
+    let errorCount = 0;
+    for (const domain of Array.from(tenantsToDigest)) {
       try {
-        const result = await sendDigestForUser(user, baseUrl);
-        if (result) sentCount++; else errorCount++;
-      } catch (userError) {
-        console.error(`[Scheduled Job] Failed to send digest to ${user.email}:`, userError);
+        const ctx = await buildWeeklyDigestCtx(domain);
+        if (!ctx) continue;
+        await notifications.dispatch(domain, "weekly_digest", ctx);
+        dispatched++;
+      } catch (tenantErr) {
+        console.error(`[Scheduled Job] Weekly digest dispatch failed for ${domain}:`, tenantErr);
         errorCount++;
       }
     }
-    
+
     tenantBriefingCache.clear();
-    
-    console.log(`[Scheduled Job] Weekly digest job completed: ${sentCount} sent, ${errorCount} errors`);
+
+    console.log(`[Scheduled Job] Weekly digest job completed: ${dispatched} tenant(s), ${errorCount} errors`);
     await storage.updateScheduledJobRun(jobRun.id, {
       status: "completed",
       completedAt: new Date(),
-      result: { sentCount, errorCount },
+      result: { tenantsDispatched: dispatched, errorCount },
     });
   } catch (error) {
     console.error("[Scheduled Job] Weekly digest job failed:", error);
@@ -1335,15 +1352,18 @@ function getBaseUrl(): string {
       : 'https://orbit.synozur.com';
 }
 
-async function sendDigestForUser(user: { email: string; name: string }, baseUrl: string): Promise<boolean> {
-  const domain = user.email.split('@')[1];
-  if (!domain) return false;
-  
-  const tenant = await storage.getTenantByDomain(domain);
-  if (!tenant || tenant.status !== 'active') return false;
-  
-  const weeklyActivity = await storage.getWeeklyActivityByTenant(domain);
-  
+/**
+ * Build the activities + briefing payload for a tenant's weekly digest.
+ * Returns null if the tenant is missing/inactive.
+ */
+async function buildWeeklyDigestCtx(tenantDomain: string): Promise<{
+  activities: { competitorName: string; type: string; description: string; summary?: string }[];
+  briefing?: BriefingDigestData;
+} | null> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant || tenant.status !== "active") return null;
+
+  const weeklyActivity = await storage.getWeeklyActivityByTenant(tenantDomain);
   const activities = weeklyActivity.map(act => ({
     competitorName: act.competitorName,
     type: act.type,
@@ -1351,36 +1371,47 @@ async function sendDigestForUser(user: { email: string; name: string }, baseUrl:
     summary: act.summary || undefined,
   }));
 
-  const tenantBriefing = await generateBriefingForTenant(domain);
-  
-  const briefingDigest = tenantBriefing ? {
+  const tenantBriefing = await generateBriefingForTenant(tenantDomain);
+  const briefing = tenantBriefing ? {
     executiveSummary: tenantBriefing.briefingData.executiveSummary,
     actionItems: tenantBriefing.briefingData.actionItems || [],
     riskAlerts: tenantBriefing.briefingData.riskAlerts || [],
     briefingId: tenantBriefing.briefingId,
   } : undefined;
-  
-  return await sendWeeklyDigestEmail({
-    email: user.email,
-    name: user.name,
-    companyName: tenant.name,
-    activities,
-    baseUrl,
-    briefing: briefingDigest,
-  });
+
+  return { activities, briefing };
 }
 
+/**
+ * Admin-triggered "send digest now" for a single user. Bypasses the tenant
+ * fan-out and webhook delivery — this is a UI action, not a tenant event.
+ */
 export async function sendDigestNowForUser(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const user = await storage.getUser(userId);
     if (!user) return { success: false, error: "User not found" };
-    
-    const baseUrl = getBaseUrl();
-    const sent = await sendDigestForUser(user, baseUrl);
-    
-    if (sent) {
-      return { success: true };
+
+    const domain = user.email.split("@")[1];
+    if (!domain) return { success: false, error: "Invalid email domain" };
+
+    const tenant = await storage.getTenantByDomain(domain);
+    if (!tenant || tenant.status !== "active") {
+      return { success: false, error: "Tenant is not active" };
     }
+
+    const ctx = await buildWeeklyDigestCtx(domain);
+    if (!ctx) return { success: false, error: "Failed to build digest context" };
+
+    const sent = await sendWeeklyDigestEmail({
+      email: user.email,
+      name: user.name,
+      companyName: tenant.name,
+      activities: ctx.activities,
+      baseUrl: getBaseUrl(),
+      briefing: ctx.briefing,
+    });
+
+    if (sent) return { success: true };
     return { success: false, error: "Failed to send email. Check that your tenant is active and email service is configured." };
   } catch (err) {
     console.error(`[Digest] Error sending on-demand digest for user ${userId}:`, err);
@@ -1495,6 +1526,9 @@ async function runScheduledBriefingJob(): Promise<void> {
               errorCount++;
             }
           }
+          // Note: briefing_ready webhook fan-out happens inside
+          // intelligence-briefing-service.generateBriefing(), so on-demand
+          // and scheduled briefings both fire the webhook from one place.
         } catch (tenantErr) {
           console.error(`[Scheduled Briefing] Failed for ${tenantDomain} market=${marketId}:`, tenantErr);
           errorCount++;

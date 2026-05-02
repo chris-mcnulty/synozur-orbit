@@ -143,6 +143,9 @@ import {
   competitorPositions,
   type CompetitorPosition,
   type InsertCompetitorPosition,
+  integrationConfigs,
+  type IntegrationConfig,
+  type InsertIntegrationConfig,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -553,6 +556,16 @@ export interface IStorage {
   // F2: Competitive Positioning Map
   getPositionsByContext(ctx: ContextFilter): Promise<CompetitorPosition[]>;
   upsertPositions(positions: InsertCompetitorPosition[]): Promise<CompetitorPosition[]>;
+
+  // Integration configs (Slack/Teams webhooks)
+  getIntegrationConfig(id: string): Promise<IntegrationConfig | undefined>;
+  getIntegrationConfigsByTenant(tenantDomain: string): Promise<IntegrationConfig[]>;
+  getIntegrationConfigsForCategory(tenantDomain: string, category: string): Promise<IntegrationConfig[]>;
+  createIntegrationConfig(data: InsertIntegrationConfig): Promise<IntegrationConfig>;
+  updateIntegrationConfig(id: string, data: Partial<InsertIntegrationConfig>): Promise<IntegrationConfig>;
+  deleteIntegrationConfig(id: string): Promise<void>;
+  markIntegrationConfigSuccess(id: string): Promise<void>;
+  markIntegrationConfigError(id: string, error: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3780,6 +3793,65 @@ export class DatabaseStorage implements IStorage {
 
       return results;
     });
+  }
+
+  // Integration configs (Slack/Teams webhooks)
+  async getIntegrationConfig(id: string): Promise<IntegrationConfig | undefined> {
+    const [row] = await db.select().from(integrationConfigs).where(eq(integrationConfigs.id, id));
+    return row || undefined;
+  }
+
+  async getIntegrationConfigsByTenant(tenantDomain: string): Promise<IntegrationConfig[]> {
+    return db
+      .select()
+      .from(integrationConfigs)
+      .where(eq(integrationConfigs.tenantDomain, tenantDomain))
+      .orderBy(desc(integrationConfigs.createdAt));
+  }
+
+  async getIntegrationConfigsForCategory(tenantDomain: string, category: string): Promise<IntegrationConfig[]> {
+    return db
+      .select()
+      .from(integrationConfigs)
+      .where(
+        and(
+          eq(integrationConfigs.tenantDomain, tenantDomain),
+          eq(integrationConfigs.enabled, true),
+          sql`${integrationConfigs.eventCategories} @> ARRAY[${category}]::text[]`,
+        ),
+      );
+  }
+
+  async createIntegrationConfig(data: InsertIntegrationConfig): Promise<IntegrationConfig> {
+    const [row] = await db.insert(integrationConfigs).values(data).returning();
+    return row;
+  }
+
+  async updateIntegrationConfig(id: string, data: Partial<InsertIntegrationConfig>): Promise<IntegrationConfig> {
+    const [row] = await db
+      .update(integrationConfigs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(integrationConfigs.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteIntegrationConfig(id: string): Promise<void> {
+    await db.delete(integrationConfigs).where(eq(integrationConfigs.id, id));
+  }
+
+  async markIntegrationConfigSuccess(id: string): Promise<void> {
+    await db
+      .update(integrationConfigs)
+      .set({ lastUsedAt: new Date(), lastError: null })
+      .where(eq(integrationConfigs.id, id));
+  }
+
+  async markIntegrationConfigError(id: string, error: string): Promise<void> {
+    await db
+      .update(integrationConfigs)
+      .set({ lastUsedAt: new Date(), lastError: error })
+      .where(eq(integrationConfigs.id, id));
   }
 }
 
