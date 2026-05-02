@@ -24,6 +24,7 @@ interface RoadmapItem {
   effort: string | null;
   status: string;
   aiRecommended: boolean;
+  fromFeedback?: boolean;
   createdAt: string;
 }
 
@@ -794,6 +795,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                     <div className="flex items-center gap-2 mt-1">
                       {getEffortBadge(item.effort)}
                       {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
+                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>From feedback</Badge>}
                     </div>
                   </div>
                 ))}
@@ -839,6 +841,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                         <Badge variant="outline" className="text-xs">{item.quarter} {item.year}</Badge>
                       )}
                       {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
+                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>From feedback</Badge>}
                     </div>
                   </div>
                 ))}

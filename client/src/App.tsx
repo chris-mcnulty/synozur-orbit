@@ -65,6 +65,7 @@ import AISettingsPage from "@/pages/app/admin/ai-settings";
 import SpeStoragePage from "@/pages/app/admin/spe-storage";
 import CompanyRosterPage from "@/pages/app/company-roster";
 import PositioningMapPage from "@/pages/app/positioning-map";
+import PublicFeedbackPage from "@/pages/feedback-public";
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -90,7 +91,8 @@ function Router() {
       <Route path="/auth/forgot-password" component={ForgotPassword} />
       <Route path="/auth/reset-password" component={ResetPassword} />
       <Route path="/auth" component={AuthPage} />
-      
+      <Route path="/feedback/:token" component={PublicFeedbackPage} />
+
       {/* App Routes */}
       <Route path="/app" component={Dashboard} />
       <Route path="/app/overview" component={Dashboard} />

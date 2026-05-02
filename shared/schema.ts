@@ -233,6 +233,8 @@ export const products = pgTable("products", {
   excludeFromCrawl: boolean("exclude_from_crawl").notNull().default(false),
   consecutiveCrawlFailures: integer("consecutive_crawl_failures").notNull().default(0),
   crawlFlaggedAt: timestamp("crawl_flagged_at"),
+  publicFeedbackEnabled: boolean("public_feedback_enabled").notNull().default(false),
+  publicFeedbackToken: text("public_feedback_token"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -270,8 +272,43 @@ export const roadmapItems = pgTable("roadmap_items", {
   effort: text("effort"), // xs, s, m, l, xl
   status: text("status").notNull().default("planned"), // planned, in_progress, completed, deferred
   aiRecommended: boolean("ai_recommended").default(false),
+  fromFeedback: boolean("from_feedback").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Customer Feedback - user-submitted feature requests/feedback per product
+export const productFeedback = pgTable("product_feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category"), // optional grouping label
+  status: text("status").notNull().default("new"), // new, planned, shipped, declined
+  source: text("source").notNull().default("internal"), // internal, public
+  submitterUserId: varchar("submitter_user_id").references(() => users.id, { onDelete: "set null" }),
+  submitterEmail: text("submitter_email"),
+  submitterName: text("submitter_name"),
+  submitterIp: text("submitter_ip"),
+  promotedFeatureId: varchar("promoted_feature_id").references(() => productFeatures.id, { onDelete: "set null" }),
+  voteCount: integer("vote_count").notNull().default(0),
+  embedding: jsonb("embedding"), // optional cached embedding/keywords for similarity grouping
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const productFeedbackVotes = pgTable("product_feedback_votes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feedbackId: varchar("feedback_id").notNull().references(() => productFeedback.id, { onDelete: "cascade" }),
+  productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  voterUserId: varchar("voter_user_id").references(() => users.id, { onDelete: "set null" }),
+  voterEmail: text("voter_email"),
+  voterIp: text("voter_ip"),
+  voterKey: text("voter_key").notNull(), // dedupe key: user id, hashed email or hashed ip
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // Feature Recommendations - AI-generated suggestions
@@ -667,6 +704,18 @@ export const insertFeatureRecommendationSchema = createInsertSchema(featureRecom
   createdAt: true,
 });
 
+export const insertProductFeedbackSchema = createInsertSchema(productFeedback).omit({
+  id: true,
+  voteCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProductFeedbackVoteSchema = createInsertSchema(productFeedbackVotes).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const gapDismissals = pgTable("gap_dismissals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   gapIdentifier: text("gap_identifier").notNull(),
@@ -732,6 +781,10 @@ export type InsertRoadmapItem = z.infer<typeof insertRoadmapItemSchema>;
 export type RoadmapItem = typeof roadmapItems.$inferSelect;
 export type InsertFeatureRecommendation = z.infer<typeof insertFeatureRecommendationSchema>;
 export type FeatureRecommendation = typeof featureRecommendations.$inferSelect;
+export type InsertProductFeedback = z.infer<typeof insertProductFeedbackSchema>;
+export type ProductFeedback = typeof productFeedback.$inferSelect;
+export type InsertProductFeedbackVote = z.infer<typeof insertProductFeedbackVoteSchema>;
+export type ProductFeedbackVote = typeof productFeedbackVotes.$inferSelect;
 export type InsertCompetitor = z.infer<typeof insertCompetitorSchema>;
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;

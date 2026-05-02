@@ -62,6 +62,12 @@ import {
   type InsertProduct,
   type ProjectProduct,
   type InsertProjectProduct,
+  productFeedback,
+  productFeedbackVotes,
+  type ProductFeedback,
+  type InsertProductFeedback,
+  type ProductFeedbackVote,
+  type InsertProductFeedbackVote,
   type Battlecard,
   type InsertBattlecard,
   type ProductBattlecard,
@@ -454,6 +460,22 @@ export interface IStorage {
   updateFeatureRecommendation(id: string, data: Partial<FeatureRecommendation>): Promise<FeatureRecommendation>;
   deleteFeatureRecommendation(id: string): Promise<void>;
   addRecommendationToRoadmap(recId: string, roadmapData: InsertRoadmapItem): Promise<{ roadmapItem: RoadmapItem; recommendation: FeatureRecommendation }>;
+
+  // Product Feedback methods
+  getProductFeedback(id: string): Promise<ProductFeedback | undefined>;
+  getProductFeedbackByProduct(productId: string): Promise<ProductFeedback[]>;
+  getProductFeedbackByContext(ctx: ContextFilter): Promise<ProductFeedback[]>;
+  createProductFeedback(feedback: InsertProductFeedback): Promise<ProductFeedback>;
+  updateProductFeedback(id: string, data: Partial<ProductFeedback>): Promise<ProductFeedback>;
+  deleteProductFeedback(id: string): Promise<void>;
+  getFeedbackVote(feedbackId: string, voterKey: string): Promise<ProductFeedbackVote | undefined>;
+  getFeedbackVotesByProduct(productId: string): Promise<ProductFeedbackVote[]>;
+  toggleFeedbackVote(vote: InsertProductFeedbackVote): Promise<{ voted: boolean; voteCount: number }>;
+  promoteFeedbackToFeature(
+    feedbackId: string,
+    featureData: InsertProductFeature,
+    roadmapOpts?: { quarter?: string | null; year?: number | null; effort?: string | null; status?: string },
+  ): Promise<{ feature: ProductFeature; feedback: ProductFeedback; roadmapItem: RoadmapItem }>;
   
   // Intelligence Briefing methods
   createIntelligenceBriefing(briefing: InsertIntelligenceBriefing): Promise<IntelligenceBriefing>;
@@ -2862,6 +2884,108 @@ export class DatabaseStorage implements IStorage {
         .where(eq(featureRecommendations.id, recId))
         .returning();
       return { roadmapItem, recommendation };
+    });
+  }
+
+  // Product Feedback methods
+  async getProductFeedback(id: string): Promise<ProductFeedback | undefined> {
+    const [item] = await db.select().from(productFeedback).where(eq(productFeedback.id, id));
+    return item || undefined;
+  }
+
+  async getProductFeedbackByProduct(productId: string): Promise<ProductFeedback[]> {
+    return db.select().from(productFeedback)
+      .where(eq(productFeedback.productId, productId))
+      .orderBy(desc(productFeedback.voteCount), desc(productFeedback.createdAt));
+  }
+
+  async getProductFeedbackByContext(ctx: ContextFilter): Promise<ProductFeedback[]> {
+    const marketCondition = ctx.marketId
+      ? eq(productFeedback.marketId, ctx.marketId)
+      : isNull(productFeedback.marketId);
+    return db.select().from(productFeedback)
+      .where(and(eq(productFeedback.tenantDomain, ctx.tenantDomain), marketCondition))
+      .orderBy(desc(productFeedback.createdAt));
+  }
+
+  async createProductFeedback(feedback: InsertProductFeedback): Promise<ProductFeedback> {
+    const [created] = await db.insert(productFeedback).values(feedback).returning();
+    return created;
+  }
+
+  async updateProductFeedback(id: string, data: Partial<ProductFeedback>): Promise<ProductFeedback> {
+    const [updated] = await db.update(productFeedback)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(productFeedback.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProductFeedback(id: string): Promise<void> {
+    await db.delete(productFeedback).where(eq(productFeedback.id, id));
+  }
+
+  async getFeedbackVote(feedbackId: string, voterKey: string): Promise<ProductFeedbackVote | undefined> {
+    const [vote] = await db.select().from(productFeedbackVotes)
+      .where(and(eq(productFeedbackVotes.feedbackId, feedbackId), eq(productFeedbackVotes.voterKey, voterKey)));
+    return vote || undefined;
+  }
+
+  async getFeedbackVotesByProduct(productId: string): Promise<ProductFeedbackVote[]> {
+    return db.select().from(productFeedbackVotes).where(eq(productFeedbackVotes.productId, productId));
+  }
+
+  async toggleFeedbackVote(vote: InsertProductFeedbackVote): Promise<{ voted: boolean; voteCount: number }> {
+    return await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(productFeedbackVotes)
+        .where(and(
+          eq(productFeedbackVotes.feedbackId, vote.feedbackId),
+          eq(productFeedbackVotes.voterKey, vote.voterKey),
+        ));
+      let voted = true;
+      if (existing) {
+        await tx.delete(productFeedbackVotes).where(eq(productFeedbackVotes.id, existing.id));
+        voted = false;
+      } else {
+        await tx.insert(productFeedbackVotes).values(vote);
+      }
+      const [{ count }] = await tx.select({ count: sql<number>`cast(count(*) as int)` })
+        .from(productFeedbackVotes)
+        .where(eq(productFeedbackVotes.feedbackId, vote.feedbackId));
+      const [updated] = await tx.update(productFeedback)
+        .set({ voteCount: count, updatedAt: new Date() })
+        .where(eq(productFeedback.id, vote.feedbackId))
+        .returning();
+      return { voted, voteCount: updated?.voteCount ?? count };
+    });
+  }
+
+  async promoteFeedbackToFeature(
+    feedbackId: string,
+    featureData: InsertProductFeature,
+    roadmapOpts?: { quarter?: string | null; year?: number | null; effort?: string | null; status?: string },
+  ): Promise<{ feature: ProductFeature; feedback: ProductFeedback; roadmapItem: RoadmapItem }> {
+    return await db.transaction(async (tx) => {
+      const [feature] = await tx.insert(productFeatures).values(featureData).returning();
+      const [roadmapItem] = await tx.insert(roadmapItems).values({
+        productId: featureData.productId,
+        featureId: feature.id,
+        tenantDomain: featureData.tenantDomain,
+        marketId: featureData.marketId ?? null,
+        title: featureData.name,
+        description: featureData.description ?? null,
+        quarter: roadmapOpts?.quarter ?? null,
+        year: roadmapOpts?.year ?? null,
+        effort: roadmapOpts?.effort ?? null,
+        status: roadmapOpts?.status ?? "planned",
+        aiRecommended: false,
+        fromFeedback: true,
+      }).returning();
+      const [feedback] = await tx.update(productFeedback)
+        .set({ status: "planned", promotedFeatureId: feature.id, updatedAt: new Date() })
+        .where(eq(productFeedback.id, feedbackId))
+        .returning();
+      return { feature, feedback, roadmapItem };
     });
   }
 

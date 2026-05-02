@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart, Linkedin, Instagram, Twitter, Users, AlertTriangle, Ban } from "lucide-react";
 import FeaturesTab from "@/components/product/FeaturesTab";
 import RoadmapTab from "@/components/product/RoadmapTab";
+import FeedbackTab from "@/components/product/FeedbackTab";
 import { MarkdownContent } from "@/components/MarkdownViewer";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -192,7 +193,7 @@ export default function ProductDetail() {
   
   const [location, setLocation] = useLocation();
   
-  const validTabs = ["overview", "gaps", "recommendations", "summary", "gtm_plan", "messaging", "features", "roadmap"];
+  const validTabs = ["overview", "gaps", "recommendations", "summary", "gtm_plan", "messaging", "features", "roadmap", "feedback"];
   const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const tabFromUrl = urlParams.get("tab");
   const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "overview";
@@ -1358,6 +1359,10 @@ export default function ProductDetail() {
               <TabsTrigger value="roadmap" className="flex items-center gap-1">
                 <Map className="h-4 w-4" />
                 Roadmap
+              </TabsTrigger>
+              <TabsTrigger value="feedback" className="flex items-center gap-1" data-testid="tab-feedback">
+                <MessageSquare className="h-4 w-4" />
+                Customer Feedback
               </TabsTrigger>
             </TabsList>
 
@@ -3026,6 +3031,16 @@ export default function ProductDetail() {
                 <RoadmapTab 
                   productId={baselineProduct.productId} 
                   product={baselineProduct.product}
+                />
+              )}
+            </TabsContent>
+
+            {/* Customer Feedback Tab Content */}
+            <TabsContent value="feedback" className="mt-6">
+              {baselineProduct && (
+                <FeedbackTab
+                  productId={baselineProduct.productId}
+                  productName={baselineProduct.product?.name || "this product"}
                 />
               )}
             </TabsContent>

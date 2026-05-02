@@ -60,6 +60,7 @@ Preferred communication style: Simple, everyday language.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
 - **Client Projects**: Facilitate product-level competitive analysis for consulting firms.
 - **Product Management MVP**: Feature catalog, quarterly roadmap view, AI-powered roadmap recommendations.
+- **Customer Feedback & Voting** (Pro/Enterprise/Unlimited): Per-product feedback intake with internal upvoting, status workflow (New / Planned / Shipped / Declined), admin promotion of popular ideas to product features, AI-powered "group similar items" duplicate detection, and an optional tokenized public feedback URL (`/feedback/:token`) protected by math captcha + honeypot + IP rate limiting.
 - **Report Generation**: Branded PDF reports and CSV exports.
 - **Multi-Market Support**: Enterprise feature for managing multiple client contexts. Markets support B2B (default) or B2C business type, which adjusts Orbit Score weighting — B2C prioritizes social engagement (Instagram) over innovation/content depth.
 - **PDF Browser Pool**: Singleton Chromium instance for efficient PDF generation.
