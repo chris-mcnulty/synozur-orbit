@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
+import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import { Link, useSearch } from "wouter";
 import {
   Dialog,
@@ -193,13 +193,13 @@ export default function CampaignsPage() {
   const isAllowed = tenantInfo?.features?.campaigns === true;
 
   const [campaignPage, setCampaignPage] = useState(1);
-  const CAMPAIGNS_PAGE_SIZE = 25;
+  const [CAMPAIGNS_PAGE_SIZE, setCampaignsPageSize] = usePersistedPageSize("campaigns");
   const [campaignSearch, setCampaignSearch] = useState("");
   const debouncedCampaignSearch = useDebouncedValue(campaignSearch, 300);
 
   useEffect(() => {
     setCampaignPage(1);
-  }, [debouncedCampaignSearch]);
+  }, [debouncedCampaignSearch, CAMPAIGNS_PAGE_SIZE]);
 
   const { data: campaignsPage, isLoading } = useQuery<PaginatedEnvelope<Campaign>>({
     queryKey: ["/api/campaigns", "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch }],
@@ -827,6 +827,8 @@ export default function CampaignsPage() {
           <PaginationFooter
             page={campaignPage}
             pageSize={CAMPAIGNS_PAGE_SIZE}
+            onPageChange={(p) => setCampaignPage(p)}
+            onPageSizeChange={(s) => { setCampaignsPageSize(s); setCampaignPage(1); }}
             total={campaignsTotal}
             hasMore={campaignsHasMore}
             onPrev={() => setCampaignPage((p) => Math.max(1, p - 1))}

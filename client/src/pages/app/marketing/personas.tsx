@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
+import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
   UserCircle,
   Plus,
@@ -169,13 +169,13 @@ export default function PersonasPage() {
   const [ingestLoading, setIngestLoading] = useState(false);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 25;
+  const [PAGE_SIZE, setPageSize] = usePersistedPageSize("personas");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, PAGE_SIZE]);
 
   const { data: paginatedData, isLoading } = useQuery<PaginatedEnvelope<Persona>>({
     queryKey: ["/api/personas", "paginated", { page, pageSize: PAGE_SIZE, q: debouncedSearch }],
@@ -648,6 +648,8 @@ export default function PersonasPage() {
         <PaginationFooter
           page={page}
           pageSize={PAGE_SIZE}
+          onPageChange={(p) => setPage(p)}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
           total={total}
           hasMore={hasMore}
           onPrev={() => setPage((p) => Math.max(1, p - 1))}

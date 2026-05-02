@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
+import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
   ImageIcon, Plus, Search, ExternalLink, Trash2, Lock, Settings, ChevronDown, X, Tag, Filter,
   Download, Upload, LayoutGrid, List, Archive, RotateCcw
@@ -108,12 +108,12 @@ export default function BrandLibraryPage() {
   const isAllowed = tenantInfo?.features?.brandLibrary === true;
 
   const [assetPage, setAssetPage] = useState(1);
-  const ASSETS_PAGE_SIZE = 25;
+  const [ASSETS_PAGE_SIZE, setAssetsPageSize] = usePersistedPageSize("brand-library");
   const debouncedAssetSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
 
@@ -847,6 +847,8 @@ export default function BrandLibraryPage() {
             hasMore={assetsHasMore}
             onPrev={() => setAssetPage((p) => Math.max(1, p - 1))}
             onNext={() => setAssetPage((p) => p + 1)}
+            onPageChange={(p) => setAssetPage(p)}
+            onPageSizeChange={(s) => { setAssetsPageSize(s); setAssetPage(1); }}
             testIdPrefix="brand-pagination"
           />
         )}

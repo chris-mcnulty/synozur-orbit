@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
+import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban } from "lucide-react";
 import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
@@ -171,13 +171,13 @@ export default function Competitors() {
   };
 
   const [competitorPage, setCompetitorPage] = useState(1);
-  const COMPETITORS_PAGE_SIZE = 25;
+  const [COMPETITORS_PAGE_SIZE, setCompetitorsPageSize] = usePersistedPageSize("competitors");
   const [competitorSearch, setCompetitorSearch] = useState("");
   const debouncedCompetitorSearch = useDebouncedValue(competitorSearch, 300);
 
   useEffect(() => {
     setCompetitorPage(1);
-  }, [debouncedCompetitorSearch]);
+  }, [debouncedCompetitorSearch, COMPETITORS_PAGE_SIZE]);
 
   const { data: competitorsPage, isLoading } = useQuery<PaginatedEnvelope<any>>({
     queryKey: ["/api/competitors", "paginated", { page: competitorPage, pageSize: COMPETITORS_PAGE_SIZE, q: debouncedCompetitorSearch }],
@@ -1347,6 +1347,8 @@ export default function Competitors() {
               hasMore={competitorsHasMore}
               onPrev={() => setCompetitorPage((p) => Math.max(1, p - 1))}
               onNext={() => setCompetitorPage((p) => p + 1)}
+              onPageChange={(p) => setCompetitorPage(p)}
+              onPageSizeChange={(s) => { setCompetitorsPageSize(s); setCompetitorPage(1); }}
               testIdPrefix="competitors-pagination"
             />
           )}
