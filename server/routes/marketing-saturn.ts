@@ -1033,184 +1033,219 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.delete("/api/campaigns/:id", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    await db.update(campaigns)
-      .set({ status: "deleted", updatedAt: new Date() })
-      .where(and(
-        eq(campaigns.id, req.params.id),
-        eq(campaigns.tenantDomain, ctx.tenantDomain),
-      ));
-    res.status(204).send();
+    try {
+      const ctx = await getRequestContext(req);
+      await db.update(campaigns)
+        .set({ status: "deleted", updatedAt: new Date() })
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Campaign Delete Error]", err.message);
+      res.status(500).json({ error: "Failed to delete campaign" });
+    }
   });
 
   // Campaign Duplication
   app.post("/api/campaigns/:id/duplicate", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [source] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!source) return res.status(404).json({ error: "Campaign not found" });
+    try {
+      const ctx = await getRequestContext(req);
+      const [source] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!source) return res.status(404).json({ error: "Campaign not found" });
 
-    const newId = randomUUID();
-    await db.transaction(async (tx) => {
-      await tx.insert(campaigns).values({
-        id: newId,
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        name: `${source.name} (Copy)`,
-        description: source.description,
-        startDate: source.startDate,
-        endDate: source.endDate,
-        numberOfDays: source.numberOfDays,
-        includeSaturday: source.includeSaturday,
-        includeSunday: source.includeSunday,
-        productIds: source.productIds,
-        status: "draft",
-        createdBy: ctx.userId,
-      } as InsertCampaign);
+      const newId = randomUUID();
+      await db.transaction(async (tx) => {
+        await tx.insert(campaigns).values({
+          id: newId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          name: `${source.name} (Copy)`,
+          description: source.description,
+          startDate: source.startDate,
+          endDate: source.endDate,
+          numberOfDays: source.numberOfDays,
+          includeSaturday: source.includeSaturday,
+          includeSunday: source.includeSunday,
+          productIds: source.productIds,
+          status: "draft",
+          createdBy: ctx.userId,
+        } as InsertCampaign);
 
-      const sourceAssets = await tx.select().from(campaignAssets)
-        .where(eq(campaignAssets.campaignId, source.id));
-      if (sourceAssets.length > 0) {
-        await tx.insert(campaignAssets).values(
-          sourceAssets.map(a => ({
-            id: randomUUID(),
-            campaignId: newId,
-            assetId: a.assetId,
-            overrideTitle: a.overrideTitle,
-            overrideContent: a.overrideContent,
-            sortOrder: a.sortOrder,
-          } as InsertCampaignAsset))
-        );
-      }
+        const sourceAssets = await tx.select().from(campaignAssets)
+          .where(eq(campaignAssets.campaignId, source.id));
+        if (sourceAssets.length > 0) {
+          await tx.insert(campaignAssets).values(
+            sourceAssets.map(a => ({
+              id: randomUUID(),
+              campaignId: newId,
+              assetId: a.assetId,
+              overrideTitle: a.overrideTitle,
+              overrideContent: a.overrideContent,
+              sortOrder: a.sortOrder,
+            } as InsertCampaignAsset))
+          );
+        }
 
-      const sourceSocial = await tx.select().from(campaignSocialAccounts)
-        .where(eq(campaignSocialAccounts.campaignId, source.id));
-      if (sourceSocial.length > 0) {
-        await tx.insert(campaignSocialAccounts).values(
-          sourceSocial.map(s => ({
-            id: randomUUID(),
-            campaignId: newId,
-            socialAccountId: s.socialAccountId,
-          } as InsertCampaignSocialAccount))
-        );
-      }
-    });
+        const sourceSocial = await tx.select().from(campaignSocialAccounts)
+          .where(eq(campaignSocialAccounts.campaignId, source.id));
+        if (sourceSocial.length > 0) {
+          await tx.insert(campaignSocialAccounts).values(
+            sourceSocial.map(s => ({
+              id: randomUUID(),
+              campaignId: newId,
+              socialAccountId: s.socialAccountId,
+            } as InsertCampaignSocialAccount))
+          );
+        }
+      });
 
-    const [row] = await db.select().from(campaigns).where(eq(campaigns.id, newId));
-    res.status(201).json(row);
+      const [row] = await db.select().from(campaigns).where(eq(campaigns.id, newId));
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[Campaign Duplicate Error]", err.message);
+      res.status(500).json({ error: "Failed to duplicate campaign" });
+    }
   });
 
   // Campaign Assets
 
   app.post("/api/campaigns/:id/assets", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { assetId, assetIds, overrideTitle, overrideContent, sortOrder } = req.body;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { assetId, assetIds, overrideTitle, overrideContent, sortOrder } = req.body;
 
-    const idsToAdd: string[] = Array.isArray(assetIds) ? assetIds : assetId ? [assetId] : [];
-    if (idsToAdd.length === 0) return res.status(400).json({ error: "assetId or assetIds is required" });
+      const idsToAdd: string[] = Array.isArray(assetIds) ? assetIds : assetId ? [assetId] : [];
+      if (idsToAdd.length === 0) return res.status(400).json({ error: "assetId or assetIds is required" });
 
-    const rows: any[] = [];
-    for (let i = 0; i < idsToAdd.length; i++) {
-      const aid = idsToAdd[i];
-      const [asset] = await db.select().from(contentAssets)
-        .where(and(
-          eq(contentAssets.id, aid),
-          eq(contentAssets.tenantDomain, ctx.tenantDomain),
-          eq(contentAssets.marketId, ctx.marketId),
-        ));
-      if (!asset) continue;
-      const existing = await db.select().from(campaignAssets)
-        .where(and(eq(campaignAssets.campaignId, campaign.id), eq(campaignAssets.assetId, aid)));
-      if (existing.length > 0) continue;
-      const [row] = await db.insert(campaignAssets).values({
-        id: randomUUID(),
-        campaignId: campaign.id,
-        assetId: aid,
-        overrideTitle: idsToAdd.length === 1 ? overrideTitle : undefined,
-        overrideContent: idsToAdd.length === 1 ? overrideContent : undefined,
-        sortOrder: sortOrder ?? i,
-      } as InsertCampaignAsset).returning();
-      rows.push(row);
+      const rows: any[] = [];
+      for (let i = 0; i < idsToAdd.length; i++) {
+        const aid = idsToAdd[i];
+        const [asset] = await db.select().from(contentAssets)
+          .where(and(
+            eq(contentAssets.id, aid),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+          ));
+        if (!asset) continue;
+        const existing = await db.select().from(campaignAssets)
+          .where(and(eq(campaignAssets.campaignId, campaign.id), eq(campaignAssets.assetId, aid)));
+        if (existing.length > 0) continue;
+        const [row] = await db.insert(campaignAssets).values({
+          id: randomUUID(),
+          campaignId: campaign.id,
+          assetId: aid,
+          overrideTitle: idsToAdd.length === 1 ? overrideTitle : undefined,
+          overrideContent: idsToAdd.length === 1 ? overrideContent : undefined,
+          sortOrder: sortOrder ?? i,
+        } as InsertCampaignAsset).returning();
+        rows.push(row);
+      }
+      res.status(201).json(rows.length === 1 ? rows[0] : rows);
+    } catch (err: any) {
+      console.error("[Campaign Assets Add Error]", err.message);
+      res.status(500).json({ error: "Failed to add campaign assets" });
     }
-    res.status(201).json(rows.length === 1 ? rows[0] : rows);
   });
 
   app.patch("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { overrideTitle, overrideContent, sortOrder } = req.body;
-    const [row] = await db.update(campaignAssets)
-      .set({ overrideTitle, overrideContent, sortOrder })
-      .where(and(
-        eq(campaignAssets.campaignId, campaign.id),
-        eq(campaignAssets.assetId, req.params.assetId),
-      ))
-      .returning();
-    if (!row) return res.status(404).json({ error: "Not found" });
-    res.json(row);
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { overrideTitle, overrideContent, sortOrder } = req.body;
+      const [row] = await db.update(campaignAssets)
+        .set({ overrideTitle, overrideContent, sortOrder })
+        .where(and(
+          eq(campaignAssets.campaignId, campaign.id),
+          eq(campaignAssets.assetId, req.params.assetId),
+        ))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (err: any) {
+      console.error("[Campaign Asset Update Error]", err.message);
+      res.status(500).json({ error: "Failed to update campaign asset" });
+    }
   });
 
   app.delete("/api/campaigns/:campaignId/assets/:assetId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    await db.delete(campaignAssets)
-      .where(and(
-        eq(campaignAssets.campaignId, campaign.id),
-        eq(campaignAssets.assetId, req.params.assetId),
-      ));
-    res.status(204).send();
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      await db.delete(campaignAssets)
+        .where(and(
+          eq(campaignAssets.campaignId, campaign.id),
+          eq(campaignAssets.assetId, req.params.assetId),
+        ));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Campaign Asset Delete Error]", err.message);
+      res.status(500).json({ error: "Failed to remove campaign asset" });
+    }
   });
 
   // Campaign Social Accounts
 
   app.post("/api/campaigns/:id/social-accounts", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { socialAccountId } = req.body;
-    if (!socialAccountId) return res.status(400).json({ error: "socialAccountId is required" });
-    const socialAccountConditions = [
-      eq(socialAccounts.id, socialAccountId),
-      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
-    ];
-    if (ctx.marketId) {
-      socialAccountConditions.push(eq(socialAccounts.marketId, ctx.marketId));
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { socialAccountId } = req.body;
+      if (!socialAccountId) return res.status(400).json({ error: "socialAccountId is required" });
+      const socialAccountConditions = [
+        eq(socialAccounts.id, socialAccountId),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ];
+      if (ctx.marketId) {
+        socialAccountConditions.push(eq(socialAccounts.marketId, ctx.marketId));
+      }
+      const [socialAccount] = await db.select().from(socialAccounts).where(and(...socialAccountConditions));
+      if (!socialAccount) return res.status(404).json({ error: "Social account not found" });
+      const [row] = await db.insert(campaignSocialAccounts).values({
+        id: randomUUID(),
+        campaignId: campaign.id,
+        socialAccountId,
+      } as InsertCampaignSocialAccount).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[Campaign Social Account Add Error]", err.message);
+      res.status(500).json({ error: "Failed to add social account to campaign" });
     }
-    const [socialAccount] = await db.select().from(socialAccounts).where(and(...socialAccountConditions));
-    if (!socialAccount) return res.status(404).json({ error: "Social account not found" });
-    const [row] = await db.insert(campaignSocialAccounts).values({
-      id: randomUUID(),
-      campaignId: campaign.id,
-      socialAccountId,
-    } as InsertCampaignSocialAccount).returning();
-    res.status(201).json(row);
   });
 
   app.delete("/api/campaigns/:campaignId/social-accounts/:accountId", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    await db.delete(campaignSocialAccounts)
-      .where(and(
-        eq(campaignSocialAccounts.campaignId, campaign.id),
-        eq(campaignSocialAccounts.socialAccountId, req.params.accountId),
-      ));
-    res.status(204).send();
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      await db.delete(campaignSocialAccounts)
+        .where(and(
+          eq(campaignSocialAccounts.campaignId, campaign.id),
+          eq(campaignSocialAccounts.socialAccountId, req.params.accountId),
+        ));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Campaign Social Account Delete Error]", err.message);
+      res.status(500).json({ error: "Failed to remove social account from campaign" });
+    }
   });
 
   // ══════════════════════════════════════════════════════════
@@ -1236,71 +1271,86 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.put("/api/campaigns/:campaignId/generated-posts/bulk-status", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { status } = req.body;
-    if (!status || !["approved", "rejected"].includes(status)) {
-      return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
-    }
-    if (status === "rejected") {
-      const rows = await db.delete(generatedPosts)
-        .where(and(
-          eq(generatedPosts.campaignId, campaign.id),
-          ne(generatedPosts.status, "approved"),
-        ))
-        .returning();
-      res.json({ updated: rows.length });
-    } else {
-      const rows = await db.update(generatedPosts)
-        .set({ status, updatedAt: new Date() })
-        .where(and(
-          eq(generatedPosts.campaignId, campaign.id),
-          ne(generatedPosts.status, "deleted"),
-          ne(generatedPosts.status, status),
-        ))
-        .returning();
-      res.json({ updated: rows.length });
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { status } = req.body;
+      if (!status || !["approved", "rejected"].includes(status)) {
+        return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
+      }
+      if (status === "rejected") {
+        const rows = await db.delete(generatedPosts)
+          .where(and(
+            eq(generatedPosts.campaignId, campaign.id),
+            ne(generatedPosts.status, "approved"),
+          ))
+          .returning();
+        res.json({ updated: rows.length });
+      } else {
+        const rows = await db.update(generatedPosts)
+          .set({ status, updatedAt: new Date() })
+          .where(and(
+            eq(generatedPosts.campaignId, campaign.id),
+            ne(generatedPosts.status, "deleted"),
+            ne(generatedPosts.status, status),
+          ))
+          .returning();
+        res.json({ updated: rows.length });
+      }
+    } catch (err: any) {
+      console.error("[Generated Posts Bulk Status Error]", err.message);
+      res.status(500).json({ error: "Failed to update posts status" });
     }
   });
 
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags } = req.body;
-    if (status === "rejected" || status === "deleted") {
-      await db.delete(generatedPosts)
-        .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
-      return res.json({ id: req.params.postId, status });
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags } = req.body;
+      if (status === "rejected" || status === "deleted") {
+        await db.delete(generatedPosts)
+          .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
+        return res.json({ id: req.params.postId, status });
+      }
+      const updateFields: any = { updatedAt: new Date() };
+      if (editedContent !== undefined) updateFields.editedContent = editedContent;
+      if (status !== undefined) updateFields.status = status;
+      if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
+      if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
+      if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
+      if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
+      const [row] = await db.update(generatedPosts)
+        .set(updateFields)
+        .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (err: any) {
+      console.error("[Generated Post Update Error]", err.message);
+      res.status(500).json({ error: "Failed to update generated post" });
     }
-    const updateFields: any = { updatedAt: new Date() };
-    if (editedContent !== undefined) updateFields.editedContent = editedContent;
-    if (status !== undefined) updateFields.status = status;
-    if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
-    if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
-    if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
-    if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
-    const [row] = await db.update(generatedPosts)
-      .set(updateFields)
-      .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
-      .returning();
-    if (!row) return res.status(404).json({ error: "Not found" });
-    res.json(row);
   });
 
   app.delete("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    await db.delete(generatedPosts)
-      .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
-    res.status(204).send();
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      await db.delete(generatedPosts)
+        .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Generated Post Delete Error]", err.message);
+      res.status(500).json({ error: "Failed to delete generated post" });
+    }
   });
 
   // ══════════════════════════════════════════════════════════
@@ -1475,123 +1525,139 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
   app.post("/api/campaigns/:id/generate-posts", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
+    try {
+      const ctx = await getRequestContext(req);
 
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
-    const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
-    const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
-    const thematicBrief: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
-    const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
-    const useThematicMode: boolean = !!(thematicBrief);
+      const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
+      const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
+      const thematicBrief: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
+      const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
+      const useThematicMode: boolean = !!(thematicBrief);
 
-    await db.delete(generatedPosts)
-      .where(and(
-        eq(generatedPosts.campaignId, campaign.id),
-        inArray(generatedPosts.status, ["deleted", "rejected"]),
-      ));
+      await db.delete(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          inArray(generatedPosts.status, ["deleted", "rejected"]),
+        ));
 
-    // Create a job run record
-    const [job] = await db.insert(scheduledJobRuns).values({
-      id: randomUUID(),
-      jobType: "generateCampaignPosts",
-      tenantDomain: ctx.tenantDomain,
-      targetId: campaign.id,
-      targetName: campaign.name,
-      status: "pending",
-    }).returning();
+      // Create a job run record
+      const [job] = await db.insert(scheduledJobRuns).values({
+        id: randomUUID(),
+        jobType: "generateCampaignPosts",
+        tenantDomain: ctx.tenantDomain,
+        targetId: campaign.id,
+        targetName: campaign.name,
+        status: "pending",
+      }).returning();
 
-    // Link job to campaign
-    await db.update(campaigns)
-      .set({ postGenerationJobId: job.id, updatedAt: new Date() })
-      .where(eq(campaigns.id, campaign.id));
+      // Link job to campaign
+      await db.update(campaigns)
+        .set({ postGenerationJobId: job.id, updatedAt: new Date() })
+        .where(eq(campaigns.id, campaign.id));
 
-    // Kick off async generation (fire-and-forget)
-    generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds, useThematicMode ? thematicBrief : "", useThematicMode ? thematicUrl : "").catch(err => {
-      console.error("[Saturn] Post generation error:", err.message);
-    });
+      // Kick off async generation (fire-and-forget)
+      generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds, useThematicMode ? thematicBrief : "", useThematicMode ? thematicUrl : "").catch(err => {
+        console.error("[Saturn] Post generation error:", err.message);
+      });
 
-    res.status(202).json({ jobId: job.id, status: "pending" });
+      res.status(202).json({ jobId: job.id, status: "pending" });
+    } catch (err: any) {
+      console.error("[Generate Posts Error]", err.message);
+      res.status(500).json({ error: "Failed to start post generation" });
+    }
   });
 
   app.get("/api/campaigns/:id/generate-posts-status", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-    if (!campaign.postGenerationJobId) return res.json({ status: "idle" });
-    const [job] = await db.select().from(scheduledJobRuns)
-      .where(eq(scheduledJobRuns.id, campaign.postGenerationJobId));
-    res.json({ status: job?.status ?? "unknown", jobId: campaign.postGenerationJobId });
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!campaign.postGenerationJobId) return res.json({ status: "idle" });
+      const [job] = await db.select().from(scheduledJobRuns)
+        .where(eq(scheduledJobRuns.id, campaign.postGenerationJobId));
+      res.json({ status: job?.status ?? "unknown", jobId: campaign.postGenerationJobId });
+    } catch (err: any) {
+      console.error("[Generate Posts Status Error]", err.message);
+      res.status(500).json({ error: "Failed to get post generation status" });
+    }
   });
 
   app.get("/api/campaigns/:id/export-preview", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
-    const ctx = await getRequestContext(req);
-    const [campaign] = await db.select().from(campaigns)
-      .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
-    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
-    const allPosts = await db.select().from(generatedPosts)
-      .where(and(
-        eq(generatedPosts.campaignId, campaign.id),
-        notInArray(generatedPosts.status, ["deleted", "rejected"]),
-      ));
+      const allPosts = await db.select().from(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          notInArray(generatedPosts.status, ["deleted", "rejected"]),
+        ));
 
-    const now = new Date();
-    const dated = allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
-    const undated = allPosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
+      const now = new Date();
+      const dated = allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
+      const undated = allPosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
 
-    const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
-      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
-    const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
-    const allAccountIds = Array.from(new Set([
-      ...allPosts.map(p => p.socialAccountId).filter(Boolean),
-      ...campaignAccountIds,
-    ])) as string[];
-    const accountMap = new Map<string, any>();
-    if (allAccountIds.length) {
-      const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, allAccountIds));
-      for (const a of accts) accountMap.set(a.id, a);
-    }
-    const platformAccountFallback = new Map<string, string>();
-    for (const link of campaignAccountLinks) {
-      const acct = accountMap.get(link.socialAccountId);
-      if (acct?.accountId && acct.platform && !platformAccountFallback.has(acct.platform)) {
-        platformAccountFallback.set(acct.platform, acct.accountId);
+      const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
+        .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+      const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
+      const allAccountIds = Array.from(new Set([
+        ...allPosts.map(p => p.socialAccountId).filter(Boolean),
+        ...campaignAccountIds,
+      ])) as string[];
+      const accountMap = new Map<string, any>();
+      if (allAccountIds.length) {
+        const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, allAccountIds));
+        for (const a of accts) accountMap.set(a.id, a);
       }
-    }
-
-    const getAcctId = (post: any) => {
-      if (post.socialAccountId) {
-        const acct = accountMap.get(post.socialAccountId);
-        if (acct?.accountId) return acct.accountId;
+      const platformAccountFallback = new Map<string, string>();
+      for (const link of campaignAccountLinks) {
+        const acct = accountMap.get(link.socialAccountId);
+        if (acct?.accountId && acct.platform && !platformAccountFallback.has(acct.platform)) {
+          platformAccountFallback.set(acct.platform, acct.accountId);
+        }
       }
-      return platformAccountFallback.get(post.platform) || post.platform;
-    };
 
-    let collisions = 0;
-    const slotMap = new Map<string, number>();
-    for (const p of dated) {
-      const key = `${new Date(p.scheduledDate!).toISOString()}|${getAcctId(p)}`;
-      const count = (slotMap.get(key) || 0) + 1;
-      slotMap.set(key, count);
-      if (count > 1) collisions++;
+      const getAcctId = (post: any) => {
+        if (post.socialAccountId) {
+          const acct = accountMap.get(post.socialAccountId);
+          if (acct?.accountId) return acct.accountId;
+        }
+        return platformAccountFallback.get(post.platform) || post.platform;
+      };
+
+      let collisions = 0;
+      const slotMap = new Map<string, number>();
+      for (const p of dated) {
+        const key = `${new Date(p.scheduledDate!).toISOString()}|${getAcctId(p)}`;
+        const count = (slotMap.get(key) || 0) + 1;
+        slotMap.set(key, count);
+        if (count > 1) collisions++;
+      }
+
+      res.json({
+        totalPosts: allPosts.length,
+        datedPosts: dated.length,
+        undatedPosts: undated.length,
+        collisions,
+      });
+    } catch (err: any) {
+      console.error("[Export Preview Error]", err.message);
+      res.status(500).json({ error: "Failed to load export preview" });
     }
-
-    res.json({
-      totalPosts: allPosts.length,
-      datedPosts: dated.length,
-      undatedPosts: undated.length,
-      collisions,
-    });
   });
 
   app.post("/api/campaigns/:id/export-csv", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
     const ctx = await getRequestContext(req);
     const [campaign] = await db.select().from(campaigns)
       .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
@@ -1867,6 +1933,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-${csvFormat}.csv"`);
     res.send(lines.join("\n"));
+    } catch (err: any) {
+      console.error("[Export CSV Error]", err.message);
+      res.status(500).json({ error: "Failed to export campaign CSV" });
+    }
   });
 
   // ══════════════════════════════════════════════════════════
