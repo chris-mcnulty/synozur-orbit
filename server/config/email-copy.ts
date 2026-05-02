@@ -423,6 +423,28 @@ export const SUPPORT_TICKET_CONFIRMATION_EMAIL = {
 };
 
 // ============================================
+// SUPPORT TICKET REPLY EMAIL
+// ============================================
+export const SUPPORT_TICKET_REPLY_EMAIL = {
+  subject: (ticketNumber: number, subject: string) => `[Orbit Support #${ticketNumber}] Re: ${subject}`,
+  headingForOwner: 'New reply on your support ticket',
+  headingForAssignee: 'New customer reply on a support ticket',
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  bodyForOwner: (ticketNumber: number, subject: string, fromName: string, message: string) =>
+    `<strong>${fromName}</strong> from Orbit Support replied to your ticket <span class="highlight">#${ticketNumber}</span> ("${subject}"):<br/><br/>
+    <blockquote style="border-left: 3px solid #810FFB; margin: 0; padding: 8px 16px; background: rgba(129, 15, 251, 0.05); white-space: pre-wrap;">${message.substring(0, 2000)}</blockquote>`,
+  bodyForAssignee: (ticketNumber: number, subject: string, fromName: string, message: string) =>
+    `<strong>${fromName}</strong> replied to ticket <span class="highlight">#${ticketNumber}</span> ("${subject}"):<br/><br/>
+    <blockquote style="border-left: 3px solid #810FFB; margin: 0; padding: 8px 16px; background: rgba(129, 15, 251, 0.05); white-space: pre-wrap;">${message.substring(0, 2000)}</blockquote>`,
+  buttonTextOwner: 'View Ticket',
+  buttonTextAssignee: 'View in Admin',
+  plainTextOwner: (name: string, ticketNumber: number, subject: string, fromName: string, message: string) =>
+    `Hi ${name},\n\n${fromName} from Orbit Support replied to your ticket #${ticketNumber} ("${subject}"):\n\n${message.substring(0, 2000)}\n\nView and reply: open the Support page in Orbit.`,
+  plainTextAssignee: (name: string, ticketNumber: number, subject: string, fromName: string, message: string) =>
+    `Hi ${name},\n\n${fromName} replied to ticket #${ticketNumber} ("${subject}"):\n\n${message.substring(0, 2000)}\n\nView and reply in the Admin console.`,
+};
+
+// ============================================
 // SCHEDULED BRIEFING PODCAST EMAIL
 // ============================================
 export const SCHEDULED_BRIEFING_EMAIL = {

@@ -12,11 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown, RefreshCw, Link2, Link2Off } from "lucide-react";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { PlannerSyncDialog } from "@/components/PlannerSyncDialog";
 
 const ACTIVITY_CATEGORIES = [
   { value: "events", label: "Events & Trade Shows", description: "Trade shows, conferences, industry events" },
@@ -88,7 +89,7 @@ interface MarketingPlan {
   description: string | null;
   fiscalYear: string;
   status: string;
-  configMatrix: { 
+  configMatrix: {
     selectedQuarters?: string[];
     quarters?: string[];
     selectedCategories?: string[];
@@ -96,6 +97,15 @@ interface MarketingPlan {
     configured?: boolean;
   } | null;
   createdAt: string;
+  plannerGroupId?: string | null;
+  plannerGroupName?: string | null;
+  plannerPlanId?: string | null;
+  plannerPlanName?: string | null;
+  plannerBucketId?: string | null;
+  plannerBucketName?: string | null;
+  plannerSyncEnabled?: boolean | null;
+  plannerLastSyncAt?: string | null;
+  plannerLastSyncError?: string | null;
 }
 
 export default function MarketingPlanDetail() {
@@ -132,6 +142,34 @@ export default function MarketingPlanDetail() {
     priority: "medium",
     timeframe: "",
     dueDate: "",
+  });
+  const [plannerDialogOpen, setPlannerDialogOpen] = useState(false);
+
+  const plannerSyncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/marketing-plans/${id}/planner/sync`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Sync failed");
+      }
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      const summary = `${result.created} created, ${result.updated} updated${result.failed ? `, ${result.failed} failed` : ""}`;
+      toast({
+        title: result.ok ? "Synced to Planner" : "Sync completed with errors",
+        description: summary,
+        variant: result.ok ? "default" : "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}`] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
@@ -683,7 +721,35 @@ export default function MarketingPlanDetail() {
 
   return (
     <AppLayout breadcrumbs={planBreadcrumbs}>
+      <PlannerSyncDialog
+        open={plannerDialogOpen}
+        onOpenChange={setPlannerDialogOpen}
+        marketingPlanId={plan.id}
+        currentMapping={{
+          plannerGroupId: plan.plannerGroupId,
+          plannerGroupName: plan.plannerGroupName,
+          plannerPlanId: plan.plannerPlanId,
+          plannerPlanName: plan.plannerPlanName,
+          plannerBucketId: plan.plannerBucketId,
+          plannerBucketName: plan.plannerBucketName,
+        }}
+      />
       <div className="space-y-6">
+        {plan.plannerSyncEnabled && (
+          <div className="flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-muted/30 text-sm" data-testid="banner-planner-status">
+            <Link2 className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1">
+              Connected to <strong>{plan.plannerPlanName}</strong> in <strong>{plan.plannerGroupName}</strong>
+              {plan.plannerBucketName && <> • bucket <strong>{plan.plannerBucketName}</strong></>}
+              {plan.plannerLastSyncAt && (
+                <span className="text-muted-foreground"> • Last synced {new Date(plan.plannerLastSyncAt).toLocaleString()}</span>
+              )}
+            </div>
+            {plan.plannerLastSyncError && (
+              <span className="text-xs text-destructive">{plan.plannerLastSyncError}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing-planner")}>
@@ -697,8 +763,8 @@ export default function MarketingPlanDetail() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 const categoryLookup = ACTIVITY_CATEGORIES.reduce((acc, cat) => {
                   acc[cat.value] = cat.label;
@@ -718,6 +784,30 @@ export default function MarketingPlanDetail() {
               <FileDown className="w-4 h-4 mr-2" />
               Export CSV
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setPlannerDialogOpen(true)}
+              data-testid="button-planner-configure"
+              title={plan.plannerSyncEnabled ? `Connected to ${plan.plannerPlanName} • bucket: ${plan.plannerBucketName || "default"}` : "Connect to Microsoft Planner"}
+            >
+              <Link2 className="w-4 h-4 mr-2" />
+              {plan.plannerSyncEnabled ? "Planner Settings" : "Connect Planner"}
+            </Button>
+            {plan.plannerSyncEnabled && (
+              <Button
+                variant="outline"
+                onClick={() => plannerSyncMutation.mutate()}
+                disabled={plannerSyncMutation.isPending || tasks.length === 0}
+                data-testid="button-planner-sync"
+              >
+                {plannerSyncMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Sync to Planner
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsConfiguring(true)}>
               <Settings className="w-4 h-4 mr-2" />
               Reconfigure

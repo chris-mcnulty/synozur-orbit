@@ -681,7 +681,8 @@ export function registerPlatformRoutes(app: Express) {
       }
 
       const replies = await storage.getSupportTicketReplies(ticket.id);
-      const userIds = new Set([ticket.userId, ...replies.map(r => r.userId)]);
+      const attachments = await storage.getSupportTicketAttachments(ticket.id);
+      const userIds = new Set([ticket.userId, ...replies.map(r => r.userId), ...attachments.map(a => a.uploadedBy)]);
       if (ticket.assignedTo) userIds.add(ticket.assignedTo);
 
       const userMap: Record<string, { name: string; email: string; role: string }> = {};
@@ -690,11 +691,17 @@ export function registerPlatformRoutes(app: Express) {
         if (u) userMap[uid] = { name: u.name, email: u.email, role: u.role };
       }
 
-      const filteredReplies = hasAdminAccess(user.role) 
-        ? replies 
+      const filteredReplies = hasAdminAccess(user.role)
+        ? replies
         : replies.filter(r => !r.isInternal);
 
-      res.json({ ...ticket, replies: filteredReplies, users: userMap });
+      // Hide attachments tied to internal-only replies for non-admins
+      const internalReplyIds = new Set(replies.filter(r => r.isInternal).map(r => r.id));
+      const visibleAttachments = hasAdminAccess(user.role)
+        ? attachments
+        : attachments.filter(a => !a.replyId || !internalReplyIds.has(a.replyId));
+
+      res.json({ ...ticket, replies: filteredReplies, attachments: visibleAttachments, users: userMap });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -785,7 +792,223 @@ export function registerPlatformRoutes(app: Express) {
         isInternal: isAdmin ? parsed.data.isInternal : false,
       });
 
+      // Send notifications (in-app + email) on non-internal replies.
+      // Owner replies notify the assignee (or all admins if unassigned);
+      // staff replies notify the ticket owner.
+      if (!reply.isInternal) {
+        try {
+          const { sendSupportTicketReplyEmail } = await import("../services/email-service");
+          const { notifySupportReply } = await import("../services/notification-service");
+
+          if (user.id === ticket.userId) {
+            // Owner replied — notify assignee or admins on the tenant
+            const recipients: { id: string; name: string; email: string }[] = [];
+            if (ticket.assignedTo) {
+              const assignee = await storage.getUser(ticket.assignedTo);
+              if (assignee) recipients.push({ id: assignee.id, name: assignee.name, email: assignee.email });
+            } else {
+              const domainUsers = await storage.getUsersByDomain(ticket.tenantDomain);
+              const admins = domainUsers.filter(u => u.role === "Global Admin" || u.role === "Domain Admin");
+              for (const a of admins) recipients.push({ id: a.id, name: a.name, email: a.email });
+            }
+            for (const r of recipients) {
+              notifySupportReply({
+                userId: r.id,
+                tenantDomain: ticket.tenantDomain,
+                ticketNumber: ticket.ticketNumber,
+                subject: ticket.subject,
+                fromName: user.name,
+                link: "/app/admin",
+              }).catch(err => console.error("[Support Notify] Admin notify failed:", err));
+              sendSupportTicketReplyEmail({
+                recipient: { name: r.name, email: r.email },
+                ticket: { id: ticket.id, ticketNumber: ticket.ticketNumber, subject: ticket.subject },
+                reply: { message: parsed.data.message },
+                fromUser: { name: user.name },
+                audience: "assignee",
+              }).catch(err => console.error("[Support Email] Reply-to-assignee failed:", err));
+            }
+          } else {
+            // Staff replied — notify the ticket owner
+            const owner = await storage.getUser(ticket.userId);
+            if (owner) {
+              notifySupportReply({
+                userId: owner.id,
+                tenantDomain: ticket.tenantDomain,
+                ticketNumber: ticket.ticketNumber,
+                subject: ticket.subject,
+                fromName: user.name,
+                link: "/app/support",
+              }).catch(err => console.error("[Support Notify] Owner notify failed:", err));
+              sendSupportTicketReplyEmail({
+                recipient: { name: owner.name, email: owner.email },
+                ticket: { id: ticket.id, ticketNumber: ticket.ticketNumber, subject: ticket.subject },
+                reply: { message: parsed.data.message },
+                fromUser: { name: user.name },
+                audience: "owner",
+              }).catch(err => console.error("[Support Email] Reply-to-owner failed:", err));
+            }
+          }
+        } catch (err) {
+          console.error("[Support Notify] Import failed:", err);
+        }
+      }
+
       res.json(reply);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== SUPPORT TICKET ATTACHMENTS ====================
+
+  const ALLOWED_ATTACHMENT_TYPES = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ]);
+
+  // Register an uploaded file (after the client uploaded to object storage via
+  // /api/uploads/request-url) and link it to a ticket or reply.
+  app.post("/api/support/tickets/:id/attachments", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const isAdmin = hasAdminAccess(user.role);
+      if (ticket.userId !== user.id && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const attachmentSchema = z.object({
+        fileName: z.string().min(1).max(255),
+        fileSize: z.number().int().positive().max(20 * 1024 * 1024),
+        contentType: z.string().refine(v => ALLOWED_ATTACHMENT_TYPES.has(v), "Unsupported file type"),
+        objectPath: z.string().min(1).max(500),
+        replyId: z.string().optional(),
+      });
+
+      const parsed = attachmentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromError(parsed.error).toString() });
+      }
+
+      // If a replyId is supplied, ensure it belongs to this ticket
+      if (parsed.data.replyId) {
+        const replies = await storage.getSupportTicketReplies(ticket.id);
+        if (!replies.find(r => r.id === parsed.data.replyId)) {
+          return res.status(400).json({ error: "Reply does not belong to this ticket" });
+        }
+      }
+
+      const attachment = await storage.createSupportTicketAttachment({
+        ticketId: ticket.id,
+        replyId: parsed.data.replyId || null,
+        uploadedBy: user.id,
+        fileName: parsed.data.fileName,
+        fileSize: parsed.data.fileSize,
+        contentType: parsed.data.contentType,
+        objectPath: parsed.data.objectPath,
+      });
+
+      res.json(attachment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Stream an attachment to the requester (with auth + ownership/admin checks).
+  app.get("/api/support/tickets/:id/attachments/:attachmentId", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const isAdmin = hasAdminAccess(user.role);
+      if (ticket.userId !== user.id && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const attachment = await storage.getSupportTicketAttachment(req.params.attachmentId);
+      if (!attachment || attachment.ticketId !== ticket.id) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      // Hide attachments tied to internal-only replies for non-admins
+      if (!isAdmin && attachment.replyId) {
+        const replies = await storage.getSupportTicketReplies(ticket.id);
+        const reply = replies.find(r => r.id === attachment.replyId);
+        if (reply?.isInternal) {
+          return res.status(404).json({ error: "Attachment not found" });
+        }
+      }
+
+      const { ObjectStorageService, ObjectNotFoundError } = await import("../replit_integrations/object_storage/objectStorage");
+      const svc = new ObjectStorageService();
+      try {
+        const file = await svc.getObjectEntityFile(attachment.objectPath);
+        res.setHeader("Content-Type", attachment.contentType);
+        res.setHeader("Content-Disposition", `attachment; filename="${attachment.fileName.replace(/"/g, "")}"`);
+        await svc.downloadObject(file, res);
+      } catch (err) {
+        if (err instanceof ObjectNotFoundError) {
+          return res.status(404).json({ error: "Attachment file missing from storage" });
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete an attachment. Uploader (while ticket is open) and admins may delete.
+  app.delete("/api/support/tickets/:id/attachments/:attachmentId", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const ticket = await storage.getSupportTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const attachment = await storage.getSupportTicketAttachment(req.params.attachmentId);
+      if (!attachment || attachment.ticketId !== ticket.id) {
+        return res.status(404).json({ error: "Attachment not found" });
+      }
+
+      const isAdmin = hasAdminAccess(user.role);
+      const isUploader = attachment.uploadedBy === user.id && ticket.status === "open";
+      if (!isAdmin && !isUploader) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteSupportTicketAttachment(attachment.id);
+      // Also purge the binary from object storage so it cannot be re-fetched
+      // and to avoid unbounded storage growth.
+      const { ObjectStorageService, ObjectNotFoundError } = await import("../replit_integrations/object_storage/objectStorage");
+      const storageSvc = new ObjectStorageService();
+      try {
+        const file = await storageSvc.getObjectEntityFile(attachment.objectPath);
+        await file.delete();
+      } catch (storageErr: any) {
+        // If already absent, silently continue; log other failures but do not
+        // roll back the DB deletion.
+        if (!(storageErr instanceof ObjectNotFoundError)) {
+          console.error("[Support] Failed to delete attachment from storage:", storageErr.message);
+        }
+      }
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
