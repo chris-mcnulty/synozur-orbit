@@ -197,6 +197,24 @@ export async function listPlanBuckets(token: string, planId: string): Promise<Pl
   }));
 }
 
+/**
+ * List all tasks in a Planner plan. Used for the pull (Planner → Orbit)
+ * direction of the two-way sync.
+ */
+export async function listPlanTasks(token: string, planId: string): Promise<PlannerTask[]> {
+  const data = await graphRequest<{ value: any[] }>(token, `/planner/plans/${planId}/tasks`);
+  return (data.value || []).map((t) => ({
+    id: t.id,
+    title: t.title,
+    planId: t.planId,
+    bucketId: t.bucketId ?? null,
+    percentComplete: t.percentComplete ?? 0,
+    priority: t.priority ?? 5,
+    dueDateTime: t.dueDateTime ?? null,
+    etag: t["@odata.etag"] ?? null,
+  }));
+}
+
 export async function createBucket(
   token: string,
   planId: string,

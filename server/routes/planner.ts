@@ -11,7 +11,9 @@
  *      /api/planner/plans/:id/buckets to populate selectors.
  *   4. Client POSTs to /api/marketing-plans/:id/planner/connect to set the
  *      target group/plan/bucket on the marketing plan.
- *   5. Client POSTs to /api/marketing-plans/:id/planner/sync to push tasks.
+ *   5. Client POSTs to /api/marketing-plans/:id/planner/sync to run a two-way
+ *      sync: Planner changes are pulled into Orbit first, then the resulting
+ *      Orbit state is pushed back to Planner.
  */
 
 import type { Express, Request } from "express";
