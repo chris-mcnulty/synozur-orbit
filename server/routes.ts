@@ -21,6 +21,7 @@ import { registerOperationsRoutes } from "./routes/operations";
 import { registerAnalyticsDataRoutes } from "./routes/analytics-data";
 import { registerPlatformRoutes } from "./routes/platform";
 import { registerPositioningMapRoutes } from "./routes/positioning-map";
+import { registerPlannerRoutes } from "./routes/planner";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -71,6 +72,7 @@ export async function registerRoutes(
   registerAnalyticsDataRoutes(app);
   registerPlatformRoutes(app);
   registerPositioningMapRoutes(app);
+  registerPlannerRoutes(app);
 
   return httpServer;
 }

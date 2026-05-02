@@ -15,6 +15,7 @@ import {
   COMPETITOR_ALERT_EMAIL,
   SUPPORT_TICKET_NOTIFICATION_EMAIL,
   SUPPORT_TICKET_CONFIRMATION_EMAIL,
+  SUPPORT_TICKET_REPLY_EMAIL,
   SCHEDULED_BRIEFING_EMAIL,
 } from '../config/email-copy';
 
@@ -985,6 +986,44 @@ export async function sendSupportTicketConfirmation(
   return sendEmail({
     to: user.email,
     subject: copy.subject(ticket.ticketNumber),
+    html: wrapEmailContent(content),
+    text,
+  });
+}
+
+export async function sendSupportTicketReplyEmail(opts: {
+  recipient: { name: string; email: string };
+  ticket: { id: string; ticketNumber: number; subject: string };
+  reply: { message: string };
+  fromUser: { name: string };
+  audience: "owner" | "assignee";
+}): Promise<boolean> {
+  const copy = SUPPORT_TICKET_REPLY_EMAIL;
+  const link = opts.audience === "owner"
+    ? `${EMAIL_CONFIG.branding.appUrl}/support`
+    : `${EMAIL_CONFIG.branding.appUrl}/admin`;
+
+  const heading = opts.audience === "owner" ? copy.headingForOwner : copy.headingForAssignee;
+  const bodyHtml = opts.audience === "owner"
+    ? copy.bodyForOwner(opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message)
+    : copy.bodyForAssignee(opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message);
+  const buttonText = opts.audience === "owner" ? copy.buttonTextOwner : copy.buttonTextAssignee;
+  const text = opts.audience === "owner"
+    ? copy.plainTextOwner(opts.recipient.name, opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message)
+    : copy.plainTextAssignee(opts.recipient.name, opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message);
+
+  const content = `
+    <h1>${heading}</h1>
+    <p>${copy.greeting(opts.recipient.name)}</p>
+    <p>${bodyHtml}</p>
+    <div class="button-container">
+      <a href="${link}" class="button">${buttonText}</a>
+    </div>
+  `;
+
+  return sendEmail({
+    to: opts.recipient.email,
+    subject: copy.subject(opts.ticket.ticketNumber, opts.ticket.subject),
     html: wrapEmailContent(content),
     text,
   });

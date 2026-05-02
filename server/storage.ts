@@ -121,10 +121,13 @@ import {
   type InsertOrganization,
   supportTickets,
   supportTicketReplies,
+  supportTicketAttachments,
   type SupportTicket,
   type InsertSupportTicket,
   type SupportTicketReply,
   type InsertSupportTicketReply,
+  type SupportTicketAttachment,
+  type InsertSupportTicketAttachment,
   gapDismissals,
   type GapDismissal,
   type InsertGapDismissal,
@@ -505,6 +508,10 @@ export interface IStorage {
   updateSupportTicket(id: string, data: Partial<SupportTicket>): Promise<SupportTicket>;
   createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply>;
   getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]>;
+  createSupportTicketAttachment(attachment: InsertSupportTicketAttachment): Promise<SupportTicketAttachment>;
+  getSupportTicketAttachments(ticketId: string): Promise<SupportTicketAttachment[]>;
+  getSupportTicketAttachment(id: string): Promise<SupportTicketAttachment | undefined>;
+  deleteSupportTicketAttachment(id: string): Promise<void>;
 
   // Gap Dismissal methods
   getGapDismissal(id: string): Promise<GapDismissal | undefined>;
@@ -3452,6 +3459,26 @@ export class DatabaseStorage implements IStorage {
 
   async getSupportTicketReplies(ticketId: string): Promise<SupportTicketReply[]> {
     return db.select().from(supportTicketReplies).where(eq(supportTicketReplies.ticketId, ticketId)).orderBy(supportTicketReplies.createdAt);
+  }
+
+  async createSupportTicketAttachment(attachment: InsertSupportTicketAttachment): Promise<SupportTicketAttachment> {
+    const [created] = await db.insert(supportTicketAttachments).values(attachment).returning();
+    return created;
+  }
+
+  async getSupportTicketAttachments(ticketId: string): Promise<SupportTicketAttachment[]> {
+    return db.select().from(supportTicketAttachments)
+      .where(eq(supportTicketAttachments.ticketId, ticketId))
+      .orderBy(supportTicketAttachments.createdAt);
+  }
+
+  async getSupportTicketAttachment(id: string): Promise<SupportTicketAttachment | undefined> {
+    const [row] = await db.select().from(supportTicketAttachments).where(eq(supportTicketAttachments.id, id));
+    return row || undefined;
+  }
+
+  async deleteSupportTicketAttachment(id: string): Promise<void> {
+    await db.delete(supportTicketAttachments).where(eq(supportTicketAttachments.id, id));
   }
 
   async getGapDismissal(id: string): Promise<GapDismissal | undefined> {
