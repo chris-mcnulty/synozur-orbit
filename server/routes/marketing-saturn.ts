@@ -252,6 +252,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
         ilike(contentAssets.description, pattern),
       )!);
     }
+    const categoryId = req.query.categoryId as string | undefined;
+    if (categoryId) {
+      if (categoryId === "__uncategorized") {
+        conditions.push(isNull(contentAssets.categoryId));
+      } else {
+        conditions.push(eq(contentAssets.categoryId, categoryId));
+      }
+    }
+    const source = req.query.source as string | undefined;
+    if (source === "captured") {
+      conditions.push(eq(contentAssets.capturedViaExtension, true));
+    } else if (source === "manual") {
+      conditions.push(eq(contentAssets.capturedViaExtension, false));
+    }
     const where = and(...conditions);
 
     if (!pagination.isPaginated) {
@@ -727,6 +741,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
         ilike(brandAssets.name, pattern),
         ilike(brandAssets.description, pattern),
       )!);
+    }
+    const categoryId = req.query.categoryId as string | undefined;
+    if (categoryId) {
+      if (categoryId === "__uncategorized") {
+        conditions.push(isNull(brandAssets.categoryId));
+      } else {
+        conditions.push(eq(brandAssets.categoryId, categoryId));
+      }
+    }
+    const fileType = req.query.fileType as string | undefined;
+    if (fileType) {
+      conditions.push(eq(brandAssets.fileType, fileType));
     }
     const where = and(...conditions);
     const baseQuery = db.select({

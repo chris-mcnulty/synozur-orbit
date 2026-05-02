@@ -161,20 +161,24 @@ export default function ContentLibraryPage() {
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, sourceFilter]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
+  const serverCategoryParam = categoryFilter === "all" ? undefined : categoryFilter;
+  const serverSourceParam = sourceFilter === "all" ? undefined : sourceFilter;
 
   const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<ContentAsset>>({
     queryKey: [
       "/api/content-assets",
       "paginated",
-      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam },
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
       if (debouncedAssetSearch) params.set("q", debouncedAssetSearch);
       if (serverStatusParam) params.set("status", serverStatusParam);
+      if (serverCategoryParam) params.set("categoryId", serverCategoryParam);
+      if (serverSourceParam) params.set("source", serverSourceParam);
       const r = await fetch(`/api/content-assets?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
       return r.json();
@@ -568,15 +572,8 @@ export default function ContentLibraryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-categories"] }),
   });
 
-  // Search and status are now applied server-side. Category/source remain
-  // client-side filters and only narrow the items on the current page.
-  const filtered = assets.filter(a => {
-    const matchesCategory = categoryFilter === "all" || (categoryFilter === "__uncategorized" ? !a.categoryId : a.categoryId === categoryFilter);
-    const matchesSource = sourceFilter === "all" ||
-      (sourceFilter === "captured" && a.capturedViaExtension) ||
-      (sourceFilter === "manual" && !a.capturedViaExtension);
-    return matchesCategory && matchesSource;
-  });
+  // Search, status, category, and source are all applied server-side.
+  const filtered = assets;
 
   const groupedByCategory = () => {
     const groups: Record<string, ContentAsset[]> = {};
@@ -1321,49 +1318,40 @@ export default function ContentLibraryPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap" data-testid="category-pills-content">
-          {(() => {
-            const statusFiltered = assets.filter(a => statusTab === "all" || a.status === statusTab);
-            const allCount = statusFiltered.length;
-            const catCounts = new Map<string, number>();
-            for (const a of statusFiltered) {
-              const catId = a.categoryId || "__uncategorized";
-              catCounts.set(catId, (catCounts.get(catId) || 0) + 1);
-            }
-            return (
-              <>
-                <button
-                  onClick={() => setCategoryFilter("all")}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                  data-testid="pill-category-all"
-                >
-                  All <span className="bg-white/20 rounded-full px-1.5 text-[10px]">{allCount}</span>
-                </button>
-                {categories.map(cat => {
-                  const count = catCounts.get(cat.id) || 0;
-                  if (count === 0) return null;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setCategoryFilter(cat.id === categoryFilter ? "all" : cat.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === cat.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                      data-testid={`pill-category-${cat.name.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      {cat.name} <span className={`rounded-full px-1.5 text-[10px] ${categoryFilter === cat.id ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{count}</span>
-                    </button>
-                  );
-                })}
-                {(catCounts.get("__uncategorized") || 0) > 0 && (
-                  <button
-                    onClick={() => setCategoryFilter(categoryFilter === "__uncategorized" ? "all" : "__uncategorized")}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "__uncategorized" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                    data-testid="pill-category-uncategorized"
-                  >
-                    Uncategorized <span className={`rounded-full px-1.5 text-[10px] ${categoryFilter === "__uncategorized" ? "bg-white/20" : "bg-primary/20 text-primary"}`}>{catCounts.get("__uncategorized")}</span>
-                  </button>
-                )}
-              </>
-            );
-          })()}
+          <button
+            onClick={() => setCategoryFilter("all")}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+            data-testid="pill-category-all"
+          >
+            All <span className="bg-white/20 rounded-full px-1.5 text-[10px]">{assetsTotal}</span>
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategoryFilter(cat.id === categoryFilter ? "all" : cat.id)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === cat.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+              data-testid={`pill-category-${cat.name.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {cat.name}
+            </button>
+          ))}
+          <button
+            onClick={() => setCategoryFilter(categoryFilter === "__uncategorized" ? "all" : "__uncategorized")}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${categoryFilter === "__uncategorized" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+            data-testid="pill-category-uncategorized"
+          >
+            Uncategorized
+          </button>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="h-7 w-[140px] text-xs" data-testid="select-source-filter-content">
+              <SelectValue placeholder="Source" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="manual">Manually added</SelectItem>
+              <SelectItem value="captured">Captured</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {suggestions.length > 0 && (
