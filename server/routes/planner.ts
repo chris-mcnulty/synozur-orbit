@@ -11,10 +11,13 @@
  *      /api/planner/plans/:id/buckets to populate selectors.
  *   4. Client POSTs to /api/marketing-plans/:id/planner/connect to set the
  *      target group/plan/bucket on the marketing plan.
- *   5. Client POSTs to /api/marketing-plans/:id/planner/sync to push tasks.
+ *   5. Client POSTs to /api/marketing-plans/:id/planner/sync to run a two-way
+ *      sync: Planner changes are pulled into Orbit first, then the resulting
+ *      Orbit state is pushed back to Planner.
  */
 
 import type { Express, Request } from "express";
+import { randomBytes } from "crypto";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess, guardFeature } from "./helpers";
@@ -97,7 +100,7 @@ export function registerPlannerRoutes(app: Express) {
       const state = Buffer.from(JSON.stringify({
         userId: req.session.userId,
         returnTo,
-        nonce: Math.random().toString(36).slice(2),
+        nonce: randomBytes(16).toString("hex"),
       })).toString("base64url");
       const url = buildPlannerConsentUrl({ state, redirectUri });
       if (!url) return res.status(503).json({ error: "Failed to build consent URL" });
@@ -142,7 +145,21 @@ export function registerPlannerRoutes(app: Express) {
         return res.redirect("/app/marketing-planner?planner_error=token_exchange_failed");
       }
       const returnTo = state.returnTo || "/app/marketing-planner";
-      res.redirect(`${returnTo}?planner_connected=1`);
+      // Prevent open-redirect: use URL constructor to confirm the path stays on
+      // the same origin and within /app/. Any value that doesn't parse as a
+      // same-origin /app/ path falls back to the default.
+      let safeReturnTo = "/app/marketing-planner";
+      try {
+        if (!returnTo.includes("://") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
+          const parsed = new URL(returnTo, "https://localhost");
+          if (parsed.origin === "https://localhost" && parsed.pathname.startsWith("/app/")) {
+            safeReturnTo = parsed.pathname + (parsed.search || "");
+          }
+        }
+      } catch {
+        // Unparseable — keep the fallback
+      }
+      res.redirect(`${safeReturnTo}?planner_connected=1`);
     } catch (err: any) {
       console.error("[Planner] Callback exception:", err);
       res.redirect("/app/marketing-planner?planner_error=callback_exception");

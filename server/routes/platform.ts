@@ -807,7 +807,7 @@ export function registerPlatformRoutes(app: Express) {
               const assignee = await storage.getUser(ticket.assignedTo);
               if (assignee) recipients.push({ id: assignee.id, name: assignee.name, email: assignee.email });
             } else {
-              const domainUsers = await storage.getUsersByDomain(user.company);
+              const domainUsers = await storage.getUsersByDomain(ticket.tenantDomain);
               const admins = domainUsers.filter(u => u.role === "Global Admin" || u.role === "Domain Admin");
               for (const a of admins) recipients.push({ id: a.id, name: a.name, email: a.email });
             }
@@ -862,6 +862,16 @@ export function registerPlatformRoutes(app: Express) {
 
   // ==================== SUPPORT TICKET ATTACHMENTS ====================
 
+  const ALLOWED_ATTACHMENT_TYPES = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ]);
+
   // Register an uploaded file (after the client uploaded to object storage via
   // /api/uploads/request-url) and link it to a ticket or reply.
   app.post("/api/support/tickets/:id/attachments", async (req, res) => {
@@ -881,7 +891,7 @@ export function registerPlatformRoutes(app: Express) {
       const attachmentSchema = z.object({
         fileName: z.string().min(1).max(255),
         fileSize: z.number().int().positive().max(20 * 1024 * 1024),
-        contentType: z.string().min(1).max(255),
+        contentType: z.string().refine(v => ALLOWED_ATTACHMENT_TYPES.has(v), "Unsupported file type"),
         objectPath: z.string().min(1).max(500),
         replyId: z.string().optional(),
       });
@@ -984,6 +994,20 @@ export function registerPlatformRoutes(app: Express) {
       }
 
       await storage.deleteSupportTicketAttachment(attachment.id);
+      // Also purge the binary from object storage so it cannot be re-fetched
+      // and to avoid unbounded storage growth.
+      const { ObjectStorageService, ObjectNotFoundError } = await import("../replit_integrations/object_storage/objectStorage");
+      const storageSvc = new ObjectStorageService();
+      try {
+        const file = await storageSvc.getObjectEntityFile(attachment.objectPath);
+        await file.delete();
+      } catch (storageErr: any) {
+        // If already absent, silently continue; log other failures but do not
+        // roll back the DB deletion.
+        if (!(storageErr instanceof ObjectNotFoundError)) {
+          console.error("[Support] Failed to delete attachment from storage:", storageErr.message);
+        }
+      }
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

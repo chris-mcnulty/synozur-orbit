@@ -1003,10 +1003,15 @@ export async function sendSupportTicketReplyEmail(opts: {
     ? `${EMAIL_CONFIG.branding.appUrl}/support`
     : `${EMAIL_CONFIG.branding.appUrl}/admin`;
 
+  const safeSubject = escapeEmailHtml(opts.ticket.subject);
+  const safeFromName = escapeEmailHtml(opts.fromUser.name);
+  const safeMessage = escapeEmailHtml(opts.reply.message);
+  const safeRecipientName = escapeEmailHtml(opts.recipient.name);
+
   const heading = opts.audience === "owner" ? copy.headingForOwner : copy.headingForAssignee;
   const bodyHtml = opts.audience === "owner"
-    ? copy.bodyForOwner(opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message)
-    : copy.bodyForAssignee(opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message);
+    ? copy.bodyForOwner(opts.ticket.ticketNumber, safeSubject, safeFromName, safeMessage)
+    : copy.bodyForAssignee(opts.ticket.ticketNumber, safeSubject, safeFromName, safeMessage);
   const buttonText = opts.audience === "owner" ? copy.buttonTextOwner : copy.buttonTextAssignee;
   const text = opts.audience === "owner"
     ? copy.plainTextOwner(opts.recipient.name, opts.ticket.ticketNumber, opts.ticket.subject, opts.fromUser.name, opts.reply.message)
@@ -1014,7 +1019,7 @@ export async function sendSupportTicketReplyEmail(opts: {
 
   const content = `
     <h1>${heading}</h1>
-    <p>${copy.greeting(opts.recipient.name)}</p>
+    <p>${copy.greeting(safeRecipientName)}</p>
     <p>${bodyHtml}</p>
     <div class="button-container">
       <a href="${link}" class="button">${buttonText}</a>

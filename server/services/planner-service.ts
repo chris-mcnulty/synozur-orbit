@@ -2,14 +2,22 @@
  * High-level Microsoft Planner sync orchestration for Orbit marketing plans.
  *
  * Responsibilities:
- *   - For each marketing task in an Orbit plan, ensure a corresponding
- *     Planner task exists in the configured (group, plan, bucket) tuple.
- *   - On subsequent syncs, push title/priority/due-date/completion changes
- *     using the stored etag for optimistic concurrency.
+ *   - **Pull (Planner → Orbit):** For each Orbit task that is linked to a
+ *     Planner task (has a `plannerTaskId`), fetch the current Planner state
+ *     and apply any changes back into Orbit (title, priority, due date,
+ *     completion status).
+ *   - **Push (Orbit → Planner):** For each marketing task in an Orbit plan,
+ *     ensure a corresponding Planner task exists in the configured
+ *     (group, plan, bucket) tuple.  On subsequent syncs, push
+ *     title/priority/due-date/completion changes using the stored etag for
+ *     optimistic concurrency.
  *   - Record sync state (last-success timestamp, last error) on the plan.
  *
- * This is a *one-way push* (Orbit → Planner) for the first iteration. Pulling
- * Planner changes back into Orbit is left for a follow-up.
+ * The sync runs pull-then-push so that Planner edits are captured before
+ * Orbit pushes its own view back.  When both sides have changed since the
+ * last sync, Planner values take precedence (Planner is treated as the
+ * source of truth for task completion and priority edits made outside
+ * Orbit).
  */
 
 import { storage } from "../storage";
@@ -18,6 +26,7 @@ import { marketingTasks } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
   getValidGraphToken,
+  listPlanTasks,
   createTask,
   updateTask,
   getTask,
@@ -26,6 +35,7 @@ import {
 
 export interface SyncResult {
   ok: boolean;
+  pulled: number;
   created: number;
   updated: number;
   skipped: number;
@@ -33,18 +43,19 @@ export interface SyncResult {
   errors: Array<{ taskId: string; message: string }>;
 }
 
+// ---- Orbit → Planner mappings ----
+
 const STATUS_TO_PERCENT: Record<string, number> = {
   suggested: 0,
   planned: 0,
   accepted: 0,
   in_progress: 50,
   completed: 100,
-  cancelled: 100, // Cancelled = closed in Planner
+  cancelled: 100,
   removed: 100,
 };
 
 const PRIORITY_MAP: Record<string, number> = {
-  // Planner uses: 1 (urgent), 3 (important), 5 (medium), 9 (low)
   High: 3,
   Medium: 5,
   Low: 9,
@@ -52,6 +63,47 @@ const PRIORITY_MAP: Record<string, number> = {
   medium: 5,
   low: 9,
 };
+
+// ---- Planner → Orbit mappings ----
+
+/** Statuses that map to "not started" — all use percentComplete=0 when pushed
+ *  to Planner.  We never pull Planner's 0% back and downgrade an "accepted"
+ *  task to "planned"; 0% only matters when coming from a task that was
+ *  previously in_progress or completed. */
+const NOT_STARTED_STATUSES = new Set(["suggested", "planned", "accepted"]);
+
+/**
+ * Statuses set by admins that should never be overridden by a Planner pull.
+ */
+const PRESERVED_STATUSES = new Set(["cancelled", "removed"]);
+
+/**
+ * Map a Planner `percentComplete` value (0-100) back to an Orbit task status.
+ * Only promotes/demotes when Planner signals active work (>0%) or completion
+ * (100%); 0% is only applied if the current status is not already a
+ * "not started" variant (avoids regressing "accepted" → "planned").
+ *
+ * @param percent       Planner percentComplete
+ * @param currentStatus Current Orbit status (used to avoid no-op regressions)
+ */
+function percentToStatus(percent: number, currentStatus: string | null | undefined): string | null {
+  if (percent >= 100) return "completed";
+  if (percent > 0) return "in_progress";
+  // 0%: only update if the task was already marked as actively progressing,
+  // otherwise leave the existing "not started" variant intact.
+  if (NOT_STARTED_STATUSES.has(currentStatus ?? "")) return null; // no change
+  return "planned";
+}
+
+/**
+ * Map a Planner priority integer back to an Orbit priority string.
+ * Planner: 1 = urgent, 3 = important, 5 = medium, 9 = low.
+ */
+function plannerPriorityToOrbit(priority: number): string {
+  if (priority <= 3) return "High";
+  if (priority <= 5) return "Medium";
+  return "Low";
+}
 
 function toPlannerPriority(priority: string | null | undefined): number {
   if (!priority) return 5;
@@ -71,7 +123,11 @@ function toGraphDateTime(due: Date | string | null | undefined): string | null {
 }
 
 /**
- * Sync all tasks in an Orbit marketing plan to Microsoft Planner.
+ * Sync all tasks in an Orbit marketing plan with Microsoft Planner (two-way).
+ *
+ * 1. Pulls current Planner task states and writes any changes back to Orbit.
+ * 2. Pushes the resulting Orbit state up to Planner (create if missing,
+ *    PATCH if existing).
  *
  * @param planId Orbit marketing plan id
  * @param ctx    tenant/market context (for storage filtering)
@@ -80,7 +136,15 @@ export async function syncMarketingPlanToPlanner(
   planId: string,
   ctx: { tenantDomain: string; marketId: string | null },
 ): Promise<SyncResult> {
-  const result: SyncResult = { ok: false, created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
+  const result: SyncResult = {
+    ok: false,
+    pulled: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
 
   const plan = await storage.getMarketingPlan(planId, ctx);
   if (!plan) {
@@ -100,7 +164,82 @@ export async function syncMarketingPlanToPlanner(
     return result;
   }
 
+  // ---------------------------------------------------------------
+  // STEP 1: Pull — fetch all Planner tasks for this plan and apply
+  //         any changes back into Orbit.
+  // ---------------------------------------------------------------
+
+  const plannerTaskMap: Map<string, PlannerTask> = new Map();
+  try {
+    const plannerTasks = await listPlanTasks(token, plan.plannerPlanId);
+    for (const pt of plannerTasks) {
+      plannerTaskMap.set(pt.id, pt);
+    }
+  } catch (pullErr: any) {
+    // Non-fatal: log and continue with the push phase.
+    console.warn("[Planner] Pull phase failed — skipping pull:", pullErr.message);
+  }
+
+  const orbitTasks = await storage.getMarketingTasks(plan.id, ctx);
+
+  for (const task of orbitTasks) {
+    if (!task.plannerTaskId) continue; // New task — no Planner counterpart yet
+
+    const pt = plannerTaskMap.get(task.plannerTaskId);
+    if (!pt) continue; // Task deleted on Planner side — push phase will recreate it
+
+    try {
+      const updates: Record<string, any> = {};
+
+      // Title
+      if (pt.title && pt.title !== task.title) {
+        updates.title = pt.title;
+      }
+
+      // Priority
+      const incomingPriority = plannerPriorityToOrbit(pt.priority);
+      if (incomingPriority !== task.priority) {
+        updates.priority = incomingPriority;
+      }
+
+      // Due date — compare milliseconds to avoid double-parsing
+      const incomingDueMs = pt.dueDateTime ? new Date(pt.dueDateTime).getTime() : null;
+      const existingDueMs = task.dueDate ? new Date(task.dueDate).getTime() : null;
+      if (incomingDueMs !== existingDueMs) {
+        updates.dueDate = incomingDueMs !== null ? new Date(incomingDueMs) : null;
+      }
+
+      // Completion / status — pass current status so we don't regress no-op variants
+      const incomingStatus = percentToStatus(pt.percentComplete, task.status);
+      // Only update status if there is a meaningful change and the current
+      // status is not admin-locked (cancelled/removed).
+      if (incomingStatus !== null && incomingStatus !== task.status && !PRESERVED_STATUSES.has(task.status ?? "")) {
+        updates.status = incomingStatus;
+      }
+
+      // Refresh the stored etag from Planner
+      if (pt.etag && pt.etag !== task.plannerEtag) {
+        updates.plannerEtag = pt.etag;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await db.update(marketingTasks)
+          .set({ ...updates, plannerLastSyncedAt: new Date(), updatedAt: new Date() })
+          .where(eq(marketingTasks.id, task.id));
+        result.pulled += 1;
+      }
+    } catch (err: any) {
+      console.error(`[Planner] Pull failed for task ${task.id}:`, err.message);
+      // Non-fatal: continue with other tasks
+    }
+  }
+
+  // Reload tasks so the push phase sees the freshly-pulled state.
   const tasks = await storage.getMarketingTasks(plan.id, ctx);
+
+  // ---------------------------------------------------------------
+  // STEP 2: Push — write Orbit task state up to Planner.
+  // ---------------------------------------------------------------
 
   for (const task of tasks) {
     try {
@@ -128,7 +267,7 @@ export async function syncMarketingPlanToPlanner(
           .where(eq(marketingTasks.id, task.id));
         result.created += 1;
       } else {
-        // Update existing — fetch latest etag if we don't have it
+        // Update existing — use etag refreshed by the pull phase if available
         let etag = task.plannerEtag;
         if (!etag) {
           const existing = await getTask(token, task.plannerTaskId);
@@ -176,7 +315,7 @@ export async function syncMarketingPlanToPlanner(
         result.updated += 1;
       }
     } catch (err: any) {
-      console.error(`[Planner] Sync failed for task ${task.id}:`, err.message);
+      console.error(`[Planner] Push failed for task ${task.id}:`, err.message);
       result.failed += 1;
       result.errors.push({ taskId: task.id, message: err.message || String(err) });
     }

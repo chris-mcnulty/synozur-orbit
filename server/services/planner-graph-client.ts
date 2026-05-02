@@ -8,7 +8,6 @@
  * Reference: https://learn.microsoft.com/en-us/graph/api/resources/planner-overview
  */
 
-import * as msal from "@azure/msal-node";
 import { storage } from "../storage";
 import type { User } from "@shared/schema";
 
@@ -139,6 +138,10 @@ async function refreshGraphToken(user: User): Promise<string | null> {
 }
 
 async function graphRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+  // Guard against path injection — all Graph paths must be relative
+  if (!path.startsWith("/")) {
+    throw new Error(`[Planner] Invalid Graph path — must start with '/': ${path}`);
+  }
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
@@ -191,6 +194,24 @@ export async function listPlanBuckets(token: string, planId: string): Promise<Pl
     name: b.name,
     planId: b.planId,
     orderHint: b.orderHint,
+  }));
+}
+
+/**
+ * List all tasks in a Planner plan. Used for the pull (Planner → Orbit)
+ * direction of the two-way sync.
+ */
+export async function listPlanTasks(token: string, planId: string): Promise<PlannerTask[]> {
+  const data = await graphRequest<{ value: any[] }>(token, `/planner/plans/${planId}/tasks`);
+  return (data.value || []).map((t) => ({
+    id: t.id,
+    title: t.title,
+    planId: t.planId,
+    bucketId: t.bucketId ?? null,
+    percentComplete: t.percentComplete ?? 0,
+    priority: t.priority ?? 5,
+    dueDateTime: t.dueDateTime ?? null,
+    etag: t["@odata.etag"] ?? null,
   }));
 }
 

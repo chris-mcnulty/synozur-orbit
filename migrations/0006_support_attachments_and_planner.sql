@@ -70,6 +70,8 @@ ALTER TABLE "marketing_plans" ADD COLUMN IF NOT EXISTS "planner_last_sync_error"
 --> statement-breakpoint
 
 -- Marketing tasks: per-task Planner sync state
+ALTER TABLE "marketing_tasks" ADD COLUMN IF NOT EXISTS "planner_task_id" text;
+--> statement-breakpoint
 ALTER TABLE "marketing_tasks" ADD COLUMN IF NOT EXISTS "planner_etag" text;
 --> statement-breakpoint
 ALTER TABLE "marketing_tasks" ADD COLUMN IF NOT EXISTS "planner_last_synced_at" timestamp;

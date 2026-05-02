@@ -159,7 +159,7 @@ export default function MarketingPlanDetail() {
       return res.json();
     },
     onSuccess: (result: any) => {
-      const summary = `${result.created} created, ${result.updated} updated${result.failed ? `, ${result.failed} failed` : ""}`;
+      const summary = `${result.pulled ? `${result.pulled} pulled, ` : ""}${result.created} created, ${result.updated} updated${result.failed ? `, ${result.failed} failed` : ""}`;
       toast({
         title: result.ok ? "Synced to Planner" : "Sync completed with errors",
         description: summary,
