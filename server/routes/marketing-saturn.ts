@@ -2744,6 +2744,45 @@ function buildFallbackVariants(raw: string): any[] {
   return [{ content: "Post generation failed — please try again.", hashtags: [], imagePrompt: "" }];
 }
 
+/**
+ * Distinct creative angles used to ensure each generated post takes a meaningfully
+ * different approach. The generator rotates through these so consecutive scheduled
+ * days never reuse the same hook, structure, or rhetorical device.
+ */
+const CONTENT_ANGLES: { name: string; directive: string }[] = [
+  { name: "thought-provoking question",  directive: "Open with a thought-provoking question that challenges a common assumption the audience holds." },
+  { name: "surprising statistic",        directive: "Lead with a specific, surprising statistic or data point that anchors the reader's attention." },
+  { name: "short story / anecdote",      directive: "Tell a short, concrete story or anecdote (2-3 sentences) that illustrates the theme through a real situation." },
+  { name: "contrarian hot take",         directive: "Open with a bold, contrarian claim or hot take that respectfully pushes back on conventional wisdom." },
+  { name: "before-and-after",            directive: "Frame the message as a before-vs-after transformation — paint the old reality, then the new one." },
+  { name: "actionable tip",              directive: "Deliver a single actionable tip or insight in the form 'Here's how to ___' or 'Did you know ___'." },
+  { name: "behind-the-scenes",           directive: "Pull back the curtain — show the process, the decision, or the work behind the result." },
+  { name: "trend commentary",            directive: "React to a current industry trend or shift, positioning the theme inside that broader movement." },
+  { name: "aspirational vision",         directive: "Paint an aspirational vision of what becomes possible — appeal to the audience's ambition." },
+  { name: "step-by-step breakdown",      directive: "Lay out 3 concrete steps or principles as a short numbered or bullet-style list inside the body." },
+  { name: "comparison / contrast",       directive: "Use a clear comparison or contrast — old way vs new way, common approach vs better approach, X vs Y." },
+  { name: "quote-led reflection",        directive: "Lead with a strong, original quote or paraphrased line of insight, then unpack it briefly." },
+];
+
+/**
+ * Determine how many unique text variants to generate per platform so that each
+ * scheduled day gets a meaningfully different post.
+ *
+ * Floor: 5 variants (gives even short campaigns visible variety).
+ * Ceiling: 30 variants (covers a month of weekday posts; longer campaigns will
+ *   cycle the variant pool monthly, which avoids day-after-day or every-other-day
+ *   repetition while keeping AI generation cost bounded).
+ */
+function calculateTargetVariantsPerPlatform(campaignRow: { numberOfDays: number | null; includeSaturday: boolean | null; includeSunday: boolean | null }): { target: number; eligibleDays: number; capped: boolean } {
+  const baseDays = campaignRow.numberOfDays ?? 7;
+  const daysPerWeek = 5 + (campaignRow.includeSaturday ? 1 : 0) + (campaignRow.includeSunday ? 1 : 0);
+  const eligibleDays = Math.max(1, Math.ceil(baseDays * daysPerWeek / 7));
+  const MIN_VARIANTS = 5;
+  const MAX_VARIANTS = 30;
+  const target = Math.min(Math.max(eligibleDays, MIN_VARIANTS), MAX_VARIANTS);
+  return { target, eligibleDays, capped: eligibleDays > MAX_VARIANTS };
+}
+
 async function generatePostsAsync(
   campaignId: string,
   tenantDomain: string,
@@ -2840,64 +2879,145 @@ async function generatePostsAsync(
     const generatedRows: InsertGeneratedPost[] = [];
 
     const isThematic = !!(thematicBrief);
-    const assetGroups = isThematic
+
+    // In thematic mode, fold any selected campaign assets in as supporting context
+    // so the AI can ground the theme in the team's existing materials.
+    const supportingAssetContext = (isThematic && selectedAssets.length > 0)
+      ? `\n\n## Supporting Campaign Assets\n${selectedAssets.map(buildAssetContext).join("\n\n---\n\n")}`
+      : "";
+
+    // Pools of (context, sourceUrl) the generator should pull from. In thematic mode
+    // there is one pool (the brief, optionally enriched with assets). In asset mode
+    // each selected asset becomes a pool entry the generator rotates across.
+    const contextPools: { context: string; sourceUrl: string | null; thematic: boolean; label: string }[] = isThematic
       ? [{
-          assets: [],
-          context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}`,
-          url: thematicUrl || null,
+          context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}${supportingAssetContext}`,
+          sourceUrl: thematicUrl || null,
           thematic: true,
+          label: "campaign theme",
         }]
       : selectedAssets.length > 0
-        ? selectedAssets.map(a => ({ assets: [a], context: buildAssetContext(a), url: a.url || null, thematic: false }))
-        : [{ assets: [], context: "(no specific assets provided — draw from your knowledge of best practices)", url: null, thematic: false }];
+        ? selectedAssets.map(a => ({
+            context: `## Content Asset\n${buildAssetContext(a)}`,
+            sourceUrl: a.url || null,
+            thematic: false,
+            label: a.title,
+          }))
+        : [{
+            context: "(no specific assets provided — draw from your knowledge of best practices)",
+            sourceUrl: null,
+            thematic: false,
+            label: "general",
+          }];
 
-    const VARIANTS_PER_COMBO = isThematic ? 3 : selectedAssets.length > 3 ? 1 : selectedAssets.length > 1 ? 2 : 3;
+    const { target: targetVariantsPerPlatform, eligibleDays, capped } = calculateTargetVariantsPerPlatform(campaignRow);
+    const VARIANTS_PER_BATCH = 4; // angles per AI call — keeps prompts focused and JSON parseable
+    if (capped) {
+      console.log(`[Saturn] Campaign ${campaignId} has ${eligibleDays} eligible posting days but variant target capped at ${targetVariantsPerPlatform}; the variant pool will cycle approximately every ${targetVariantsPerPlatform} scheduled days.`);
+    }
 
-    for (const assetGroup of assetGroups) {
-      for (const account of platformTargets) {
-        const platformGuide = getPlatformGuide(account.platform);
-        const variantGroupId = randomUUID();
-        const isThematicGroup = assetGroup.thematic;
-        const prompt = `You are an expert social media copywriter. Generate ${VARIANTS_PER_COMBO} variant ${account.platform} post${VARIANTS_PER_COMBO > 1 ? "s" : ""} for the account "${account.accountName}" based on the following${isThematicGroup ? " campaign theme brief" : " content"}.
+    const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
+      .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+      .filter((h: string) => h.length > 0);
 
-IMPORTANT RULES — follow these strictly:
-1. ${isThematicGroup ? "The brief below is the creative starting point — rewrite and adapt it into compelling social copy. Do NOT copy it verbatim. Bring your own angle, voice, and structure." : "Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate \"About Us\", social sharing button text, comment sections. Only use the actual article substance and key messages."}
-2. ${isThematicGroup ? (assetGroup.url ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${assetGroup.url}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below.") : "The content asset has a URL — include the asset URL ONCE in the post body so readers can click through. Place it at the end or with a CTA (e.g. \"Read more: <url>\"). NEVER include the URL more than once."}
+    for (const account of platformTargets) {
+      const platformGuide = getPlatformGuide(account.platform);
+      const variantGroupId = randomUUID();
+      const cleanedVariantsForAccount: { content: string; hashtags: string[]; imagePrompt: string; sourceUrl: string | null }[] = [];
+      const usedOpenings: string[] = []; // first ~80 chars of each accepted variant — passed back to the AI to forbid reuse
+
+      let angleIndex = 0;
+      let poolIndex = 0;
+      let safetyLoops = 0;
+      const MAX_SAFETY_LOOPS = Math.ceil(targetVariantsPerPlatform / VARIANTS_PER_BATCH) * 3 + 2;
+
+      while (cleanedVariantsForAccount.length < targetVariantsPerPlatform && safetyLoops < MAX_SAFETY_LOOPS) {
+        safetyLoops++;
+        const remaining = targetVariantsPerPlatform - cleanedVariantsForAccount.length;
+        const batchSize = Math.min(VARIANTS_PER_BATCH, remaining);
+
+        // Pick the next N angles (with wrap-around) and the pool to ground this batch in
+        const batchAngles: { name: string; directive: string }[] = [];
+        for (let i = 0; i < batchSize; i++) {
+          batchAngles.push(CONTENT_ANGLES[(angleIndex + i) % CONTENT_ANGLES.length]);
+        }
+        angleIndex = (angleIndex + batchSize) % CONTENT_ANGLES.length;
+        const pool = contextPools[poolIndex % contextPools.length];
+        poolIndex++;
+
+        const anglesBlock = batchAngles
+          .map((a, i) => `Variant ${i + 1} — ANGLE: "${a.name}". ${a.directive}`)
+          .join("\n");
+
+        const avoidBlock = usedOpenings.length > 0
+          ? `\n\n## Already-used openings — do NOT reuse, paraphrase, or echo these first lines:\n${usedOpenings.map((o, i) => `${i + 1}. "${o}"`).join("\n")}`
+          : "";
+
+        const prompt = `You are an expert social media copywriter. Generate ${batchSize} variant ${account.platform} post${batchSize > 1 ? "s" : ""} for the account "${account.accountName}" based on the following ${pool.thematic ? "campaign theme brief" : "content"}.
+
+CRITICAL ANTI-REPETITION RULES — follow strictly:
+- Each variant MUST commit to its assigned ANGLE below. Do NOT blend angles.
+- Each variant MUST have a completely distinct opening hook (first sentence). Do not reuse the same words, questions, statistics, or phrasing across variants.
+- Vary sentence structure, rhythm, and rhetorical device across variants.
+- Do NOT start two variants with the same word, the same phrase, or the same sentence pattern.
+
+ASSIGNED ANGLES (one per variant, in order):
+${anglesBlock}${avoidBlock}
+
+GENERAL RULES:
+1. ${pool.thematic ? "The brief below is the creative starting point — rewrite and adapt it into compelling social copy. Do NOT copy it verbatim. Bring your own angle, voice, and structure." : "Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate \"About Us\", social sharing button text, comment sections. Only use the actual article substance and key messages."}
+2. ${pool.sourceUrl ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${pool.sourceUrl}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below."}
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${isThematicGroup ? assetGroup.context : `## Content Asset\n${assetGroup.context}`}
+${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
 
 ## Platform Guidelines
 ${platformGuide}
 
-${VARIANTS_PER_COMBO > 1 ? "Each variant should take a different angle, tone, or hook while staying on-brand and on-message." : "Write one compelling post that captures the key message while staying on-brand."}
-
-Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANTS_PER_COMBO} object${VARIANTS_PER_COMBO > 1 ? "s" : ""}, each with:
-- "content": string (the post body — include the source asset URL naturally, no inline hashtags)
+Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSize} object${batchSize > 1 ? "s" : ""}, each with:
+- "content": string (the post body — include the source URL naturally if one was provided, no inline hashtags)
 - "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
 
-        const result = await completeForFeature("marketing_tasks", prompt);
+        let result;
+        try {
+          result = await completeForFeature("marketing_tasks", prompt);
+        } catch (err: any) {
+          console.error(`[Saturn] AI call failed for ${account.platform} batch (angles: ${batchAngles.map(a => a.name).join(", ")}):`, err.message);
+          continue; // try next batch
+        }
 
         let variants: any[] = [];
         try {
           variants = extractJsonVariants(result.text);
-        } catch (e) {
-          console.error("[Saturn] All JSON extraction strategies failed for campaign", campaignId);
+        } catch {
+          console.error(`[Saturn] All JSON extraction strategies failed for campaign ${campaignId}`);
           console.error("[Saturn] Raw AI response:", result.text);
           variants = buildFallbackVariants(result.text);
         }
 
-        const cleanedVariants: { content: string; hashtags: string[]; imagePrompt: string }[] = [];
         for (const parsed of variants) {
+          if (cleanedVariantsForAccount.length >= targetVariantsPerPlatform) break;
+
           let postContent = (parsed.content ?? result.text).trim();
           postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
 
           if (!postContent || postContent.length < 10) {
-            console.warn("[Saturn] Skipping empty/trivial AI variant for campaign", campaignId);
+            console.warn(`[Saturn] Skipping empty/trivial AI variant for campaign ${campaignId}`);
+            continue;
+          }
+
+          // Reject near-duplicates: if the first 60 chars (case/whitespace-normalized) match
+          // an already-accepted variant, skip it.
+          const normalizedOpening = postContent.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase();
+          const isDuplicate = cleanedVariantsForAccount.some(v =>
+            v.content.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase() === normalizedOpening
+          );
+          if (isDuplicate) {
+            console.warn(`[Saturn] Rejecting near-duplicate variant for ${account.platform}`);
             continue;
           }
 
@@ -2905,9 +3025,6 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
             .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
             .filter((h: string) => h.length > 0 && h.length < 50);
 
-          const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
-            .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
-            .filter((h: string) => h.length > 0);
           if (campaignAlwaysHashtags.length > 0) {
             const existing = new Set(hashtags.map(h => h.toLowerCase()));
             for (const ah of campaignAlwaysHashtags) {
@@ -2921,35 +3038,27 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
           postContent = adapted.content;
           hashtags = adapted.hashtags;
 
-          cleanedVariants.push({ content: postContent, hashtags, imagePrompt: parsed.imagePrompt ?? "" });
+          cleanedVariantsForAccount.push({
+            content: postContent,
+            hashtags,
+            imagePrompt: parsed.imagePrompt ?? "",
+            sourceUrl: pool.sourceUrl,
+          });
+          usedOpenings.push(postContent.replace(/\s+/g, " ").trim().slice(0, 80));
         }
+      }
 
-        if (brandImageAssets.length > 0) {
-          let comboIndex = 0;
-          for (let vi = 0; vi < cleanedVariants.length; vi++) {
-            for (let ii = 0; ii < brandImageAssets.length; ii++) {
-              const v = cleanedVariants[vi];
-              const img = brandImageAssets[ii];
-              generatedRows.push({
-                id: randomUUID(),
-                campaignId,
-                socialAccountId: account.id === "placeholder" ? null : account.id,
-                tenantDomain,
-                platform: account.platform,
-                content: v.content,
-                hashtags: v.hashtags,
-                imagePrompt: v.imagePrompt,
-                sourceUrl: assetGroup.url,
-                variantGroup: variantGroupId,
-                generationJobId: jobId,
-                overrideBrandAssetId: img.id,
-              } as InsertGeneratedPost);
-              comboIndex++;
-            }
-          }
-          console.log(`[Saturn] Generated ${comboIndex} text x image combos for ${account.platform} asset "${assetGroup.assets[0]?.title || 'general'}"`);
-        } else {
-          for (const v of cleanedVariants) {
+      console.log(`[Saturn] ${account.platform}/${account.accountName}: produced ${cleanedVariantsForAccount.length}/${targetVariantsPerPlatform} unique variants across ${safetyLoops} batches`);
+
+      // Persist variants. When brand images are provided, expand variants × images,
+      // but iterate IMAGES on the outer loop so consecutive scheduled days never share
+      // the same text — only the image rotates underneath the unique text variants.
+      if (brandImageAssets.length > 0) {
+        let comboIndex = 0;
+        for (let ii = 0; ii < brandImageAssets.length; ii++) {
+          for (let vi = 0; vi < cleanedVariantsForAccount.length; vi++) {
+            const v = cleanedVariantsForAccount[vi];
+            const img = brandImageAssets[ii];
             generatedRows.push({
               id: randomUUID(),
               campaignId,
@@ -2959,14 +3068,31 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${VARIANT
               content: v.content,
               hashtags: v.hashtags,
               imagePrompt: v.imagePrompt,
-              sourceUrl: assetGroup.url,
+              sourceUrl: v.sourceUrl,
               variantGroup: variantGroupId,
               generationJobId: jobId,
+              overrideBrandAssetId: img.id,
             } as InsertGeneratedPost);
+            comboIndex++;
           }
         }
-
-        console.log(`[Saturn] Completed asset "${assetGroup.assets[0]?.title || 'general'}" for ${account.platform}: ${cleanedVariants.length} variants`);
+        console.log(`[Saturn] ${account.platform}: ${comboIndex} text × image combos (${cleanedVariantsForAccount.length} unique texts × ${brandImageAssets.length} images)`);
+      } else {
+        for (const v of cleanedVariantsForAccount) {
+          generatedRows.push({
+            id: randomUUID(),
+            campaignId,
+            socialAccountId: account.id === "placeholder" ? null : account.id,
+            tenantDomain,
+            platform: account.platform,
+            content: v.content,
+            hashtags: v.hashtags,
+            imagePrompt: v.imagePrompt,
+            sourceUrl: v.sourceUrl,
+            variantGroup: variantGroupId,
+            generationJobId: jobId,
+          } as InsertGeneratedPost);
+        }
       }
     }
 

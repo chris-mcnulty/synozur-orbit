@@ -1771,6 +1771,29 @@ export default function CampaignDetailPage() {
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 pr-1">
 
+            {/* Variant count hint based on campaign duration */}
+            {(() => {
+              const days = campaign?.numberOfDays ?? 7;
+              const dpw = 5 + (campaign?.includeSaturday ? 1 : 0) + (campaign?.includeSunday ? 1 : 0);
+              const eligibleDays = Math.max(1, Math.ceil(days * dpw / 7));
+              const MAX_VARIANTS = 30;
+              const target = Math.min(Math.max(eligibleDays, 5), MAX_VARIANTS);
+              const capped = eligibleDays > MAX_VARIANTS;
+              const accountCount = campaign?.socialAccounts?.length || 1;
+              return (
+                <div className="rounded-lg border bg-primary/5 border-primary/20 px-3 py-2.5">
+                  <p className="text-xs text-foreground" data-testid="text-variant-count-hint">
+                    Will generate <strong>~{target} unique text variants per channel</strong> ({target * accountCount} total across {accountCount} channel{accountCount !== 1 ? "s" : ""}), each committed to a distinct creative angle — question hook, statistic, story, contrarian take, behind-the-scenes, comparison, and more. Consecutive scheduled days never repeat the same post.
+                    {capped && (
+                      <span className="block mt-1 text-muted-foreground">
+                        Your campaign has {eligibleDays} eligible posting days. The variant pool is capped at {MAX_VARIANTS} per channel to control AI cost, so the same texts will recycle roughly every {MAX_VARIANTS} scheduled days.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              );
+            })()}
+
             {/* Mode Toggle */}
             <div className="grid grid-cols-2 gap-2">
               <button
