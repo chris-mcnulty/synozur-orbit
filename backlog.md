@@ -259,11 +259,14 @@
 **Effort**: Medium - COMPLETED
 
 ### 3.17 Support Ticket System ✅
-**Status**: Implemented (March 2026)
-- [x] User ticket submission with category and priority
+**Status**: Implemented (March 2026, expanded May 2026)
+- [x] User ticket submission with category and priority (Bug, Feature Request, Question, Feedback, Account, Billing, Other)
 - [x] Threaded discussion with support staff
 - [x] Admin management with internal notes and assignment
-- [x] Email notifications for new tickets and updates
+- [x] Email notifications for new tickets, confirmations, and **ticket replies (admin → owner, owner → assignee/admins)**
+- [x] **In-app notifications on ticket replies** via existing notification centre (`support_reply` type)
+- [x] **File attachments** on tickets and replies (PDF, DOCX, TXT, images up to 10 MB) backed by object storage
+- [x] **Admin triage UX**: search, filters (status / priority / category / assignee / tenant), age column with staleness colouring, bulk status/priority/assignee updates, CSV export
 **Effort**: Medium - COMPLETED
 
 ### 3.18 SEO Optimization ✅
@@ -385,11 +388,12 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 - [x] Defense-in-depth security with market context filtering on all operations
 - [x] AI-generated task suggestions informed by GTM Plan, Recommendations, and Competitor Insights
 - [x] Matrix view showing categories as rows and time periods as columns (matches Synozur marketing plan format)
-- [ ] Microsoft Planner integration via Graph API - create plan in target team/channel, sync tasks
+- [x] **Microsoft Planner integration via Graph API** - phase 1 (one-way push Orbit → Planner). Per-plan mapping of Microsoft 365 group → Planner plan → bucket; users can pick an existing bucket or create a dedicated "Orbit" bucket. Delegated OAuth with `Tasks.ReadWrite Group.Read.All offline_access`, refresh tokens stored on user. Push creates Planner tasks and stores `plannerTaskId` + `etag`; subsequent syncs PATCH with `If-Match`. Status banner shows last sync time and errors. See `server/services/planner-graph-client.ts`, `planner-service.ts`, `server/routes/planner.ts`, `client/src/components/PlannerSyncDialog.tsx`.
+- [ ] Microsoft Planner integration phase 2: bidirectional sync (pull Planner edits/completions back into Orbit), webhook subscriptions, multiple buckets per category
 - [ ] Vega Launchpad export - generate document optimized for Vega to create Big Rocks (Projects) and OKRs
 - [x] Uses comprehensive marketing activities document as grounding (19 categories stored)
 **Reference**: Constellation project (https://github.com/chris-mcnulty/synozur-scdp) for Planner sync patterns
-**Effort**: High (Phase 1 complete, remaining phases in progress)
+**Effort**: High (Phase 1 + Planner phase 1 complete, Vega export and Planner phase 2 pending)
 
 #### Product Competitive Position Summaries ✅
 **Status**: Implemented
@@ -422,12 +426,18 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 - [ ] Re-generate specific sections while preserving user edits (future enhancement)
 **Effort**: Medium - COMPLETED
 
-#### Microsoft Planner Integration
-**Status**: Planned (not implemented)
-Sync marketing plan tasks bidirectionally with Microsoft Planner for execution tracking in Teams.
+#### Microsoft Planner Integration ✅ (Phase 1)
+**Status**: Phase 1 implemented (May 2026) — one-way push from Orbit to Planner with bucket selection.
+- [x] Per-marketing-plan mapping to a Microsoft 365 group, Planner plan, and **bucket** (existing or newly created from the dialog) — controls exactly where Orbit tasks land
+- [x] Delegated OAuth with incremental consent (`Tasks.ReadWrite Group.Read.All offline_access`); refresh tokens stored per user
+- [x] Push creates Planner tasks (with title, priority mapping High/Medium/Low → 3/5/9, due date, % complete from status) and tracks `plannerTaskId` + `@odata.etag`
+- [x] Subsequent syncs PATCH using `If-Match`; deleted Planner tasks are recreated automatically
+- [x] Status banner on plan detail surfaces last sync time, target group/plan/bucket, and per-sync error summary
+- [x] Disconnect endpoint clears mapping; reconsent flow handles expired refresh tokens
+- [ ] **Phase 2**: bidirectional sync (Planner → Orbit), Graph change-notification webhooks, multiple buckets per activity category, deep links from each Orbit task to its Planner card
+**Files**: `server/services/planner-graph-client.ts`, `server/services/planner-service.ts`, `server/routes/planner.ts`, `client/src/components/PlannerSyncDialog.tsx`, `migrations/0006_support_attachments_and_planner.sql`
 **Reference**: Constellation (`server/services/planner-service.ts`, `planner-graph-client.ts`)
-**Effort**: High
-**Dependencies**: Tenant must have Microsoft Entra ID configured with admin consent
+**Effort**: High - Phase 1 COMPLETED
 
 #### Competitor Document Uploads
 **Status**: Not implemented
@@ -435,6 +445,25 @@ Allow users to upload documents about competitors (whitepapers, case studies, sa
 - [ ] Document upload UI similar to company grounding documents
 - [ ] Text extraction and indexing
 - [ ] Include in AI analysis context
+**Effort**: Medium
+
+#### Vega Launchpad Export from Marketing Planner
+**Status**: Not implemented
+Export an Orbit marketing plan as a structured document optimised for Vega to ingest as Big Rocks (Projects) and OKRs. Pairs with the Microsoft Planner integration as the second "execution handoff" path — for customers who do not run Planner.
+- [ ] Define Vega-friendly schema (project name, OKR statements, key results, owner, timeframe)
+- [ ] Map Orbit `marketing_tasks` (with activity category and timeframe) into Vega projects
+- [ ] Generate downloadable JSON or markdown bundle from the plan detail page
+- [ ] Link to the Vega import flow once the API is published
+**Files**: `client/src/pages/app/marketing-plan-detail.tsx`, new `server/services/vega-export.ts`
+**Effort**: Medium
+
+#### Support Knowledge Base / FAQ Deflection
+**Status**: Not implemented
+Reduce ticket volume by surfacing relevant help-content suggestions before a ticket is submitted.
+- [ ] Inline content suggestions in the New Ticket form keyed off the subject/description (search the user guide and changelog)
+- [ ] "Browse common questions" section on `/app/support` rendered from a curated FAQ collection (markdown source under `public/`)
+- [ ] Track which suggestions were viewed before ticket submission to measure deflection
+- [ ] Optional: AI-summarised user-guide answers for the top categories
 **Effort**: Medium
 
 #### Headless Browser Crawling ✅

@@ -20,7 +20,8 @@ export type NotificationType =
   | "job_failed"
   | "competitor_change"
   | "freshness_warning"
-  | "trial";
+  | "trial"
+  | "support_reply";
 
 export async function createNotification(data: InsertNotification): Promise<Notification> {
   const [row] = await db.insert(notifications).values(data).returning();
@@ -94,6 +95,29 @@ export async function notifyCompetitorChange(opts: {
     });
   } catch (err) {
     console.error("[NotificationService] Failed to create competitor_change notification:", err);
+  }
+}
+
+export async function notifySupportReply(opts: {
+  userId: string;
+  tenantDomain: string;
+  ticketNumber: number;
+  subject: string;
+  fromName: string;
+  link: string;
+}): Promise<void> {
+  try {
+    await createNotification({
+      userId: opts.userId,
+      tenantDomain: opts.tenantDomain,
+      type: "support_reply",
+      title: `New reply on ticket #${opts.ticketNumber}`,
+      message: `${opts.fromName} replied to "${opts.subject}"`,
+      link: opts.link,
+      readAt: null,
+    });
+  } catch (err) {
+    console.error("[NotificationService] Failed to create support_reply notification:", err);
   }
 }
 
