@@ -10,6 +10,10 @@ import { generateBriefing, type BriefingData } from "./intelligence-briefing-ser
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
+import { syncMarketingPlanToPlanner } from "./planner-service";
+import { db } from "../db";
+import { marketingPlans } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -1536,6 +1540,53 @@ async function checkAndRunScheduledBriefing(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Planner sync job — syncs all marketing plans that have Planner connected
+// ---------------------------------------------------------------------------
+
+async function runPlannerSyncJob(): Promise<void> {
+  if (jobStatus.plannerSync?.isRunning) {
+    console.log("[Planner Sync] Job already running, skipping sweep");
+    return;
+  }
+  if (!jobStatus.plannerSync) {
+    jobStatus.plannerSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+  }
+  jobStatus.plannerSync.isRunning = true;
+  jobStatus.plannerSync.lastRun = new Date();
+  console.log("[Planner Sync] Starting auto-sync sweep...");
+  let synced = 0;
+  let failed = 0;
+  try {
+    // Find all marketing plans with Planner sync enabled across all tenants
+    const enabledPlans = await db
+      .select()
+      .from(marketingPlans)
+      .where(eq(marketingPlans.plannerSyncEnabled, true));
+
+    for (const plan of enabledPlans) {
+      try {
+        const ctx = { tenantDomain: plan.tenantDomain, marketId: plan.marketId };
+        const result = await syncMarketingPlanToPlanner(plan.id, ctx);
+        if (result.ok) {
+          synced += 1;
+        } else {
+          failed += 1;
+          console.warn(`[Planner Sync] Plan ${plan.id} (${plan.tenantDomain}) completed with errors:`, result.errors.slice(0, 2));
+        }
+      } catch (planErr: any) {
+        failed += 1;
+        console.error(`[Planner Sync] Plan ${plan.id} (${plan.tenantDomain}) threw:`, planErr.message);
+      }
+    }
+    console.log(`[Planner Sync] Auto-sync sweep complete — ${synced} ok, ${failed} failed out of ${enabledPlans.length} connected plans`);
+  } catch (err: any) {
+    console.error("[Planner Sync] Sweep failed:", err.message);
+  } finally {
+    jobStatus.plannerSync.isRunning = false;
+  }
+}
+
 let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
@@ -1543,6 +1594,7 @@ let productMonitorInterval: NodeJS.Timeout | null = null;
 let trialReminderInterval: NodeJS.Timeout | null = null;
 let weeklyDigestInterval: NodeJS.Timeout | null = null;
 let scheduledBriefingInterval: NodeJS.Timeout | null = null;
+let plannerSyncInterval: NodeJS.Timeout | null = null;
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
@@ -1554,8 +1606,10 @@ export function startScheduledJobs(): void {
   if (trialReminderInterval) clearInterval(trialReminderInterval);
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
   if (scheduledBriefingInterval) clearInterval(scheduledBriefingInterval);
+  if (plannerSyncInterval) clearInterval(plannerSyncInterval);
 
   jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+  jobStatus.plannerSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
 
   // Set up recurring intervals
   websiteCrawlInterval = setInterval(() => {
@@ -1585,6 +1639,11 @@ export function startScheduledJobs(): void {
   scheduledBriefingInterval = setInterval(() => {
     checkAndRunScheduledBriefing();
   }, 60 * 60 * 1000);
+
+  // Planner two-way sync — runs every 15 minutes for all connected plans
+  plannerSyncInterval = setInterval(() => {
+    runPlannerSyncJob();
+  }, 15 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
   cleanupStuckJobs().catch(err => {
@@ -1635,7 +1694,7 @@ export function startScheduledJobs(): void {
     checkAndRunScheduledBriefing();
   }, 25 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly)");
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
@@ -1668,11 +1727,19 @@ export function stopScheduledJobs(): void {
     clearInterval(scheduledBriefingInterval);
     scheduledBriefingInterval = null;
   }
+  if (plannerSyncInterval) {
+    clearInterval(plannerSyncInterval);
+    plannerSyncInterval = null;
+  }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }
 
 export async function triggerWeeklyDigestNow(): Promise<void> {
   runWeeklyDigestJob();
+}
+
+export async function triggerPlannerSyncNow(): Promise<void> {
+  runPlannerSyncJob();
 }
 
 export function getJobStatus(): Record<string, Omit<JobStatus, 'abortController'>> {

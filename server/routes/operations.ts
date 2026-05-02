@@ -4,7 +4,7 @@ import { db } from "../db";
 import { sql, and, count } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess } from "./helpers";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
+import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
 import type { Competitor, User } from "@shared/schema";
@@ -58,6 +58,11 @@ export function registerOperationsRoutes(app: Express) {
           ...status.weeklyDigest,
           description: "Sends weekly competitive intelligence digest emails",
           interval: "Weekly (Mondays 9am ET)",
+        },
+        plannerSync: {
+          ...status.plannerSync,
+          description: "Two-way sync of marketing tasks with Microsoft Planner for all connected plans",
+          interval: "Every 15 minutes",
         },
       };
       
@@ -204,6 +209,24 @@ export function registerOperationsRoutes(app: Express) {
 
       triggerProductMonitorNow();
       res.json({ success: true, message: "Product monitor job triggered" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/jobs/trigger-planner-sync", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Global Admin only" });
+      }
+
+      triggerPlannerSyncNow();
+      res.json({ success: true, message: "Planner two-way sync triggered for all connected marketing plans" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

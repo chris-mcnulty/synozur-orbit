@@ -370,6 +370,75 @@ app.use((req, res, next) => {
       END $$;
     `);
 
+    // PR39/40: support ticket attachments, graph tokens, and Planner sync columns
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS support_ticket_attachments (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        ticket_id VARCHAR NOT NULL,
+        reply_id VARCHAR,
+        uploaded_by VARCHAR NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        content_type TEXT NOT NULL,
+        object_path TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_ticket_attachments_ticket_id_support_tickets_id_fk') THEN
+          ALTER TABLE support_ticket_attachments
+            ADD CONSTRAINT support_ticket_attachments_ticket_id_support_tickets_id_fk
+            FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_ticket_attachments_reply_id_support_ticket_replies_id_fk') THEN
+          ALTER TABLE support_ticket_attachments
+            ADD CONSTRAINT support_ticket_attachments_reply_id_support_ticket_replies_id_fk
+            FOREIGN KEY (reply_id) REFERENCES support_ticket_replies(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'support_ticket_attachments_uploaded_by_users_id_fk') THEN
+          ALTER TABLE support_ticket_attachments
+            ADD CONSTRAINT support_ticket_attachments_uploaded_by_users_id_fk
+            FOREIGN KEY (uploaded_by) REFERENCES users(id);
+        END IF;
+      END $$;
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_support_ticket_attachments_ticket ON support_ticket_attachments (ticket_id)`);
+
+    // User-level Microsoft Graph delegated tokens (Planner OAuth)
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_access_token TEXT`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_refresh_token TEXT`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_token_expires_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_scopes TEXT`);
+
+    // Planner integration: marketing plan target mapping
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_group_id TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_group_name TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_plan_id TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_plan_name TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_bucket_id TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_bucket_name TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_connected_by VARCHAR`);
+    await pgPool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketing_plans_planner_connected_by_users_id_fk') THEN
+          ALTER TABLE marketing_plans
+            ADD CONSTRAINT marketing_plans_planner_connected_by_users_id_fk
+            FOREIGN KEY (planner_connected_by) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_sync_enabled BOOLEAN DEFAULT false`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_last_sync_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_last_sync_error TEXT`);
+
+    // Planner integration: per-task sync state
+    await pgPool.query(`ALTER TABLE marketing_tasks ADD COLUMN IF NOT EXISTS planner_task_id TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_tasks ADD COLUMN IF NOT EXISTS planner_etag TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_tasks ADD COLUMN IF NOT EXISTS planner_last_synced_at TIMESTAMP`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
