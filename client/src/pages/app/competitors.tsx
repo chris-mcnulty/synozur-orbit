@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
 import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban } from "lucide-react";
 import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
@@ -130,16 +132,30 @@ export default function Competitors() {
     });
   };
 
-  const { data: competitors = [], isLoading } = useQuery({
-    queryKey: ["/api/competitors"],
+  const [competitorPage, setCompetitorPage] = useState(1);
+  const COMPETITORS_PAGE_SIZE = 25;
+  const [competitorSearch, setCompetitorSearch] = useState("");
+  const debouncedCompetitorSearch = useDebouncedValue(competitorSearch, 300);
+
+  useEffect(() => {
+    setCompetitorPage(1);
+  }, [debouncedCompetitorSearch]);
+
+  const { data: competitorsPage, isLoading } = useQuery<PaginatedEnvelope<any>>({
+    queryKey: ["/api/competitors", "paginated", { page: competitorPage, pageSize: COMPETITORS_PAGE_SIZE, q: debouncedCompetitorSearch }],
     queryFn: async () => {
-      const response = await fetch("/api/competitors", {
-        credentials: "include",
-      });
+      const params = new URLSearchParams({ page: String(competitorPage), pageSize: String(COMPETITORS_PAGE_SIZE) });
+      if (debouncedCompetitorSearch) params.set("q", debouncedCompetitorSearch);
+      const response = await fetch(`/api/competitors?${params.toString()}`, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch competitors");
       return response.json();
     },
+    placeholderData: (prev) => prev,
   });
+
+  const competitors: any[] = competitorsPage?.items ?? [];
+  const competitorsTotal = competitorsPage?.total ?? 0;
+  const competitorsHasMore = competitorsPage?.hasMore ?? false;
 
   const { data: projects = [] } = useQuery<{ id: string; name: string; clientName: string; status: string }[]>({
     queryKey: ["/api/projects"],
@@ -179,7 +195,7 @@ export default function Competitors() {
   
   const isPremiumPlan = tenantInfo?.isPremium || ["pro", "professional", "enterprise"].includes(tenantInfo?.plan || "");
   const competitorLimit = tenantInfo?.limits?.competitorLimit ?? tenantInfo?.features?.competitorLimit ?? -1;
-  const competitorCount = tenantInfo?.usage?.competitorCount ?? competitors.length;
+  const competitorCount = tenantInfo?.usage?.competitorCount ?? competitorsTotal;
   const isAtCompetitorLimit = competitorLimit !== -1 && competitorCount >= competitorLimit;
 
   const addCompetitor = useMutation({
@@ -998,9 +1014,23 @@ export default function Competitors() {
               </div>
             )}
           </div>
+          {(competitorsTotal > 0 || debouncedCompetitorSearch) && (
+            <div className="max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={competitorSearch}
+                  onChange={(e) => setCompetitorSearch(e.target.value)}
+                  placeholder="Search competitors by name, URL, industry..."
+                  className="pl-9"
+                  data-testid="input-search-competitors"
+                />
+              </div>
+            </div>
+          )}
           {isInitialLoading ? (
             <CompetitorListSkeleton count={4} />
-          ) : competitors.length === 0 ? (
+          ) : competitorsTotal === 0 && !debouncedCompetitorSearch ? (
             <EmptyPageState
               icon={<Target className="h-5 w-5" />}
               title="No competitors tracked yet"
@@ -1019,6 +1049,12 @@ export default function Competitors() {
               }}
               learnMoreHref="/app/guide"
             />
+          ) : competitors.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-no-competitor-search-results">
+                No competitors match your search.
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
               {competitors.map((competitor: any) => {
@@ -1263,6 +1299,18 @@ export default function Competitors() {
                 );
               })}
             </div>
+          )}
+
+          {competitorsTotal > 0 && (
+            <PaginationFooter
+              page={competitorPage}
+              pageSize={COMPETITORS_PAGE_SIZE}
+              total={competitorsTotal}
+              hasMore={competitorsHasMore}
+              onPrev={() => setCompetitorPage((p) => Math.max(1, p - 1))}
+              onNext={() => setCompetitorPage((p) => p + 1)}
+              testIdPrefix="competitors-pagination"
+            />
           )}
         </div>
       </div>

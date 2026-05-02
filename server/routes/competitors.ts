@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature, guardCompetitorLimit, guardAnalysisLimit } from "./helpers";
+import { parsePaginationParams, buildPaginatedEnvelope } from "../utils/pagination";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
@@ -55,12 +56,33 @@ export function registerCompetitorRoutes(app: Express) {
         c.organizationId ? enrichWithOrgData(c, orgMap.get(c.organizationId)) : c
       );
 
+      const pagination = parsePaginationParams(req);
+
+      // Apply optional search filter (after enrichment so org-derived fields are searchable too)
+      let filtered = enriched;
+      if (pagination.q) {
+        const term = pagination.q.toLowerCase();
+        filtered = enriched.filter((c: any) => {
+          return (
+            (c.name && c.name.toLowerCase().includes(term)) ||
+            (c.url && c.url.toLowerCase().includes(term)) ||
+            (c.industry && c.industry.toLowerCase().includes(term))
+          );
+        });
+      }
+
       const elapsedMs = Date.now() - startedAt;
       console.log(
-        `[Perf] GET /api/competitors items=${competitorsList.length} orgs=${orgMap.size} took=${elapsedMs}ms`
+        `[Perf] GET /api/competitors items=${competitorsList.length} orgs=${orgMap.size} paginated=${pagination.isPaginated} took=${elapsedMs}ms`
       );
 
-      res.json(enriched);
+      if (!pagination.isPaginated) {
+        return res.json(filtered);
+      }
+
+      const total = filtered.length;
+      const items = filtered.slice(pagination.offset, pagination.offset + pagination.limit);
+      res.json(buildPaginatedEnvelope(items, total, pagination));
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

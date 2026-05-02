@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
 import {
   UserCircle,
   Plus,
@@ -26,6 +28,7 @@ import {
   Star,
   X,
   ClipboardPaste,
+  Search,
 } from "lucide-react";
 import { PersonaGridSkeleton } from "@/components/ui/skeletons";
 
@@ -140,9 +143,30 @@ export default function PersonasPage() {
   const [ingestText, setIngestText] = useState("");
   const [ingestLoading, setIngestLoading] = useState(false);
 
-  const { data: personas = [], isLoading } = useQuery<Persona[]>({
-    queryKey: ["/api/personas"],
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 300);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  const { data: paginatedData, isLoading } = useQuery<PaginatedEnvelope<Persona>>({
+    queryKey: ["/api/personas", "paginated", { page, pageSize: PAGE_SIZE, q: debouncedSearch }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      const r = await fetch(`/api/personas?${params.toString()}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load personas");
+      return r.json();
+    },
+    placeholderData: (prev) => prev,
   });
+
+  const personas = paginatedData?.items ?? [];
+  const total = paginatedData?.total ?? 0;
+  const hasMore = paginatedData?.hasMore ?? false;
 
   const createMutation = useMutation({
     mutationFn: async (data: PersonaFormData) => {
@@ -346,10 +370,19 @@ export default function PersonasPage() {
     }
   };
 
-  const handleCsvExport = () => {
-    if (personas.length === 0) return;
+  const handleCsvExport = async () => {
+    let allPersonas: Persona[] = [];
+    try {
+      const r = await fetch("/api/personas", { credentials: "include" });
+      if (!r.ok) throw new Error("fetch failed");
+      allPersonas = await r.json();
+    } catch {
+      toast({ title: "Export failed", description: "Could not fetch personas.", variant: "destructive" });
+      return;
+    }
+    if (allPersonas.length === 0) return;
     const headers = ["Name", "Role", "Industry", "Company Size", "Pain Points", "Goals", "Objections", "Preferred Channels", "Notes", "ICP"];
-    const rows = personas.map(p => [
+    const rows = allPersonas.map(p => [
       p.name,
       p.role || "",
       p.industry || "",
@@ -412,7 +445,7 @@ export default function PersonasPage() {
             <p className="text-sm sm:text-base text-muted-foreground">Define buyer personas and ideal customer profiles to make AI content more targeted.</p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={personas.length === 0} data-testid="button-export-csv">
+            <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={total === 0} data-testid="button-export-csv">
               <Download className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Export CSV</span>
             </Button>
@@ -432,9 +465,22 @@ export default function PersonasPage() {
         </div>
       </div>
 
-      {isLoading ? (
+      <div className="mb-4 max-w-md">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search personas by name, role, industry, notes..."
+            className="pl-9"
+            data-testid="input-search-personas"
+          />
+        </div>
+      </div>
+
+      {isLoading && !paginatedData ? (
         <PersonaGridSkeleton count={6} />
-      ) : personas.length === 0 ? (
+      ) : total === 0 && !debouncedSearch ? (
         <Card className="max-w-lg mx-auto" data-testid="card-empty-state">
           <CardContent className="pt-8 text-center space-y-4">
             <UserCircle className="h-12 w-12 mx-auto text-muted-foreground" />
@@ -456,6 +502,12 @@ export default function PersonasPage() {
                 Create Persona
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      ) : personas.length === 0 ? (
+        <Card className="max-w-lg mx-auto" data-testid="card-no-search-results">
+          <CardContent className="pt-8 text-center space-y-2">
+            <p className="text-sm text-muted-foreground">No personas match your search.</p>
           </CardContent>
         </Card>
       ) : (
@@ -565,6 +617,18 @@ export default function PersonasPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {total > 0 && (
+        <PaginationFooter
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          hasMore={hasMore}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => p + 1)}
+          testIdPrefix="personas-pagination"
+        />
       )}
 
       {/* Create/Edit Dialog */}

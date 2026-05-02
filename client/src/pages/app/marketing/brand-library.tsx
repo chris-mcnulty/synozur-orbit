@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
 import {
   ImageIcon, Plus, Search, ExternalLink, Trash2, Lock, Settings, ChevronDown, X, Tag, Filter,
   Download, Upload, LayoutGrid, List, Archive, RotateCcw
@@ -105,14 +107,37 @@ export default function BrandLibraryPage() {
 
   const isAllowed = tenantInfo?.features?.brandLibrary === true;
 
-  const { data: assets = [], isLoading } = useQuery<BrandAsset[]>({
-    queryKey: ["/api/brand-assets"],
+  const [assetPage, setAssetPage] = useState(1);
+  const ASSETS_PAGE_SIZE = 25;
+  const debouncedAssetSearch = useDebouncedValue(search, 300);
+
+  useEffect(() => {
+    setAssetPage(1);
+  }, [debouncedAssetSearch, statusTab]);
+
+  const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
+
+  const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<BrandAsset>>({
+    queryKey: [
+      "/api/brand-assets",
+      "paginated",
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam },
+    ],
     queryFn: async () => {
-      const r = await fetch("/api/brand-assets", { credentials: "include" });
-      return r.ok ? r.json() : [];
+      const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
+      if (debouncedAssetSearch) params.set("q", debouncedAssetSearch);
+      if (serverStatusParam) params.set("status", serverStatusParam);
+      const r = await fetch(`/api/brand-assets?${params.toString()}`, { credentials: "include" });
+      if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
+      return r.json();
     },
     enabled: isAllowed,
+    placeholderData: (prev) => prev,
   });
+
+  const assets: BrandAsset[] = assetsPage?.items ?? [];
+  const assetsTotal = assetsPage?.total ?? 0;
+  const assetsHasMore = assetsPage?.hasMore ?? false;
 
   const { data: categories = [] } = useQuery<BrandAssetCategory[]>({
     queryKey: ["/api/brand-asset-categories"],
@@ -366,16 +391,12 @@ export default function BrandLibraryPage() {
     }));
   };
 
+  // Search and status are now applied server-side. Category/file-type remain
+  // client-side filters and only narrow the items on the current page.
   const filtered = assets.filter(a => {
-    const matchesSearch = !search ||
-      a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.description?.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === "all" || (categoryFilter === "__uncategorized" ? !a.categoryId : a.categoryId === categoryFilter);
     const matchesFileType = fileTypeFilter === "all" || a.fileType === fileTypeFilter;
-    const matchesStatus = statusTab === "all" ||
-      (statusTab === "active" && a.status === "active") ||
-      (statusTab === "archived" && a.status === "archived");
-    return matchesSearch && matchesCategory && matchesFileType && matchesStatus;
+    return matchesCategory && matchesFileType;
   });
 
   const groupedByCategory = () => {
@@ -391,8 +412,20 @@ export default function BrandLibraryPage() {
   const categoryName = (id?: string) => categories.find(c => c.id === id)?.name;
   const productName = (id: string) => marketProducts.find(p => p.id === id)?.name;
 
-  const handleExportCSV = () => {
-    const rows = filtered.map(a => ({
+  const handleExportCSV = async () => {
+    let allAssets: BrandAsset[] = [];
+    try {
+      const params = new URLSearchParams();
+      if (statusTab === "archived") params.set("status", "archived");
+      const url = "/api/brand-assets" + (params.toString() ? `?${params.toString()}` : "");
+      const r = await fetch(url, { credentials: "include" });
+      if (!r.ok) throw new Error("fetch failed");
+      allAssets = await r.json();
+    } catch {
+      toast({ title: "Export failed", description: "Could not fetch brand assets.", variant: "destructive" });
+      return;
+    }
+    const rows = allAssets.map(a => ({
       name: a.name,
       description: a.description || "",
       url: a.url || "",
@@ -587,7 +620,7 @@ export default function BrandLibraryPage() {
               <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-brand">
                 <Upload className="w-4 h-4 mr-1" /> Import CSV
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filtered.length === 0} data-testid="button-export-csv-brand">
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={assetsTotal === 0} data-testid="button-export-csv-brand">
                 <Download className="w-4 h-4 mr-1" /> Export CSV
               </Button>
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-brand-categories">
@@ -738,8 +771,8 @@ export default function BrandLibraryPage() {
                 data-testid="button-status-archived-brand"
               >
                 <Archive className="w-3 h-3" /> Archived
-                {assets.filter(a => a.status === "archived").length > 0 && (
-                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assets.filter(a => a.status === "archived").length}</span>
+                {statusTab === "archived" && assetsTotal > 0 && (
+                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assetsTotal}</span>
                 )}
               </button>
             </div>
@@ -792,18 +825,30 @@ export default function BrandLibraryPage() {
           })()}
         </div>
 
-        {isLoading ? (
+        {isLoading && !assetsPage ? (
           <BrandGridSkeleton count={8} />
         ) : filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-brand">
-              {assets.length === 0 ? "No brand assets yet. Add your first asset to get started." : statusTab === "archived" ? "No archived brand assets." : "No assets match your search or filter."}
+              {assetsTotal === 0 && !debouncedAssetSearch ? "No brand assets yet. Add your first asset to get started." : statusTab === "archived" ? "No archived brand assets." : "No assets match your search or filter."}
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-5 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 items-start">
             {filtered.map(renderAssetCard)}
           </div>
+        )}
+
+        {assetsTotal > 0 && (
+          <PaginationFooter
+            page={assetPage}
+            pageSize={ASSETS_PAGE_SIZE}
+            total={assetsTotal}
+            hasMore={assetsHasMore}
+            onPrev={() => setAssetPage((p) => Math.max(1, p - 1))}
+            onNext={() => setAssetPage((p) => p + 1)}
+            testIdPrefix="brand-pagination"
+          />
         )}
 
         {/* Edit Brand Asset Dialog */}

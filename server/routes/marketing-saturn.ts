@@ -16,7 +16,8 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray, notInArray, sql, ne } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, count } from "drizzle-orm";
+import { parsePaginationParams, buildPaginatedEnvelope, toContainsPattern } from "../utils/pagination";
 import { randomUUID } from "crypto";
 import {
   contentAssets,
@@ -242,10 +243,30 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } else {
       conditions.push(ne(contentAssets.status, "archived"));
     }
-    const rows = await db.select().from(contentAssets)
-      .where(and(...conditions))
-      .orderBy(desc(contentAssets.createdAt));
-    res.json(rows);
+    const pagination = parsePaginationParams(req);
+    if (pagination.q) {
+      const pattern = toContainsPattern(pagination.q);
+      conditions.push(or(
+        ilike(contentAssets.title, pattern),
+        ilike(contentAssets.description, pattern),
+      )!);
+    }
+    const where = and(...conditions);
+
+    if (!pagination.isPaginated) {
+      const rows = await db.select().from(contentAssets)
+        .where(where)
+        .orderBy(desc(contentAssets.createdAt));
+      return res.json(rows);
+    }
+
+    const [{ value: total }] = await db.select({ value: count() }).from(contentAssets).where(where);
+    const items = await db.select().from(contentAssets)
+      .where(where)
+      .orderBy(desc(contentAssets.createdAt))
+      .limit(pagination.limit)
+      .offset(pagination.offset);
+    res.json(buildPaginatedEnvelope(items, Number(total), pagination));
   });
 
   app.get("/api/content-assets/:id", async (req, res) => {
@@ -698,14 +719,32 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } else {
       conditions.push(ne(brandAssets.status, "archived"));
     }
-    const rows = await db.select({
+    const pagination = parsePaginationParams(req);
+    if (pagination.q) {
+      const pattern = toContainsPattern(pagination.q);
+      conditions.push(or(
+        ilike(brandAssets.name, pattern),
+        ilike(brandAssets.description, pattern),
+      )!);
+    }
+    const where = and(...conditions);
+    const baseQuery = db.select({
         asset: brandAssets,
         categoryName: brandAssetCategories.name,
       }).from(brandAssets)
       .leftJoin(brandAssetCategories, eq(brandAssets.categoryId, brandAssetCategories.id))
-      .where(and(...conditions))
+      .where(where)
       .orderBy(desc(brandAssets.createdAt));
-    res.json(rows.map(r => ({ ...r.asset, categoryName: r.categoryName })));
+
+    if (!pagination.isPaginated) {
+      const rows = await baseQuery;
+      return res.json(rows.map(r => ({ ...r.asset, categoryName: r.categoryName })));
+    }
+
+    const [{ value: total }] = await db.select({ value: count() }).from(brandAssets).where(where);
+    const rows = await baseQuery.limit(pagination.limit).offset(pagination.offset);
+    const items = rows.map(r => ({ ...r.asset, categoryName: r.categoryName }));
+    res.json(buildPaginatedEnvelope(items, Number(total), pagination));
   });
 
   app.get("/api/brand-assets/:id", async (req, res) => {
@@ -883,14 +922,35 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const rows = await db.select().from(campaigns)
-        .where(and(
-          eq(campaigns.tenantDomain, ctx.tenantDomain),
-          eq(campaigns.marketId, ctx.marketId),
-          ne(campaigns.status, "deleted"),
-        ))
-        .orderBy(desc(campaigns.createdAt));
-      res.json(rows);
+      const conditions = [
+        eq(campaigns.tenantDomain, ctx.tenantDomain),
+        eq(campaigns.marketId, ctx.marketId),
+        ne(campaigns.status, "deleted"),
+      ];
+      const pagination = parsePaginationParams(req);
+      if (pagination.q) {
+        const pattern = toContainsPattern(pagination.q);
+        conditions.push(or(
+          ilike(campaigns.name, pattern),
+          ilike(campaigns.description, pattern),
+        )!);
+      }
+      const where = and(...conditions);
+
+      if (!pagination.isPaginated) {
+        const rows = await db.select().from(campaigns)
+          .where(where)
+          .orderBy(desc(campaigns.createdAt));
+        return res.json(rows);
+      }
+
+      const [{ value: total }] = await db.select({ value: count() }).from(campaigns).where(where);
+      const items = await db.select().from(campaigns)
+        .where(where)
+        .orderBy(desc(campaigns.createdAt))
+        .limit(pagination.limit)
+        .offset(pagination.offset);
+      res.json(buildPaginatedEnvelope(items, Number(total), pagination));
     } catch (err: any) {
       console.error("[Campaigns List Error]", err.message);
       res.status(500).json({ error: "Failed to load campaigns" });
@@ -2520,8 +2580,44 @@ Structure your response using these exact delimiters:
     if (!await guardFeature(req, res, "personaBuilder")) return;
     const ctx = await getRequestContext(req);
     const ctxFilter: ContextFilter = { tenantId: ctx.tenantId, marketId: ctx.marketId, tenantDomain: ctx.tenantDomain, isDefaultMarket: ctx.isDefaultMarket };
-    const rows = await storage.getPersonasByContext(ctxFilter);
-    res.json(rows);
+    const pagination = parsePaginationParams(req);
+
+    if (!pagination.isPaginated && !pagination.q) {
+      const rows = await storage.getPersonasByContext(ctxFilter);
+      return res.json(rows);
+    }
+
+    const conditions = [eq(personas.tenantDomain, ctx.tenantDomain)];
+    if (ctx.marketId) {
+      conditions.push(eq(personas.marketId, ctx.marketId));
+    } else if (ctx.isDefaultMarket) {
+      conditions.push(isNull(personas.marketId));
+    }
+    if (pagination.q) {
+      const pattern = toContainsPattern(pagination.q);
+      conditions.push(or(
+        ilike(personas.name, pattern),
+        ilike(personas.role, pattern),
+        ilike(personas.industry, pattern),
+        ilike(personas.notes, pattern),
+      )!);
+    }
+    const where = and(...conditions);
+
+    if (!pagination.isPaginated) {
+      const rows = await db.select().from(personas)
+        .where(where)
+        .orderBy(desc(personas.isIcp), personas.name);
+      return res.json(rows);
+    }
+
+    const [{ value: total }] = await db.select({ value: count() }).from(personas).where(where);
+    const items = await db.select().from(personas)
+      .where(where)
+      .orderBy(desc(personas.isIcp), personas.name)
+      .limit(pagination.limit)
+      .offset(pagination.offset);
+    res.json(buildPaginatedEnvelope(items, Number(total), pagination));
   });
 
   app.get("/api/personas/:id", async (req, res) => {

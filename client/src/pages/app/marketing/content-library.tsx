@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
 import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2, AlertTriangle,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
@@ -153,14 +155,37 @@ export default function ContentLibraryPage() {
 
   const isAllowed = tenantInfo?.features?.contentLibrary === true;
 
-  const { data: assets = [], isLoading } = useQuery<ContentAsset[]>({
-    queryKey: ["/api/content-assets"],
+  const [assetPage, setAssetPage] = useState(1);
+  const ASSETS_PAGE_SIZE = 25;
+  const debouncedAssetSearch = useDebouncedValue(search, 300);
+
+  useEffect(() => {
+    setAssetPage(1);
+  }, [debouncedAssetSearch, statusTab]);
+
+  const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
+
+  const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<ContentAsset>>({
+    queryKey: [
+      "/api/content-assets",
+      "paginated",
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam },
+    ],
     queryFn: async () => {
-      const r = await fetch("/api/content-assets", { credentials: "include" });
-      return r.ok ? r.json() : [];
+      const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
+      if (debouncedAssetSearch) params.set("q", debouncedAssetSearch);
+      if (serverStatusParam) params.set("status", serverStatusParam);
+      const r = await fetch(`/api/content-assets?${params.toString()}`, { credentials: "include" });
+      if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
+      return r.json();
     },
     enabled: isAllowed,
+    placeholderData: (prev) => prev,
   });
+
+  const assets: ContentAsset[] = assetsPage?.items ?? [];
+  const assetsTotal = assetsPage?.total ?? 0;
+  const assetsHasMore = assetsPage?.hasMore ?? false;
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ["/api/content-categories"],
@@ -543,18 +568,14 @@ export default function ContentLibraryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-categories"] }),
   });
 
+  // Search and status are now applied server-side. Category/source remain
+  // client-side filters and only narrow the items on the current page.
   const filtered = assets.filter(a => {
-    const matchesSearch = !search ||
-      a.title.toLowerCase().includes(search.toLowerCase()) ||
-      a.description?.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === "all" || (categoryFilter === "__uncategorized" ? !a.categoryId : a.categoryId === categoryFilter);
     const matchesSource = sourceFilter === "all" ||
       (sourceFilter === "captured" && a.capturedViaExtension) ||
       (sourceFilter === "manual" && !a.capturedViaExtension);
-    const matchesStatus = statusTab === "all" ||
-      (statusTab === "active" && a.status === "active") ||
-      (statusTab === "archived" && a.status === "archived");
-    return matchesSearch && matchesCategory && matchesSource && matchesStatus;
+    return matchesCategory && matchesSource;
   });
 
   const groupedByCategory = () => {
@@ -591,8 +612,20 @@ export default function ContentLibraryPage() {
     }));
   };
 
-  const handleExportCSV = () => {
-    const rows = filtered.map(a => ({
+  const handleExportCSV = async () => {
+    let allAssets: ContentAsset[] = [];
+    try {
+      const params = new URLSearchParams();
+      if (statusTab === "archived") params.set("status", "archived");
+      const url = "/api/content-assets" + (params.toString() ? `?${params.toString()}` : "");
+      const r = await fetch(url, { credentials: "include" });
+      if (!r.ok) throw new Error("fetch failed");
+      allAssets = await r.json();
+    } catch {
+      toast({ title: "Export failed", description: "Could not fetch assets.", variant: "destructive" });
+      return;
+    }
+    const rows = allAssets.map(a => ({
       title: a.title,
       description: a.description || "",
       url: a.url || "",
@@ -1261,8 +1294,8 @@ export default function ContentLibraryPage() {
                 data-testid="button-status-archived-content"
               >
                 <Archive className="w-3 h-3" /> Archived
-                {assets.filter(a => a.status === "archived").length > 0 && (
-                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assets.filter(a => a.status === "archived").length}</span>
+                {statusTab === "archived" && assetsTotal > 0 && (
+                  <span className="bg-muted-foreground/20 rounded-full px-1.5 text-[10px]">{assetsTotal}</span>
                 )}
               </button>
             </div>
@@ -1405,7 +1438,7 @@ export default function ContentLibraryPage() {
           </Collapsible>
         )}
 
-        {isLoading ? (
+        {isLoading && !assetsPage ? (
           viewMode === "table" ? (
             <ContentTableSkeleton count={6} />
           ) : (
@@ -1414,7 +1447,7 @@ export default function ContentLibraryPage() {
         ) : filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-content">
-              {assets.length === 0
+              {assetsTotal === 0 && !debouncedAssetSearch
                 ? "No content assets yet. Click \"Add Content\" to get started by pasting a URL or entering content manually."
                 : "No assets match your search or filter."}
             </CardContent>
@@ -1519,6 +1552,18 @@ export default function ContentLibraryPage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
             {filtered.map(renderAssetCard)}
           </div>
+        )}
+
+        {assetsTotal > 0 && (
+          <PaginationFooter
+            page={assetPage}
+            pageSize={ASSETS_PAGE_SIZE}
+            total={assetsTotal}
+            hasMore={assetsHasMore}
+            onPrev={() => setAssetPage((p) => Math.max(1, p - 1))}
+            onNext={() => setAssetPage((p) => p + 1)}
+            testIdPrefix="content-pagination"
+          />
         )}
 
         {/* Edit Asset Dialog */}

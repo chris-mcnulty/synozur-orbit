@@ -8,6 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PaginationFooter, type PaginatedEnvelope } from "@/components/ui/pagination-footer";
 import { Link, useSearch } from "wouter";
 import {
   Dialog,
@@ -150,14 +152,31 @@ export default function CampaignsPage() {
 
   const isAllowed = tenantInfo?.features?.campaigns === true;
 
-  const { data: campaigns = [], isLoading } = useQuery<Campaign[]>({
-    queryKey: ["/api/campaigns"],
+  const [campaignPage, setCampaignPage] = useState(1);
+  const CAMPAIGNS_PAGE_SIZE = 25;
+  const [campaignSearch, setCampaignSearch] = useState("");
+  const debouncedCampaignSearch = useDebouncedValue(campaignSearch, 300);
+
+  useEffect(() => {
+    setCampaignPage(1);
+  }, [debouncedCampaignSearch]);
+
+  const { data: campaignsPage, isLoading } = useQuery<PaginatedEnvelope<Campaign>>({
+    queryKey: ["/api/campaigns", "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch }],
     queryFn: async () => {
-      const r = await fetch("/api/campaigns", { credentials: "include" });
-      return r.ok ? r.json() : [];
+      const params = new URLSearchParams({ page: String(campaignPage), pageSize: String(CAMPAIGNS_PAGE_SIZE) });
+      if (debouncedCampaignSearch) params.set("q", debouncedCampaignSearch);
+      const r = await fetch(`/api/campaigns?${params.toString()}`, { credentials: "include" });
+      if (!r.ok) return { items: [], total: 0, hasMore: false, page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE };
+      return r.json();
     },
     enabled: isAllowed,
+    placeholderData: (prev) => prev,
   });
+
+  const campaigns = campaignsPage?.items ?? [];
+  const campaignsTotal = campaignsPage?.total ?? 0;
+  const campaignsHasMore = campaignsPage?.hasMore ?? false;
 
   const { data: allAssets = [] } = useQuery<ContentAsset[]>({
     queryKey: ["/api/content-assets"],
@@ -640,12 +659,31 @@ export default function CampaignsPage() {
           </Dialog>
         </div>
 
-        {isLoading ? (
+        <div className="max-w-md">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={campaignSearch}
+              onChange={(e) => setCampaignSearch(e.target.value)}
+              placeholder="Search campaigns..."
+              className="pl-9"
+              data-testid="input-search-campaigns"
+            />
+          </div>
+        </div>
+
+        {isLoading && !campaignsPage ? (
           <div className="text-center text-muted-foreground py-12">Loading...</div>
-        ) : campaigns.length === 0 ? (
+        ) : campaignsTotal === 0 && !debouncedCampaignSearch ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-campaigns">
               No campaigns yet. Create your first campaign to start generating content.
+            </CardContent>
+          </Card>
+        ) : campaigns.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-no-campaign-search-results">
+              No campaigns match your search.
             </CardContent>
           </Card>
         ) : (
@@ -707,6 +745,18 @@ export default function CampaignsPage() {
               </Card>
             ))}
           </div>
+        )}
+
+        {campaignsTotal > 0 && (
+          <PaginationFooter
+            page={campaignPage}
+            pageSize={CAMPAIGNS_PAGE_SIZE}
+            total={campaignsTotal}
+            hasMore={campaignsHasMore}
+            onPrev={() => setCampaignPage((p) => Math.max(1, p - 1))}
+            onNext={() => setCampaignPage((p) => p + 1)}
+            testIdPrefix="campaigns-pagination"
+          />
         )}
       </div>
     </AppLayout>
