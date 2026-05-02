@@ -85,13 +85,28 @@ const CHANNEL_OPTIONS = [
 
 function TagInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const slug = placeholder.toLowerCase().replace(/\s+/g, "-");
+
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 2500);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const addTag = () => {
     const trimmed = input.trim();
-    if (trimmed && !value.includes(trimmed)) {
-      onChange([...value, trimmed]);
-      setInput("");
+    if (!trimmed) {
+      setError("Enter a value before adding");
+      return;
     }
+    if (value.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
+      setError(`"${trimmed}" is already added`);
+      return;
+    }
+    onChange([...value, trimmed]);
+    setInput("");
+    setError("");
   };
 
   return (
@@ -99,16 +114,26 @@ function TagInput({ value, onChange, placeholder }: { value: string[]; onChange:
       <div className="flex gap-2">
         <Input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => { setInput(e.target.value); if (error) setError(""); }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
           placeholder={placeholder}
-          className="flex-1"
-          data-testid={`input-tag-${placeholder.toLowerCase().replace(/\s+/g, "-")}`}
+          className={`flex-1 ${error ? "border-destructive focus-visible:ring-destructive" : ""}`}
+          aria-invalid={!!error}
+          data-testid={`input-tag-${slug}`}
         />
-        <Button type="button" variant="outline" size="sm" onClick={addTag} data-testid={`button-add-tag-${placeholder.toLowerCase().replace(/\s+/g, "-")}`}>
+        <Button type="button" variant="outline" size="sm" onClick={addTag} data-testid={`button-add-tag-${slug}`}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>
+      {error && (
+        <p
+          key={error}
+          className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-200"
+          data-testid={`error-tag-${slug}`}
+        >
+          {error}
+        </p>
+      )}
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((tag, i) => (

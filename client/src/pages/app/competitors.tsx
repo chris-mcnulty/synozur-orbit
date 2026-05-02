@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { z } from "zod";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,31 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import EmptyPageState from "@/components/EmptyPageState";
 import { CompetitorListSkeleton } from "@/components/ui/skeletons";
+
+const optionalUrl = (regex: RegExp, message: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === "" || regex.test(v), { message });
+
+const socialLinkSchemas = {
+  linkedInUrl: optionalUrl(
+    /^https?:\/\/(www\.)?linkedin\.com\/(company|in|school|showcase)\/[A-Za-z0-9._%+-]+\/?.*$/i,
+    "Use a LinkedIn URL like https://linkedin.com/company/example",
+  ),
+  twitterUrl: optionalUrl(
+    /^https?:\/\/(www\.)?(twitter\.com|x\.com)\/[A-Za-z0-9_]{1,15}\/?.*$/i,
+    "Use a Twitter/X URL like https://x.com/example",
+  ),
+  instagramUrl: optionalUrl(
+    /^https?:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?.*$/i,
+    "Use an Instagram URL like https://instagram.com/example",
+  ),
+  blogUrl: optionalUrl(
+    /^https?:\/\/[^\s.]+\.[^\s]+/i,
+    "Use a full URL like https://example.com/blog or https://example.com/feed.xml",
+  ),
+};
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -86,6 +112,18 @@ export default function Competitors() {
   const [isBlogTesting, setIsBlogTesting] = useState(false);
   const [blogTestResult, setBlogTestResult] = useState<{ valid: boolean; feedType: string; postCount: number; sampleTitles: string[]; error?: string } | null>(null);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
+
+  const linkErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    (Object.keys(socialLinkSchemas) as Array<keyof typeof socialLinkSchemas>).forEach((key) => {
+      const result = socialLinkSchemas[key].safeParse((linksForm as any)[key] ?? "");
+      if (!result.success) {
+        errs[key] = result.error.issues[0]?.message || "Invalid URL";
+      }
+    });
+    return errs;
+  }, [linksForm.linkedInUrl, linksForm.twitterUrl, linksForm.instagramUrl, linksForm.blogUrl]);
+  const hasLinkErrors = Object.keys(linkErrors).length > 0;
 
   // Validate and normalize URL - basic frontend validation, backend does authoritative security checks
   const normalizeAndValidateUrl = (inputUrl: string): { valid: boolean; normalized: string; error: string } => {
@@ -1373,8 +1411,13 @@ export default function Competitors() {
                 placeholder="https://linkedin.com/company/example"
                 value={linksForm.linkedInUrl}
                 onChange={(e) => setLinksForm(f => ({ ...f, linkedInUrl: e.target.value }))}
+                aria-invalid={!!linkErrors.linkedInUrl}
+                className={linkErrors.linkedInUrl ? "border-destructive focus-visible:ring-destructive" : ""}
                 data-testid="input-linkedin-url"
               />
+              {linkErrors.linkedInUrl && (
+                <p className="text-xs text-destructive" data-testid="error-linkedin-url">{linkErrors.linkedInUrl}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -1384,8 +1427,13 @@ export default function Competitors() {
                 placeholder="https://twitter.com/example"
                 value={linksForm.twitterUrl}
                 onChange={(e) => setLinksForm(f => ({ ...f, twitterUrl: e.target.value }))}
+                aria-invalid={!!linkErrors.twitterUrl}
+                className={linkErrors.twitterUrl ? "border-destructive focus-visible:ring-destructive" : ""}
                 data-testid="input-twitter-url"
               />
+              {linkErrors.twitterUrl && (
+                <p className="text-xs text-destructive" data-testid="error-twitter-url">{linkErrors.twitterUrl}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -1395,8 +1443,13 @@ export default function Competitors() {
                 placeholder="https://instagram.com/example"
                 value={linksForm.instagramUrl}
                 onChange={(e) => setLinksForm(f => ({ ...f, instagramUrl: e.target.value }))}
+                aria-invalid={!!linkErrors.instagramUrl}
+                className={linkErrors.instagramUrl ? "border-destructive focus-visible:ring-destructive" : ""}
                 data-testid="input-instagram-url"
               />
+              {linkErrors.instagramUrl && (
+                <p className="text-xs text-destructive" data-testid="error-instagram-url">{linkErrors.instagramUrl}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -1406,7 +1459,7 @@ export default function Competitors() {
                   variant="ghost" 
                   size="sm"
                   onClick={testBlogUrl}
-                  disabled={isBlogTesting || !linksForm.blogUrl.trim()}
+                  disabled={isBlogTesting || !linksForm.blogUrl.trim() || !!linkErrors.blogUrl}
                   data-testid="button-test-blog"
                 >
                   {isBlogTesting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Rss className="w-3 h-3 mr-1" />}
@@ -1421,11 +1474,17 @@ export default function Competitors() {
                   setLinksForm(f => ({ ...f, blogUrl: e.target.value }));
                   setBlogTestResult(null);
                 }}
+                aria-invalid={!!linkErrors.blogUrl}
+                className={linkErrors.blogUrl ? "border-destructive focus-visible:ring-destructive" : ""}
                 data-testid="input-blog-url"
               />
-              <p className="text-xs text-muted-foreground">
-                RSS feeds, Atom feeds, or blog page URLs
-              </p>
+              {linkErrors.blogUrl ? (
+                <p className="text-xs text-destructive" data-testid="error-blog-url">{linkErrors.blogUrl}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  RSS feeds, Atom feeds, or blog page URLs
+                </p>
+              )}
               
               {blogTestResult && (
                 <div className={`p-2 rounded border text-sm ${blogTestResult.valid ? "bg-green-500/10 border-green-500/30" : "bg-destructive/10 border-destructive/30"}`}>
@@ -1578,7 +1637,7 @@ export default function Competitors() {
             </Button>
             <Button 
               onClick={saveLinks}
-              disabled={isSavingLinks}
+              disabled={isSavingLinks || hasLinkErrors}
               data-testid="button-save-links"
             >
               {isSavingLinks ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

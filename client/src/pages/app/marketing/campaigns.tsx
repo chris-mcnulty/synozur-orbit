@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { z } from "zod";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,22 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STEPS = ["Details", "Assets", "Accounts", "Schedule"];
 
+const stepSchemas = [
+  z.object({
+    name: z.string().trim().min(1, "Campaign name is required"),
+  }),
+  z.object({}),
+  z.object({}),
+  z.object({
+    startDate: z.string().min(1, "Start date is required"),
+    numberOfDays: z
+      .number({ invalid_type_error: "Enter a number of days" })
+      .int("Days must be a whole number")
+      .min(1, "Must run for at least 1 day")
+      .max(365, "Days cannot exceed 365"),
+  }),
+] as const;
+
 function calculateEndDate(startDate: string, numberOfDays: number, includeSat: boolean, includeSun: boolean): Date {
   const start = new Date(startDate);
   let daysAdded = 0;
@@ -112,6 +129,7 @@ export default function CampaignsPage() {
   const isInstant = !!preselectedAssetId;
   const [addOpen, setAddOpen] = useState(isInstant);
   const [step, setStep] = useState(0);
+  const [stepAttempted, setStepAttempted] = useState<Record<number, boolean>>({});
   const [assetSearch, setAssetSearch] = useState("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string>("all");
   const [assetDateRange, setAssetDateRange] = useState<string>("all");
@@ -127,6 +145,27 @@ export default function CampaignsPage() {
     includeSunday: false,
   });
 
+  const stepFieldErrors = useMemo(() => {
+    const result = stepSchemas[step].safeParse(form as any);
+    if (result.success) return {} as Record<string, string>;
+    const errs: Record<string, string> = {};
+    for (const issue of result.error.issues) {
+      const key = issue.path[0] as string;
+      if (key && !errs[key]) errs[key] = issue.message;
+    }
+    return errs;
+  }, [step, form]);
+  const isStepValid = Object.keys(stepFieldErrors).length === 0;
+  const showStepErrors = !!stepAttempted[step];
+
+  const advanceStep = (next: number) => {
+    if (!isStepValid) {
+      setStepAttempted((prev) => ({ ...prev, [step]: true }));
+      return;
+    }
+    setStep(next);
+  };
+
   const resetForm = () => {
     setForm({
       name: "", description: "",
@@ -137,6 +176,7 @@ export default function CampaignsPage() {
       numberOfDays: 7, includeSaturday: false, includeSunday: false,
     });
     setStep(0);
+    setStepAttempted({});
     setAssetSearch("");
     setAssetCategoryFilter("all");
     setAssetDateRange("all");
@@ -386,7 +426,13 @@ export default function CampaignsPage() {
                 {STEPS.map((s, i) => (
                   <div key={s} className="flex items-center gap-1">
                     <button
-                      onClick={() => setStep(i)}
+                      onClick={() => {
+                        if (i > step && !isStepValid) {
+                          setStepAttempted((prev) => ({ ...prev, [step]: true }));
+                          return;
+                        }
+                        setStep(i);
+                      }}
                       className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
                         i === step ? "bg-primary text-primary-foreground" :
                         i < step ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
@@ -408,8 +454,15 @@ export default function CampaignsPage() {
                       value={form.name}
                       onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                       placeholder="e.g. Q2 2026 Product Launch"
+                      aria-invalid={showStepErrors && !!stepFieldErrors.name}
+                      className={showStepErrors && stepFieldErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                       data-testid="input-campaign-name"
                     />
+                    {showStepErrors && stepFieldErrors.name && (
+                      <p className="text-xs text-destructive mt-1" data-testid="error-campaign-name">
+                        {stepFieldErrors.name}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label>Description</Label>
@@ -448,8 +501,8 @@ export default function CampaignsPage() {
                   </div>
                   <Button
                     className="w-full"
-                    disabled={!form.name.trim()}
-                    onClick={() => setStep(1)}
+                    disabled={!isStepValid}
+                    onClick={() => advanceStep(1)}
                     data-testid="button-next-to-assets"
                   >
                     Next: Select Assets <ChevronRight className="w-4 h-4 ml-1" />
@@ -541,7 +594,7 @@ export default function CampaignsPage() {
                     <Button variant="outline" onClick={() => setStep(0)} className="flex-1" data-testid="button-back-to-details">
                       <ChevronLeft className="w-4 h-4 mr-1" /> Back
                     </Button>
-                    <Button onClick={() => setStep(2)} className="flex-1" data-testid="button-next-to-accounts">
+                    <Button onClick={() => advanceStep(2)} disabled={!isStepValid} className="flex-1" data-testid="button-next-to-accounts">
                       Next: Social Accounts <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </div>
@@ -576,7 +629,7 @@ export default function CampaignsPage() {
                     <Button variant="outline" onClick={() => setStep(1)} className="flex-1" data-testid="button-back-to-assets">
                       <ChevronLeft className="w-4 h-4 mr-1" /> Back
                     </Button>
-                    <Button onClick={() => setStep(3)} className="flex-1" data-testid="button-next-to-schedule">
+                    <Button onClick={() => advanceStep(3)} disabled={!isStepValid} className="flex-1" data-testid="button-next-to-schedule">
                       Next: Schedule <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </div>
@@ -592,8 +645,15 @@ export default function CampaignsPage() {
                         type="date"
                         value={form.startDate}
                         onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                        aria-invalid={showStepErrors && !!stepFieldErrors.startDate}
+                        className={showStepErrors && stepFieldErrors.startDate ? "border-destructive focus-visible:ring-destructive" : ""}
                         data-testid="input-start-date"
                       />
+                      {showStepErrors && stepFieldErrors.startDate && (
+                        <p className="text-xs text-destructive mt-1" data-testid="error-start-date">
+                          {stepFieldErrors.startDate}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label>Days to Run</Label>
@@ -602,9 +662,19 @@ export default function CampaignsPage() {
                         min={1}
                         max={365}
                         value={form.numberOfDays}
-                        onChange={e => setForm(f => ({ ...f, numberOfDays: parseInt(e.target.value) || 1 }))}
+                        onChange={e => {
+                          const raw = e.target.value;
+                          setForm(f => ({ ...f, numberOfDays: raw === "" ? (NaN as any) : parseInt(raw, 10) }));
+                        }}
+                        aria-invalid={showStepErrors && !!stepFieldErrors.numberOfDays}
+                        className={showStepErrors && stepFieldErrors.numberOfDays ? "border-destructive focus-visible:ring-destructive" : ""}
                         data-testid="input-number-of-days"
                       />
+                      {showStepErrors && stepFieldErrors.numberOfDays && (
+                        <p className="text-xs text-destructive mt-1" data-testid="error-number-of-days">
+                          {stepFieldErrors.numberOfDays}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
@@ -646,8 +716,14 @@ export default function CampaignsPage() {
                     </Button>
                     <Button
                       className="flex-1"
-                      disabled={!form.name.trim() || createMutation.isPending}
-                      onClick={() => createMutation.mutate()}
+                      disabled={!form.name.trim() || !isStepValid || createMutation.isPending}
+                      onClick={() => {
+                        if (!isStepValid) {
+                          setStepAttempted((prev) => ({ ...prev, [step]: true }));
+                          return;
+                        }
+                        createMutation.mutate();
+                      }}
                       data-testid="button-create-campaign"
                     >
                       {createMutation.isPending ? "Creating..." : "Create Campaign"}
