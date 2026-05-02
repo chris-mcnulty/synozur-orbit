@@ -158,6 +158,7 @@ export default function EmailNewslettersPage() {
   const [emailTone, setEmailTone] = useState("professional");
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
+  const [wrapEmailLinks, setWrapEmailLinks] = useState(false);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const [emailInstructions, setEmailInstructions] = useState(
     briefingAction ? `Address this intelligence action item in the email: ${briefingAction}`
@@ -362,6 +363,7 @@ export default function EmailNewslettersPage() {
           callToAction: emailCallToAction || undefined,
           recipientContext: emailRecipientContext || undefined,
           personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
+          wrapLinks: wrapEmailLinks,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -676,6 +678,21 @@ export default function EmailNewslettersPage() {
                 data-testid="input-email-instructions"
               />
             </div>
+            <label className="flex items-start gap-2 cursor-pointer text-sm rounded-md border bg-muted/30 p-3" data-testid="toggle-wrap-email-links-label">
+              <input
+                type="checkbox"
+                checked={wrapEmailLinks}
+                onChange={e => setWrapEmailLinks(e.target.checked)}
+                className="mt-0.5"
+                data-testid="checkbox-wrap-email-links"
+              />
+              <div>
+                <span className="font-medium">Wrap outbound URLs in tracked redirects</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Replace any URLs in the generated email with /r/short-codes that record click counts and append UTM tags. Tracked links appear in Marketing → Performance.
+                </p>
+              </div>
+            </label>
             <div className="flex items-center gap-3">
               <Button
                 onClick={handleGenerateEmail}

@@ -19,7 +19,11 @@ import {
   Library,
   Image,
   AtSign,
+  LayoutGrid,
+  TrendingUp,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
 import { useQuery } from "@tanstack/react-query";
 
 type LongFormRecommendation = {
@@ -225,7 +229,22 @@ export default function MarketingLandingPage() {
             </Card>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Tabs defaultValue="overview" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="overview" className="gap-1.5" data-testid="tab-marketing-overview">
+                <LayoutGrid className="w-3.5 h-3.5" /> Overview
+              </TabsTrigger>
+              <TabsTrigger value="performance" className="gap-1.5" data-testid="tab-marketing-performance">
+                <TrendingUp className="w-3.5 h-3.5" /> Performance
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="performance">
+              <LinkPerformanceTab />
+            </TabsContent>
+
+            <TabsContent value="overview">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {cards.map((card) => {
               const Icon = card.icon;
               return (
@@ -302,7 +321,9 @@ export default function MarketingLandingPage() {
                 </Card>
               );
             })}
-          </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </AppLayout>

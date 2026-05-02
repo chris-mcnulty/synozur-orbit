@@ -5,6 +5,7 @@ import { join } from "path";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
+import { registerMarketingLinksRoutes } from "./routes/marketing-links";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
@@ -31,6 +32,9 @@ export async function registerRoutes(
   registerObjectStorageRoutes(app);
   registerEntraRoutes(app);
   registerSaturnMarketingRoutes(app);
+  // Register marketing-links BEFORE the Vite/static catch-all so /r/:slug
+  // resolves to the redirect handler instead of the SPA HTML.
+  registerMarketingLinksRoutes(app);
   
   app.get("/api/content/:filename", (req, res) => {
     const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];

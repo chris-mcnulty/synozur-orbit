@@ -55,6 +55,7 @@ Preferred communication style: Simple, everyday language.
 - **Email Newsletters**: Standalone tool for generating emails from content assets.
 - **Marketing Content Library**: Enterprise-gated asset management with AI summarization, categories, tagging, and crawl-based asset suggestions (pages discovered during baseline web crawl are flagged as candidates).
 - **Marketing Brand Library**: Enterprise-gated brand asset management with product cross-linking, categories, and tagging.
+- **UTM Builder & Link Tracking**: Tenant-scoped tracked short links with UTM parameters. `/r/:slug` redirects record clicks (bot-filtered, daily-rotating IP hash). Link Builder UI on campaigns; Performance tab on Marketing index with sparklines and CSV export. Optional opt-in to wrap outbound URLs in generated social posts and emails.
 - **Persona & ICP Builder**: Pro/Enterprise/Unlimited-gated buyer persona management with AI-assisted generation.
 - **Assessments**: Competitive analysis snapshots with proxy assessment capabilities.
 - **Client Projects**: Facilitate product-level competitive analysis for consulting firms.

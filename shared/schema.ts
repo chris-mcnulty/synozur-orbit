@@ -1941,6 +1941,74 @@ export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
 
+// Marketing Links — UTM-tagged short links with click tracking. Slug is
+// globally unique so the redirect handler can resolve a slug to a destination
+// without ambiguity, but ownership is enforced through tenantDomain on every
+// CRUD/read path.
+export const marketingLinks = pgTable("marketing_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  slug: text("slug").notNull().unique(),
+  destinationUrl: text("destination_url").notNull(),
+  label: text("label"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmContent: text("utm_content"),
+  utmTerm: text("utm_term"),
+  clickCount: integer("click_count").notNull().default(0),
+  lastClickedAt: timestamp("last_clicked_at"),
+  status: text("status").notNull().default("active"), // active | archived
+  source: text("source").notNull().default("manual"), // manual | post-wrap | email-wrap
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const marketingLinksRelations = relations(marketingLinks, ({ one, many }) => ({
+  campaign: one(campaigns, {
+    fields: [marketingLinks.campaignId],
+    references: [campaigns.id],
+  }),
+  market: one(markets, {
+    fields: [marketingLinks.marketId],
+    references: [markets.id],
+  }),
+  clicks: many(marketingLinkClicks),
+}));
+
+export const insertMarketingLinkSchema = createInsertSchema(marketingLinks).omit({
+  id: true, createdAt: true, updatedAt: true, clickCount: true, lastClickedAt: true,
+});
+export type MarketingLink = typeof marketingLinks.$inferSelect;
+export type InsertMarketingLink = z.infer<typeof insertMarketingLinkSchema>;
+
+// Marketing Link Clicks — append-only log of redirect events. Bots are flagged
+// rather than dropped so analytics can be re-aggregated if filtering rules
+// change. Raw IPs are never stored; instead we hash with a daily-rotating salt
+// to provide rough uniqueness while preserving privacy.
+export const marketingLinkClicks = pgTable("marketing_link_clicks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  linkId: varchar("link_id").notNull().references(() => marketingLinks.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  clickedAt: timestamp("clicked_at").notNull().defaultNow(),
+  referrer: text("referrer"),
+  userAgent: text("user_agent"),
+  ipHash: text("ip_hash"),
+  isBot: boolean("is_bot").notNull().default(false),
+});
+
+export const marketingLinkClicksRelations = relations(marketingLinkClicks, ({ one }) => ({
+  link: one(marketingLinks, {
+    fields: [marketingLinkClicks.linkId],
+    references: [marketingLinks.id],
+  }),
+}));
+
+export type MarketingLinkClick = typeof marketingLinkClicks.$inferSelect;
+
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   ticketNumber: serial("ticket_number").notNull(),

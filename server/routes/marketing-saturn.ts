@@ -60,6 +60,7 @@ import { storage, type ContextFilter } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
+import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1619,8 +1620,23 @@ Return ONLY a valid JSON object (no markdown fences) with:
         .set({ postGenerationJobId: job.id, updatedAt: new Date() })
         .where(eq(campaigns.id, campaign.id));
 
+      const wrapLinks: boolean = !!req.body?.wrapLinks;
+      const reqHost = req.get("host") || undefined;
+      const reqProtocol = req.protocol;
+      const ownerUserId = ctx.userId;
+
       // Kick off async generation (fire-and-forget)
-      generatePostsAsync(campaign.id, ctx.tenantDomain, ctx.marketId, job.id, brandImageIds, personaIds, useThematicMode ? thematicBrief : "", useThematicMode ? thematicUrl : "").catch(err => {
+      generatePostsAsync(
+        campaign.id,
+        ctx.tenantDomain,
+        ctx.marketId,
+        job.id,
+        brandImageIds,
+        personaIds,
+        useThematicMode ? thematicBrief : "",
+        useThematicMode ? thematicUrl : "",
+        { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost },
+      ).catch(err => {
         console.error("[Saturn] Post generation error:", err.message);
       });
 
@@ -2006,7 +2022,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext, personaIds } = req.body;
+    const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext, personaIds, wrapLinks } = req.body;
 
     const platformKey = platform || "outlook";
     const toneKey = tone || "professional";
@@ -2319,6 +2335,39 @@ Structure your response using these exact delimiters:
     const subject = subjectLineSuggestions[0] || "Generated Email";
     const isHtml = platformKey === "hubspot-marketing";
 
+    // Optionally wrap outbound URLs in tracked redirects with UTM tags. We do
+    // this after platform-specific HTML rewriting so the link-replacer doesn't
+    // have to know about HubSpot's table structure.
+    let wrapInfo: { createdSlugs: string[] } | null = null;
+    if (wrapLinks) {
+      let campaignContext: { id: string; name: string } | null = null;
+      if (campaignId) {
+        const [c] = await db.select({ id: campaigns.id, name: campaigns.name })
+          .from(campaigns)
+          .where(and(eq(campaigns.id, campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)))
+          .limit(1);
+        if (c) campaignContext = c;
+      }
+      const utmCampaignVal = slugifyForUtm(campaignContext?.name, "newsletter");
+      const wrapped = await wrapOutboundLinksInText(emailBody, {
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        campaignId: campaignContext?.id ?? null,
+        userId: ctx.userId,
+        utm: {
+          source: platformKey,
+          medium: "email",
+          campaign: utmCampaignVal,
+          content: "newsletter",
+        },
+        source: "email-wrap",
+        redirectBase: { protocol: req.protocol, host: req.get("host") || undefined },
+        label: campaignContext ? `Email · ${campaignContext.name}` : "Email · newsletter",
+      });
+      emailBody = wrapped.text;
+      wrapInfo = { createdSlugs: wrapped.createdSlugs };
+    }
+
     res.json({
       subject,
       previewText: "",
@@ -2328,6 +2377,7 @@ Structure your response using these exact delimiters:
       coachingTips,
       platform: platformKey,
       usage: result.usage,
+      wrappedLinks: wrapInfo?.createdSlugs.length ?? 0,
     });
   });
 
@@ -2958,6 +3008,7 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string } = {},
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
@@ -3259,6 +3310,43 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             generationJobId: jobId,
           } as InsertGeneratedPost);
         }
+      }
+    }
+
+    // Optional wrap-on-generate. Done as a final pass so the AI never has to
+    // think about redirect URLs — we rewrite the URLs it produced into tracked
+    // /r/:slug equivalents and persist a marketing_links row per unique URL.
+    if (wrapOpts.wrapLinks && wrapOpts.ownerUserId && generatedRows.length > 0) {
+      const utmCampaign = slugifyForUtm(campaignRow?.name, "campaign");
+      let wrappedCount = 0;
+      for (const row of generatedRows) {
+        if (!row.content) continue;
+        const platformSource = (row.platform || "social");
+        try {
+          const wrapped = await wrapOutboundLinksInText(row.content, {
+            tenantDomain,
+            marketId,
+            campaignId,
+            userId: wrapOpts.ownerUserId,
+            utm: {
+              source: platformSource,
+              medium: "social",
+              campaign: utmCampaign,
+            },
+            source: "post-wrap",
+            redirectBase: { protocol: wrapOpts.redirectProtocol, host: wrapOpts.redirectHost },
+            label: `${platformSource} · ${campaignRow?.name ?? "campaign"}`,
+          });
+          if (wrapped.createdSlugs.length > 0) {
+            row.content = wrapped.text;
+            wrappedCount += wrapped.createdSlugs.length;
+          }
+        } catch (err: any) {
+          console.warn(`[Saturn] Link wrap failed for post:`, err.message);
+        }
+      }
+      if (wrappedCount > 0) {
+        console.log(`[Saturn] Wrapped ${wrappedCount} outbound links across ${generatedRows.length} posts`);
       }
     }
 

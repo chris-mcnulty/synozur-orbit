@@ -30,9 +30,11 @@ import {
   Package,
   ChevronDown,
   ExternalLink,
+  Link2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -166,6 +168,7 @@ export default function CampaignDetailPage() {
   const [generateMode, setGenerateMode] = useState<"asset" | "thematic">("asset");
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
+  const [wrapPostLinks, setWrapPostLinks] = useState(false);
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
@@ -246,12 +249,12 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "" }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -893,7 +896,12 @@ export default function CampaignDetailPage() {
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
+            <TabsTrigger value="links" className="gap-1.5" data-testid="tab-links"><Link2 className="w-3.5 h-3.5" />Links</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="links" className="space-y-4">
+            <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />
+          </TabsContent>
 
           {/* Social Posts */}
           <TabsContent value="posts" className="space-y-4">
@@ -1948,14 +1956,31 @@ export default function CampaignDetailPage() {
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); }} data-testid="button-cancel-generate">Cancel</Button>
+          <div className="pt-3 border-t flex-shrink-0">
+            <label className="flex items-start gap-2 cursor-pointer text-sm py-2" data-testid="toggle-wrap-post-links-label">
+              <Checkbox
+                checked={wrapPostLinks}
+                onCheckedChange={(v) => setWrapPostLinks(!!v)}
+                className="mt-0.5"
+                data-testid="checkbox-wrap-post-links"
+              />
+              <div>
+                <span className="font-medium">Wrap outbound URLs in tracked redirects</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Replace any URLs the AI generates with /r/short-codes that record click counts and append UTM tags. Visit the Links tab afterwards to see them.
+                </p>
+              </div>
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
                 personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
                 thematicBrief: generateMode === "thematic" ? thematicBrief : undefined,
                 thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
+                wrapLinks: wrapPostLinks,
               })}
               disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim())}
               className="gap-2"
