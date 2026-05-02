@@ -146,6 +146,12 @@ import {
   integrationConfigs,
   type IntegrationConfig,
   type InsertIntegrationConfig,
+  trackedKeywords,
+  type TrackedKeyword,
+  type InsertTrackedKeyword,
+  seoMetrics,
+  type SeoMetric,
+  type InsertSeoMetric,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -566,6 +572,17 @@ export interface IStorage {
   deleteIntegrationConfig(id: string): Promise<void>;
   markIntegrationConfigSuccess(id: string): Promise<void>;
   markIntegrationConfigError(id: string, error: string): Promise<void>;
+
+  // SEO & Share-of-Voice Tracking
+  getTrackedKeyword(id: string): Promise<TrackedKeyword | undefined>;
+  getTrackedKeywordsByContext(ctx: ContextFilter): Promise<TrackedKeyword[]>;
+  getTrackedKeywordsByTenant(tenantDomain: string): Promise<TrackedKeyword[]>;
+  createTrackedKeyword(keyword: InsertTrackedKeyword): Promise<TrackedKeyword>;
+  deleteTrackedKeyword(id: string): Promise<void>;
+  recordSeoMetrics(metrics: InsertSeoMetric[]): Promise<SeoMetric[]>;
+  getLatestSeoMetricsByContext(ctx: ContextFilter): Promise<SeoMetric[]>;
+  getSeoMetricsByKeyword(keywordId: string, limit?: number): Promise<SeoMetric[]>;
+  getSeoMetricsForCompetitor(ctx: ContextFilter, competitorId: string): Promise<SeoMetric[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3852,6 +3869,92 @@ export class DatabaseStorage implements IStorage {
       .update(integrationConfigs)
       .set({ lastUsedAt: new Date(), lastError: error })
       .where(eq(integrationConfigs.id, id));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SEO & Share-of-Voice Tracking
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getTrackedKeyword(id: string): Promise<TrackedKeyword | undefined> {
+    const [row] = await db.select().from(trackedKeywords).where(eq(trackedKeywords.id, id));
+    return row || undefined;
+  }
+
+  async getTrackedKeywordsByContext(ctx: ContextFilter): Promise<TrackedKeyword[]> {
+    const conditions = [eq(trackedKeywords.tenantDomain, ctx.tenantDomain)];
+    if (ctx.isDefaultMarket) {
+      conditions.push(isNull(trackedKeywords.marketId));
+    } else if (ctx.marketId) {
+      conditions.push(eq(trackedKeywords.marketId, ctx.marketId));
+    }
+    return db.select().from(trackedKeywords)
+      .where(and(...conditions))
+      .orderBy(trackedKeywords.keyword);
+  }
+
+  async getTrackedKeywordsByTenant(tenantDomain: string): Promise<TrackedKeyword[]> {
+    return db.select().from(trackedKeywords)
+      .where(eq(trackedKeywords.tenantDomain, tenantDomain))
+      .orderBy(trackedKeywords.keyword);
+  }
+
+  async createTrackedKeyword(keyword: InsertTrackedKeyword): Promise<TrackedKeyword> {
+    const [created] = await db.insert(trackedKeywords).values(keyword).returning();
+    return created;
+  }
+
+  async deleteTrackedKeyword(id: string): Promise<void> {
+    await db.delete(trackedKeywords).where(eq(trackedKeywords.id, id));
+  }
+
+  async recordSeoMetrics(metrics: InsertSeoMetric[]): Promise<SeoMetric[]> {
+    if (metrics.length === 0) return [];
+    return db.insert(seoMetrics).values(metrics).returning();
+  }
+
+  async getLatestSeoMetricsByContext(ctx: ContextFilter): Promise<SeoMetric[]> {
+    const conditions = [eq(seoMetrics.tenantDomain, ctx.tenantDomain)];
+    if (ctx.isDefaultMarket) {
+      conditions.push(isNull(seoMetrics.marketId));
+    } else if (ctx.marketId) {
+      conditions.push(eq(seoMetrics.marketId, ctx.marketId));
+    }
+    const rows = await db.select().from(seoMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(seoMetrics.capturedAt));
+
+    const seen = new Set<string>();
+    const latest: SeoMetric[] = [];
+    for (const row of rows) {
+      const key = `${row.keywordId}::${row.entityType}::${row.entityId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      latest.push(row);
+    }
+    return latest;
+  }
+
+  async getSeoMetricsByKeyword(keywordId: string, limit: number = 200): Promise<SeoMetric[]> {
+    return db.select().from(seoMetrics)
+      .where(eq(seoMetrics.keywordId, keywordId))
+      .orderBy(desc(seoMetrics.capturedAt))
+      .limit(limit);
+  }
+
+  async getSeoMetricsForCompetitor(ctx: ContextFilter, competitorId: string): Promise<SeoMetric[]> {
+    const conditions = [
+      eq(seoMetrics.tenantDomain, ctx.tenantDomain),
+      eq(seoMetrics.entityType, "competitor"),
+      eq(seoMetrics.entityId, competitorId),
+    ];
+    if (ctx.isDefaultMarket) {
+      conditions.push(isNull(seoMetrics.marketId));
+    } else if (ctx.marketId) {
+      conditions.push(eq(seoMetrics.marketId, ctx.marketId));
+    }
+    return db.select().from(seoMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(seoMetrics.capturedAt));
   }
 }
 

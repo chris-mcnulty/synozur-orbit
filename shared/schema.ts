@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -105,6 +105,8 @@ export const tenants = pgTable("tenants", {
   speStorageEnabled: boolean("spe_storage_enabled").default(false), // Whether SPE storage is active for this tenant
   speMigrationStatus: text("spe_migration_status"), // pending | in_progress | completed | failed
   speMigrationStartedAt: timestamp("spe_migration_started_at"), // When SPE migration began
+  // SEO tracking refresh cadence (in days) — null falls back to platform default of 7
+  seoRefreshIntervalDays: integer("seo_refresh_interval_days").default(7),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2206,6 +2208,7 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
 
+<<<<<<< HEAD
 // ═══════════════════════════════════════════════════════════════════════════
 // Webhook integrations (Slack & Teams) — Task #71
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2249,6 +2252,75 @@ export const insertIntegrationConfigSchema = createInsertSchema(integrationConfi
 });
 export type IntegrationConfig = typeof integrationConfigs.$inferSelect;
 export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEO & Share-of-Voice Tracking
+export const trackedKeywords = pgTable("tracked_keywords", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  keyword: text("keyword").notNull(),
+  country: text("country").notNull().default("us"),
+  locale: text("locale").notNull().default("en"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantMarketIdx: index("tracked_keywords_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
+
+export const trackedKeywordsRelations = relations(trackedKeywords, ({ one, many }) => ({
+  market: one(markets, {
+    fields: [trackedKeywords.marketId],
+    references: [markets.id],
+  }),
+  createdByUser: one(users, {
+    fields: [trackedKeywords.createdBy],
+    references: [users.id],
+  }),
+  metrics: many(seoMetrics),
+}));
+
+export const insertTrackedKeywordSchema = createInsertSchema(trackedKeywords).omit({
+  id: true, createdAt: true,
+});
+export type TrackedKeyword = typeof trackedKeywords.$inferSelect;
+export type InsertTrackedKeyword = z.infer<typeof insertTrackedKeywordSchema>;
+
+export const seoMetrics = pgTable("seo_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  keywordId: varchar("keyword_id").notNull().references(() => trackedKeywords.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(), // 'baseline' | 'competitor'
+  entityId: varchar("entity_id"), // companyProfileId or competitorId; null only when the entity has been deleted
+  entityName: text("entity_name").notNull(),
+  entityDomain: text("entity_domain"),
+  rank: integer("rank"),
+  estimatedTraffic: integer("estimated_traffic").notNull().default(0),
+  shareOfVoice: integer("share_of_voice").notNull().default(0),
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantMarketIdx: index("seo_metrics_tenant_market_idx").on(table.tenantDomain, table.marketId, table.capturedAt),
+  keywordIdx: index("seo_metrics_keyword_idx").on(table.keywordId, table.capturedAt),
+  entityIdx: index("seo_metrics_entity_idx").on(table.entityId, table.capturedAt),
+}));
+
+export const seoMetricsRelations = relations(seoMetrics, ({ one }) => ({
+  keyword: one(trackedKeywords, {
+    fields: [seoMetrics.keywordId],
+    references: [trackedKeywords.id],
+  }),
+  market: one(markets, {
+    fields: [seoMetrics.marketId],
+    references: [markets.id],
+  }),
+}));
+
+export const insertSeoMetricSchema = createInsertSchema(seoMetrics).omit({
+  id: true, capturedAt: true,
+});
+export type SeoMetric = typeof seoMetrics.$inferSelect;
+export type InsertSeoMetric = z.infer<typeof insertSeoMetricSchema>;
 
 export const CURRENT_APP_VERSION = "2.0.0";
 

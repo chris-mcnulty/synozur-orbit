@@ -12,6 +12,7 @@ import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { syncMarketingPlanToPlanner } from "./planner-service";
+import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
 import { marketingPlans } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -170,6 +171,7 @@ const jobStatus: Record<string, JobStatus> = {
   productMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   trialReminder: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   weeklyDigest: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  seoRefresh: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -1629,6 +1631,124 @@ let trialReminderInterval: NodeJS.Timeout | null = null;
 let weeklyDigestInterval: NodeJS.Timeout | null = null;
 let scheduledBriefingInterval: NodeJS.Timeout | null = null;
 let plannerSyncInterval: NodeJS.Timeout | null = null;
+let seoRefreshInterval: NodeJS.Timeout | null = null;
+
+// ---------------------------------------------------------------------------
+// SEO refresh job — weekly per (tenant, market) sweep that re-runs SERP
+// queries for every tracked keyword and records a row of seo_metrics.
+// ---------------------------------------------------------------------------
+
+const SEO_REFRESH_DEFAULT_INTERVAL_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getTenantSeoIntervalMs(tenant: { seoRefreshIntervalDays?: number | null }): number {
+  const days = tenant.seoRefreshIntervalDays ?? SEO_REFRESH_DEFAULT_INTERVAL_DAYS;
+  const clamped = Math.max(1, Math.min(days, 90));
+  return clamped * DAY_MS;
+}
+
+async function runSeoRefreshJob(): Promise<void> {
+  if (jobStatus.seoRefresh.isRunning) {
+    console.log("[SEO Refresh] Job already running, skipping sweep");
+    return;
+  }
+
+  jobStatus.seoRefresh.isRunning = true;
+  console.log("[SEO Refresh] Starting weekly SEO refresh sweep...");
+
+  let tenantsProcessed = 0;
+  let marketsProcessed = 0;
+  let keywordsProcessed = 0;
+  let rowsRecorded = 0;
+  let errorCount = 0;
+
+  try {
+    const tenants = await storage.getAllTenants();
+    for (const tenant of tenants) {
+      if (tenant.status !== "active") continue;
+
+      const featureCheck = await checkFeatureAccessAsync(tenant.plan, "seoTracking");
+      if (!featureCheck.allowed) continue;
+
+      const allKeywords = await storage.getTrackedKeywordsByTenant(tenant.domain);
+      if (allKeywords.length === 0) continue;
+
+      const tenantIntervalMs = getTenantSeoIntervalMs(tenant);
+      const tenantRuns = await storage.getScheduledJobRunsByTenant(tenant.domain, 50);
+      const lastTenantRun = tenantRuns.find((r) => r.jobType === "seoRefresh" && r.status === "completed");
+      if (lastTenantRun?.completedAt) {
+        const elapsed = Date.now() - new Date(lastTenantRun.completedAt).getTime();
+        if (elapsed < tenantIntervalMs) continue;
+      }
+
+      // Group keywords by their market context so we can run one sweep per market.
+      const marketGroups = new Map<string | null, typeof allKeywords>();
+      for (const k of allKeywords) {
+        const key = k.marketId ?? null;
+        if (!marketGroups.has(key)) marketGroups.set(key, []);
+        marketGroups.get(key)!.push(k);
+      }
+
+      tenantsProcessed += 1;
+
+      const defaultMarket = await storage.getDefaultMarket(tenant.id);
+      for (const [marketId] of Array.from(marketGroups.entries())) {
+        if (await isMarketArchived(marketId)) {
+          console.log(`[SEO Refresh] Skipping archived market ${marketId} for ${tenant.domain}`);
+          continue;
+        }
+
+        const isDefault = marketId === null;
+        const effectiveMarketId = isDefault ? (defaultMarket?.id ?? "") : marketId;
+        if (isDefault && !effectiveMarketId) {
+          console.log(`[SEO Refresh] Skipping ${tenant.domain} default-market keywords — no default market found`);
+          continue;
+        }
+
+        const targetName = `${tenant.domain}/${marketId ?? "default"}`;
+        await trackJobRun(
+          "seoRefresh",
+          tenant.domain,
+          marketId ?? "default",
+          targetName,
+          async () => {
+            const result = await refreshSeoForContext({
+              tenantDomain: tenant.domain,
+              tenantId: tenant.id,
+              marketId: effectiveMarketId,
+              isDefaultMarket: isDefault,
+            });
+            keywordsProcessed += result.keywordsProcessed;
+            rowsRecorded += result.rowsRecorded;
+            marketsProcessed += 1;
+            return result;
+          },
+        ).catch((err) => {
+          errorCount += 1;
+          console.error(`[SEO Refresh] Failed for ${targetName}:`, err);
+        });
+      }
+    }
+    console.log(`[SEO Refresh] Sweep complete — tenants=${tenantsProcessed}, markets=${marketsProcessed}, keywords=${keywordsProcessed}, rows=${rowsRecorded}, errors=${errorCount}`);
+  } catch (err) {
+    console.error("[SEO Refresh] Sweep failed:", err);
+  } finally {
+    jobStatus.seoRefresh.isRunning = false;
+    jobStatus.seoRefresh.lastRun = new Date();
+  }
+}
+
+async function checkAndRunSeoRefresh(): Promise<void> {
+  try {
+    await runSeoRefreshJob();
+  } catch (err) {
+    console.error("[SEO Refresh] Error checking schedule:", err);
+  }
+}
+
+export async function triggerSeoRefreshNow(): Promise<void> {
+  runSeoRefreshJob();
+}
 
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
@@ -1641,9 +1761,11 @@ export function startScheduledJobs(): void {
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
   if (scheduledBriefingInterval) clearInterval(scheduledBriefingInterval);
   if (plannerSyncInterval) clearInterval(plannerSyncInterval);
+  if (seoRefreshInterval) clearInterval(seoRefreshInterval);
 
   jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
   jobStatus.plannerSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+  jobStatus.seoRefresh = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
 
   // Set up recurring intervals
   websiteCrawlInterval = setInterval(() => {
@@ -1678,6 +1800,11 @@ export function startScheduledJobs(): void {
   plannerSyncInterval = setInterval(() => {
     runPlannerSyncJob();
   }, 15 * 60 * 1000);
+
+  // SEO refresh — checks every hour but only runs when 7+ days since last run
+  seoRefreshInterval = setInterval(() => {
+    checkAndRunSeoRefresh();
+  }, 60 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
   cleanupStuckJobs().catch(err => {
@@ -1728,7 +1855,12 @@ export function startScheduledJobs(): void {
     checkAndRunScheduledBriefing();
   }, 25 * 1000);
 
-  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes)");
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Checking if SEO refresh is overdue...");
+    checkAndRunSeoRefresh();
+  }, 35 * 1000);
+
+  console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes), SEO refresh (weekly)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
 
@@ -1764,6 +1896,10 @@ export function stopScheduledJobs(): void {
   if (plannerSyncInterval) {
     clearInterval(plannerSyncInterval);
     plannerSyncInterval = null;
+  }
+  if (seoRefreshInterval) {
+    clearInterval(seoRefreshInterval);
+    seoRefreshInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }

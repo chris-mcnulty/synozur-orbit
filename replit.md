@@ -65,6 +65,7 @@ Preferred communication style: Simple, everyday language.
 - **Multi-Market Support**: Enterprise feature for managing multiple client contexts. Markets support B2B (default) or B2C business type, which adjusts Orbit Score weighting — B2C prioritizes social engagement (Instagram) over innovation/content depth.
 - **PDF Browser Pool**: Singleton Chromium instance for efficient PDF generation.
 - **SharePoint Embedded (SPE) Storage**: Tenant-isolated document storage with admin UI.
+- **SEO & Share-of-Voice Tracking**: Pro/Enterprise/Unlimited-gated (`seoTracking` feature key). Tenant/market-scoped `tracked_keywords` + `seo_metrics` tables. SERP provider abstracted in `server/services/seo-provider.ts` with `SerpApiProvider` (uses `SERP_API_KEY` secret) and a deterministic `MockSerpProvider` fallback for dev. Captures rank, estimated traffic, and share-of-voice (basis points) for the baseline company plus all competitors per keyword. Weekly scheduled refresh job (`SEO refresh` in scheduled-jobs). CRUD + dashboard endpoints under `/api/seo/*` and `/api/competitors/:id/seo`, with CSV export at `/api/seo/share-of-voice.csv`. UI: `/app/seo-dashboard` (full dashboard with bar chart, leaderboard, CSV export) and a "SEO & Visibility" tab on competitor detail pages.
 
 ## External Dependencies
 

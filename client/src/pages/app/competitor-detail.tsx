@@ -19,6 +19,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import DataFreshnessBar from "@/components/DataFreshnessBar";
 import { useUser } from "@/lib/userContext";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
@@ -928,6 +930,9 @@ export default function CompetitorDetail() {
             </TabsTrigger>
             <TabsTrigger value="messaging">Messaging</TabsTrigger>
             <TabsTrigger value="pages">Pages Tracked</TabsTrigger>
+            <TabsTrigger value="seo" data-testid="tab-seo">
+              <Search className="h-4 w-4 mr-1" /> SEO &amp; Visibility
+            </TabsTrigger>
             <TabsTrigger value="history">Crawl History</TabsTrigger>
           </TabsList>
 
@@ -1613,6 +1618,10 @@ export default function CompetitorDetail() {
             )}
           </TabsContent>
           
+          <TabsContent value="seo" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <CompetitorSeoPanel competitorId={id!} competitorName={competitor.name} />
+          </TabsContent>
+
           <TabsContent value="history" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {competitorActivity.length === 0 ? (
               <Card>
@@ -1731,5 +1740,223 @@ export default function CompetitorDetail() {
         }}
       />
     </AppLayout>
+  );
+}
+
+interface SeoKeywordRow {
+  keywordId: string;
+  keyword: string;
+  country: string;
+  rank: number | null;
+  previousRank: number | null;
+  weekOverWeekChange: number | null;
+  estimatedTraffic: number;
+  shareOfVoice: number;
+  capturedAt: string | null;
+}
+
+interface SeoMetricRow {
+  id: string;
+  keywordId: string;
+  entityType: string;
+  entityId: string | null;
+  entityName: string;
+  rank: number | null;
+  estimatedTraffic: number;
+  shareOfVoice: number;
+  capturedAt: string;
+}
+
+function CompetitorSeoPanel({ competitorId, competitorName }: { competitorId: string; competitorName: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading, error } = useQuery<{ competitorId: string; keywords: SeoKeywordRow[]; baselineMetrics: SeoMetricRow[] }>({
+    queryKey: ["/api/competitors", competitorId, "seo"],
+    queryFn: async () => {
+      const res = await fetch(`/api/competitors/${competitorId}/seo`, { credentials: "include" });
+      if (res.status === 403) {
+        const err: any = new Error("Feature locked");
+        err.status = 403;
+        throw err;
+      }
+      if (!res.ok) throw new Error("Failed to load SEO metrics");
+      return res.json();
+    },
+  });
+
+  const [selectedKeywordId, setSelectedKeywordId] = useState<string | null>(null);
+  const selectedKeyword = data?.keywords.find((k) => k.keywordId === (selectedKeywordId || data.keywords[0]?.keywordId));
+
+  const { data: history } = useQuery<SeoMetricRow[]>({
+    queryKey: ["/api/seo/keywords", selectedKeyword?.keywordId, "history"],
+    queryFn: async () => {
+      if (!selectedKeyword) return [];
+      const res = await fetch(`/api/seo/keywords/${selectedKeyword.keywordId}/history`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedKeyword,
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/seo/refresh`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json()).error || "Refresh failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "SEO data refreshed", description: "Latest rankings have been recorded." });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", competitorId, "seo"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/seo/keywords"] });
+    },
+    onError: (err: Error) => toast({ title: "Refresh failed", description: err.message, variant: "destructive" }),
+  });
+
+  if (error && (error as any).status === 403) {
+    return (
+      <Card data-testid="seo-feature-locked">
+        <CardContent className="pt-8 text-center space-y-4">
+          <Lock className="h-12 w-12 mx-auto text-muted-foreground" />
+          <h3 className="text-lg font-semibold">Upgrade to Pro</h3>
+          <p className="text-sm text-muted-foreground">
+            SEO &amp; Share-of-Voice tracking is available on Pro, Enterprise, and Unlimited plans.
+          </p>
+          <Button onClick={() => window.location.href = "/pricing"} data-testid="button-upgrade-seo">View Plans</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-12 text-center text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Loading SEO data...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = data?.keywords ?? [];
+  const trendData = (history || [])
+    .filter((h) => h.entityType === "competitor" && h.entityId === competitorId)
+    .map((h) => ({
+      date: new Date(h.capturedAt).toLocaleDateString(),
+      rank: h.rank,
+      shareOfVoice: h.shareOfVoice / 100,
+    }))
+    .reverse();
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-primary" /> Tracked Keywords
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              How {competitorName} ranks for keywords tracked in this market.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/app/seo-dashboard">
+              <Button variant="outline" size="sm" data-testid="link-seo-dashboard">
+                <BarChart2 className="h-4 w-4 mr-1" /> Share-of-Voice Dashboard
+              </Button>
+            </Link>
+            <Button
+              size="sm"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending || rows.length === 0}
+              data-testid="button-refresh-seo"
+            >
+              {refreshMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+              Refresh now
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {rows.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground" data-testid="text-seo-empty">
+              No keywords tracked yet. Add keywords from the{" "}
+              <Link href="/app/seo-dashboard" className="text-primary underline">SEO Dashboard</Link> to start tracking.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="py-2 pr-2">Keyword</th>
+                    <th className="py-2 pr-2">Country</th>
+                    <th className="py-2 pr-2">Rank</th>
+                    <th className="py-2 pr-2">WoW</th>
+                    <th className="py-2 pr-2">Est. Traffic</th>
+                    <th className="py-2 pr-2">Share of Voice</th>
+                    <th className="py-2 pr-2">Last captured</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.keywordId}
+                      className={cn(
+                        "border-b cursor-pointer hover:bg-muted/40",
+                        selectedKeyword?.keywordId === row.keywordId && "bg-muted/30",
+                      )}
+                      onClick={() => setSelectedKeywordId(row.keywordId)}
+                      data-testid={`row-seo-keyword-${row.keywordId}`}
+                    >
+                      <td className="py-2 pr-2 font-medium" data-testid={`text-keyword-${row.keywordId}`}>{row.keyword}</td>
+                      <td className="py-2 pr-2 uppercase text-xs text-muted-foreground">{row.country}</td>
+                      <td className="py-2 pr-2" data-testid={`text-rank-${row.keywordId}`}>
+                        {row.rank ? <Badge variant={row.rank <= 10 ? "default" : "secondary"}>#{row.rank}</Badge> : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-2 pr-2" data-testid={`text-wow-${row.keywordId}`}>
+                        {row.weekOverWeekChange === null ? (
+                          <span className="text-muted-foreground inline-flex items-center"><Minus className="h-3 w-3" /></span>
+                        ) : row.weekOverWeekChange > 0 ? (
+                          <span className="text-emerald-500 inline-flex items-center"><ArrowUp className="h-3 w-3 mr-1" />{row.weekOverWeekChange}</span>
+                        ) : row.weekOverWeekChange < 0 ? (
+                          <span className="text-red-500 inline-flex items-center"><ArrowDown className="h-3 w-3 mr-1" />{Math.abs(row.weekOverWeekChange)}</span>
+                        ) : (
+                          <span className="text-muted-foreground inline-flex items-center"><Minus className="h-3 w-3" /></span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-2" data-testid={`text-traffic-${row.keywordId}`}>{row.estimatedTraffic.toLocaleString()}</td>
+                      <td className="py-2 pr-2" data-testid={`text-sov-${row.keywordId}`}>{(row.shareOfVoice / 100).toFixed(1)}%</td>
+                      <td className="py-2 pr-2 text-xs text-muted-foreground">
+                        {row.capturedAt ? new Date(row.capturedAt).toLocaleDateString() : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedKeyword && trendData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Ranking trend — &ldquo;{selectedKeyword.keyword}&rdquo;</CardTitle>
+            <p className="text-sm text-muted-foreground">Most recent rank captures (lower is better).</p>
+          </CardHeader>
+          <CardContent className="h-72" data-testid="chart-seo-trend">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis reversed allowDecimals={false} tick={{ fontSize: 11 }} domain={[1, "dataMax"]} />
+                <ReTooltip />
+                <Line type="monotone" dataKey="rank" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

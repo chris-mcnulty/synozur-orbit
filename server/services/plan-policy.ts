@@ -36,6 +36,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "personaBuilder", label: "Persona & ICP Builder", description: "Define buyer personas and inject audience context into AI content", category: "marketing" },
   { key: "autoBuild", label: "Auto Build", description: "Automatically discover competitors, crawl data, and generate full analytics for a new market", category: "platform" },
   { key: "webhookIntegrations", label: "Slack & Teams Notifications", description: "Send tenant-scoped event notifications to Slack and Microsoft Teams via incoming webhooks", category: "platform" },
+  { key: "seoTracking", label: "SEO & Share of Voice", description: "Track keyword rankings and competitive share-of-voice over time", category: "monitoring" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -87,6 +88,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     personaBuilder: false,
     autoBuild: false,
     webhookIntegrations: false,
+    seoTracking: false,
   },
   trial: {
     battlecards: true,
@@ -117,6 +119,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     personaBuilder: false,
     autoBuild: false,
     webhookIntegrations: false,
+    seoTracking: false,
   },
   pro: {
     battlecards: true,
@@ -147,6 +150,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     personaBuilder: true,
     autoBuild: false,
     webhookIntegrations: false,
+    seoTracking: true,
   },
   enterprise: {
     battlecards: true,
@@ -177,6 +181,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     personaBuilder: true,
     autoBuild: true,
     webhookIntegrations: true,
+    seoTracking: true,
   },
   unlimited: {
     battlecards: true,
@@ -207,6 +212,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     personaBuilder: true,
     autoBuild: true,
     webhookIntegrations: true,
+    seoTracking: true,
   },
 };
 

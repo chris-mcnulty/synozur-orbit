@@ -66,6 +66,7 @@ import SpeStoragePage from "@/pages/app/admin/spe-storage";
 import CompanyRosterPage from "@/pages/app/company-roster";
 import PositioningMapPage from "@/pages/app/positioning-map";
 import PublicFeedbackPage from "@/pages/feedback-public";
+import SeoDashboard from "@/pages/app/seo-dashboard";
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -146,6 +147,7 @@ function Router() {
       <Route path="/app/intelligence">{() => <PageFeatureGate featureKey="intelligenceBriefings" label="Intelligence Briefings" description="AI-synthesized periodic market intelligence reports. Upgrade to unlock this feature."><IntelligenceBriefingPage /></PageFeatureGate>}</Route>
       <Route path="/app/getting-started" component={GettingStartedPage} />
       <Route path="/app/positioning-map" component={PositioningMapPage} />
+      <Route path="/app/seo-dashboard">{() => <PageFeatureGate featureKey="seoTracking" label="SEO &amp; Share of Voice" description="Track keyword rankings and competitive share-of-voice. Upgrade to unlock this feature."><SeoDashboard /></PageFeatureGate>}</Route>
 
       {/* Fallback to 404 */}
       <Route component={NotFound} />
