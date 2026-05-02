@@ -5,6 +5,7 @@ import { calculateScores } from "./scoring-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
+import { runWithConcurrency, AI_CONCURRENCY, aiLimiter } from "./promise-pool";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -168,20 +169,22 @@ async function runRegenerationInBackground(
     }
 
     const analyses: any[] = [];
-    for (const competitor of competitors) {
+    let analysesCompleted = 0;
+    progress.currentStep = `Analyzing competitors (0/${competitors.length})`;
+    await runWithConcurrency(competitors, AI_CONCURRENCY.anthropic, async (competitor) => {
       try {
         // Check if competitor has manual research that should be preserved
         const existingAnalysis = competitor.analysisData as any;
         const hasManualResearch = existingAnalysis?.source === "manual";
-        
+
         if (hasManualResearch) {
           // Skip re-crawling - preserve manual research data
           console.log(`Full regen: Preserving manual research for ${competitor.name}`);
           analyses.push({ competitor: competitor.name, ...existingAnalysis });
           results.competitorsAnalyzed++;
-          continue;
+          return;
         }
-        
+
         const response = await fetch(competitor.url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; OrbitBot/1.0)" },
         });
@@ -201,19 +204,21 @@ async function runRegenerationInBackground(
             employees?: number;
             recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
           } | null;
-          
+
           const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
             followerCount: linkedInEngagement.followers,
             employeeCount: linkedInEngagement.employees,
             recentPosts: linkedInEngagement.recentPosts,
           } : undefined;
-          
-          const analysis = await analyzeCompetitorWebsite(
-            competitor.name,
-            competitor.url,
-            content,
-            undefined, // grounding context
-            linkedInData
+
+          const analysis = await aiLimiter.anthropic.run(() =>
+            analyzeCompetitorWebsite(
+              competitor.name,
+              competitor.url,
+              content,
+              undefined, // grounding context
+              linkedInData
+            )
           );
           await storage.updateCompetitorAnalysis(competitor.id, analysis);
           await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
@@ -222,12 +227,15 @@ async function runRegenerationInBackground(
         }
       } catch (e) {
         console.error(`Full regen: Failed to analyze ${competitor.name}:`, e);
+      } finally {
+        analysesCompleted++;
+        progress.currentStep = `Analyzing competitors (${analysesCompleted}/${competitors.length})`;
       }
-    }
+    });
 
     // Calculate and store competitor scores after analysis
     progress.currentStep = "Calculating competitor scores";
-    for (const competitor of competitors) {
+    await runWithConcurrency(competitors, 4, async (competitor) => {
       try {
         const refreshedCompetitor = await storage.getCompetitor(competitor.id);
         if (refreshedCompetitor) {
@@ -257,7 +265,7 @@ async function runRegenerationInBackground(
       } catch (e) {
         console.error(`Full regen: Failed to calculate scores for ${competitor.name}:`, e);
       }
-    }
+    });
 
     progress.currentStep = "Generating gap analysis";
     progress.stepsCompleted = 2;
@@ -349,18 +357,37 @@ async function runRegenerationInBackground(
       generatedFromDataAsOf: sourceDataAsOf,
     });
 
-    progress.currentStep = "Generating battlecards";
+    // Steps 3-6: Generate battlecards, GTM plan, messaging framework, and marketing
+    // tasks. Battlecards / GTM plan / messaging framework are independent of each
+    // other (they only depend on competitor analyses + gaps + companyProfile, all
+    // of which are already complete), so we run them in parallel. Marketing tasks
+    // depend on the GTM plan and therefore run sequentially after it inside the
+    // GTM "lane". Every AI call inside the lanes goes through `aiLimiter` so the
+    // total in-flight calls per provider stay bounded across all parallel lanes
+    // (not just within a single per-item pool).
+    progress.currentStep = "Generating battlecards, GTM plan & messaging framework";
     progress.stepsCompleted = 3;
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-      baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
-    });
+    const isB2C = businessType === "b2c";
+    const TOTAL_DELIVERABLE_LANES = 4;
+    let deliverablesCompleted = 0;
+    const onDeliverableDone = (label: string) => {
+      deliverablesCompleted++;
+      // Advance overall step counter (3 -> 6 across the four parallel lanes)
+      progress.stepsCompleted = Math.min(3 + Math.floor((deliverablesCompleted * 3) / TOTAL_DELIVERABLE_LANES), 6);
+      console.log(`Full regen: ${label} lane complete (${deliverablesCompleted}/${TOTAL_DELIVERABLE_LANES})`);
+    };
 
-    for (const competitor of competitors) {
-      try {
-        const competitorAnalysis = competitor.analysisData as any;
-        const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
+    const battlecardsTask = (async () => {
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      await runWithConcurrency(competitors, AI_CONCURRENCY.anthropic, async (competitor) => {
+        try {
+          const competitorAnalysis = competitor.analysisData as any;
+          const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
 
 Our Company: ${companyProfile?.companyName || "Our Company"}
 Our Positioning: ${ourPositioning.slice(0, 2000)}
@@ -383,11 +410,13 @@ Generate a battlecard with the following sections in valid JSON format:
 
 Return ONLY valid JSON.`;
 
-        const message = await anthropic.messages.create({
-          model: "claude-sonnet-4-5",
-          max_tokens: 2048,
-          messages: [{ role: "user", content: prompt }],
-        });
+        const message = await aiLimiter.anthropic.run(() =>
+          anthropic.messages.create({
+            model: "claude-sonnet-4-5",
+            max_tokens: 2048,
+            messages: [{ role: "user", content: prompt }],
+          })
+        );
 
         const content = message.content[0];
         if (content.type === "text") {
@@ -427,17 +456,19 @@ Return ONLY valid JSON.`;
           }
           results.battlecardsGenerated++;
         }
-      } catch (e) {
-        console.error(`Full regen: Failed to generate battlecard for ${competitor.name}:`, e);
+        } catch (e) {
+          console.error(`Full regen: Failed to generate battlecard for ${competitor.name}:`, e);
+        }
+      });
+      onDeliverableDone("Battlecards");
+    })();
+
+    const gtmTask = (async () => {
+      if (!companyProfile) {
+        onDeliverableDone("GTM plan (skipped: no company profile)");
+        return;
       }
-    }
 
-    progress.currentStep = "Generating GTM plan";
-    progress.stepsCompleted = 4;
-
-    const isB2C = businessType === "b2c";
-
-    if (companyProfile) {
       try {
         const openai = new OpenAI({
           apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -588,11 +619,13 @@ Brief overview of the GTM strategy
 
 Make this practical and actionable for the team.`;
 
-        const completion = await openai.chat.completions.create({
-          model: "gpt-5.2",
-          max_completion_tokens: 4096,
-          messages: [{ role: "user", content: gtmPrompt }],
-        });
+        const completion = await aiLimiter.openai.run(() =>
+          openai.chat.completions.create({
+            model: "gpt-5.2",
+            max_completion_tokens: 4096,
+            messages: [{ role: "user", content: gtmPrompt }],
+          })
+        );
 
         const gtmContent = completion.choices[0]?.message?.content || "";
         
@@ -621,12 +654,14 @@ Make this practical and actionable for the team.`;
       } catch (e) {
         console.error("Full regen: Failed to generate GTM plan:", e);
       }
-    }
+      onDeliverableDone("GTM plan");
+    })();
 
-    progress.currentStep = "Generating messaging framework";
-    progress.stepsCompleted = 5;
-
-    if (companyProfile) {
+    const messagingTask = (async () => {
+      if (!companyProfile) {
+        onDeliverableDone("Messaging framework (skipped: no company profile)");
+        return;
+      }
       try {
         const messagingPrompt = isB2C
           ? `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
@@ -718,11 +753,13 @@ Make this practical and ready to use in marketing materials.`;
           baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
         });
 
-        const message = await anthropic.messages.create({
-          model: "claude-sonnet-4-5",
-          max_tokens: 4096,
-          messages: [{ role: "user", content: messagingPrompt }],
-        });
+        const message = await aiLimiter.anthropic.run(() =>
+          anthropic.messages.create({
+            model: "claude-sonnet-4-5",
+            max_tokens: 4096,
+            messages: [{ role: "user", content: messagingPrompt }],
+          })
+        );
 
         const messagingContent = message.content[0].type === "text" ? message.content[0].text : "";
         
@@ -751,17 +788,19 @@ Make this practical and ready to use in marketing materials.`;
       } catch (e) {
         console.error("Full regen: Failed to generate messaging framework:", e);
       }
-    }
+      onDeliverableDone("Messaging framework");
+    })();
 
-    // Step 7: Generate marketing tasks for existing marketing plans
-    progress.currentStep = "Generating marketing tasks";
-    progress.stepsCompleted = 6;
-
-    try {
-      const marketingCtx = { tenantDomain, marketId: marketId || null };
-      const marketingPlans = await storage.getMarketingPlans(marketingCtx);
-      if (marketingPlans.length > 0 && companyProfile) {
-        const anthropicForTasks = new Anthropic({
+    // Marketing tasks consume the GTM plan that gtmTask writes to storage,
+    // so this lane awaits gtmTask before starting. It still runs in parallel
+    // with battlecards and messaging.
+    const marketingTasksTask = (async () => {
+      await gtmTask;
+      try {
+        const marketingCtx = { tenantDomain, marketId: marketId || null };
+        const marketingPlans = await storage.getMarketingPlans(marketingCtx);
+        if (marketingPlans.length > 0 && companyProfile) {
+          const anthropicForTasks = new Anthropic({
           apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
           baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
         });
@@ -802,12 +841,12 @@ Make this practical and ready to use in marketing materials.`;
 
         const recommendations = await storage.getRecommendationsByContext(contextFilter);
 
-        for (const mPlan of marketingPlans) {
+        await runWithConcurrency(marketingPlans, AI_CONCURRENCY.anthropic, async (mPlan) => {
           try {
             const configMatrix = mPlan.configMatrix as any;
             if (!configMatrix?.categories?.length || !configMatrix?.periods?.length) {
               console.log(`Full regen: Skipping marketing plan "${mPlan.name}" - no categories/periods configured`);
-              continue;
+              return;
             }
 
             const categories: string[] = configMatrix.categories;
@@ -889,12 +928,14 @@ Respond in JSON format:
 Only use these activityGroup values: ${categories.join(", ")}
 Only use these timeframe values: ${periods.join(", ")}`;
 
-            const message = await anthropicForTasks.messages.create({
-              model: "claude-sonnet-4-5",
-              max_tokens: 8000,
-              messages: [{ role: "user", content: prompt }],
-              system: "You are a marketing strategy expert. Generate practical, actionable marketing tasks based on the company's competitive landscape. Always respond with valid JSON only, no additional text.",
-            });
+            const message = await aiLimiter.anthropic.run(() =>
+              anthropicForTasks.messages.create({
+                model: "claude-sonnet-4-5",
+                max_tokens: 8000,
+                messages: [{ role: "user", content: prompt }],
+                system: "You are a marketing strategy expert. Generate practical, actionable marketing tasks based on the company's competitive landscape. Always respond with valid JSON only, no additional text.",
+              })
+            );
 
             const aiResponse = message.content[0].type === "text" ? message.content[0].text : "";
 
@@ -949,11 +990,17 @@ Only use these timeframe values: ${periods.join(", ")}`;
           } catch (planError) {
             console.error(`Full regen: Failed to generate tasks for marketing plan "${mPlan.name}":`, planError);
           }
+        });
         }
+      } catch (marketingError) {
+        console.error("Full regen: Failed to generate marketing tasks:", marketingError);
       }
-    } catch (marketingError) {
-      console.error("Full regen: Failed to generate marketing tasks:", marketingError);
-    }
+      onDeliverableDone("Marketing tasks");
+    })();
+
+    // Run the four lanes in parallel. Each lane handles its own errors so a
+    // failure in one does not abort the others.
+    await Promise.all([battlecardsTask, gtmTask, messagingTask, marketingTasksTask]);
 
     progress.currentStep = "Recording scores";
     progress.stepsCompleted = 7;
@@ -1046,7 +1093,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
           competitorSummaryContext += `\n- ${c.name}: ${analysis?.summary || "No details"}`;
         }
 
-        for (const product of allProducts) {
+        await runWithConcurrency(allProducts, AI_CONCURRENCY.anthropic, async (product) => {
           try {
             const productAnalysis = product.analysisData as any;
             const features = await storage.getProductFeaturesByProduct(product.id);
@@ -1065,11 +1112,13 @@ Competitive Landscape:${competitorSummaryContext || " No competitor data availab
 
 Write 2-3 sentences that capture what this product does, its key differentiators, and how it compares to alternatives. Be specific and analytical. Return ONLY the summary text.`;
 
-            const message = await anthropic.messages.create({
-              model: "claude-sonnet-4-5",
-              max_tokens: 300,
-              messages: [{ role: "user", content: prompt }],
-            });
+            const message = await aiLimiter.anthropic.run(() =>
+              anthropic.messages.create({
+                model: "claude-sonnet-4-5",
+                max_tokens: 300,
+                messages: [{ role: "user", content: prompt }],
+              })
+            );
 
             const content = message.content[0];
             if (content.type === "text") {
@@ -1081,7 +1130,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
           } catch (e) {
             console.error(`Full regen: Failed to generate summary for product ${product.name}:`, e);
           }
-        }
+        });
         console.log(`Full regen: Generated competitive position summaries for ${allProducts.length} products`);
       }
     } catch (productSummaryError) {
