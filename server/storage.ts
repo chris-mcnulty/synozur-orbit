@@ -233,6 +233,12 @@ export interface IStorage {
   getActivityByCompanyProfile(companyProfileId: string, limit?: number): Promise<Activity[]>;
   getActivityByProduct(productId: string, limit?: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  getUnanalyzedActivities(
+    limit?: number,
+    opts?: { sinceDays?: number; tenantDomain?: string; competitorId?: string },
+  ): Promise<Activity[]>;
+  updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
+  getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
   
   // Weekly Digest methods
   getUsersWithDigestEnabled(): Promise<User[]>;
@@ -917,7 +923,87 @@ export class DatabaseStorage implements IStorage {
       .insert(activity)
       .values(insertActivity)
       .returning();
+
+    // Task #102: Fire-and-forget sentiment analysis for competitor artifacts.
+    // Never blocks the caller; failures are swallowed inside the hook.
+    if (newActivity?.competitorId) {
+      // Lazy import avoids a require cycle (storage <- services).
+      import("./services/sentiment-analyzer-hook")
+        .then(({ scheduleActivitySentimentAnalysis }) =>
+          scheduleActivitySentimentAnalysis(newActivity),
+        )
+        .catch((err) => {
+          console.warn("[sentiment] hook dispatch failed:", err instanceof Error ? err.message : err);
+        });
+    }
+
     return newActivity;
+  }
+
+  // Task #102: Sentiment & Tone — query helpers
+  // NOTE: Trend windows ALWAYS bin by `createdAt` (the artifact's capture
+  // time) so backfilled rows don't collapse into "today". `analyzedAt` is
+  // metadata only — used to find unscored rows and to record run version.
+  async getUnanalyzedActivities(
+    limit: number = 50,
+    opts?: { sinceDays?: number; tenantDomain?: string; competitorId?: string },
+  ): Promise<Activity[]> {
+    const sinceDays = opts?.sinceDays ?? 90;
+    const since = new Date();
+    since.setDate(since.getDate() - sinceDays);
+
+    const conditions = [
+      sql`${activity.analyzedAt} IS NULL`,
+      sql`${activity.competitorId} IS NOT NULL`,
+      sql`${activity.createdAt} >= ${since}`,
+    ];
+    if (opts?.tenantDomain) {
+      conditions.push(eq(activity.tenantDomain, opts.tenantDomain));
+    }
+    if (opts?.competitorId) {
+      conditions.push(eq(activity.competitorId, opts.competitorId));
+    }
+
+    return await db
+      .select()
+      .from(activity)
+      .where(and(...conditions))
+      .orderBy(desc(activity.createdAt))
+      .limit(limit);
+  }
+
+  async updateActivitySentiment(
+    id: string,
+    fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string },
+  ): Promise<void> {
+    await db
+      .update(activity)
+      .set({
+        sentimentScore: fields.sentimentScore,
+        toneLabel: fields.toneLabel,
+        toneNote: fields.toneNote,
+        analyzerVersion: fields.analyzerVersion,
+        analyzedAt: new Date(),
+      })
+      .where(eq(activity.id, id));
+  }
+
+  async getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays: number = 90): Promise<Activity[]> {
+    // Window by capture time (createdAt) so backfilled artifacts land in
+    // the right bucket. Filter to rows that have an actual numeric score —
+    // skipped (e.g. non-English) rows have analyzedAt set but a NULL
+    // sentimentScore so they don't pollute summaries or tone-shift math.
+    const since = new Date();
+    since.setDate(since.getDate() - sinceDays);
+    return await db
+      .select()
+      .from(activity)
+      .where(and(
+        eq(activity.competitorId, competitorId),
+        sql`${activity.sentimentScore} IS NOT NULL`,
+        sql`${activity.createdAt} >= ${since}`,
+      ))
+      .orderBy(desc(activity.createdAt));
   }
 
   // Recommendation methods

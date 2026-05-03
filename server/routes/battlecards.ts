@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
+import { buildCompetitorToneContextBlock } from "../services/sentiment-context";
 import Anthropic from "@anthropic-ai/sdk";
 
 export function registerBattlecardRoutes(app: Express) {
@@ -70,6 +71,9 @@ export function registerBattlecardRoutes(app: Express) {
         apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
         baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
       });
+      // Task #102: include captured tone snapshot from recent activities
+      const toneBlock = await buildCompetitorToneContextBlock(competitor.id);
+
       const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
 
 ${ourContext ? `Our Company: ${ourContext.name} (${ourContext.url})
@@ -78,6 +82,7 @@ Our Analysis: ${JSON.stringify(ourContext.analysis, null, 2)}` : ""}
 Competitor: ${competitor.name} (${competitor.url})
 Competitor Analysis: ${JSON.stringify(competitorContext.analysis, null, 2)}
 Competitor Website Content: ${JSON.stringify(competitorContext.crawlData?.pages?.slice(0, 3), null, 2) || "Not crawled yet"}
+${toneBlock}
 
 Generate a battlecard with the following sections in valid JSON format:
 {
@@ -314,6 +319,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const competitorData = competitor.analysisData as any || {};
       const companyData = companyProfile?.analysisData as any || {};
 
+      // Task #102: include captured tone snapshot from recent activities
+      const toneBlock = await buildCompetitorToneContextBlock(competitor.id);
+
       const prompt = `Generate a sales battle card comparing our company against a competitor. 
 
 OUR COMPANY:
@@ -326,6 +334,7 @@ COMPETITOR:
 - Website: ${competitor.url}
 - Key messaging: ${JSON.stringify(competitorData.messaging || {})}
 - Value proposition: ${competitorData.valueProposition || "N/A"}
+${toneBlock}
 
 Generate a comprehensive battle card in the following JSON format:
 {

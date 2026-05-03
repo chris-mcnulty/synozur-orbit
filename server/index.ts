@@ -738,6 +738,16 @@ app.use((req, res, next) => {
       }
     }
 
+    // Task #102: Sentiment & tone analysis on competitor content.
+    // Adds scoring metadata to the canonical artifact record (`activity`).
+    await pgPool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS sentiment_score REAL`);
+    await pgPool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS tone_label TEXT`);
+    await pgPool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS tone_note TEXT`);
+    await pgPool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS analyzer_version TEXT`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS activity_competitor_analyzed_idx ON activity (competitor_id, analyzed_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS activity_analyzed_at_idx ON activity (analyzed_at)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

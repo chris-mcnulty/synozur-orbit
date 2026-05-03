@@ -23,6 +23,7 @@ import {
   sendCompetitorAlertEmail,
   sendWeeklyDigestEmail,
   sendSeoMovementAlertEmail,
+  sendCompetitorToneShiftEmail,
   type BriefingDigestData,
 } from "./email-service";
 import {
@@ -33,6 +34,7 @@ import {
   buildWeeklyDigestPayload,
   buildJobFailedPayload,
   buildSeoMovementPayload,
+  buildCompetitorToneShiftPayload,
   type WebhookPayload,
   type SeoMover,
 } from "./webhook-formatters";
@@ -200,12 +202,24 @@ export interface SeoMovementCtx {
   topLosers: SeoMover[];
 }
 
+export interface CompetitorToneShiftCtx {
+  competitorId: string;
+  competitorName: string;
+  reason: "sentiment_delta" | "new_tone";
+  recentMean: number;
+  priorMean: number;
+  delta: number;
+  dominantTone: string | null;
+  sampleCount: number;
+}
+
 type DispatchCtxMap = {
   competitor_change: CompetitorChangeCtx;
   briefing_ready: BriefingReadyCtx;
   weekly_digest: WeeklyDigestCtx;
   job_failed: JobFailedCtx;
   seo_movement: SeoMovementCtx;
+  competitor_tone_shift: CompetitorToneShiftCtx;
 };
 
 // ---------------------------------------------------------------------------
@@ -437,6 +451,90 @@ async function handleSeoMovement(
   );
 }
 
+async function handleCompetitorToneShift(
+  tenantDomain: string,
+  ctx: CompetitorToneShiftCtx,
+): Promise<void> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant || tenant.status !== "active") return;
+
+  // Gate behind sentimentAnalysis. Analyzer always runs server-side; this
+  // gate suppresses *alerts and UI surfaces* on plans that don't include it.
+  if (!(await isFeatureEnabledAsync(tenant.plan, "sentimentAnalysis"))) return;
+
+  const baseUrl = defaultBaseUrl();
+  const link = `${baseUrl}/app/competitors/${ctx.competitorId}`;
+
+  const direction = ctx.delta > 0 ? "more positive" : "more negative";
+  const summary = ctx.reason === "new_tone"
+    ? `${ctx.competitorName} adopted a new tone${ctx.dominantTone ? ` ("${ctx.dominantTone}")` : ""} not seen in the prior 90 days.`
+    : `${ctx.competitorName}'s sentiment shifted ${direction} (Δ ${ctx.delta >= 0 ? "+" : ""}${ctx.delta.toFixed(2)}) over the last 7 days vs the prior 30-day baseline.`;
+
+  const users = await storage.getUsersByDomain(tenantDomain);
+  const eligibleUsers = users.filter((u) => u.alertsEnabled || u.alertEmailEnabled);
+
+  await Promise.allSettled(
+    eligibleUsers.map(async (user) => {
+      if (user.alertsEnabled) {
+        try {
+          await createNotification({
+            userId: user.id,
+            tenantDomain,
+            type: "competitor_tone_shift",
+            title: `Tone shift — ${ctx.competitorName}`,
+            message: summary,
+            link: `/app/competitors/${ctx.competitorId}`,
+            readAt: null,
+          });
+        } catch (err) {
+          console.error(`[Notifications] in-app tone_shift failed for user ${user.id}:`, err);
+        }
+      }
+
+      if (user.alertEmailEnabled) {
+        try {
+          await sendCompetitorToneShiftEmail({
+            to: user.email,
+            userName: user.name,
+            competitorName: ctx.competitorName,
+            competitorId: ctx.competitorId,
+            reason: ctx.reason,
+            recentMean: ctx.recentMean,
+            priorMean: ctx.priorMean,
+            delta: ctx.delta,
+            dominantTone: ctx.dominantTone,
+            sampleCount: ctx.sampleCount,
+            baseUrl,
+          });
+        } catch (err) {
+          console.error(`[Notifications] tone_shift email failed for user ${user.id}:`, err);
+        }
+      }
+    }),
+  );
+
+  if (eligibleUsers.length > 0) {
+    console.log(
+      `[Notifications] competitor_tone_shift dispatched to ${eligibleUsers.length} user(s) in ${tenantDomain} for ${ctx.competitorName}`,
+    );
+  }
+
+  await fanOutWebhook(
+    tenantDomain,
+    "competitor_tone_shift",
+    buildCompetitorToneShiftPayload({
+      competitorName: ctx.competitorName,
+      reason: ctx.reason,
+      recentMean: ctx.recentMean,
+      priorMean: ctx.priorMean,
+      delta: ctx.delta,
+      dominantTone: ctx.dominantTone,
+      sampleCount: ctx.sampleCount,
+      link,
+    }),
+  );
+}
+
 async function handleJobFailed(
   tenantDomain: string,
   ctx: JobFailedCtx,
@@ -486,6 +584,9 @@ export const notifications = {
           break;
         case "seo_movement":
           await handleSeoMovement(tenantDomain, ctx as SeoMovementCtx);
+          break;
+        case "competitor_tone_shift":
+          await handleCompetitorToneShift(tenantDomain, ctx as CompetitorToneShiftCtx);
           break;
       }
     } catch (err) {

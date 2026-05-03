@@ -1960,6 +1960,16 @@ export function startScheduledJobs(): void {
     checkAndRunSeoRefresh();
   }, 60 * 60 * 1000);
 
+  // Task #102: Sentiment & tone backfill — drains rows where analyzedAt IS
+  // NULL in small batches so the analyzer does not spike LLM spend. Runs
+  // every 15 minutes; each tick processes up to 50 rows captured in the
+  // last 90 days.
+  setInterval(() => {
+    import("./sentiment-backfill")
+      .then(({ backfillSentiment }) => backfillSentiment({ limit: 50, sinceDays: 90 }))
+      .catch((err) => console.error("[Sentiment Backfill] Tick error:", err?.message || err));
+  }, 15 * 60 * 1000);
+
   // Task #97: Marketing publish worker — picks up approved+scheduled posts on
   // auto-publish accounts every 2 minutes. Cheap query; safe to run frequently.
   setInterval(() => {

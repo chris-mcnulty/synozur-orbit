@@ -13,6 +13,7 @@ import {
   WEEKLY_DIGEST_EMAIL,
   INTELLIGENCE_BRIEFING_DIGEST_EMAIL,
   COMPETITOR_ALERT_EMAIL,
+  COMPETITOR_TONE_SHIFT_EMAIL,
   SEO_MOVEMENT_ALERT_EMAIL,
   SUPPORT_TICKET_NOTIFICATION_EMAIL,
   SUPPORT_TICKET_CONFIRMATION_EMAIL,
@@ -1261,6 +1262,81 @@ export async function sendSeoMovementAlertEmail(params: SeoMovementAlertEmailPar
   return sendEmail({
     to,
     subject: copy.subject(companyName, marketLabel),
+    html: wrapEmailContent(content),
+    text,
+  });
+}
+
+export interface CompetitorToneShiftEmailParams {
+  to: string;
+  userName: string;
+  competitorName: string;
+  competitorId: string;
+  reason: "sentiment_delta" | "new_tone";
+  recentMean: number;
+  priorMean: number;
+  delta: number;
+  dominantTone: string | null;
+  sampleCount: number;
+  baseUrl: string;
+}
+
+export async function sendCompetitorToneShiftEmail(params: CompetitorToneShiftEmailParams): Promise<boolean> {
+  const { to, userName, competitorName, competitorId, reason, recentMean, priorMean, delta, dominantTone, sampleCount, baseUrl } = params;
+  const copy = COMPETITOR_TONE_SHIFT_EMAIL;
+  const competitorLink = `${baseUrl}/app/competitors/${competitorId}`;
+  const settingsLink = `${baseUrl}/app/settings`;
+
+  const safeUserName = escapeEmailHtml(userName);
+  const safeCompetitorName = escapeEmailHtml(competitorName);
+  const safeTone = dominantTone ? escapeEmailHtml(dominantTone) : null;
+
+  const direction = delta > 0 ? "more positive" : "more negative";
+  const summary = reason === "new_tone"
+    ? `A new tone${safeTone ? ` <strong>${safeTone}</strong>` : ""} appeared in the last 7 days that wasn't observed in the prior 90 days.`
+    : `Mean sentiment shifted ${direction} (Δ ${delta >= 0 ? "+" : ""}${delta.toFixed(2)}) over the last 7 days vs the prior 30-day baseline.`;
+
+  const reasonBadgeColor = delta < 0 ? '#EF4444' : '#0EA5E9';
+  const reasonLabel = reason === "new_tone" ? "New tone" : "Sentiment delta";
+
+  const content = `
+    <h1>${copy.heading(safeCompetitorName)}</h1>
+    <p>${copy.greeting(safeUserName)}</p>
+    <p>${copy.intro(safeCompetitorName)}</p>
+
+    <div class="feature">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span style="display: inline-block; padding: 2px 10px; border-radius: 6px; background: ${reasonBadgeColor}; color: #fff; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">${reasonLabel}</span>
+      </div>
+      <p class="feature-desc" style="margin: 0;">${summary}</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-title">Snapshot</div>
+      <p class="feature-desc">
+        Recent mean (7d): <strong>${recentMean.toFixed(2)}</strong><br/>
+        Prior 30-day baseline: <strong>${priorMean.toFixed(2)}</strong><br/>
+        ${reason === "new_tone" ? "New tone (last 7d)" : "Dominant tone (last 7d)"}: <strong>${safeTone || "—"}</strong><br/>
+        Recent sample count: <strong>${sampleCount}</strong>
+      </p>
+    </div>
+
+    <div class="button-container">
+      <a href="${competitorLink}" class="button">${copy.buttonText}</a>
+    </div>
+
+    <div class="divider"></div>
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      ${copy.footerMessage}<br/>
+      <a href="${settingsLink}" class="link" style="font-size: 12px;">${copy.unsubscribeText}</a>
+    </p>
+  `;
+
+  const text = copy.plainText(userName, competitorName, reasonLabel, summary.replace(/<[^>]+>/g, ""), competitorLink, settingsLink);
+
+  return sendEmail({
+    to,
+    subject: copy.subject(competitorName),
     html: wrapEmailContent(content),
     text,
   });

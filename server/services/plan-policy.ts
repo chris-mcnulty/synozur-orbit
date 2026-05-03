@@ -40,6 +40,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "directPublishing", label: "Direct Social Publishing", description: "Publish approved scheduled posts directly to LinkedIn (and other platforms as added) instead of exporting CSV", category: "marketing" },
   { key: "directEmailDelivery", label: "Direct Email Campaign Delivery", description: "Send AI-generated emails to managed recipient lists with bounce/unsubscribe handling", category: "marketing" },
   { key: "partnerApi", label: "Partner API & OAuth", description: "OAuth 2.0 partner API for Galaxy and other third-party portals to read user-consented artifacts", category: "platform" },
+  { key: "sentimentAnalysis", label: "Sentiment & Tone Analysis", description: "Show competitor content sentiment and tone analysis, plus tone-shift alerts. Analysis always runs server-side; this gate controls UI visibility and alerts only.", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -95,6 +96,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directPublishing: false,
     directEmailDelivery: false,
     partnerApi: false,
+    sentimentAnalysis: false,
   },
   trial: {
     battlecards: true,
@@ -129,6 +131,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directPublishing: false,
     directEmailDelivery: false,
     partnerApi: false,
+    sentimentAnalysis: false,
   },
   pro: {
     battlecards: true,
@@ -163,6 +166,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directPublishing: false,
     directEmailDelivery: false,
     partnerApi: false,
+    sentimentAnalysis: true,
   },
   enterprise: {
     battlecards: true,
@@ -197,6 +201,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directPublishing: true,
     directEmailDelivery: true,
     partnerApi: true,
+    sentimentAnalysis: true,
   },
   unlimited: {
     battlecards: true,
@@ -231,6 +236,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directPublishing: true,
     directEmailDelivery: true,
     partnerApi: true,
+    sentimentAnalysis: true,
   },
 };
 

@@ -504,6 +504,26 @@ export const SEO_MOVEMENT_ALERT_EMAIL = {
     `Hi ${name},\n\nWeekly SEO movement alert for ${companyName}${marketLabel ? ` (${marketLabel})` : ''}\n\nTop gainers:\n${gainersText || '(none)'}\n\nTop losses:\n${losersText || '(none)'}\n\nView details: ${link}\n\nManage alert preferences: ${settingsLink}`,
 };
 
+export const COMPETITOR_TONE_SHIFT_EMAIL = {
+  subject: (competitorName: string) => `🎙️ Tone shift detected — ${competitorName}`,
+  heading: (competitorName: string) => `Tone shift: ${competitorName}`,
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  intro: (competitorName: string) =>
+    `Our analyzer detected a meaningful change in how <span class="highlight">${competitorName}</span> is communicating across captured content.`,
+  buttonText: 'Open competitor profile',
+  unsubscribeText: 'Manage your alert preferences in Settings',
+  footerMessage: `You're receiving this because tone-shift alerts are enabled for your tenant.`,
+  plainText: (
+    name: string,
+    competitorName: string,
+    reason: string,
+    summary: string,
+    link: string,
+    settingsLink: string,
+  ) =>
+    `Hi ${name},\n\nTone shift detected for ${competitorName} (${reason}).\n\n${summary}\n\nOpen competitor: ${link}\n\nManage alert preferences: ${settingsLink}`,
+};
+
 export const COMPETITOR_ALERT_EMAIL = {
   subject: (competitorName: string, significance: string) =>
     `${significance === 'high' ? '🔴' : significance === 'medium' ? '🟡' : '🔵'} ${competitorName} — ${significance}-significance change detected`,

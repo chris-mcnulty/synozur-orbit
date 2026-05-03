@@ -94,6 +94,21 @@ function buildSignalSummary(activities: Activity[]): string {
   const lines: string[] = [];
   for (const [name, acts] of Object.entries(byCompetitor)) {
     lines.push(`\n### ${name} (${acts.length} signal${acts.length > 1 ? "s" : ""})`);
+
+    // Task #102: aggregate sentiment & tone for this competitor's signals
+    const scored = acts.filter((a) => typeof a.sentimentScore === "number");
+    if (scored.length > 0) {
+      const meanSentiment = scored.reduce((s, a) => s + (a.sentimentScore || 0), 0) / scored.length;
+      const toneCounts: Record<string, number> = {};
+      for (const a of scored) {
+        if (a.toneLabel) toneCounts[a.toneLabel] = (toneCounts[a.toneLabel] || 0) + 1;
+      }
+      const dominantTone = Object.entries(toneCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      lines.push(
+        `  Tone snapshot: mean sentiment ${meanSentiment.toFixed(2)} (n=${scored.length})${dominantTone ? `, dominant tone "${dominantTone}"` : ""}.`,
+      );
+    }
+
     for (const act of acts) {
       const details = act.details as any;
       const changeAnalysis = details?.changeAnalysis;
@@ -101,6 +116,9 @@ function buildSignalSummary(activities: Activity[]): string {
       lines.push(`- **${act.type}** [Impact: ${act.impact}]: ${act.description}`);
       if (act.summary) {
         lines.push(`  Summary: ${act.summary}`);
+      }
+      if (typeof act.sentimentScore === "number" && act.toneLabel) {
+        lines.push(`  Tone: ${act.toneLabel} (sentiment ${act.sentimentScore.toFixed(2)})${act.toneNote ? ` — ${act.toneNote}` : ""}`);
       }
       if (changeAnalysis?.changes?.length > 0) {
         for (const change of changeAnalysis.changes.slice(0, 3)) {

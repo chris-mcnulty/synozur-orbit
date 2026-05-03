@@ -254,6 +254,39 @@ export function buildSeoMovementPayload(opts: {
   };
 }
 
+export function buildCompetitorToneShiftPayload(opts: {
+  competitorName: string;
+  reason: "sentiment_delta" | "new_tone";
+  recentMean: number;
+  priorMean: number;
+  delta: number;
+  dominantTone: string | null;
+  sampleCount: number;
+  link?: string;
+}): WebhookPayload {
+  const direction = opts.delta > 0 ? "more positive" : "more negative";
+  const summary =
+    opts.reason === "new_tone"
+      ? `${opts.competitorName} adopted a new tone${opts.dominantTone ? ` ("${opts.dominantTone}")` : ""} not seen in the past 90 days.`
+      : `${opts.competitorName}'s sentiment shifted ${direction} (Δ ${opts.delta >= 0 ? "+" : ""}${opts.delta.toFixed(2)}) over the last 7 days vs the prior 30-day baseline.`;
+
+  const toneFactLabel = opts.reason === "new_tone" ? "New tone (7d)" : "Dominant tone (7d)";
+  return {
+    category: "competitor_tone_shift",
+    title: `Tone shift detected — ${opts.competitorName}`,
+    summary,
+    facts: [
+      ...(opts.dominantTone ? [{ label: toneFactLabel, value: opts.dominantTone }] : []),
+      { label: "Recent mean (7d)", value: opts.recentMean.toFixed(2) },
+      { label: "Prior 30-day baseline", value: opts.priorMean.toFixed(2) },
+      { label: "Δ", value: `${opts.delta >= 0 ? "+" : ""}${opts.delta.toFixed(2)}` },
+      { label: "Samples (7d)", value: String(opts.sampleCount) },
+    ],
+    link: opts.link ? { label: "View competitor", url: opts.link } : undefined,
+    color: opts.delta < 0 ? "#DC2626" : "#0EA5E9",
+  };
+}
+
 export function buildJobFailedPayload(opts: {
   jobType: string;
   targetName?: string;

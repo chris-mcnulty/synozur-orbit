@@ -19,8 +19,9 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import DataFreshnessBar from "@/components/DataFreshnessBar";
 import { useUser } from "@/lib/userContext";
+import { useFeatureAccess } from "@/components/UpgradePrompt";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Minus } from "lucide-react";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
@@ -1192,6 +1193,8 @@ export default function CompetitorDetail() {
                 )}
               </CardContent>
             </Card>
+
+            <CompetitorTonePanel competitorId={competitor.id} competitorName={competitor.name} />
           </TabsContent>
 
           <TabsContent value="battlecard" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -1958,5 +1961,232 @@ function CompetitorSeoPanel({ competitorId, competitorName }: { competitorId: st
         </Card>
       )}
     </div>
+  );
+}
+
+// =====================================================================
+// Task #102 — Tone & Sentiment panel (overview tab)
+// =====================================================================
+
+interface ToneSummaryResponse {
+  competitorId: string;
+  sinceDays: number;
+  totalAnalyzed: number;
+  meanSentiment: number | null;
+  meanSentiment30d: number | null;
+  meanSentiment90d: number | null;
+  recentMeanSentiment: number | null;
+  dominantTone: string | null;
+  toneCounts: Record<string, number>;
+  sparkline: { date: string; sentiment: number; toneLabel: string | null }[];
+  topNotes: { date: string; toneLabel: string | null; sentimentScore: number; note: string }[];
+  toneShifts: { date: string; fromTone: string | null; toTone: string }[];
+}
+
+function sentimentColor(score: number): string {
+  if (score > 0.25) return "hsl(142 76% 36%)";
+  if (score < -0.25) return "hsl(0 76% 50%)";
+  return "hsl(45 93% 47%)";
+}
+
+function formatSentiment(score: number | null): string {
+  if (score === null || score === undefined) return "—";
+  return (score >= 0 ? "+" : "") + score.toFixed(2);
+}
+
+function CompetitorTonePanel({ competitorId, competitorName }: { competitorId: string; competitorName: string }) {
+  const { isAllowed, isLoading: planLoading } = useFeatureAccess("sentimentAnalysis");
+
+  const { data, isLoading } = useQuery<ToneSummaryResponse>({
+    queryKey: [`/api/competitors/${competitorId}/tone`],
+    enabled: isAllowed && !planLoading,
+    staleTime: 60_000,
+  });
+
+  if (planLoading) return null;
+
+  if (!isAllowed) {
+    return (
+      <Card data-testid="card-tone-locked">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4" />
+            Tone & Sentiment
+            <Badge variant="outline" className="ml-2 gap-1"><Lock className="h-3 w-3" /> Pro</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Track how {competitorName}'s tone shifts over time across captured content. Available on Pro and above.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-tone-loading">
+        <CardContent className="p-8 text-center">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+          <p className="text-sm text-muted-foreground mt-2">Analyzing tone…</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data || data.totalAnalyzed === 0) {
+    return (
+      <Card data-testid="card-tone-empty">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4" /> Tone & Sentiment
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            No analyzed content yet. As we capture website, social, and product activity for {competitorName}, we'll score sentiment and tone here.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const sparkline = data.sparkline.map((p) => ({
+    date: new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    sentiment: p.sentiment,
+    toneLabel: p.toneLabel,
+  }));
+
+  const toneEntries = Object.entries(data.toneCounts).sort((a, b) => b[1] - a[1]);
+  const total = toneEntries.reduce((s, [, n]) => s + n, 0) || 1;
+
+  const recent = data.recentMeanSentiment;
+  const m30 = data.meanSentiment30d;
+  const m90 = data.meanSentiment90d;
+  const delta = recent !== null && m30 !== null ? recent - m30 : null;
+
+  return (
+    <Card data-testid="card-tone-panel">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4" /> Tone & Sentiment
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Last {data.sinceDays} days · {data.totalAnalyzed} analyzed item{data.totalAnalyzed === 1 ? "" : "s"}
+            </p>
+          </div>
+          {data.dominantTone && (
+            <Badge variant="secondary" data-testid="badge-dominant-tone">{data.dominantTone}</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div data-testid="stat-sentiment-recent">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Last 7 days</p>
+            <p className="text-2xl font-semibold flex items-center gap-1" style={{ color: recent !== null ? sentimentColor(recent) : undefined }}>
+              {formatSentiment(recent)}
+              {delta !== null && Math.abs(delta) >= 0.05 && (
+                delta > 0
+                  ? <ArrowUp className="h-4 w-4 text-emerald-500" />
+                  : <ArrowDown className="h-4 w-4 text-rose-500" />
+              )}
+            </p>
+          </div>
+          <div data-testid="stat-sentiment-30d">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">30-day mean</p>
+            <p className="text-2xl font-semibold" style={{ color: m30 !== null ? sentimentColor(m30) : undefined }}>
+              {formatSentiment(m30)}
+            </p>
+          </div>
+          <div data-testid="stat-sentiment-90d">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">90-day mean</p>
+            <p className="text-2xl font-semibold" style={{ color: m90 !== null ? sentimentColor(m90) : undefined }}>
+              {formatSentiment(m90)}
+            </p>
+          </div>
+          <div data-testid="stat-tone-dominant">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Dominant tone</p>
+            <p className="text-2xl font-semibold capitalize">{data.dominantTone || "—"}</p>
+          </div>
+        </div>
+
+        {sparkline.length > 1 && (
+          <div className="h-40" data-testid="chart-tone-sparkline">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={sparkline} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis domain={[-1, 1]} tick={{ fontSize: 11 }} />
+                <ReTooltip
+                  formatter={(value: number) => [formatSentiment(value), "Sentiment"]}
+                  labelFormatter={(l) => `Date: ${l}`}
+                />
+                <Line type="monotone" dataKey="sentiment" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {data.toneShifts && data.toneShifts.length > 0 && (
+          <div data-testid="section-tone-shifts">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Recent tone shifts</p>
+            <ul className="space-y-1.5">
+              {data.toneShifts.map((s, i) => (
+                <li key={i} className="text-sm flex items-center gap-2" data-testid={`shift-tone-${i}`}>
+                  <Badge variant="outline" className="capitalize">{s.fromTone || "—"}</Badge>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <Badge variant="secondary" className="capitalize">{s.toTone}</Badge>
+                  <span className="text-xs text-muted-foreground">on {new Date(s.date).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {toneEntries.length > 0 && (
+          <div data-testid="section-tone-distribution">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Tone distribution</p>
+            <div className="space-y-1.5">
+              {toneEntries.map(([tone, count]) => {
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <div key={tone} className="flex items-center gap-3 text-sm" data-testid={`row-tone-${tone}`}>
+                    <span className="capitalize w-28 shrink-0">{tone}</span>
+                    <div className="flex-1 bg-muted rounded h-2 overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground w-16 text-right">{count} · {pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {data.topNotes.length > 0 && (
+          <div data-testid="section-tone-notes">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Recent tone notes</p>
+            <ul className="space-y-2">
+              {data.topNotes.map((n, i) => (
+                <li key={i} className="text-sm border-l-2 pl-3" style={{ borderColor: sentimentColor(n.sentimentScore) }} data-testid={`note-tone-${i}`}>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="capitalize">{n.toneLabel || "—"}</span>
+                    <span>·</span>
+                    <span>{formatSentiment(n.sentimentScore)}</span>
+                    <span>·</span>
+                    <span>{new Date(n.date).toLocaleDateString()}</span>
+                  </div>
+                  <p className="mt-0.5">{n.note}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

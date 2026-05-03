@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -438,6 +438,18 @@ export const competitors = pgTable("competitors", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const TONE_LABELS = [
+  "confident",
+  "defensive",
+  "aggressive",
+  "measured",
+  "promotional",
+  "technical",
+  "empathetic",
+  "urgent",
+] as const;
+export type ToneLabel = (typeof TONE_LABELS)[number];
+
 export const activity = pgTable("activity", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   type: text("type").notNull(), // change, new_page, blog_post, social_update, product_update
@@ -453,8 +465,17 @@ export const activity = pgTable("activity", {
   userId: varchar("user_id").references(() => users.id),
   tenantDomain: text("tenant_domain"),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }), // Market context
+  // Task #102: Sentiment & tone analysis (analyzer always runs server-side regardless of plan)
+  sentimentScore: real("sentiment_score"), // -1.0 (very negative) .. +1.0 (very positive)
+  toneLabel: text("tone_label"), // one of TONE_LABELS
+  toneNote: text("tone_note"), // one-sentence rationale from analyzer
+  analyzedAt: timestamp("analyzed_at"),
+  analyzerVersion: text("analyzer_version"), // e.g. "claude-sonnet-4-5", "mock-1"
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  competitorAnalyzedIdx: index("activity_competitor_analyzed_idx").on(table.competitorId, table.analyzedAt),
+  competitorCreatedIdx: index("activity_competitor_created_idx").on(table.competitorId, table.createdAt),
+}));
 
 export const recommendations = pgTable("recommendations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -619,6 +640,11 @@ export const insertCompetitorSchema = createInsertSchema(competitors).omit({
 export const insertActivitySchema = createInsertSchema(activity).omit({
   id: true,
   createdAt: true,
+  sentimentScore: true,
+  toneLabel: true,
+  toneNote: true,
+  analyzedAt: true,
+  analyzerVersion: true,
 });
 
 export const insertRecommendationSchema = createInsertSchema(recommendations).omit({
@@ -2250,6 +2276,7 @@ export const WEBHOOK_EVENT_CATEGORIES = [
   "weekly_digest",
   "job_failed",
   "seo_movement",
+  "competitor_tone_shift",
 ] as const;
 export type WebhookEventCategory = (typeof WEBHOOK_EVENT_CATEGORIES)[number];
 

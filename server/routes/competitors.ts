@@ -382,6 +382,26 @@ export function registerCompetitorRoutes(app: Express) {
 
       await storage.incrementOrgRefCount(org.id);
 
+      // Task #102 — kick an immediate per-competitor sentiment backfill so
+      // the tone & sentiment panel has trend data on day one for any
+      // pre-existing activity rows tied to this competitor.
+      (async () => {
+        try {
+          const { backfillSentiment } = await import("../services/sentiment-backfill");
+          await backfillSentiment({
+            competitorId: competitor.id,
+            tenantDomain: competitor.tenantDomain ?? undefined,
+            limit: 200,
+            sinceDays: 90,
+          });
+        } catch (err) {
+          console.warn(
+            `[sentiment] day-one backfill failed for competitor ${competitor.id}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      })();
+
       // Auto-populate global directory metadata for new orgs (description / category / sicCode).
       // Fire-and-forget so the create response stays fast.
       if (org.wasCreated || !org.description || !org.category || !org.sicCode) {
@@ -1787,6 +1807,59 @@ Return ONLY the JSON object, no other text.`;
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Task #102: Sentiment & tone summary for a competitor.
+  // Plan-gated via the `sentimentAnalysis` feature key — analyzer always
+  // runs server-side, but this endpoint (UI surface) is plan-gated.
+  app.get("/api/competitors/:id/tone", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) return res.status(404).json({ error: "Competitor not found" });
+      if (!validateResourceContext(competitor, ctx)) return res.status(403).json({ error: "Access denied" });
+      if (!await guardFeature(req, res, "sentimentAnalysis")) return;
+
+      const sinceParam = req.query.sinceDays ? parseInt(String(req.query.sinceDays), 10) : 90;
+      const sinceDays = Number.isFinite(sinceParam) && sinceParam > 0 ? Math.min(sinceParam, 365) : 90;
+
+      const { getCompetitorToneSummary } = await import("../services/sentiment-context");
+      const summary = await getCompetitorToneSummary(competitor.id, sinceDays);
+      res.json({ competitorId: competitor.id, sinceDays, ...summary });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Task #102: Admin-triggered backfill that scores activities lacking
+  // sentiment/tone metadata. Returns counts so the caller can decide
+  // whether to run again.
+  app.post("/api/admin/sentiment/backfill", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      // Reuse role check: only Domain Admin / Global Admin can trigger backfills
+      if (ctx.userRole !== "Domain Admin" && ctx.userRole !== "Global Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      const limit = req.body?.limit ? Math.min(parseInt(String(req.body.limit), 10), 200) : 50;
+      const sinceDays = req.body?.sinceDays ? Math.min(parseInt(String(req.body.sinceDays), 10), 365) : 90;
+      const competitorId = typeof req.body?.competitorId === "string" ? req.body.competitorId : undefined;
+
+      // Domain Admins can only backfill their own tenant. Global Admins
+      // may pass an explicit tenantDomain to target another tenant.
+      let tenantDomain: string | undefined = ctx.tenantDomain;
+      if (ctx.userRole === "Global Admin" && typeof req.body?.tenantDomain === "string") {
+        tenantDomain = req.body.tenantDomain;
+      }
+
+      const { backfillSentiment } = await import("../services/sentiment-backfill");
+      const result = await backfillSentiment({ limit, sinceDays, tenantDomain, competitorId });
+      res.json(result);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
     }
   });
