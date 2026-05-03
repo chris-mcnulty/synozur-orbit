@@ -6,7 +6,7 @@ import { calculateScores } from "./scoring-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
-import { runWithConcurrency, AI_CONCURRENCY, aiLimiter } from "./promise-pool";
+import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } from "./promise-pool";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -395,13 +395,11 @@ async function runRegenerationInBackground(
     progress.stepsCompleted = 3;
 
     const isB2C = businessType === "b2c";
-    const TOTAL_DELIVERABLE_LANES = 4;
-    let deliverablesCompleted = 0;
+    // No-op: each lane is wrapped via `runLanesInParallel` below, which owns
+    // step-counter advancement. Kept as a label-friendly helper so the
+    // existing per-lane logging stays readable.
     const onDeliverableDone = (label: string) => {
-      deliverablesCompleted++;
-      // Advance overall step counter (3 -> 6 across the four parallel lanes)
-      progress.stepsCompleted = Math.min(3 + Math.floor((deliverablesCompleted * 3) / TOTAL_DELIVERABLE_LANES), 6);
-      console.log(`Full regen: ${label} lane complete (${deliverablesCompleted}/${TOTAL_DELIVERABLE_LANES})`);
+      console.log(`Full regen: ${label} lane finished its work`);
     };
 
     const battlecardsTask = (async () => {
@@ -1024,9 +1022,22 @@ Only use these timeframe values: ${periods.join(", ")}`;
       onDeliverableDone("Marketing tasks");
     })();
 
-    // Run the four lanes in parallel. Each lane handles its own errors so a
-    // failure in one does not abort the others.
-    await Promise.all([battlecardsTask, gtmTask, messagingTask, marketingTasksTask]);
+    // Run the four lanes in parallel via `runLanesInParallel`, which:
+    //   * isolates a thrown lane (others still complete),
+    //   * advances `progress.stepsCompleted` from 3 toward 6 as each lane
+    //     settles (3 + floor(done * 3 / 4), capped at 6).
+    // The lane IIFEs above were already started; we just hand them off to
+    // the helper so the bookkeeping is unified.
+    await runLanesInParallel(
+      [
+        { label: "Battlecards", run: () => battlecardsTask },
+        { label: "GTM plan", run: () => gtmTask },
+        { label: "Messaging framework", run: () => messagingTask },
+        { label: "Marketing tasks", run: () => marketingTasksTask },
+      ],
+      progress,
+      { baseStep: 3, stepSpan: 3 },
+    );
 
     progress.currentStep = "Recording scores";
     progress.stepsCompleted = 7;

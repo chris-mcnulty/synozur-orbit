@@ -76,6 +76,67 @@ export async function runWithConcurrency<T>(
 }
 
 /**
+ * Run a fixed set of independent "lanes" (e.g. battlecards / GTM plan /
+ * messaging framework / marketing tasks) in parallel, with these
+ * guarantees:
+ *
+ *   1. Every lane runs — a thrown lane does not abort the others. Each
+ *      lane is wrapped in its own try/catch so `Promise.all` cannot
+ *      reject early.
+ *   2. After every lane settles (success or failure), the shared
+ *      `progress.stepsCompleted` counter is advanced by the same
+ *      formula the regeneration pipeline uses:
+ *
+ *          stepsCompleted = min(baseStep + floor(done * stepSpan / N), baseStep + stepSpan)
+ *
+ *      where `done` is the number of lanes that have finished and `N`
+ *      is `lanes.length`. This is what guarantees the counter lands on
+ *      `baseStep + stepSpan` once all lanes complete (e.g. 3 + 3 = 6
+ *      across the four deliverable lanes).
+ *   3. Lanes start concurrently — they are dispatched before any
+ *      `await` so they make progress in parallel.
+ *
+ * `onLaneSettled` is an optional hook, primarily useful in tests, that
+ * fires after each lane finishes with `(label, ok)` where `ok` is
+ * `false` if the lane threw.
+ */
+export async function runLanesInParallel(
+  lanes: Array<{ label: string; run: () => Promise<void> }>,
+  progress: { stepsCompleted: number },
+  options: {
+    baseStep?: number;
+    stepSpan?: number;
+    onLaneSettled?: (label: string, ok: boolean) => void;
+  } = {}
+): Promise<void> {
+  const baseStep = options.baseStep ?? 3;
+  const stepSpan = options.stepSpan ?? 3;
+  const total = lanes.length;
+  if (total === 0) return;
+
+  let done = 0;
+  const wrapped = lanes.map(({ label, run }) =>
+    (async () => {
+      let ok = true;
+      try {
+        await run();
+      } catch (err) {
+        ok = false;
+        console.error(`[lane] ${label} crashed:`, err);
+      } finally {
+        done++;
+        progress.stepsCompleted = Math.min(
+          baseStep + Math.floor((done * stepSpan) / total),
+          baseStep + stepSpan,
+        );
+        options.onLaneSettled?.(label, ok);
+      }
+    })()
+  );
+  await Promise.all(wrapped);
+}
+
+/**
  * Conservative per-provider concurrency caps. Tuned to keep wall-clock
  * time well below the serial baseline while staying inside typical
  * provider rate limits.
