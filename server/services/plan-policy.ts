@@ -846,13 +846,25 @@ export async function seedDefaultPlans(): Promise<void> {
           }
         } else {
           const missingKeys = Object.keys(defaultFeatures).filter(k => !(k in existingFeatures));
-          if (missingKeys.length > 0) {
-            const merged = { ...existingFeatures };
-            for (const k of missingKeys) {
-              merged[k] = defaultFeatures[k];
-            }
+          const merged = { ...existingFeatures };
+          for (const k of missingKeys) {
+            merged[k] = defaultFeatures[k];
+          }
+
+          const forceTrueKeys: string[] = [];
+          if (def.name === "pro" && merged.outcomeMetrics !== true) {
+            merged.outcomeMetrics = true;
+            forceTrueKeys.push("outcomeMetrics");
+          }
+
+          if (missingKeys.length > 0 || forceTrueKeys.length > 0) {
             await storage.updateServicePlan(existing.id, { features: merged } as any);
-            console.log(`[Plan Seed] Synced ${missingKeys.length} new feature(s) for plan ${def.displayName}: ${missingKeys.join(", ")}`);
+            if (missingKeys.length > 0) {
+              console.log(`[Plan Seed] Synced ${missingKeys.length} new feature(s) for plan ${def.displayName}: ${missingKeys.join(", ")}`);
+            }
+            if (forceTrueKeys.length > 0) {
+              console.log(`[Plan Seed] Force-enabled ${forceTrueKeys.length} feature(s) for plan ${def.displayName}: ${forceTrueKeys.join(", ")}`);
+            }
           }
         }
       }
