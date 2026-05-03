@@ -211,6 +211,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByEntraId(entraId: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
+  getUsersByIds(ids: string[]): Promise<Map<string, User>>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<User>): Promise<User>;
   getAllUsers(): Promise<User[]>;
@@ -643,6 +644,16 @@ export class DatabaseStorage implements IStorage {
   async getUserByEntraId(entraId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.entraId, entraId));
     return user || undefined;
+  }
+
+  async getUsersByIds(ids: string[]): Promise<Map<string, User>> {
+    const result = new Map<string, User>();
+    if (!ids.length) return result;
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (!uniqueIds.length) return result;
+    const rows = await db.select().from(users).where(inArray(users.id, uniqueIds));
+    for (const row of rows) result.set(row.id, row);
+    return result;
   }
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {

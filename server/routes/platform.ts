@@ -705,9 +705,9 @@ export function registerPlatformRoutes(app: Express) {
       if (ticket.assignedTo) userIds.add(ticket.assignedTo);
 
       const userMap: Record<string, { name: string; email: string; role: string }> = {};
-      for (const uid of userIds) {
-        const u = await storage.getUser(uid);
-        if (u) userMap[uid] = { name: u.name, email: u.email, role: u.role };
+      const usersById = await storage.getUsersByIds(Array.from(userIds).filter((id): id is string => Boolean(id)));
+      for (const [uid, u] of usersById) {
+        userMap[uid] = { name: u.name, email: u.email, role: u.role };
       }
 
       const filteredReplies = hasAdminAccess(user.role)
@@ -1049,9 +1049,9 @@ export function registerPlatformRoutes(app: Express) {
       tickets.forEach(t => { if (t.assignedTo) userIds.add(t.assignedTo); });
       
       const userMap: Record<string, { name: string; email: string; role: string }> = {};
-      for (const uid of userIds) {
-        const u = await storage.getUser(uid);
-        if (u) userMap[uid] = { name: u.name, email: u.email, role: u.role };
+      const usersById = await storage.getUsersByIds(Array.from(userIds).filter((id): id is string => Boolean(id)));
+      for (const [uid, u] of usersById) {
+        userMap[uid] = { name: u.name, email: u.email, role: u.role };
       }
 
       const domainUsers = await storage.getUsersByDomain(user.company);
