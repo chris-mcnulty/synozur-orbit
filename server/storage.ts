@@ -370,6 +370,7 @@ export interface IStorage {
   getLongFormRecommendationByType(type: string, projectId?: string, companyProfileId?: string): Promise<LongFormRecommendation | undefined>;
   getLongFormRecommendationsByProject(projectId: string): Promise<LongFormRecommendation[]>;
   getLongFormRecommendationsByCompanyProfile(companyProfileId: string): Promise<LongFormRecommendation[]>;
+  getLongFormRecommendationsByTenantMarket(tenantDomain: string, marketId: string | null): Promise<LongFormRecommendation[]>;
   createLongFormRecommendation(recommendation: InsertLongFormRecommendation): Promise<LongFormRecommendation>;
   updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation>;
   deleteLongFormRecommendation(id: string): Promise<void>;
@@ -1693,6 +1694,18 @@ export class DatabaseStorage implements IStorage {
   async getLongFormRecommendationsByCompanyProfile(companyProfileId: string): Promise<LongFormRecommendation[]> {
     return await db.select().from(longFormRecommendations)
       .where(eq(longFormRecommendations.companyProfileId, companyProfileId))
+      .orderBy(desc(longFormRecommendations.createdAt));
+  }
+
+  async getLongFormRecommendationsByTenantMarket(tenantDomain: string, marketId: string | null): Promise<LongFormRecommendation[]> {
+    const conditions = [eq(longFormRecommendations.tenantDomain, tenantDomain)];
+    if (marketId) {
+      conditions.push(eq(longFormRecommendations.marketId, marketId));
+    } else {
+      conditions.push(isNull(longFormRecommendations.marketId));
+    }
+    return await db.select().from(longFormRecommendations)
+      .where(and(...conditions))
       .orderBy(desc(longFormRecommendations.createdAt));
   }
 

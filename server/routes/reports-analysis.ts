@@ -49,6 +49,27 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
   // ==================== REPORT ROUTES ====================
 
+  // Lightweight content-availability probe used by the Generate Report dialog
+  // to disable section toggles when the underlying content does not exist.
+  app.get("/api/reports/available-content", async (req, res) => {
+    if (!await guardFeature(req, res, "pdfReports")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const tenantRecs = await storage.getLongFormRecommendationsByTenantMarket(
+        ctx.tenantDomain,
+        ctx.marketId || null
+      );
+      const hasGtmPlan = tenantRecs.some(r => r.type === "gtm_plan" && r.status === "generated" && !!r.content);
+      const hasMessagingFramework = tenantRecs.some(r => r.type === "messaging_framework" && r.status === "generated" && !!r.content);
+      res.json({ hasGtmPlan, hasMessagingFramework });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/reports", async (req, res) => {
     if (!await guardFeature(req, res, "pdfReports")) return;
     try {

@@ -25,6 +25,17 @@ interface ProjectSummary {
   productCount: number;
 }
 
+interface ProductHighlightFeature {
+  name: string;
+  description: string | null;
+  category: string | null;
+}
+
+interface CompetingProductRef {
+  competitorName: string;
+  productName: string;
+}
+
 interface ProductSummary {
   id: string;
   name: string;
@@ -33,6 +44,9 @@ interface ProductSummary {
   status: string;
   featureCount: number;
   roadmapCount: number;
+  isBaseline?: boolean;
+  topFeatures?: ProductHighlightFeature[];
+  competingProducts?: CompetingProductRef[];
 }
 
 interface ProductFeatureData {
@@ -136,36 +150,131 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#039;");
 }
 
+export function renderProductBlock(prod: ProductSummary): string {
+  const topFeatures = prod.topFeatures || [];
+  const competing = prod.competingProducts || [];
+  const highlightsBlock = topFeatures.length > 0 ? `
+      <div style="margin-top: 10px;">
+        <div style="font-size: 11px; font-weight: 600; color: #6366F1; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px;">Highlights</div>
+        <ul style="margin: 0; padding-left: 18px; list-style-type: disc; color: #475569; font-size: 13px;">
+          ${topFeatures.map(f => `<li style="margin: 2px 0;"><strong style="color: #1E293B;">${escapeHtml(f.name)}</strong>${f.category ? ` <span style="color: #94A3B8; font-size: 11px;">(${escapeHtml(f.category)})</span>` : ""}${f.description ? ` — ${escapeHtml(f.description.slice(0, 120))}${f.description.length > 120 ? "…" : ""}` : ""}</li>`).join("")}
+        </ul>
+      </div>` : "";
+  const competingBlock = competing.length > 0 ? `
+      <div style="margin-top: 10px;">
+        <div style="font-size: 11px; font-weight: 600; color: #DC2626; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px;">Competing Against</div>
+        <div style="font-size: 13px; color: #475569; line-height: 1.6;">
+          ${competing.map(c => `<div>vs <strong style="color: #1E293B;">${escapeHtml(c.competitorName)}</strong>: ${escapeHtml(c.productName)}</div>`).join("")}
+        </div>
+      </div>` : "";
+  return `
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #1E293B; font-size: 15px;">${escapeHtml(prod.name)}</div>
+          ${prod.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(prod.description.slice(0, 200))}${prod.description.length > 200 ? "…" : ""}</div>` : ""}
+        </div>
+        <div style="text-align: right; margin-left: 16px;">
+          <span style="background: ${prod.status === "baseline" ? "#EDE9FE" : "#F1F5F9"}; color: ${prod.status === "baseline" ? "#7C3AED" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${prod.status === "baseline" ? "Your Product" : "Competitor"}</span>
+          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${prod.featureCount} features, ${prod.roadmapCount} roadmap items</div>
+        </div>
+      </div>
+      ${prod.competitivePositionSummary ? `<div style="font-size: 12px; color: #6B7280; margin-top: 10px; padding: 8px; background: #F1F5F9; border-radius: 4px; border-left: 3px solid #7C3AED; font-style: italic;">${escapeHtml(prod.competitivePositionSummary)}</div>` : ""}
+      ${highlightsBlock}
+      ${competingBlock}
+    </div>
+  `;
+}
+
+export { markdownToHtml, renderFrameworkContent, escapeHtml };
+
+function renderMarkdownTable(block: string): string {
+  const lines = block.split("\n").filter(l => l.trim().length > 0);
+  if (lines.length < 2) return "";
+  const splitRow = (row: string) => row.replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+  const header = splitRow(lines[0]);
+  const sepCells = splitRow(lines[1]);
+  if (!sepCells.every(c => /^:?-{2,}:?$/.test(c))) return "";
+  const bodyRows = lines.slice(2).map(splitRow);
+  // SECURITY: cell content originates from user/AI-authored markdown — escape
+  // before interpolating into HTML so authored markdown cannot inject tags
+  // or attributes into the rendered PDF.
+  const ths = header.map(h => `<th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #cbd5e1; background: #F1F5F9; color: #1E293B; font-weight: 600;">${escapeHtml(h)}</th>`).join("");
+  const trs = bodyRows.map(row => `<tr>${row.map(c => `<td style="padding: 8px 10px; border-bottom: 1px solid #E2E8F0; color: #475569;">${escapeHtml(c)}</td>`).join("")}</tr>`).join("");
+  return `<table style="width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px;"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
 function markdownToHtml(markdown: string): string {
   if (!markdown) return "";
-  
-  let html = escapeHtml(markdown);
-  
+
+  // Tables: extract before escaping so pipes survive. Render to placeholder HTML.
+  const tablePlaceholders: string[] = [];
+  let pre = markdown.replace(/(^|\n)((?:\|[^\n]+\|\s*\n)\|[\s:|-]+\|\s*\n(?:\|[^\n]+\|\s*\n?)+)/g, (_match, lead, block) => {
+    const rendered = renderMarkdownTable(block);
+    if (!rendered) return _match;
+    const idx = tablePlaceholders.push(rendered) - 1;
+    return `${lead}\n@@TABLE_${idx}@@\n`;
+  });
+
+  let html = escapeHtml(pre);
+
   html = html.replace(/^#### (.+)$/gm, '<h4 style="font-size: 14px; font-weight: 600; color: #1e293b; margin: 16px 0 8px 0;">$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3 style="font-size: 16px; font-weight: 600; color: #1e293b; margin: 20px 0 12px 0;">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 24px 0 14px 0;">$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1 style="font-size: 22px; font-weight: 700; color: #1e293b; margin: 28px 0 16px 0;">$1</h1>');
-  
+
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  
+
+  // Markdown links [text](url) — only http(s) and mailto allowed.
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, (_m, text: string, url: string) => {
+    return `<a href="${url}" style="color: #6366F1; text-decoration: underline;">${text}</a>`;
+  });
+
+  // Blockquotes — group consecutive `> ` lines (escaped to `&gt; `).
+  html = html.replace(/(^|\n)((?:&gt; ?[^\n]*(?:\n|$))+)/g, (_m, lead: string, block: string) => {
+    const inner = block.split("\n")
+      .filter(l => l.length > 0)
+      .map(l => l.replace(/^&gt; ?/, ""))
+      .join("<br>");
+    return `${lead}<blockquote style="border-left: 3px solid #6366F1; background: #EEF2FF; color: #1E293B; padding: 8px 14px; margin: 10px 0; font-style: italic;">${inner}</blockquote>`;
+  });
+
   html = html.replace(/^- (.+)$/gm, '<li class="ul-item" style="margin: 4px 0; padding-left: 4px;">$1</li>');
   html = html.replace(/(<li class="ul-item"[^>]*>.*<\/li>\n?)+/g, (match) => `<ul style="margin: 10px 0; padding-left: 24px; list-style-type: disc;">${match}</ul>`);
-  
+
   html = html.replace(/^\d+\. (.+)$/gm, '<li class="ol-item" style="margin: 4px 0; padding-left: 4px;">$1</li>');
   html = html.replace(/(<li class="ol-item"[^>]*>.*<\/li>\n?)+/g, (match) => `<ol style="margin: 10px 0; padding-left: 24px; list-style-type: decimal;">${match}</ol>`);
-  
+
   const paragraphs = html.split(/\n{2,}/);
   html = paragraphs.map(p => {
     const trimmed = p.trim();
     if (!trimmed) return '';
-    if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<ol') || trimmed.startsWith('<li')) {
+    if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<ol') || trimmed.startsWith('<li') || trimmed.startsWith('<blockquote') || trimmed.startsWith('@@TABLE_')) {
       return trimmed;
     }
     return `<p style="margin: 10px 0; line-height: 1.7;">${trimmed.replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
-  
+
+  // Restore tables.
+  html = html.replace(/@@TABLE_(\d+)@@/g, (_m, idx) => tablePlaceholders[Number(idx)] || "");
+
   return html;
+}
+
+// Best-effort renderer for legacy plain-text frameworks. Wraps paragraphs in <p>
+// and turns blockquote-style lines into proper <blockquote> rather than rendering
+// "> " markers verbatim.
+function renderFrameworkContent(content: string): string {
+  if (!content) return "";
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+  const looksLikeMarkdown = /(^|\n)(#{1,6} |[-*] |\d+\. |> |\|)/.test(trimmed) || /\*\*[^*]+\*\*/.test(trimmed);
+  if (looksLikeMarkdown) return markdownToHtml(trimmed);
+  return trimmed
+    .split(/\n{2,}/)
+    .map(p => `<p style="margin: 10px 0; line-height: 1.7;">${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
 }
 
 function getSynozurLogoBase64(): string {
@@ -598,21 +707,7 @@ function generateReportHtml(data: ReportData): string {
     </div>
   `).join("");
 
-  const productCards = data.products.map(prod => `
-    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div style="flex: 1;">
-          <div style="font-weight: 600; color: #1E293B;">${escapeHtml(prod.name)}</div>
-          ${prod.description ? `<div style="font-size: 13px; color: #475569; margin-top: 4px;">${escapeHtml(prod.description.slice(0, 150))}${prod.description.length > 150 ? "..." : ""}</div>` : ""}
-          ${prod.competitivePositionSummary ? `<div style="font-size: 12px; color: #6B7280; margin-top: 6px; padding: 8px; background: #F1F5F9; border-radius: 4px; border-left: 3px solid #7C3AED; font-style: italic;">${escapeHtml(prod.competitivePositionSummary)}</div>` : ""}
-        </div>
-        <div style="text-align: right; margin-left: 16px;">
-          <span style="background: ${prod.status === "baseline" ? "#EDE9FE" : "#F1F5F9"}; color: ${prod.status === "baseline" ? "#7C3AED" : "#64748B"}; padding: 4px 8px; border-radius: 4px; font-size: 11px;">${prod.status === "baseline" ? "Your Product" : "Competitor"}</span>
-          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">${prod.featureCount} features, ${prod.roadmapCount} roadmap items</div>
-        </div>
-      </div>
-    </div>
-  `).join("");
+  const productCards = data.products.map(prod => renderProductBlock(prod)).join("");
 
   const marketingPlanCards = (data.marketingPlans || []).map(plan => {
     const statusColors: Record<string, { bg: string; text: string }> = {
@@ -1153,12 +1248,12 @@ function generateReportHtml(data: ReportData): string {
       ${headerLogo}
       <div class="report-meta">
         <div>${formattedDate}</div>
-        <div>Products</div>
+        <div>Active Products</div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">Products (${data.products.length})</div>
+      <div class="section-title">Active Products (${data.products.length})</div>
       ${productCards || '<div class="empty-state">No products defined in this market.</div>'}
     </div>
 
@@ -1260,7 +1355,7 @@ function generateReportHtml(data: ReportData): string {
     <div class="section">
       <div class="section-title">Messaging & Positioning Framework</div>
       <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 24px; color: #475569; font-size: 14px;">
-        ${markdownToHtml(data.messagingFramework)}
+        ${renderFrameworkContent(data.messagingFramework)}
       </div>
     </div>
     ${ORBIT_FOOTER}
@@ -1573,6 +1668,77 @@ export async function generatePdfReport(
         const msgRec = longFormRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
         messagingFramework = msgRec?.content || null;
       }
+    }
+    // Final fallback: any long-form recommendation matching this tenant+market scope.
+    // This catches GTM Plans and Messaging Frameworks generated against an unrelated
+    // project/companyProfile but still belonging to the same tenant + market.
+    if (!gtmPlan || !messagingFramework) {
+      const tenantRecs = await storage.getLongFormRecommendationsByTenantMarket(tenantDomain, marketId || null);
+      if (!gtmPlan) {
+        const gtmRec = tenantRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
+        gtmPlan = gtmRec?.content || null;
+      }
+      if (!messagingFramework) {
+        const msgRec = tenantRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
+        messagingFramework = msgRec?.content || null;
+      }
+    }
+  }
+
+  // Enrich product summaries with top features and competing-product mappings.
+  // Top 3 features ranked by status (released > in_progress > planned > backlog) +
+  // priority (high > medium > low). Released features are the strongest "differentiators".
+  const statusWeight: Record<string, number> = { released: 4, in_progress: 3, planned: 2, backlog: 1 };
+  const priorityWeight: Record<string, number> = { high: 3, medium: 2, low: 1 };
+  const featureScore = (f: { status: string; priority: string | null }) => {
+    return (statusWeight[f.status] || 0) * 10 + (priorityWeight[f.priority || ""] || 0);
+  };
+  const allCompetitorProducts: Map<string, Array<{ name: string; featureNames: Set<string> }>> = new Map();
+  for (const comp of competitors) {
+    const compProducts = await storage.getProductsByCompetitor(comp.id);
+    const enriched: Array<{ name: string; featureNames: Set<string> }> = [];
+    for (const cp of compProducts) {
+      const cpFeatures = await storage.getProductFeaturesByProduct(cp.id);
+      enriched.push({
+        name: cp.name,
+        featureNames: new Set(cpFeatures.map(f => f.name.toLowerCase())),
+      });
+    }
+    if (enriched.length > 0) {
+      allCompetitorProducts.set(comp.id, enriched);
+    }
+  }
+  for (const summary of baselineProducts) {
+    const features = await storage.getProductFeaturesByProduct(summary.id);
+    const ranked = [...features].sort((a, b) => featureScore(b) - featureScore(a));
+    summary.topFeatures = ranked.slice(0, 3).map(f => ({
+      name: f.name,
+      description: f.description,
+      category: f.category,
+    }));
+    if (summary.status === "baseline") {
+      summary.isBaseline = true;
+      const baselineFeatureNames = new Set(features.map(f => f.name.toLowerCase()));
+      const competing: CompetingProductRef[] = [];
+      for (const comp of competitors) {
+        const compProds = allCompetitorProducts.get(comp.id);
+        if (!compProds || compProds.length === 0) continue;
+        // Pick the product with the most overlapping feature names; fall back to the first.
+        let best = compProds[0];
+        let bestOverlap = -1;
+        for (const cp of compProds) {
+          let overlap = 0;
+          cp.featureNames.forEach(fn => {
+            if (baselineFeatureNames.has(fn)) overlap += 1;
+          });
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            best = cp;
+          }
+        }
+        competing.push({ competitorName: comp.name, productName: best.name });
+      }
+      summary.competingProducts = competing;
     }
   }
 

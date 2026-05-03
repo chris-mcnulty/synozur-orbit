@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, FileText, Clock, Building2, Briefcase, Sparkles, Swords, Activity, Target, BarChart2, Lightbulb, Zap, CheckCircle2, Info, Trash2, Megaphone, MessageSquareText } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -68,6 +69,7 @@ export default function Reports() {
   const [sections, setSections] = useState<ReportSections>(defaultSections);
   const [isGenerating, setIsGenerating] = useState(false);
   const [includeStrategicPlans, setIncludeStrategicPlans] = useState(false);
+  const [strategicPlansTouched, setStrategicPlansTouched] = useState(false);
 
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["/api/reports"],
@@ -126,6 +128,31 @@ export default function Reports() {
       return response.json();
     },
   });
+
+  const { data: availableContent } = useQuery<{ hasGtmPlan: boolean; hasMessagingFramework: boolean }>({
+    queryKey: ["/api/reports/available-content"],
+    queryFn: async () => {
+      const response = await fetch("/api/reports/available-content", { credentials: "include" });
+      if (!response.ok) return { hasGtmPlan: false, hasMessagingFramework: false };
+      return response.json();
+    },
+  });
+  const hasGtmPlan = !!availableContent?.hasGtmPlan;
+  const hasMessagingFramework = !!availableContent?.hasMessagingFramework;
+
+  useEffect(() => {
+    if (!availableContent) return;
+    setSections(s => ({
+      ...s,
+      gtmPlan: hasGtmPlan ? s.gtmPlan : false,
+      messagingFramework: hasMessagingFramework ? s.messagingFramework : false,
+    }));
+    if (!strategicPlansTouched) {
+      setIncludeStrategicPlans(hasGtmPlan || hasMessagingFramework);
+    } else if (!hasGtmPlan && !hasMessagingFramework) {
+      setIncludeStrategicPlans(false);
+    }
+  }, [availableContent, hasGtmPlan, hasMessagingFramework, strategicPlansTouched]);
 
   const latestSourceDate = (() => {
     const dates = [
@@ -420,29 +447,52 @@ export default function Reports() {
                   { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
                   { key: "recommendations", label: "Recommendations", icon: Lightbulb },
                   { key: "battleCards", label: "Battle Cards", icon: Swords },
-                  { key: "gtmPlan", label: "GTM Plan", icon: Megaphone },
-                  { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText },
+                  { key: "gtmPlan", label: "GTM Plan", icon: Megaphone, disabled: !hasGtmPlan, disabledReason: "Generate a GTM Plan first to include it in the report." },
+                  { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText, disabled: !hasMessagingFramework, disabledReason: "Generate a Messaging Framework first to include it in the report." },
                   { key: "activityLog", label: "Activity Log", icon: Activity },
-                ].map(({ key, label, icon: Icon }) => (
-                  <div 
-                    key={key}
-                    className={cn(
-                      "flex items-center gap-2 p-2 rounded-md cursor-pointer transition-all text-sm",
-                      sections[key as keyof ReportSections] 
-                        ? "bg-primary/10 text-primary" 
-                        : "bg-background hover:bg-muted"
-                    )}
-                    onClick={() => setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }))}
-                  >
-                    <Checkbox 
-                      checked={sections[key as keyof ReportSections]} 
-                      onCheckedChange={(checked) => setSections(s => ({ ...s, [key]: !!checked }))}
-                      className="h-4 w-4"
-                    />
-                    <Icon className="w-3.5 h-3.5" />
-                    <span className="truncate">{label}</span>
-                  </div>
-                ))}
+                ].map(({ key, label, icon: Icon, disabled, disabledReason }) => {
+                  const checked = sections[key as keyof ReportSections];
+                  const tile = (
+                    <div
+                      className={cn(
+                        "flex items-center gap-2 p-2 rounded-md transition-all text-sm",
+                        disabled
+                          ? "bg-muted/40 text-muted-foreground cursor-not-allowed opacity-60"
+                          : checked
+                            ? "bg-primary/10 text-primary cursor-pointer"
+                            : "bg-background hover:bg-muted cursor-pointer"
+                      )}
+                      onClick={() => {
+                        if (disabled) return;
+                        setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }));
+                      }}
+                      data-testid={`toggle-section-${key}`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        disabled={disabled}
+                        onCheckedChange={(c) => {
+                          if (disabled) return;
+                          setSections(s => ({ ...s, [key]: !!c }));
+                        }}
+                        className="h-4 w-4"
+                      />
+                      <Icon className="w-3.5 h-3.5" />
+                      <span className="truncate">{label}</span>
+                    </div>
+                  );
+                  if (disabled && disabledReason) {
+                    return (
+                      <TooltipProvider key={key} delayDuration={150}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>{tile}</TooltipTrigger>
+                          <TooltipContent>{disabledReason}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  }
+                  return <React.Fragment key={key}>{tile}</React.Fragment>;
+                })}
               </div>
             </div>
           )}
@@ -541,28 +591,55 @@ export default function Reports() {
             </div>
           )}
 
-          {scope === "baseline" && reportType === "quick" && (
-            <div
-              className={cn(
-                "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
-                includeStrategicPlans
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
-              )}
-              onClick={() => setIncludeStrategicPlans(!includeStrategicPlans)}
-              data-testid="toggle-strategic-plans"
-            >
-              <Checkbox
-                checked={includeStrategicPlans}
-                onCheckedChange={(checked) => setIncludeStrategicPlans(!!checked)}
-                className="h-4 w-4"
-              />
-              <div>
-                <span className="text-sm font-medium">Include GTM Plan & Messaging Framework</span>
-                <p className="text-xs text-muted-foreground">Add your Go-to-Market plan and messaging framework to the report</p>
+          {scope === "baseline" && reportType === "quick" && (() => {
+            const strategicDisabled = !hasGtmPlan && !hasMessagingFramework;
+            const tile = (
+              <div
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg border transition-all",
+                  strategicDisabled
+                    ? "border-border bg-muted/30 cursor-not-allowed opacity-60"
+                    : includeStrategicPlans
+                      ? "border-primary bg-primary/5 cursor-pointer"
+                      : "border-border hover:border-primary/50 cursor-pointer"
+                )}
+                onClick={() => {
+                  if (strategicDisabled) return;
+                  setStrategicPlansTouched(true);
+                  setIncludeStrategicPlans(!includeStrategicPlans);
+                }}
+                data-testid="toggle-strategic-plans"
+              >
+                <Checkbox
+                  checked={includeStrategicPlans}
+                  disabled={strategicDisabled}
+                  onCheckedChange={(checked) => {
+                    if (strategicDisabled) return;
+                    setStrategicPlansTouched(true);
+                    setIncludeStrategicPlans(!!checked);
+                  }}
+                  className="h-4 w-4"
+                />
+                <div>
+                  <span className="text-sm font-medium">Include GTM Plan & Messaging Framework</span>
+                  <p className="text-xs text-muted-foreground">Add your Go-to-Market plan and messaging framework to the report</p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+            if (strategicDisabled) {
+              return (
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>{tile}</TooltipTrigger>
+                    <TooltipContent>
+                      Generate a GTM Plan or Messaging Framework first to include them in the report.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            }
+            return tile;
+          })()}
         </CardContent>
         <CardFooter className="border-t pt-4">
           <Button 
