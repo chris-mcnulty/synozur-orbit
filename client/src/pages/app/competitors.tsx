@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import EmptyPageState from "@/components/EmptyPageState";
 import { CompetitorListSkeleton } from "@/components/ui/skeletons";
+import { formatCompactUsd, formatLifecycleStage } from "@/lib/hubspot-format";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -1187,27 +1188,40 @@ export default function Competitors() {
                                       <Ban className="w-3 h-3 mr-1" /> No Crawl
                                     </Badge>
                                   )}
-                                  {(competitor as { hubspotCompanyId?: string | null }).hubspotCompanyId && (() => {
-                                    const c = competitor as { hubspotCompanyId?: string | null; hubspotOpenDealCount?: number | null; hubspotOpenDealValue?: number | null };
+                                  {(() => {
+                                    const c = competitor as { hubspotCompanyId?: string | null; hubspotOpenDealCount?: number | null; hubspotOpenDealValue?: number | null; hubspotLifecycleStage?: string | null };
+                                    if (!c.hubspotCompanyId) return null;
                                     const dealCount = c.hubspotOpenDealCount ?? 0;
                                     const dealValue = c.hubspotOpenDealValue ?? 0;
                                     const portalSegment = hubspotPortalId ?? "0";
-                                    const dealsHref = `https://app.hubspot.com/contacts/${portalSegment}/record/0-2/${encodeURIComponent(c.hubspotCompanyId!)}/?objectTypeId=0-3`;
+                                    const companyHref = `https://app.hubspot.com/contacts/${portalSegment}/company/${encodeURIComponent(c.hubspotCompanyId!)}`;
                                     return (
-                                      <a
-                                        href={dealsHref}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        data-testid={`badge-hubspot-${competitor.id}`}
-                                      >
-                                        <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30">
-                                          HubSpot
-                                          {dealCount > 0 ? ` · ${dealCount} open deal${dealCount === 1 ? "" : "s"}` : ""}
-                                          {dealValue > 0 ? ` · $${Number(dealValue).toLocaleString()}` : ""}
-                                          <ExternalLink className="w-3 h-3 ml-1" />
-                                        </Badge>
-                                      </a>
+                                      <>
+                                        {dealCount > 0 && (
+                                          <a
+                                            href={companyHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            data-testid={`badge-hubspot-deals-${competitor.id}`}
+                                          >
+                                            <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30">
+                                              {dealCount} open deal{dealCount === 1 ? "" : "s"}
+                                              {dealValue > 0 ? ` · ${formatCompactUsd(dealValue)}` : ""}
+                                              <ExternalLink className="w-3 h-3 ml-1" />
+                                            </Badge>
+                                          </a>
+                                        )}
+                                        {c.hubspotLifecycleStage && (
+                                          <Badge
+                                            variant="outline"
+                                            className="ml-2 text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700 capitalize"
+                                            data-testid={`badge-hubspot-lifecycle-${competitor.id}`}
+                                          >
+                                            {formatLifecycleStage(c.hubspotLifecycleStage)}
+                                          </Badge>
+                                        )}
+                                      </>
                                     );
                                   })()}
                                 </div>

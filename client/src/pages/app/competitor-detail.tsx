@@ -24,6 +24,7 @@ import { AnnotationRail } from "@/components/collaboration/CollabComponents";
 import { useUser } from "@/lib/userContext";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
 import { ArrowDown, ArrowRight, ArrowUp, Minus } from "lucide-react";
+import { formatCompactUsd, formatLifecycleStage, buildHubspotCompanyUrl } from "@/lib/hubspot-format";
 
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
@@ -88,6 +89,17 @@ export default function CompetitorDetail() {
   const competitorActivity = allActivity.filter((a: any) => 
     a.competitorId && id && String(a.competitorId) === String(id)
   );
+
+  const { data: hubspotStatus } = useQuery<{ connected: boolean; connection: { hubspotPortalId: string | null } | null }>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
+      if (!res.ok) return { connected: false, connection: null };
+      return res.json();
+    },
+    retry: false,
+  });
+  const hubspotPortalId = hubspotStatus?.connection?.hubspotPortalId ?? null;
   // Handle both formats: 'pages' and 'pagesCrawled' (backend uses pagesCrawled)
   const rawCrawlData = competitor?.crawlData as { 
     pages?: Array<{ url: string; title?: string; wordCount?: number; pageType?: string }>; 
@@ -551,6 +563,41 @@ export default function CompetitorDetail() {
                     <Calendar className="mr-1 h-3 w-3" /> Last crawled: {competitor.lastCrawl ? new Date(competitor.lastCrawl).toLocaleString() : "Never"}
                   </span>
                 </div>
+                {(() => {
+                  const c = competitor as { hubspotCompanyId?: string | null; hubspotOpenDealCount?: number | null; hubspotOpenDealValue?: number | null; hubspotLifecycleStage?: string | null };
+                  if (!c.hubspotCompanyId) return null;
+                  const dealCount = c.hubspotOpenDealCount ?? 0;
+                  const dealValue = c.hubspotOpenDealValue ?? 0;
+                  if (dealCount <= 0 && !c.hubspotLifecycleStage) return null;
+                  const companyHref = buildHubspotCompanyUrl(hubspotPortalId, c.hubspotCompanyId!);
+                  return (
+                    <div className="flex items-center gap-2 mt-2 flex-wrap" data-testid="hubspot-context">
+                      {dealCount > 0 && (
+                        <a
+                          href={companyHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="badge-hubspot-deals"
+                        >
+                          <Badge variant="outline" className="text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30">
+                            {dealCount} open deal{dealCount === 1 ? "" : "s"}
+                            {dealValue > 0 ? ` · ${formatCompactUsd(dealValue)}` : ""}
+                            <ExternalLink className="w-3 h-3 ml-1" />
+                          </Badge>
+                        </a>
+                      )}
+                      {c.hubspotLifecycleStage && (
+                        <Badge
+                          variant="outline"
+                          className="text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700"
+                          data-testid="badge-hubspot-lifecycle"
+                        >
+                          {formatLifecycleStage(c.hubspotLifecycleStage)}
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center gap-3 mt-2">
                   {competitor.linkedInUrl ? (
                     <a 
