@@ -2674,6 +2674,93 @@ export type OauthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
 export type OauthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
 export type OauthApiAudit = typeof oauthApiAudit.$inferSelect;
 
+// ─────────────────────────────────────────────────────────────────────────
+// Task #101 — Outcome Metrics, Orbit Score & ROI
+// ─────────────────────────────────────────────────────────────────────────
+
+// GA4 (and future provider) connections per tenant/market. Tokens are stored
+// AES-256-GCM encrypted via server/utils/encryption.ts.
+export const analyticsConnections = pgTable("analytics_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  provider: text("provider").notNull().default("ga4"), // ga4 only for now
+  propertyId: text("property_id"), // GA4 property id ("properties/123456")
+  propertyName: text("property_name"),
+  accessTokenEnc: text("access_token_enc"),
+  refreshTokenEnc: text("refresh_token_enc"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  scope: text("scope"),
+  status: text("status").notNull().default("connected"), // connected | error | disconnected
+  lastError: text("last_error"),
+  lastSyncAt: timestamp("last_sync_at"),
+  connectedBy: varchar("connected_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertAnalyticsConnectionSchema = createInsertSchema(analyticsConnections).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type AnalyticsConnection = typeof analyticsConnections.$inferSelect;
+export type InsertAnalyticsConnection = z.infer<typeof insertAnalyticsConnectionSchema>;
+
+// Daily aggregated analytics keyed by (tenant, market, date, source/medium/campaign).
+export const analyticsDaily = pgTable("analytics_daily", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  source: text("source").notNull().default("(direct)"),
+  medium: text("medium").notNull().default("(none)"),
+  campaign: text("campaign"),
+  sessions: integer("sessions").notNull().default(0),
+  users: integer("users").notNull().default(0),
+  conversions: integer("conversions").notNull().default(0),
+  revenue: integer("revenue").notNull().default(0), // cents
+  // Joined Orbit-attributed metrics (from marketing_link_clicks)
+  orbitClicks: integer("orbit_clicks").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type AnalyticsDaily = typeof analyticsDaily.$inferSelect;
+
+// Weekly Orbit Score (0-100) per tenant/market with components breakdown.
+export const orbitScores = pgTable("orbit_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  weekStart: text("week_start").notNull(), // ISO date of Monday
+  score: integer("score").notNull(), // 0-100
+  components: jsonb("components").notNull().$type<{
+    sovTrend: number;
+    publishRate: number;
+    actionCompletion: number;
+    socialEngagement: number;
+    competitorFreshness: number;
+    weights: Record<string, number>;
+  }>(),
+  businessType: text("business_type").notNull().default("b2b"),
+  sicCode: text("sic_code"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type OrbitScore = typeof orbitScores.$inferSelect;
+
+// Industry benchmark cohort (per-SIC), only published when sampleSize ≥ 5.
+export const orbitScoreBenchmarks = pgTable("orbit_score_benchmarks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sicCode: text("sic_code").notNull(),
+  weekStart: text("week_start").notNull(),
+  p50: integer("p50").notNull(),
+  p75: integer("p75").notNull(),
+  sampleSize: integer("sample_size").notNull(),
+  componentP50: jsonb("component_p50").$type<Record<string, number>>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type OrbitScoreBenchmark = typeof orbitScoreBenchmarks.$inferSelect;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

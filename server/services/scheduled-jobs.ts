@@ -1969,6 +1969,33 @@ export function startScheduledJobs(): void {
       .then(({ backfillSentiment }) => backfillSentiment({ limit: 50, sinceDays: 90 }))
       .catch((err) => console.error("[Sentiment Backfill] Tick error:", err?.message || err));
   }, 15 * 60 * 1000);
+  // Task #101: Outcome metrics — daily GA4/UTM analytics pull (runs hourly,
+  // each call is idempotent for the date being pulled). Weekly Orbit Score
+  // computation runs every 6 hours; benchmark aggregation runs nightly.
+  setInterval(() => {
+    import("./ga-client").then(({ runDailyAnalyticsPull }) =>
+      runDailyAnalyticsPull().catch((err) => console.error("[Outcome Metrics] daily pull error:", err?.message || err)),
+    );
+  }, 60 * 60 * 1000);
+  setInterval(() => {
+    import("./orbit-score").then(({ runWeeklyOrbitScoreJob }) =>
+      runWeeklyOrbitScoreJob().catch((err) => console.error("[Orbit Score] weekly job error:", err?.message || err)),
+    );
+  }, 6 * 60 * 60 * 1000);
+  setInterval(() => {
+    import("./orbit-score").then(({ runBenchmarkAggregationJob }) =>
+      runBenchmarkAggregationJob().catch((err) => console.error("[Orbit Score] benchmark job error:", err?.message || err)),
+    );
+  }, 24 * 60 * 60 * 1000);
+  // Initial sweep ~ 2 minutes after boot
+  setTimeout(() => {
+    import("./ga-client").then(({ runDailyAnalyticsPull }) =>
+      runDailyAnalyticsPull().catch((err) => console.error("[Outcome Metrics] initial daily pull error:", err?.message || err)),
+    );
+    import("./orbit-score").then(({ runWeeklyOrbitScoreJob }) =>
+      runWeeklyOrbitScoreJob().catch((err) => console.error("[Orbit Score] initial weekly job error:", err?.message || err)),
+    );
+  }, 2 * 60 * 1000);
 
   // Task #97: Marketing publish worker — picks up approved+scheduled posts on
   // auto-publish accounts every 2 minutes. Cheap query; safe to run frequently.

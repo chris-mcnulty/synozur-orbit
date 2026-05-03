@@ -68,6 +68,8 @@ import CompanyRosterPage from "@/pages/app/company-roster";
 import PositioningMapPage from "@/pages/app/positioning-map";
 import PublicFeedbackPage from "@/pages/feedback-public";
 import SeoDashboard from "@/pages/app/seo-dashboard";
+import InsightsOutcomesPage from "@/pages/app/insights-outcomes";
+import SettingsIntegrationsPage from "@/pages/app/settings-integrations";
 import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
 import DeveloperPortalPage from "@/pages/app/developer";
 
@@ -118,6 +120,7 @@ function Router() {
       <Route path="/app/documents" component={Documents} />
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
+      <Route path="/app/settings/integrations">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Integrations" description="Connect Google Analytics and other services to enrich your outcomes data."><SettingsIntegrationsPage /></PageFeatureGate>}</Route>
       <Route path="/app/users" component={UsersPage} />
       <Route path="/app/admin/organizations" component={AdminOrganizationsPage} />
       <Route path="/app/admin/ai-settings" component={AISettingsPage} />
@@ -161,6 +164,7 @@ function Router() {
       <Route path="/app/getting-started" component={GettingStartedPage} />
       <Route path="/app/positioning-map" component={PositioningMapPage} />
       <Route path="/app/seo-dashboard">{() => <PageFeatureGate featureKey="seoTracking" label="SEO &amp; Share of Voice" description="Track keyword rankings and competitive share-of-voice. Upgrade to unlock this feature."><SeoDashboard /></PageFeatureGate>}</Route>
+      <Route path="/app/insights/outcomes">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Outcome Metrics & Orbit Score" description="ROI dashboard with Orbit Score, GA4 analytics, and outcome trend charts. Upgrade to unlock this feature."><InsightsOutcomesPage /></PageFeatureGate>}</Route>
 
       {/* Fallback to 404 */}
       <Route component={NotFound} />

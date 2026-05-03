@@ -41,6 +41,8 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "directEmailDelivery", label: "Direct Email Campaign Delivery", description: "Send AI-generated emails to managed recipient lists with bounce/unsubscribe handling", category: "marketing" },
   { key: "partnerApi", label: "Partner API & OAuth", description: "OAuth 2.0 partner API for Galaxy and other third-party portals to read user-consented artifacts", category: "platform" },
   { key: "sentimentAnalysis", label: "Sentiment & Tone Analysis", description: "Show competitor content sentiment and tone analysis, plus tone-shift alerts. Analysis always runs server-side; this gate controls UI visibility and alerts only.", category: "intelligence" },
+  { key: "outcomeMetrics", label: "Outcome Metrics & Orbit Score", description: "ROI dashboard with Orbit Score, GA4 analytics integration, and outcome trend charts", category: "intelligence" },
+  { key: "industryBenchmarks", label: "Industry Benchmarks", description: "Compare your Orbit Score against anonymized SIC-code peer cohorts (≥5 tenants)", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -97,6 +99,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directEmailDelivery: false,
     partnerApi: false,
     sentimentAnalysis: false,
+    outcomeMetrics: false,
+    industryBenchmarks: false,
   },
   trial: {
     battlecards: true,
@@ -132,6 +136,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directEmailDelivery: false,
     partnerApi: false,
     sentimentAnalysis: false,
+    outcomeMetrics: false,
+    industryBenchmarks: false,
   },
   pro: {
     battlecards: true,
@@ -167,6 +173,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directEmailDelivery: false,
     partnerApi: false,
     sentimentAnalysis: true,
+    outcomeMetrics: true,
+    industryBenchmarks: false,
   },
   enterprise: {
     battlecards: true,
@@ -202,6 +210,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directEmailDelivery: true,
     partnerApi: true,
     sentimentAnalysis: true,
+    outcomeMetrics: true,
+    industryBenchmarks: true,
   },
   unlimited: {
     battlecards: true,
@@ -237,6 +247,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     directEmailDelivery: true,
     partnerApi: true,
     sentimentAnalysis: true,
+    outcomeMetrics: true,
+    industryBenchmarks: true,
   },
 };
 
