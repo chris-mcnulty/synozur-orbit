@@ -12,6 +12,10 @@ import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { syncMarketingPlanToPlanner } from "./planner-service";
+import {
+  getValidGraphToken,
+  renewGraphSubscription,
+} from "./planner-graph-client";
 import { tickMarketingPublishWorker } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { refreshSeoForContext } from "../routes/seo";
@@ -1583,6 +1587,58 @@ async function checkAndRunScheduledBriefing(): Promise<void> {
 // Planner sync job — syncs all marketing plans that have Planner connected
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Planner subscription auto-renewal — Graph subscriptions on Planner expire
+// after ~3 days. We refresh anything within 12 hours of expiration so
+// webhook delivery never lapses (Task #104).
+// ---------------------------------------------------------------------------
+
+async function runPlannerSubscriptionRenewalJob(): Promise<void> {
+  try {
+    const subs = await storage.getAllPlannerSubscriptions();
+    const renewWindow = Date.now() + 12 * 60 * 60 * 1000;
+    let renewed = 0;
+    let failed = 0;
+    for (const sub of subs) {
+      if (sub.expiresAt.getTime() > renewWindow) continue;
+      const plan = await db.query.marketingPlans.findFirst({
+        where: (p, { eq }) => eq(p.id, sub.planId),
+      });
+      if (!plan || !plan.plannerConnectedBy) continue;
+      const token = await getValidGraphToken(plan.plannerConnectedBy);
+      if (!token) {
+        await storage.updatePlannerSubscription(sub.planId, {
+          lastError: "Planner consent unavailable for renewal",
+        });
+        failed += 1;
+        continue;
+      }
+      try {
+        const renewedSub = await renewGraphSubscription(token, sub.subscriptionId);
+        await storage.updatePlannerSubscription(sub.planId, {
+          expiresAt: new Date(renewedSub.expirationDateTime),
+          lastRenewedAt: new Date(),
+          lastError: null,
+        });
+        renewed += 1;
+      } catch (err: any) {
+        console.error(`[Planner] Renewal failed for plan ${sub.planId}:`, err.message);
+        await storage.updatePlannerSubscription(sub.planId, {
+          lastError: err.message,
+        });
+        failed += 1;
+      }
+    }
+    if (renewed > 0 || failed > 0) {
+      console.log(`[Planner Subscription] Renewal sweep: ${renewed} renewed, ${failed} failed`);
+    }
+  } catch (err: any) {
+    console.error("[Planner Subscription] Renewal sweep error:", err.message);
+  }
+}
+
+let plannerSubscriptionRenewalInterval: NodeJS.Timeout | null = null;
+
 async function runPlannerSyncJob(): Promise<void> {
   if (jobStatus.plannerSync?.isRunning) {
     console.log("[Planner Sync] Job already running, skipping sweep");
@@ -1996,6 +2052,15 @@ export function startScheduledJobs(): void {
       runWeeklyOrbitScoreJob().catch((err) => console.error("[Orbit Score] initial weekly job error:", err?.message || err)),
     );
   }, 2 * 60 * 1000);
+
+  // Task #104 — Planner Graph subscription renewal — runs hourly
+  if (plannerSubscriptionRenewalInterval) clearInterval(plannerSubscriptionRenewalInterval);
+  plannerSubscriptionRenewalInterval = setInterval(() => {
+    runPlannerSubscriptionRenewalJob();
+  }, 60 * 60 * 1000);
+  setTimeout(() => {
+    runPlannerSubscriptionRenewalJob();
+  }, 45 * 1000);
 
   // Task #97: Marketing publish worker — picks up approved+scheduled posts on
   // auto-publish accounts every 2 minutes. Cheap query; safe to run frequently.

@@ -7,6 +7,7 @@ import { registerEntraRoutes } from "./auth/entra-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { registerMarketingLinksRoutes } from "./routes/marketing-links";
 import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes } from "./routes/marketing-delivery";
+import { registerPlannerWebhookPublicRoutes } from "./routes/planner-webhook";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
@@ -46,6 +47,7 @@ export async function registerRoutes(
   registerMarketingLinksRoutes(app);
   // Task #97: public unsubscribe + SendGrid event webhook (no auth required)
   registerMarketingDeliveryPublicRoutes(app);
+  registerPlannerWebhookPublicRoutes(app);
   // Authenticated marketing delivery routes (oauth, lists, sends, audit)
   registerMarketingDeliveryRoutes(app);
   

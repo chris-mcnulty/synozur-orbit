@@ -26,6 +26,9 @@ import {
   aiUsage,
   marketingPlans,
   marketingTasks,
+  marketingPlanBucketMappings,
+  plannerTaskSyncLog,
+  plannerSubscriptions,
   type User, 
   type InsertUser,
   type Tenant,
@@ -95,6 +98,12 @@ import {
   type InsertMarketingPlan,
   type MarketingTask,
   type InsertMarketingTask,
+  type MarketingPlanBucketMapping,
+  type InsertMarketingPlanBucketMapping,
+  type PlannerTaskSyncLog,
+  type InsertPlannerTaskSyncLog,
+  type PlannerSubscription,
+  type InsertPlannerSubscription,
   productFeatures,
   roadmapItems,
   featureRecommendations,
@@ -2955,6 +2964,98 @@ export class DatabaseStorage implements IStorage {
       .where(eq(marketingTasks.planId, planId))
       .returning();
     return result.length;
+  }
+
+  // Marketing Plan Bucket Mappings (Task #104 — multi-bucket per category)
+  async getMarketingPlanBucketMappings(planId: string): Promise<MarketingPlanBucketMapping[]> {
+    return db.select().from(marketingPlanBucketMappings)
+      .where(eq(marketingPlanBucketMappings.planId, planId));
+  }
+
+  async setMarketingPlanBucketMappings(
+    planId: string,
+    mappings: Array<{ activityCategory: string; bucketId: string; bucketName: string }>,
+  ): Promise<MarketingPlanBucketMapping[]> {
+    return db.transaction(async (tx) => {
+      await tx.delete(marketingPlanBucketMappings)
+        .where(eq(marketingPlanBucketMappings.planId, planId));
+      if (mappings.length === 0) return [];
+      const rows = mappings.map(m => ({
+        planId,
+        activityCategory: m.activityCategory,
+        bucketId: m.bucketId,
+        bucketName: m.bucketName,
+      }));
+      return tx.insert(marketingPlanBucketMappings).values(rows).returning();
+    });
+  }
+
+  async deleteMarketingPlanBucketMappings(planId: string): Promise<void> {
+    await db.delete(marketingPlanBucketMappings)
+      .where(eq(marketingPlanBucketMappings.planId, planId));
+  }
+
+  // Planner sync log
+  async getPlannerTaskSyncLog(planId: string, limit: number = 50): Promise<PlannerTaskSyncLog[]> {
+    return db.select().from(plannerTaskSyncLog)
+      .where(eq(plannerTaskSyncLog.planId, planId))
+      .orderBy(desc(plannerTaskSyncLog.occurredAt))
+      .limit(limit);
+  }
+
+  // Planner subscriptions
+  async getPlannerSubscriptionByPlan(planId: string): Promise<PlannerSubscription | null> {
+    const [row] = await db.select().from(plannerSubscriptions)
+      .where(eq(plannerSubscriptions.planId, planId));
+    return row || null;
+  }
+
+  async getPlannerSubscriptionById(subscriptionId: string): Promise<PlannerSubscription | null> {
+    const [row] = await db.select().from(plannerSubscriptions)
+      .where(eq(plannerSubscriptions.subscriptionId, subscriptionId));
+    return row || null;
+  }
+
+  async getAllPlannerSubscriptions(): Promise<PlannerSubscription[]> {
+    return db.select().from(plannerSubscriptions);
+  }
+
+  async upsertPlannerSubscription(data: InsertPlannerSubscription): Promise<PlannerSubscription> {
+    const existing = await this.getPlannerSubscriptionByPlan(data.planId);
+    if (existing) {
+      const [updated] = await db.update(plannerSubscriptions)
+        .set({
+          subscriptionId: data.subscriptionId,
+          resource: data.resource,
+          clientState: data.clientState,
+          expiresAt: data.expiresAt,
+          lastRenewedAt: data.lastRenewedAt ?? null,
+          lastError: data.lastError ?? null,
+        })
+        .where(eq(plannerSubscriptions.planId, data.planId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(plannerSubscriptions).values(data).returning();
+    return created;
+  }
+
+  async updatePlannerSubscription(
+    planId: string,
+    updates: Partial<InsertPlannerSubscription>,
+  ): Promise<PlannerSubscription | null> {
+    const [updated] = await db.update(plannerSubscriptions)
+      .set(updates)
+      .where(eq(plannerSubscriptions.planId, planId))
+      .returning();
+    return updated || null;
+  }
+
+  async deletePlannerSubscription(planId: string): Promise<boolean> {
+    const result = await db.delete(plannerSubscriptions)
+      .where(eq(plannerSubscriptions.planId, planId))
+      .returning();
+    return result.length > 0;
   }
 
   // Product Feature methods

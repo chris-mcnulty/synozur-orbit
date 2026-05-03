@@ -48,6 +48,35 @@ export interface PlannerTask {
   priority: number; // 0 (low) - 10 (urgent), Planner uses 1, 3, 5, 9
   dueDateTime?: string | null;
   etag?: string | null;
+  /** Server-side last modification timestamp from Microsoft Graph. */
+  lastModifiedDateTime?: string | null;
+  /** Map of Entra/AAD user oid → assignment metadata. */
+  assignments?: Record<string, { orderHint?: string }>;
+}
+
+/**
+ * Build a Planner `assignments` payload from a list of Entra (AAD) oids.
+ * Microsoft expects `null` to remove an assignment and a `plannerAssignment`
+ * object to add one.
+ */
+export function buildAssignmentsPayload(
+  desiredOids: string[],
+  currentOids: string[],
+): Record<string, any> | null {
+  const desired = Array.from(new Set(desiredOids.filter(Boolean)));
+  const current = Array.from(new Set(currentOids.filter(Boolean)));
+  const payload: Record<string, any> = {};
+  for (const oid of desired) {
+    if (!current.includes(oid)) {
+      payload[oid] = { "@odata.type": "#microsoft.graph.plannerAssignment", orderHint: " !" };
+    }
+  }
+  for (const oid of current) {
+    if (!desired.includes(oid)) {
+      payload[oid] = null;
+    }
+  }
+  return Object.keys(payload).length === 0 ? null : payload;
 }
 
 class GraphHttpError extends Error {
@@ -113,7 +142,7 @@ async function refreshGraphToken(user: User): Promise<string | null> {
           graphAccessToken: null,
           graphRefreshToken: null,
           graphTokenExpiresAt: null,
-        } as any);
+        });
       }
       return null;
     }
@@ -128,7 +157,7 @@ async function refreshGraphToken(user: User): Promise<string | null> {
       graphRefreshToken: refreshToken,
       graphTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
       graphScopes: scope,
-    } as any);
+    });
 
     return accessToken;
   } catch (err: any) {
@@ -156,7 +185,7 @@ async function graphRequest<T>(token: string, path: string, init: RequestInit = 
       body,
     );
   }
-  if (res.status === 204) return undefined as any;
+  if (res.status === 204) return undefined as unknown as T;
   return (await res.json()) as T;
 }
 
@@ -212,6 +241,8 @@ export async function listPlanTasks(token: string, planId: string): Promise<Plan
     priority: t.priority ?? 5,
     dueDateTime: t.dueDateTime ?? null,
     etag: t["@odata.etag"] ?? null,
+    lastModifiedDateTime: t.lastModifiedDateTime ?? null,
+    assignments: (t.assignments && typeof t.assignments === "object") ? t.assignments : {},
   }));
 }
 
@@ -245,9 +276,10 @@ export async function createTask(
     priority?: number; // Planner: 1=urgent, 3=important, 5=medium (default), 9=low
     dueDateTime?: string | null; // ISO 8601 UTC
     percentComplete?: number;
+    assignments?: Record<string, any> | null;
   },
 ): Promise<PlannerTask> {
-  const body: any = {
+  const body: Record<string, unknown> = {
     planId: opts.planId,
     title: opts.title,
   };
@@ -255,6 +287,7 @@ export async function createTask(
   if (opts.priority !== undefined) body.priority = opts.priority;
   if (opts.dueDateTime) body.dueDateTime = opts.dueDateTime;
   if (opts.percentComplete !== undefined) body.percentComplete = opts.percentComplete;
+  if (opts.assignments) body.assignments = opts.assignments;
 
   const created = await graphRequest<any>(token, `/planner/tasks`, {
     method: "POST",
@@ -269,6 +302,8 @@ export async function createTask(
     priority: created.priority,
     dueDateTime: created.dueDateTime,
     etag: created["@odata.etag"] || null,
+    lastModifiedDateTime: created.lastModifiedDateTime ?? null,
+    assignments: created.assignments && typeof created.assignments === "object" ? created.assignments : {},
   };
 }
 
@@ -286,6 +321,7 @@ export async function updateTask(
     priority?: number;
     dueDateTime?: string | null;
     percentComplete?: number;
+    assignments?: Record<string, any> | null;
   },
 ): Promise<string | null> {
   // PATCH returns 204 No Content; we need to GET to retrieve the new etag.
@@ -319,6 +355,8 @@ export async function getTask(token: string, taskId: string): Promise<PlannerTas
       priority: data.priority,
       dueDateTime: data.dueDateTime,
       etag: data["@odata.etag"] || null,
+      lastModifiedDateTime: data.lastModifiedDateTime ?? null,
+      assignments: data.assignments && typeof data.assignments === "object" ? data.assignments : {},
     };
   } catch (err: any) {
     if (err instanceof GraphHttpError && err.status === 404) return null;
@@ -391,11 +429,97 @@ export async function exchangeCodeForGraphTokens(opts: {
       graphRefreshToken: data.refresh_token,
       graphTokenExpiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
       graphScopes: data.scope || "",
-    } as any);
+    });
     return true;
   } catch (err: any) {
     console.error("[Planner] Code exchange exception:", err.message);
     return false;
+  }
+}
+
+// ---------- Change-notification subscriptions (Planner → Orbit webhook) ----------
+
+export interface GraphSubscription {
+  id: string;
+  resource: string;
+  changeType: string;
+  notificationUrl: string;
+  expirationDateTime: string;
+  clientState?: string;
+}
+
+/**
+ * Create a Microsoft Graph change-notification subscription on a Planner plan.
+ * Graph subscriptions on Planner resources currently support a maximum
+ * lifetime of ~3 days (4230 minutes) so callers must renew periodically.
+ *
+ * @param token            User delegated token
+ * @param resource         Graph resource path, e.g. `/planner/plans/{id}/tasks`
+ * @param notificationUrl  Public webhook URL (HTTPS) reachable from Microsoft
+ * @param clientState      Opaque secret echoed back in every notification
+ * @param expiresAt        Optional expiration; defaults to ~70 hours
+ */
+export async function createGraphSubscription(
+  token: string,
+  opts: {
+    resource: string;
+    notificationUrl: string;
+    clientState: string;
+    expiresAt?: Date;
+    changeType?: string;
+  },
+): Promise<GraphSubscription> {
+  const expiration = opts.expiresAt ?? new Date(Date.now() + 70 * 60 * 60 * 1000);
+  const created = await graphRequest<any>(token, `/subscriptions`, {
+    method: "POST",
+    body: JSON.stringify({
+      changeType: opts.changeType || "updated,deleted",
+      notificationUrl: opts.notificationUrl,
+      resource: opts.resource,
+      expirationDateTime: expiration.toISOString(),
+      clientState: opts.clientState,
+    }),
+  });
+  return {
+    id: created.id,
+    resource: created.resource,
+    changeType: created.changeType,
+    notificationUrl: created.notificationUrl,
+    expirationDateTime: created.expirationDateTime,
+    clientState: created.clientState,
+  };
+}
+
+export async function renewGraphSubscription(
+  token: string,
+  subscriptionId: string,
+  expiresAt?: Date,
+): Promise<GraphSubscription> {
+  const expiration = expiresAt ?? new Date(Date.now() + 70 * 60 * 60 * 1000);
+  const updated = await graphRequest<any>(token, `/subscriptions/${subscriptionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ expirationDateTime: expiration.toISOString() }),
+  });
+  return {
+    id: updated.id,
+    resource: updated.resource,
+    changeType: updated.changeType,
+    notificationUrl: updated.notificationUrl,
+    expirationDateTime: updated.expirationDateTime,
+    clientState: updated.clientState,
+  };
+}
+
+export async function deleteGraphSubscription(
+  token: string,
+  subscriptionId: string,
+): Promise<void> {
+  try {
+    await graphRequest<void>(token, `/subscriptions/${subscriptionId}`, { method: "DELETE" });
+  } catch (err: any) {
+    // 404s during teardown are fine
+    if (err instanceof GraphHttpError && err.status === 404) return;
+    throw err;
   }
 }
 

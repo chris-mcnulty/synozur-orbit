@@ -1,19 +1,9 @@
 /**
- * Microsoft Planner integration routes.
+ * Microsoft Planner integration routes (Task #98 + Task #104).
  *
- * Lifecycle:
- *   1. User clicks "Connect to Microsoft Planner" → GET /api/planner/auth/url
- *      returns a Microsoft consent URL with `Tasks.ReadWrite Group.Read.All
- *      offline_access` scopes.
- *   2. After consent, Microsoft redirects to /api/planner/auth/callback with
- *      ?code=...; we exchange for tokens and store them on the user.
- *   3. Client uses /api/planner/groups, /api/planner/groups/:id/plans, and
- *      /api/planner/plans/:id/buckets to populate selectors.
- *   4. Client POSTs to /api/marketing-plans/:id/planner/connect to set the
- *      target group/plan/bucket on the marketing plan.
- *   5. Client POSTs to /api/marketing-plans/:id/planner/sync to run a two-way
- *      sync: Planner changes are pulled into Orbit first, then the resulting
- *      Orbit state is pushed back to Planner.
+ * Phase 1 (Task #98) — OAuth + browse + connect/disconnect/sync.
+ * Phase 2 (Task #104) — multi-bucket-per-category mappings, change-notification
+ * subscriptions (subscribe/resubscribe/status), and per-plan sync log.
  */
 
 import type { Express, Request } from "express";
@@ -29,10 +19,14 @@ import {
   listGroupPlans,
   listPlanBuckets,
   createBucket,
+  createGraphSubscription,
+  renewGraphSubscription,
+  deleteGraphSubscription,
   GraphHttpError,
   PLANNER_SCOPES,
 } from "../services/planner-graph-client";
 import { syncMarketingPlanToPlanner } from "../services/planner-service";
+import { buildVegaExportBundle } from "../services/vega-export";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
@@ -51,6 +45,24 @@ function getRedirectUri(req: Request): string {
   return `${protocol}://${host}/api/planner/auth/callback`;
 }
 
+function getPublicBaseUrl(req: Request): string {
+  if (process.env.PUBLIC_APP_URL) return process.env.PUBLIC_APP_URL.replace(/\/$/, "");
+  if (process.env.PRODUCTION_URL) return process.env.PRODUCTION_URL.replace(/\/$/, "");
+  if (process.env.REPLIT_DEPLOYMENT_URL) return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+  return `${protocol}://${host}`;
+}
+
+function getWebhookUrl(req: Request): string {
+  return `${getPublicBaseUrl(req)}/api/webhooks/graph-planner`;
+}
+
+function buildPlannerDeepLink(plannerPlanId: string, tenantDomain: string): string {
+  return `https://tasks.office.com/${encodeURIComponent(tenantDomain)}/Home/Planner/#/plantaskboard?planId=${encodeURIComponent(plannerPlanId)}`;
+}
+
 function handleGraphError(res: any, err: any) {
   if (err instanceof GraphHttpError) {
     if (err.status === 401) {
@@ -63,6 +75,45 @@ function handleGraphError(res: any, err: any) {
   }
   console.error("[Planner] Unexpected error:", err);
   return res.status(500).json({ error: err.message || "Planner request failed" });
+}
+
+async function ensurePlannerSubscription(opts: {
+  planId: string;
+  plannerPlanId: string;
+  connectedByUserId: string;
+  webhookUrl: string;
+}): Promise<{ ok: boolean; subscriptionId?: string; expiresAt?: Date; error?: string }> {
+  const token = await getValidGraphToken(opts.connectedByUserId);
+  if (!token) return { ok: false, error: "Planner consent unavailable" };
+  const clientState = randomBytes(24).toString("hex");
+  const resource = `/planner/plans/${opts.plannerPlanId}/tasks`;
+  try {
+    const sub = await createGraphSubscription(token, {
+      resource,
+      notificationUrl: opts.webhookUrl,
+      clientState,
+    });
+    const expiresAt = new Date(sub.expirationDateTime);
+    await storage.upsertPlannerSubscription({
+      planId: opts.planId,
+      subscriptionId: sub.id,
+      resource,
+      clientState,
+      expiresAt,
+      lastRenewedAt: new Date(),
+      lastError: null,
+    });
+    return { ok: true, subscriptionId: sub.id, expiresAt };
+  } catch (err: any) {
+    const msg = err instanceof GraphHttpError ? `${err.message} (${JSON.stringify(err.body)})` : err.message;
+    console.error("[Planner] Subscription create failed:", msg);
+    // Track failure on the subscription record (if one exists) so the banner can surface it
+    const existing = await storage.getPlannerSubscriptionByPlan(opts.planId);
+    if (existing) {
+      await storage.updatePlannerSubscription(opts.planId, { lastError: msg });
+    }
+    return { ok: false, error: msg };
+  }
 }
 
 export function registerPlannerRoutes(app: Express) {
@@ -94,8 +145,6 @@ export function registerPlannerRoutes(app: Express) {
         return res.status(503).json({ error: "Microsoft Entra is not configured on this server." });
       }
       const redirectUri = getRedirectUri(req);
-      // Encode the user id and an optional return path in `state` so the
-      // callback can re-associate the consent with the right session.
       const returnTo = (req.query.returnTo as string) || "/app/marketing-planner";
       const state = Buffer.from(JSON.stringify({
         userId: req.session.userId,
@@ -131,7 +180,6 @@ export function registerPlannerRoutes(app: Express) {
       } catch {
         return res.redirect("/app/marketing-planner?planner_error=bad_state");
       }
-      // Require the session user to match the state user (prevents cross-user replay)
       if (!state.userId || state.userId !== req.session.userId) {
         return res.redirect("/app/marketing-planner?planner_error=session_mismatch");
       }
@@ -145,9 +193,6 @@ export function registerPlannerRoutes(app: Express) {
         return res.redirect("/app/marketing-planner?planner_error=token_exchange_failed");
       }
       const returnTo = state.returnTo || "/app/marketing-planner";
-      // Prevent open-redirect: use URL constructor to confirm the path stays on
-      // the same origin and within /app/. Any value that doesn't parse as a
-      // same-origin /app/ path falls back to the default.
       let safeReturnTo = "/app/marketing-planner";
       try {
         if (!returnTo.includes("://") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
@@ -174,7 +219,7 @@ export function registerPlannerRoutes(app: Express) {
         graphRefreshToken: null,
         graphTokenExpiresAt: null,
         graphScopes: null,
-      } as any);
+      });
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -250,6 +295,12 @@ export function registerPlannerRoutes(app: Express) {
         planName: z.string().min(1),
         bucketId: z.string().min(1).nullable(),
         bucketName: z.string().min(1).nullable(),
+        // Phase 2: optional per-category bucket mappings
+        categoryMappings: z.array(z.object({
+          activityCategory: z.string().min(1),
+          bucketId: z.string().min(1),
+          bucketName: z.string().min(1),
+        })).optional(),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
@@ -264,9 +315,25 @@ export function registerPlannerRoutes(app: Express) {
         plannerConnectedBy: ctx.userId,
         plannerSyncEnabled: true,
         plannerLastSyncError: null,
-      } as any, toContextFilter(ctx));
+      }, toContextFilter(ctx));
 
-      res.json(updated);
+      if (parsed.data.categoryMappings) {
+        await storage.setMarketingPlanBucketMappings(plan.id, parsed.data.categoryMappings);
+      }
+
+      // Best-effort: register a Graph change-notification subscription so
+      // Planner edits flow back into Orbit in near real-time.
+      const subResult = await ensurePlannerSubscription({
+        planId: plan.id,
+        plannerPlanId: parsed.data.planId,
+        connectedByUserId: ctx.userId,
+        webhookUrl: getWebhookUrl(req),
+      });
+      if (!subResult.ok) {
+        console.warn(`[Planner] Subscription not created for plan ${plan.id}:`, subResult.error);
+      }
+
+      res.json({ ...updated, plannerSubscription: subResult });
     } catch (err: any) {
       if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
       res.status(500).json({ error: err.message });
@@ -279,6 +346,20 @@ export function registerPlannerRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
       if (!plan) return res.status(404).json({ error: "Marketing plan not found" });
+
+      // Tear down any change-notification subscription
+      const sub = await storage.getPlannerSubscriptionByPlan(plan.id);
+      if (sub && plan.plannerConnectedBy) {
+        try {
+          const token = await getValidGraphToken(plan.plannerConnectedBy);
+          if (token) await deleteGraphSubscription(token, sub.subscriptionId);
+        } catch (subErr: any) {
+          console.warn("[Planner] Subscription teardown failed (continuing):", subErr.message);
+        }
+        await storage.deletePlannerSubscription(plan.id);
+      }
+      await storage.deleteMarketingPlanBucketMappings(plan.id);
+
       const updated = await storage.updateMarketingPlan(plan.id, {
         plannerSyncEnabled: false,
         plannerGroupId: null,
@@ -290,7 +371,7 @@ export function registerPlannerRoutes(app: Express) {
         plannerConnectedBy: null,
         plannerLastSyncAt: null,
         plannerLastSyncError: null,
-      } as any, toContextFilter(ctx));
+      }, toContextFilter(ctx));
       res.json(updated);
     } catch (err: any) {
       if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
@@ -312,6 +393,147 @@ export function registerPlannerRoutes(app: Express) {
     } catch (err: any) {
       if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
       handleGraphError(res, err);
+    }
+  });
+
+  // ----- Phase 2: status / mappings / resubscribe / sync log / vega export -----
+
+  app.get("/api/marketing-plans/:id/planner/status", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!plan) return res.status(404).json({ error: "Marketing plan not found" });
+      const subscription = await storage.getPlannerSubscriptionByPlan(plan.id);
+      const mappings = await storage.getMarketingPlanBucketMappings(plan.id);
+      const recentLog = await storage.getPlannerTaskSyncLog(plan.id, 25);
+      const deepLink = plan.plannerPlanId
+        ? buildPlannerDeepLink(plan.plannerPlanId, plan.tenantDomain)
+        : null;
+      // Per-task deep link template — clients substitute `{taskId}` to open
+      // a single Planner card directly, matching Microsoft's task URL shape.
+      const taskDeepLinkTemplate = plan.plannerPlanId
+        ? `https://tasks.office.com/${encodeURIComponent(plan.tenantDomain)}/Home/Task/{taskId}?planId=${encodeURIComponent(plan.plannerPlanId)}`
+        : null;
+      res.json({
+        connected: !!plan.plannerSyncEnabled && !!plan.plannerPlanId,
+        plannerGroupId: plan.plannerGroupId,
+        plannerGroupName: plan.plannerGroupName,
+        plannerPlanId: plan.plannerPlanId,
+        plannerPlanName: plan.plannerPlanName,
+        plannerBucketId: plan.plannerBucketId,
+        plannerBucketName: plan.plannerBucketName,
+        plannerLastSyncAt: plan.plannerLastSyncAt,
+        plannerLastSyncError: plan.plannerLastSyncError,
+        deepLink,
+        taskDeepLinkTemplate,
+        subscription: subscription ? {
+          subscriptionId: subscription.subscriptionId,
+          expiresAt: subscription.expiresAt,
+          lastRenewedAt: subscription.lastRenewedAt,
+          lastError: subscription.lastError,
+          healthy: !subscription.lastError && subscription.expiresAt.getTime() > Date.now(),
+        } : null,
+        categoryMappings: mappings.map(m => ({
+          activityCategory: m.activityCategory,
+          bucketId: m.bucketId,
+          bucketName: m.bucketName,
+        })),
+        recentLog: recentLog.map(r => ({
+          occurredAt: r.occurredAt,
+          direction: r.direction,
+          taskId: r.taskId,
+          plannerTaskId: r.plannerTaskId,
+          fields: r.fields,
+          success: r.success,
+          errorMessage: r.errorMessage,
+        })),
+      });
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/marketing-plans/:id/planner/mappings", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!plan) return res.status(404).json({ error: "Marketing plan not found" });
+      const schema = z.object({
+        mappings: z.array(z.object({
+          activityCategory: z.string().min(1),
+          bucketId: z.string().min(1),
+          bucketName: z.string().min(1),
+        })),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const saved = await storage.setMarketingPlanBucketMappings(plan.id, parsed.data.mappings);
+      res.json({ mappings: saved });
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/marketing-plans/:id/planner/resubscribe", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!plan) return res.status(404).json({ error: "Marketing plan not found" });
+      if (!plan.plannerPlanId || !plan.plannerConnectedBy) {
+        return res.status(400).json({ error: "Plan is not connected to Microsoft Planner" });
+      }
+
+      // Best-effort: try to delete any existing subscription before creating a new one.
+      const existing = await storage.getPlannerSubscriptionByPlan(plan.id);
+      if (existing) {
+        try {
+          const token = await getValidGraphToken(plan.plannerConnectedBy);
+          if (token) await deleteGraphSubscription(token, existing.subscriptionId);
+        } catch {
+          // swallow — likely already expired
+        }
+      }
+      const result = await ensurePlannerSubscription({
+        planId: plan.id,
+        plannerPlanId: plan.plannerPlanId,
+        connectedByUserId: plan.plannerConnectedBy,
+        webhookUrl: getWebhookUrl(req),
+      });
+      if (!result.ok) return res.status(502).json({ error: result.error || "Failed to resubscribe" });
+      res.json({
+        ok: true,
+        subscriptionId: result.subscriptionId,
+        expiresAt: result.expiresAt,
+      });
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      handleGraphError(res, err);
+    }
+  });
+
+  // ----- Vega Launchpad export bundle -----
+
+  app.get("/api/marketing-plans/:id/vega-export", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const requested = String(req.query.format ?? "zip").toLowerCase();
+      const format: "zip" | "json" = requested === "json" ? "json" : "zip";
+      const bundle = await buildVegaExportBundle(req.params.id, toContextFilter(ctx), format);
+      if (!bundle) return res.status(404).json({ error: "Marketing plan not found" });
+      res.setHeader("Content-Type", bundle.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${bundle.filename}"`);
+      res.setHeader("Content-Length", String(bundle.body.length));
+      res.end(bundle.body);
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      console.error("[Vega Export] Failed:", err);
+      res.status(500).json({ error: err.message || "Failed to build Vega export" });
     }
   });
 }

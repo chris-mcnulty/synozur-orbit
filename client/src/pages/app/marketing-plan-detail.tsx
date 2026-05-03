@@ -75,7 +75,41 @@ interface MarketingTask {
   timeframe: string | null;
   aiGenerated: boolean;
   createdAt: string;
+  plannerTaskId?: string | null;
 }
+
+interface PlannerStatus {
+  connected: boolean;
+  plannerGroupId: string | null;
+  plannerGroupName: string | null;
+  plannerPlanId: string | null;
+  plannerPlanName: string | null;
+  plannerBucketId: string | null;
+  plannerBucketName: string | null;
+  plannerLastSyncAt: string | null;
+  plannerLastSyncError: string | null;
+  deepLink: string | null;
+  taskDeepLinkTemplate: string | null;
+  subscription: {
+    subscriptionId: string;
+    expiresAt: string;
+    lastRenewedAt: string | null;
+    lastError: string | null;
+    healthy: boolean;
+  } | null;
+  categoryMappings: Array<{ activityCategory: string; bucketId: string; bucketName: string }>;
+  recentLog: Array<{
+    occurredAt: string;
+    direction: "pull" | "push" | "reconcile" | "webhook";
+    taskId: string | null;
+    plannerTaskId: string | null;
+    fields: Record<string, unknown> | null;
+    success: boolean;
+    errorMessage: string | null;
+  }>;
+}
+
+const INCOMING_DIRECTIONS = new Set(["pull", "reconcile", "webhook"]);
 
 interface PlanConfig {
   selectedCategories: string[];
@@ -171,6 +205,70 @@ export default function MarketingPlanDetail() {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     },
   });
+
+  const { data: plannerStatus } = useQuery<PlannerStatus>({
+    queryKey: [`/api/marketing-plans/${id}/planner/status`],
+    queryFn: async () => {
+      const res = await fetch(`/api/marketing-plans/${id}/planner/status`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load Planner status");
+      return res.json();
+    },
+    enabled: !!id,
+    refetchInterval: 60_000,
+  });
+
+  const resubscribeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/marketing-plans/${id}/planner/resubscribe`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Resubscribe failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Webhook subscription refreshed" });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/planner/status`] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Resubscribe failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [vegaExportOpen, setVegaExportOpen] = useState(false);
+  const [vegaExporting, setVegaExporting] = useState(false);
+
+  const exportVega = async (format: "zip" | "json") => {
+    setVegaExporting(true);
+    try {
+      const res = await fetch(`/api/marketing-plans/${id}/vega-export?format=${format}`, { credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("Content-Disposition") || "";
+      const match = cd.match(/filename="([^"]+)"/);
+      a.download = match?.[1] || `vega-export-${id}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Vega export ready", description: "Bundle downloaded to your computer." });
+      setVegaExportOpen(false);
+    } catch (err: any) {
+      toast({ title: "Vega export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setVegaExporting(false);
+    }
+  };
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
     queryKey: [`/api/marketing-plans/${id}`],
@@ -725,6 +823,7 @@ export default function MarketingPlanDetail() {
         open={plannerDialogOpen}
         onOpenChange={setPlannerDialogOpen}
         marketingPlanId={plan.id}
+        activityCategories={ACTIVITY_CATEGORIES.filter(c => selectedCategories.includes(c.value))}
         currentMapping={{
           plannerGroupId: plan.plannerGroupId,
           plannerGroupName: plan.plannerGroupName,
@@ -733,20 +832,64 @@ export default function MarketingPlanDetail() {
           plannerBucketId: plan.plannerBucketId,
           plannerBucketName: plan.plannerBucketName,
         }}
+        currentCategoryMappings={plannerStatus?.categoryMappings || []}
       />
       <div className="space-y-6">
         {plan.plannerSyncEnabled && (
-          <div className="flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-muted/30 text-sm" data-testid="banner-planner-status">
-            <Link2 className="w-4 h-4 text-primary shrink-0" />
-            <div className="flex-1">
-              Connected to <strong>{plan.plannerPlanName}</strong> in <strong>{plan.plannerGroupName}</strong>
-              {plan.plannerBucketName && <> • bucket <strong>{plan.plannerBucketName}</strong></>}
-              {plan.plannerLastSyncAt && (
-                <span className="text-muted-foreground"> • Last synced {new Date(plan.plannerLastSyncAt).toLocaleString()}</span>
+          <div className="flex flex-col gap-2 px-3 py-2 border border-border rounded-md bg-muted/30 text-sm" data-testid="banner-planner-status">
+            <div className="flex items-center gap-3">
+              <Link2 className="w-4 h-4 text-primary shrink-0" />
+              <div className="flex-1">
+                Connected to <strong>{plan.plannerPlanName}</strong> in <strong>{plan.plannerGroupName}</strong>
+                {plan.plannerBucketName && <> • default bucket <strong>{plan.plannerBucketName}</strong></>}
+                {plan.plannerLastSyncAt && (
+                  <span className="text-muted-foreground"> • Last synced {new Date(plan.plannerLastSyncAt).toLocaleString()}</span>
+                )}
+              </div>
+              {plannerStatus?.deepLink && (
+                <a
+                  href={plannerStatus.deepLink}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-xs underline"
+                  data-testid="link-open-plan-in-planner"
+                >
+                  Open in Planner
+                </a>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground pl-7">
+              {plannerStatus?.subscription ? (
+                plannerStatus.subscription.healthy ? (
+                  <span data-testid="status-subscription-healthy">
+                    Webhook active · expires {new Date(plannerStatus.subscription.expiresAt).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-destructive" data-testid="status-subscription-unhealthy">
+                    Webhook unhealthy: {plannerStatus.subscription.lastError || "expired"}
+                  </span>
+                )
+              ) : (
+                <span data-testid="status-subscription-missing">No incoming-change subscription</span>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                onClick={() => resubscribeMutation.mutate()}
+                disabled={resubscribeMutation.isPending}
+                data-testid="button-resubscribe-planner"
+              >
+                {resubscribeMutation.isPending ? "Refreshing…" : "Refresh subscription"}
+              </Button>
+              {plannerStatus?.recentLog?.find(r => INCOMING_DIRECTIONS.has(r.direction)) && (
+                <span data-testid="text-last-incoming">
+                  Last incoming change {new Date(plannerStatus.recentLog.find(r => INCOMING_DIRECTIONS.has(r.direction))!.occurredAt).toLocaleString()}
+                </span>
               )}
             </div>
             {plan.plannerLastSyncError && (
-              <span className="text-xs text-destructive">{plan.plannerLastSyncError}</span>
+              <span className="text-xs text-destructive pl-7">{plan.plannerLastSyncError}</span>
             )}
           </div>
         )}
@@ -783,6 +926,16 @@ export default function MarketingPlanDetail() {
             >
               <FileDown className="w-4 h-4 mr-2" />
               Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setVegaExportOpen(true)}
+              disabled={tasks.length === 0}
+              data-testid="button-vega-export"
+              title="Open the Vega Launchpad export dialog"
+            >
+              <FileDown className="w-4 h-4 mr-2" />
+              Export for Vega
             </Button>
             <Button
               variant="outline"
@@ -1232,6 +1385,22 @@ export default function MarketingPlanDetail() {
                           <p className="font-medium">{new Date(selectedTask.dueDate).toLocaleDateString()}</p>
                         </div>
                       )}
+                      {selectedTask.plannerTaskId && plannerStatus?.taskDeepLinkTemplate && (
+                        <div className="col-span-2">
+                          <a
+                            href={plannerStatus.taskDeepLinkTemplate.replace(
+                              "{taskId}",
+                              encodeURIComponent(selectedTask.plannerTaskId),
+                            )}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="text-xs underline text-primary"
+                            data-testid={`link-open-task-in-planner-${selectedTask.id}`}
+                          >
+                            Open in Microsoft Planner ↗
+                          </a>
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-between pt-4 border-t">
                       <div className="flex gap-2">
@@ -1388,6 +1557,53 @@ export default function MarketingPlanDetail() {
           </div>
         )}
       </div>
+
+      <Dialog open={vegaExportOpen} onOpenChange={(open) => !vegaExporting && setVegaExportOpen(open)}>
+        <DialogContent data-testid="dialog-vega-export">
+          <DialogHeader>
+            <DialogTitle>Export for Vega Launchpad</DialogTitle>
+            <DialogDescription>
+              Vega Launchpad consumes a Big-Rocks + OKRs bundle (schema {`vega-export/2.0`}) so it can render this plan as
+              an executable strategy. The bundle includes the plan metadata, quarterly objectives derived from your
+              tasks, one Big Rock per quarter and activity-category cluster, and any GTM plan or messaging framework
+              context that has been generated for this company.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm py-2">
+            <div className="rounded-md border p-3">
+              <p className="font-medium">JSON only</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                A single <code>plan.json</code> file. Best for programmatic ingestion into Vega Launchpad or another
+                tool.
+              </p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="font-medium">JSON + Markdown (zip)</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                A zip containing <code>plan.json</code> and a human-readable <code>plan.md</code> runbook. Choose this
+                if you also want a printable summary.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => exportVega("json")}
+              disabled={vegaExporting}
+              data-testid="button-vega-export-json"
+            >
+              {vegaExporting ? "Preparing…" : "Download JSON"}
+            </Button>
+            <Button
+              onClick={() => exportVega("zip")}
+              disabled={vegaExporting}
+              data-testid="button-vega-export-zip"
+            >
+              {vegaExporting ? "Preparing…" : "Download JSON + Markdown (.zip)"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

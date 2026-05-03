@@ -1617,6 +1617,67 @@ export const insertMarketingTaskSchema = createInsertSchema(marketingTasks).omit
 export type MarketingTask = typeof marketingTasks.$inferSelect;
 export type InsertMarketingTask = z.infer<typeof insertMarketingTaskSchema>;
 
+// Per-category bucket mappings — Phase 2 enables routing each marketing
+// activity category to its own Planner bucket. Backwards compatible with
+// the single `plannerBucketId` on marketing_plans, which is used as the
+// fallback when no per-category mapping exists.
+export const marketingPlanBucketMappings = pgTable("marketing_plan_bucket_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => marketingPlans.id, { onDelete: "cascade" }),
+  activityCategory: text("activity_category").notNull(), // e.g. "events", "digital_marketing"
+  bucketId: text("bucket_id").notNull(),
+  bucketName: text("bucket_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertMarketingPlanBucketMappingSchema = createInsertSchema(marketingPlanBucketMappings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingPlanBucketMapping = typeof marketingPlanBucketMappings.$inferSelect;
+export type InsertMarketingPlanBucketMapping = z.infer<typeof insertMarketingPlanBucketMappingSchema>;
+
+// Per-task sync log — auditing every Planner sync direction, fields touched,
+// success/failure for the sync banner and debugging.
+export const plannerTaskSyncLog = pgTable("planner_task_sync_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => marketingPlans.id, { onDelete: "cascade" }),
+  taskId: varchar("task_id").references(() => marketingTasks.id, { onDelete: "set null" }),
+  plannerTaskId: text("planner_task_id"),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+  direction: text("direction").notNull(), // pull | push | reconcile | webhook
+  fields: jsonb("fields"), // { title?: any, status?: any, ... }
+  success: boolean("success").notNull().default(true),
+  errorMessage: text("error_message"),
+});
+export const insertPlannerTaskSyncLogSchema = createInsertSchema(plannerTaskSyncLog).omit({
+  id: true,
+  occurredAt: true,
+});
+export type PlannerTaskSyncLog = typeof plannerTaskSyncLog.$inferSelect;
+export type InsertPlannerTaskSyncLog = z.infer<typeof insertPlannerTaskSyncLogSchema>;
+
+// Microsoft Graph change-notification subscription per Planner-connected plan.
+// Allows Planner→Orbit pushes via webhook with auto-renew.
+export const plannerSubscriptions = pgTable("planner_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  planId: varchar("plan_id").notNull().references(() => marketingPlans.id, { onDelete: "cascade" }),
+  subscriptionId: text("subscription_id").notNull(),
+  resource: text("resource").notNull(),
+  clientState: text("client_state").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  lastRenewedAt: timestamp("last_renewed_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertPlannerSubscriptionSchema = createInsertSchema(plannerSubscriptions).omit({
+  id: true,
+  createdAt: true,
+});
+export type PlannerSubscription = typeof plannerSubscriptions.$inferSelect;
+export type InsertPlannerSubscription = z.infer<typeof insertPlannerSubscriptionSchema>;
+
 // Intelligence Briefings - AI-synthesized periodic intelligence reports
 export const intelligenceBriefings = pgTable("intelligence_briefings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

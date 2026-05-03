@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Link2, RefreshCw, AlertCircle, Plus } from "lucide-react";
+import { Loader2, Link2, AlertCircle, Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,10 +22,18 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
+interface CategoryMapping {
+  activityCategory: string;
+  bucketId: string;
+  bucketName: string;
+}
+
 interface PlannerSyncDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   marketingPlanId: string;
+  /** Categories used by this marketing plan (for the per-category bucket UI). */
+  activityCategories?: Array<{ value: string; label: string }>;
   currentMapping?: {
     plannerGroupId?: string | null;
     plannerGroupName?: string | null;
@@ -34,6 +42,8 @@ interface PlannerSyncDialogProps {
     plannerBucketId?: string | null;
     plannerBucketName?: string | null;
   };
+  /** Existing per-category mappings for this plan (Phase 2). */
+  currentCategoryMappings?: CategoryMapping[];
 }
 
 interface PlannerGroup { id: string; displayName: string; description?: string | null }
@@ -44,7 +54,9 @@ export function PlannerSyncDialog({
   open,
   onOpenChange,
   marketingPlanId,
+  activityCategories = [],
   currentMapping,
+  currentCategoryMappings = [],
 }: PlannerSyncDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -59,12 +71,24 @@ export function PlannerSyncDialog({
   const [newBucketName, setNewBucketName] = useState("");
   const [creatingBucket, setCreatingBucket] = useState(false);
 
+  // Per-category bucket overrides — keyed by activityCategory
+  const [categoryBucketOverrides, setCategoryBucketOverrides] = useState<Record<string, string>>(
+    () => {
+      const m: Record<string, string> = {};
+      for (const c of currentCategoryMappings) m[c.activityCategory] = c.bucketId;
+      return m;
+    },
+  );
+
   useEffect(() => {
     if (open) {
       setGroupId(currentMapping?.plannerGroupId || "");
       setPlanId(currentMapping?.plannerPlanId || "");
       setBucketChoice(currentMapping?.plannerBucketId || "_default");
       setNewBucketName("");
+      const overrides: Record<string, string> = {};
+      for (const c of currentCategoryMappings) overrides[c.activityCategory] = c.bucketId;
+      setCategoryBucketOverrides(overrides);
     }
   }, [open]);
 
@@ -148,6 +172,15 @@ export function PlannerSyncDialog({
       const bucket = bucketChoice && bucketChoice !== "_default"
         ? buckets.data?.find(b => b.id === bucketChoice)
         : null;
+
+      const categoryMappings: CategoryMapping[] = [];
+      for (const [activityCategory, bucketId] of Object.entries(categoryBucketOverrides)) {
+        if (!bucketId || bucketId === "_default") continue;
+        const b = buckets.data?.find(x => x.id === bucketId);
+        if (!b) continue;
+        categoryMappings.push({ activityCategory, bucketId: b.id, bucketName: b.name });
+      }
+
       const res = await apiRequest("POST", `/api/marketing-plans/${marketingPlanId}/planner/connect`, {
         groupId,
         groupName: group?.displayName || "",
@@ -155,11 +188,13 @@ export function PlannerSyncDialog({
         planName: plan?.title || "",
         bucketId: bucket?.id || null,
         bucketName: bucket?.name || null,
+        categoryMappings,
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${marketingPlanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${marketingPlanId}/planner/status`] });
       toast({ title: "Connected to Microsoft Planner" });
       onOpenChange(false);
     },
@@ -175,6 +210,7 @@ export function PlannerSyncDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${marketingPlanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${marketingPlanId}/planner/status`] });
       toast({ title: "Disconnected from Planner" });
       onOpenChange(false);
     },
@@ -188,15 +224,16 @@ export function PlannerSyncDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="w-5 h-5" />
             Microsoft Planner Integration
           </DialogTitle>
           <DialogDescription>
-            Push Orbit marketing tasks into a Microsoft Planner plan. You choose the
-            target Microsoft 365 group, plan, and the bucket where Orbit tasks land.
+            Push Orbit marketing tasks into a Microsoft Planner plan. Choose the
+            target Microsoft 365 group, plan, the default bucket, and optionally
+            route each marketing category into its own bucket.
           </DialogDescription>
         </DialogHeader>
 
@@ -225,7 +262,7 @@ export function PlannerSyncDialog({
 
             <div className="space-y-2">
               <Label>Microsoft 365 Group / Team</Label>
-              <Select value={groupId} onValueChange={(v) => { setGroupId(v); setPlanId(""); setBucketChoice("_default"); }}>
+              <Select value={groupId} onValueChange={(v) => { setGroupId(v); setPlanId(""); setBucketChoice("_default"); setCategoryBucketOverrides({}); }}>
                 <SelectTrigger data-testid="select-planner-group">
                   <SelectValue placeholder={groups.isLoading ? "Loading groups…" : "Select a group"} />
                 </SelectTrigger>
@@ -239,7 +276,7 @@ export function PlannerSyncDialog({
 
             <div className="space-y-2">
               <Label>Plan</Label>
-              <Select value={planId} onValueChange={(v) => { setPlanId(v); setBucketChoice("_default"); }} disabled={!groupId}>
+              <Select value={planId} onValueChange={(v) => { setPlanId(v); setBucketChoice("_default"); setCategoryBucketOverrides({}); }} disabled={!groupId}>
                 <SelectTrigger data-testid="select-planner-plan">
                   <SelectValue placeholder={!groupId ? "Pick a group first" : (plans.isLoading ? "Loading plans…" : "Select a plan")} />
                 </SelectTrigger>
@@ -252,7 +289,7 @@ export function PlannerSyncDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Bucket (where Orbit tasks land)</Label>
+              <Label>Default bucket</Label>
               <Select value={bucketChoice} onValueChange={setBucketChoice} disabled={!planId}>
                 <SelectTrigger data-testid="select-planner-bucket">
                   <SelectValue placeholder={!planId ? "Pick a plan first" : (buckets.isLoading ? "Loading buckets…" : "Select a bucket")} />
@@ -265,7 +302,7 @@ export function PlannerSyncDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Choose an existing bucket or create a dedicated "Orbit" bucket below.
+                Tasks land here unless a category-specific bucket is set below.
               </p>
               {!creatingBucket ? (
                 <Button
@@ -281,7 +318,7 @@ export function PlannerSyncDialog({
               ) : (
                 <div className="flex gap-2">
                   <Input
-                    placeholder="e.g. Orbit Marketing"
+                    placeholder="e.g. Orbit Events"
                     value={newBucketName}
                     onChange={(e) => setNewBucketName(e.target.value)}
                     className="h-8 text-sm"
@@ -301,6 +338,61 @@ export function PlannerSyncDialog({
                 </div>
               )}
             </div>
+
+            {planId && activityCategories.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <Label>Per-category buckets (optional)</Label>
+                  <span className="text-xs text-muted-foreground">Overrides the default for the selected category.</span>
+                </div>
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {activityCategories.map(cat => {
+                    const value = categoryBucketOverrides[cat.value] || "_default";
+                    return (
+                      <div key={cat.value} className="flex items-center gap-2" data-testid={`row-category-bucket-${cat.value}`}>
+                        <div className="flex-1 text-sm">{cat.label}</div>
+                        <Select
+                          value={value}
+                          onValueChange={(v) => {
+                            setCategoryBucketOverrides(prev => {
+                              const next = { ...prev };
+                              if (v === "_default") delete next[cat.value];
+                              else next[cat.value] = v;
+                              return next;
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="w-56 h-8 text-sm" data-testid={`select-category-bucket-${cat.value}`}>
+                            <SelectValue placeholder="Use default bucket" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_default">Use default bucket</SelectItem>
+                            {(buckets.data || []).map(b => (
+                              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {value !== "_default" && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => setCategoryBucketOverrides(prev => {
+                              const next = { ...prev };
+                              delete next[cat.value];
+                              return next;
+                            })}
+                            data-testid={`button-clear-category-bucket-${cat.value}`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

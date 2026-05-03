@@ -781,6 +781,49 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS manual_action_bonuses_tenant_action_period_idx ON manual_action_bonuses(tenant_domain, action, period_start)`);
 
+    // Task #104 — Marketing Planner Phase 2: per-category bucket mappings,
+    // sync log, and Graph change-notification subscription bookkeeping.
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_plan_bucket_mappings (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        plan_id VARCHAR NOT NULL REFERENCES marketing_plans(id) ON DELETE CASCADE,
+        activity_category TEXT NOT NULL,
+        bucket_id TEXT NOT NULL,
+        bucket_name TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS marketing_plan_bucket_mappings_plan_cat_idx ON marketing_plan_bucket_mappings(plan_id, activity_category)`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS planner_task_sync_log (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        plan_id VARCHAR NOT NULL REFERENCES marketing_plans(id) ON DELETE CASCADE,
+        task_id VARCHAR REFERENCES marketing_tasks(id) ON DELETE SET NULL,
+        planner_task_id TEXT,
+        occurred_at TIMESTAMP NOT NULL DEFAULT now(),
+        direction TEXT NOT NULL,
+        fields JSONB,
+        success BOOLEAN NOT NULL DEFAULT TRUE,
+        error_message TEXT
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS planner_task_sync_log_plan_idx ON planner_task_sync_log(plan_id, occurred_at DESC)`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS planner_subscriptions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        plan_id VARCHAR NOT NULL REFERENCES marketing_plans(id) ON DELETE CASCADE,
+        subscription_id TEXT NOT NULL,
+        resource TEXT NOT NULL,
+        client_state TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        last_renewed_at TIMESTAMP,
+        last_error TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS planner_subscriptions_plan_idx ON planner_subscriptions(plan_id)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
