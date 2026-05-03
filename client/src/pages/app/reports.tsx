@@ -22,6 +22,7 @@ import { getTimeAgo, calculateStaleness, checkArtifactFreshness, formatShortDate
 import { RefreshCw } from "lucide-react";
 import EmptyPageState from "@/components/EmptyPageState";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 type ReportSections = {
   executiveSummary: boolean;
@@ -68,6 +69,8 @@ export default function Reports() {
   const [reportName, setReportName] = useState("");
   const [sections, setSections] = useState<ReportSections>(defaultSections);
   const [isGenerating, setIsGenerating] = useState(false);
+  const reportJobStatus = useJobStatus("report-pdf", isGenerating);
+  const reportGenLabel = jobStatusLabel(reportJobStatus, "Generating Report…");
   const [includeStrategicPlans, setIncludeStrategicPlans] = useState(false);
   const [strategicPlansTouched, setStrategicPlansTouched] = useState(false);
 
@@ -653,7 +656,7 @@ export default function Reports() {
             {isGenerating ? (
               <>
                 <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                Generating Report...
+                {reportGenLabel}
               </>
             ) : (
               <>

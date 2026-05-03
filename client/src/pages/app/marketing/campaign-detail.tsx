@@ -33,6 +33,7 @@ import {
   Link2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
 import { Textarea } from "@/components/ui/textarea";
@@ -752,6 +753,8 @@ export default function CampaignDetailPage() {
   const availableSocial = allSocialAccounts.filter(a => !linkedSocialIds.has(a.id));
 
   const isGenerating = jobStatus?.status === "running" || jobStatus?.status === "pending";
+  const postsGenJobStatus = useJobStatus(id ? `campaign-posts:${id}` : null, isGenerating);
+  const postsGenLabel = jobStatusLabel(postsGenJobStatus, "Generating…");
 
   const prevJobStatus = useRef(jobStatus?.status);
   useEffect(() => {
@@ -947,7 +950,7 @@ export default function CampaignDetailPage() {
                 className="gap-2"
                 data-testid="button-generate-posts"
               >
-                {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
+                {isGenerating ? <><Loader2 className="w-4 h-4 animate-spin" />{postsGenLabel}</> : <><Sparkles className="w-4 h-4" />Generate Posts</>}
               </Button>
               <Button
                 variant="outline"
@@ -1021,7 +1024,7 @@ export default function CampaignDetailPage() {
               <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5" data-testid="status-generating-posts">
                 <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Generating social posts...</p>
+                  <p className="text-sm font-medium">{postsGenLabel}</p>
                   <p className="text-xs text-muted-foreground">
                     {jobStatus?.status === "pending" ? "Queued — waiting to start..." : "AI is writing your posts. This usually takes 30–60 seconds."}
                   </p>

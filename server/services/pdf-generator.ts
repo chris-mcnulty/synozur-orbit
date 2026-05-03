@@ -1374,8 +1374,10 @@ export async function generatePdfReport(
   scope: "baseline" | "project" = "baseline",
   projectId?: string,
   includeStrategicPlans: boolean = false,
-  marketId?: string
+  marketId?: string,
+  reportProgress?: (patch: { phase?: string; percent?: number }) => void,
 ): Promise<{ pdfBuffer: Buffer; report: Report }> {
+  reportProgress?.({ phase: "Loading tenant data", percent: 5 });
   const user = await storage.getUser(userId);
   if (!user) {
     throw new Error("User not found");
@@ -1826,6 +1828,7 @@ export async function generatePdfReport(
     recentActivity: limitedActivity.length > 0 ? limitedActivity : undefined,
   };
 
+  reportProgress?.({ phase: "Rendering pages", percent: 50 });
   const html = generateReportHtml(reportData);
   const startTime = Date.now();
   console.log(`[Report PDF] Starting generation via PDF pool`);
@@ -1834,12 +1837,14 @@ export async function generatePdfReport(
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
     console.log(`[Report PDF] Content loaded in ${Date.now() - startTime}ms`);
+    reportProgress?.({ phase: "Printing PDF", percent: 80 });
     return await page.pdf({
       format: "A4",
       printBackground: true,
       margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
     });
   });
+  reportProgress?.({ phase: "Finalising", percent: 95 });
 
   {
     const pdfSizeKb = Math.round(pdfBuffer.length / 1024);

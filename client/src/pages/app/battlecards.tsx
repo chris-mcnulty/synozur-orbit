@@ -104,6 +104,11 @@ export default function BattleCardsPage() {
     selectedCard ? `battlecard-pdf:${selectedCard.id}` : null,
     downloading === "pdf",
   );
+  const genJobStatus = useJobStatus(
+    generatingFor ? `battlecard-gen:${generatingFor}` : null,
+    !!generatingFor,
+  );
+  const genLabel = jobStatusLabel(genJobStatus, "Generating…");
 
   const { data: competitors = [] } = useQuery({
     queryKey: ["/api/competitors"],
@@ -329,7 +334,7 @@ export default function BattleCardsPage() {
                     {generatingFor === selectedCompetitor ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Generating...
+                        {genLabel}
                       </>
                     ) : (
                       <>
@@ -440,7 +445,7 @@ export default function BattleCardsPage() {
                       {generatingFor === selectedCompetitor ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Generating...
+                          {genLabel}
                         </>
                       ) : (
                         <>

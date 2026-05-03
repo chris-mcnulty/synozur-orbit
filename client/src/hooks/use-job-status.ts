@@ -72,8 +72,10 @@ export function jobStatusLabel(status: JobStatus | null, fallback: string = "Wor
   }
   if (status.status === "active") {
     const percent = status.progress?.percent;
-    if (typeof percent === "number") return `Generating ${Math.round(percent)}%`;
-    return "Generating";
+    const phase = status.progress?.phase;
+    const pct = typeof percent === "number" ? `Generating ${Math.round(percent)}%` : "Generating";
+    if (phase) return `${pct} — ${phase}`;
+    return pct;
   }
   return fallback;
 }

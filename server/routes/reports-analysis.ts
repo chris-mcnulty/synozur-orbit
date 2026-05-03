@@ -123,15 +123,21 @@ export function registerReportsAnalysisRoutes(app: Express) {
       const { generatePdfReport } = await import("../services/pdf-generator");
       const { enqueuePdf } = await import("../services/job-queue");
       const reportName = name || `Competitive Analysis - ${new Date().toLocaleDateString()}`;
-      const { pdfBuffer, report } = await enqueuePdf("report-pdf", () => generatePdfReport(
-        ctx.tenantDomain,
-        ctx.userId,
-        reportName,
-        scope || "baseline",
-        projectId,
-        !!includeStrategicPlans,
-        ctx.marketId || undefined
-      ));
+      const { pdfBuffer, report } = await enqueuePdf(
+        `report-pdf:${ctx.tenantDomain}`,
+        (_signal, reportProgress) => generatePdfReport(
+          ctx.tenantDomain,
+          ctx.userId,
+          reportName,
+          scope || "baseline",
+          projectId,
+          !!includeStrategicPlans,
+          ctx.marketId || undefined,
+          reportProgress,
+        ),
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetName: reportName },
+      );
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf"`);
@@ -174,15 +180,21 @@ export function registerReportsAnalysisRoutes(app: Express) {
       const { enqueuePdf } = await import("../services/job-queue");
       const reportName = `Full Analysis Report - ${new Date().toLocaleDateString()}`;
       
-      const { pdfBuffer, report } = await enqueuePdf("full-analysis-pdf", () => generatePdfReport(
-        ctx.tenantDomain,
-        ctx.userId,
-        reportName,
-        "baseline",
+      const { pdfBuffer, report } = await enqueuePdf(
+        `full-analysis-pdf:${ctx.tenantDomain}`,
+        (_signal, reportProgress) => generatePdfReport(
+          ctx.tenantDomain,
+          ctx.userId,
+          reportName,
+          "baseline",
+          undefined,
+          true,
+          ctx.marketId || undefined,
+          reportProgress,
+        ),
         undefined,
-        true,
-        ctx.marketId || undefined
-      ));
+        { tenantDomain: ctx.tenantDomain, targetName: reportName },
+      );
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);

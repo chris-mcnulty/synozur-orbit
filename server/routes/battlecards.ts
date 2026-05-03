@@ -5,6 +5,7 @@ import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSour
 import { buildCompetitorToneContextBlock } from "../services/sentiment-context";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildCompetitorDocumentContext } from "../services/competitor-document-context";
+import { enqueue } from "../services/job-queue";
 
 export function registerBattlecardRoutes(app: Express) {
   // ==================== BATTLECARD ROUTES ====================
@@ -47,6 +48,12 @@ export function registerBattlecardRoutes(app: Express) {
         return res.status(403).json({ error: "Access denied" });
       }
 
+      const result = await enqueue(
+        "analysis",
+        `battlecard-gen:${req.params.competitorId}`,
+        async (_signal, reportProgress) => {
+          reportProgress?.({ phase: "Analyzing competitor", percent: 10 });
+
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       
       // Get existing analysis data
@@ -83,6 +90,8 @@ export function registerBattlecardRoutes(app: Express) {
       const competitorDocsSection = competitorDocCtx.context
         ? `\n\n${competitorDocCtx.context}`
         : "";
+
+      reportProgress?.({ phase: "Drafting battlecard", percent: 30 });
 
       const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
 
@@ -123,6 +132,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
         messages: [{ role: "user", content: prompt }],
       });
 
+      reportProgress?.({ phase: "Parsing response", percent: 80 });
+
       // Log AI usage
       await logAiUsage(ctx, "generate_battlecard", "anthropic", "claude-sonnet-4-5", response.usage);
 
@@ -147,6 +158,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
           throw new Error("Failed to parse AI response as JSON");
         }
       }
+
+      reportProgress?.({ phase: "Saving", percent: 95 });
 
       // Check if battlecard already exists
       const existingBattlecard = await storage.getBattlecardByCompetitor(req.params.competitorId);
@@ -186,7 +199,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       // Surface "sources used" so the UI can show which competitor docs
       // contributed to this battlecard generation.
-      res.json({ ...battlecard, competitorDocSources: competitorDocCtx.sources });
+      return { ...battlecard, competitorDocSources: competitorDocCtx.sources };
+        },
+        { ctx: { tenantDomain: ctx.tenantDomain, targetId: req.params.competitorId, targetName: competitor.name } },
+      );
+      res.json(result);
     } catch (error: any) {
       console.error("Battlecard generation error:", error);
       res.status(500).json({ error: error.message });
@@ -354,6 +371,12 @@ Return ONLY valid JSON, no markdown or explanation.`;
       // Charge quota only after resource validation succeeds.
       if (!await guardManualAction(req, res, "manualBattlecardRegen")) return;
 
+      const result = await enqueue(
+        "analysis",
+        `battlecard-gen:${competitorId}`,
+        async (_signal, reportProgress) => {
+          reportProgress?.({ phase: "Analyzing competitor", percent: 10 });
+
       // Get company profile for comparison
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
 
@@ -367,6 +390,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       // Task #102: include captured tone snapshot from recent activities
       const toneBlock = await buildCompetitorToneContextBlock(competitor.id);
+
+      reportProgress?.({ phase: "Drafting battlecard", percent: 30 });
 
       const prompt = `Generate a sales battle card comparing our company against a competitor. 
 
@@ -419,6 +444,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         messages: [{ role: "user", content: prompt }],
       });
 
+      reportProgress?.({ phase: "Parsing response", percent: 80 });
+
       // Log AI usage
       await logAiUsage(ctx, "generate_battlecard", "anthropic", "claude-sonnet-4-5", response.usage);
 
@@ -450,6 +477,8 @@ Return ONLY valid JSON, no markdown or explanations.`;
         throw new Error("Failed to parse AI response as JSON");
       }
 
+      reportProgress?.({ phase: "Saving", percent: 95 });
+
       // Check if battle card already exists for this competitor
       const existing = await storage.getBattlecardByCompetitor(competitorId);
       
@@ -475,10 +504,14 @@ Return ONLY valid JSON, no markdown or explanations.`;
         });
       }
 
-      res.json({
+      return {
         ...battlecard,
         competitorName: competitor.name,
-      });
+      };
+        },
+        { ctx: { tenantDomain: ctx.tenantDomain, targetId: competitorId, targetName: competitor.name } },
+      );
+      res.json(result);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

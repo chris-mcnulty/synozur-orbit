@@ -18,6 +18,7 @@ import { calculateStaleness, getTimeAgo, getStalenessInfo, checkArtifactFreshnes
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import SharedSourceFreshnessRow, { type SourceFreshnessItem, type SourceFreshnessData } from "@/components/SourceFreshnessRow";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 // StalenessDot is now handled by shared SourceFreshnessRow component
 
@@ -74,6 +75,33 @@ type AnalysisMode = "quick" | "full" | "full_with_change";
 export default function Analysis() {
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [downloadingFullReport, setDownloadingFullReport] = useState(false);
+  const fullReportJobStatus = useJobStatus("full-analysis-pdf", downloadingFullReport);
+  const fullReportLabel = jobStatusLabel(fullReportJobStatus, "Generating…");
+  const handleDownloadFullReport = async () => {
+    if (downloadingFullReport) return;
+    setDownloadingFullReport(true);
+    try {
+      const res = await fetch("/api/reports/full-analysis/pdf", { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to generate full analysis report");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Full_Analysis_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to download full analysis report");
+    } finally {
+      setDownloadingFullReport(false);
+    }
+  };
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
   const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
@@ -949,11 +977,21 @@ export default function Analysis() {
                     </div>
                     <Button
                       variant="default"
-                      onClick={() => window.open("/api/reports/full-analysis/pdf", "_blank")}
+                      onClick={handleDownloadFullReport}
+                      disabled={downloadingFullReport}
                       data-testid="button-download-full-report"
                     >
-                      <Download className="mr-2 h-4 w-4" />
-                      Download PDF Report
+                      {downloadingFullReport ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {fullReportLabel}
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 h-4 w-4" />
+                          Download PDF Report
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardHeader>

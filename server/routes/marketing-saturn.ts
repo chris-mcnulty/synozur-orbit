@@ -62,6 +62,7 @@ import { extractContentFromUrl, generateContentSummary, loadGroundingContext } f
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { guardManualAction } from "./helpers";
+import { enqueue } from "../services/job-queue";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1702,17 +1703,24 @@ Return ONLY a valid JSON object (no markdown fences) with:
       const reqProtocol = req.protocol;
       const ownerUserId = ctx.userId;
 
-      // Kick off async generation (fire-and-forget)
-      generatePostsAsync(
-        campaign.id,
-        ctx.tenantDomain,
-        ctx.marketId,
-        job.id,
-        brandImageIds,
-        personaIds,
-        useThematicMode ? thematicBrief : "",
-        useThematicMode ? thematicUrl : "",
-        { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost },
+      // Kick off async generation via job queue (fire-and-forget at the HTTP
+      // layer; the queue runs the work and exposes live progress).
+      enqueue(
+        "analysis",
+        `campaign-posts:${campaign.id}`,
+        (_signal, reportProgress) => generatePostsAsync(
+          campaign.id,
+          ctx.tenantDomain,
+          ctx.marketId,
+          job.id,
+          brandImageIds,
+          personaIds,
+          useThematicMode ? thematicBrief : "",
+          useThematicMode ? thematicUrl : "",
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost },
+          reportProgress,
+        ),
+        { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
       ).catch(err => {
         console.error("[Saturn] Post generation error:", err.message);
       });
@@ -3088,12 +3096,14 @@ async function generatePostsAsync(
   thematicBrief: string = "",
   thematicUrl: string = "",
   wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string } = {},
+  reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
     .where(eq(scheduledJobRuns.id, jobId));
 
   try {
+    reportProgress?.({ phase: "Loading context", percent: 5 });
     const [campaignRow] = await db.select().from(campaigns)
       .where(eq(campaigns.id, campaignId));
 
@@ -3174,6 +3184,8 @@ async function generatePostsAsync(
 
     const generatedRows: InsertGeneratedPost[] = [];
 
+    reportProgress?.({ phase: "Drafting posts", percent: 15, totalItems: platformTargets.length });
+
     const isThematic = !!(thematicBrief);
 
     // In thematic mode, fold any selected campaign assets in as supporting context
@@ -3216,7 +3228,17 @@ async function generatePostsAsync(
       .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
       .filter((h: string) => h.length > 0);
 
+    let platformIdx = 0;
     for (const account of platformTargets) {
+      platformIdx++;
+      const platformPct = 15 + Math.round((platformIdx - 1) / platformTargets.length * 75);
+      reportProgress?.({
+        phase: `Drafting ${account.platform} variants`,
+        percent: platformPct,
+        currentItem: platformIdx,
+        totalItems: platformTargets.length,
+        currentItemName: account.platform,
+      });
       const platformGuide = getPlatformGuide(account.platform);
       const variantGroupId = randomUUID();
       const cleanedVariantsForAccount: { content: string; hashtags: string[]; imagePrompt: string; sourceUrl: string | null }[] = [];
@@ -3429,6 +3451,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       }
     }
 
+    reportProgress?.({ phase: "Saving posts", percent: 95 });
     if (generatedRows.length) {
       await db.insert(generatedPosts).values(generatedRows);
     }
