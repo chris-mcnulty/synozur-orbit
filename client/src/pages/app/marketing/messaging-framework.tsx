@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import FieldHelp from "@/components/FieldHelp";
 import { LongFormContentSkeleton } from "@/components/ui/skeletons";
+import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
+import { useUser } from "@/lib/userContext";
 
 type LongFormRecommendation = {
   id: string;
@@ -32,7 +34,7 @@ export default function MessagingFrameworkPage() {
   const [editContent, setEditContent] = useState("");
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
 
-  const { data: tenant } = useQuery({
+  const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/info", { credentials: "include" });
@@ -42,6 +44,9 @@ export default function MessagingFrameworkPage() {
   });
 
   const messagingAllowed = tenant?.features?.messagingFramework !== false;
+  const collabAllowed = tenant?.features?.collaboration !== false;
+  const { user } = useUser();
+  const isReadOnlyRole = user?.role === "Consultant";
 
   const { data: companyProfile } = useQuery({
     queryKey: ["/api/company-profile"],
@@ -160,7 +165,8 @@ export default function MessagingFrameworkPage() {
       })()}
 
       <FeatureGate feature="Messaging Framework" requiredPlan="Trial" isAllowed={messagingAllowed} description="Generate AI-powered messaging frameworks based on competitive gaps. Upgrade to Trial or higher to access this feature.">
-        <Card>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        <div className="min-w-0"><Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -176,12 +182,21 @@ export default function MessagingFrameworkPage() {
                   AI-generated messaging framework based on competitive gaps
                 </CardDescription>
               </div>
-              {messagingFramework?.lastGeneratedAt && (
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4 mr-1" />
-                  Last updated: {new Date(messagingFramework.lastGeneratedAt).toLocaleDateString()}
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {messagingFramework?.id && collabAllowed && (
+                  <CommentPopoverButton
+                    targetKind="messaging_framework"
+                    targetId={messagingFramework.id}
+                    readOnly={isReadOnlyRole}
+                  />
+                )}
+                {messagingFramework?.lastGeneratedAt && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4 mr-1" />
+                    Last updated: {new Date(messagingFramework.lastGeneratedAt).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -368,6 +383,26 @@ export default function MessagingFrameworkPage() {
             )}
           </CardContent>
         </Card>
+        {messagingFramework?.id && collabAllowed && (
+          <div className="lg:hidden mt-6">
+            <AnnotationRail
+              targetKind="messaging_framework"
+              targetId={messagingFramework.id}
+              readOnly={isReadOnlyRole}
+            />
+          </div>
+        )}
+        </div>
+        {messagingFramework?.id && collabAllowed && (
+          <div className="hidden lg:block">
+            <AnnotationRail
+              targetKind="messaging_framework"
+              targetId={messagingFramework.id}
+              readOnly={isReadOnlyRole}
+            />
+          </div>
+        )}
+        </div>
       </FeatureGate>
 
       <Dialog open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen}>

@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import FieldHelp from "@/components/FieldHelp";
 import { LongFormContentSkeleton } from "@/components/ui/skeletons";
+import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
+import { useUser } from "@/lib/userContext";
 
 type LongFormRecommendation = {
   id: string;
@@ -32,7 +34,7 @@ export default function GtmPlanPage() {
   const [editContent, setEditContent] = useState("");
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
 
-  const { data: tenant } = useQuery({
+  const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/info", { credentials: "include" });
@@ -42,6 +44,9 @@ export default function GtmPlanPage() {
   });
 
   const gtmAllowed = tenant?.features?.gtmPlan !== false;
+  const collabAllowed = tenant?.features?.collaboration !== false;
+  const { user } = useUser();
+  const isReadOnlyRole = user?.role === "Consultant";
 
   const { data: companyProfile } = useQuery({
     queryKey: ["/api/company-profile"],
@@ -160,7 +165,8 @@ export default function GtmPlanPage() {
       })()}
 
       <FeatureGate feature="GTM Plan" requiredPlan="Trial" isAllowed={gtmAllowed} description="Generate AI-powered Go-To-Market plans based on your competitive analysis. Upgrade to Trial or higher to access this feature.">
-        <Card>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        <div className="min-w-0"><Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -176,12 +182,21 @@ export default function GtmPlanPage() {
                   AI-generated strategic plan based on your baseline analysis
                 </CardDescription>
               </div>
-              {gtmPlan?.lastGeneratedAt && (
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4 mr-1" />
-                  Last updated: {new Date(gtmPlan.lastGeneratedAt).toLocaleDateString()}
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {gtmPlan?.id && collabAllowed && (
+                  <CommentPopoverButton
+                    targetKind="gtm_plan"
+                    targetId={gtmPlan.id}
+                    readOnly={isReadOnlyRole}
+                  />
+                )}
+                {gtmPlan?.lastGeneratedAt && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4 mr-1" />
+                    Last updated: {new Date(gtmPlan.lastGeneratedAt).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -362,6 +377,26 @@ export default function GtmPlanPage() {
             )}
           </CardContent>
         </Card>
+        {gtmPlan?.id && collabAllowed && (
+          <div className="lg:hidden mt-6">
+            <AnnotationRail
+              targetKind="gtm_plan"
+              targetId={gtmPlan.id}
+              readOnly={isReadOnlyRole}
+            />
+          </div>
+        )}
+        </div>
+        {gtmPlan?.id && collabAllowed && (
+          <div className="hidden lg:block">
+            <AnnotationRail
+              targetKind="gtm_plan"
+              targetId={gtmPlan.id}
+              readOnly={isReadOnlyRole}
+            />
+          </div>
+        )}
+        </div>
       </FeatureGate>
 
       <Dialog open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen}>

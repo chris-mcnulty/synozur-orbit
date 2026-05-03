@@ -26,6 +26,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import RecentUpdatesCard from "@/components/RecentUpdatesCard";
 import { useUser } from "@/lib/userContext";
+import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
 
 interface Product {
   id: string;
@@ -127,6 +128,15 @@ export default function ProductDetail() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useUser();
   const isAdmin = currentUser?.role === "Domain Admin" || currentUser?.role === "Global Admin";
+  const isReadOnlyRole = currentUser?.role === "Consultant";
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+  const collabAllowed = tenantInfo?.features?.collaboration !== false;
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [isEditProductOpen, setIsEditProductOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -2039,6 +2049,15 @@ export default function ProductDetail() {
                             
                             {selectedBattlecard?.id === existingBattlecard?.id && existingBattlecard && (
                               <div className="p-4 border-t space-y-4">
+                                {collabAllowed && (
+                                  <div className="flex items-center justify-between">
+                                    <CommentPopoverButton
+                                      targetKind="product_battlecard"
+                                      targetId={existingBattlecard.id}
+                                      readOnly={isReadOnlyRole}
+                                    />
+                                  </div>
+                                )}
                                 <div className="grid gap-4 md:grid-cols-3">
                                   {/* Strengths */}
                                   <div className="space-y-2">
@@ -2180,6 +2199,14 @@ export default function ProductDetail() {
                                     Text
                                   </Button>
                                 </div>
+                                {collabAllowed && (
+                                  <AnnotationRail
+                                    targetKind="product_battlecard"
+                                    targetId={existingBattlecard.id}
+                                    readOnly={isReadOnlyRole}
+                                    className="mt-4 border-t pt-4"
+                                  />
+                                )}
                               </div>
                             )}
                           </div>

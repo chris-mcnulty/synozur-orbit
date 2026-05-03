@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
 import EmptyPageState from "@/components/EmptyPageState";
-import { AnnotationRail } from "@/components/collaboration/CollabComponents";
+import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
 import { useUser } from "@/lib/userContext";
 import {
   Select,
@@ -91,6 +91,14 @@ export default function BattleCardsPage() {
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
   const { user } = useUser();
   const isReadOnlyRole = user?.role === "Consultant";
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+  const collabAllowed = tenantInfo?.features?.collaboration !== false;
   const [downloading, setDownloading] = useState<"pdf" | "txt" | null>(null);
   const pdfJobStatus = useJobStatus(
     selectedCard ? `battlecard-pdf:${selectedCard.id}` : null,
@@ -524,6 +532,15 @@ export default function BattleCardsPage() {
             <DialogTitle className="flex items-center gap-3">
               <Building2 className="w-5 h-5 text-primary" />
               {selectedCard?.competitorName} Battle Card
+              {collabAllowed && selectedCard && (
+                <div className="ml-auto">
+                  <CommentPopoverButton
+                    targetKind="battlecard"
+                    targetId={selectedCard.id}
+                    readOnly={isReadOnlyRole}
+                  />
+                </div>
+              )}
             </DialogTitle>
             <DialogDescription className="flex items-center justify-between">
               <span>Competitive comparison vs {companyProfile?.companyName || "Your Company"}</span>
@@ -770,8 +787,17 @@ export default function BattleCardsPage() {
                 </>
               )}
             </div>
-            {selectedCard && (
+            {selectedCard && collabAllowed && (
               <div className="hidden lg:block py-4 border-l pl-6">
+                <AnnotationRail
+                  targetKind="battlecard"
+                  targetId={selectedCard.id}
+                  readOnly={isReadOnlyRole}
+                />
+              </div>
+            )}
+            {selectedCard && collabAllowed && (
+              <div className="lg:hidden border-t pt-4">
                 <AnnotationRail
                   targetKind="battlecard"
                   targetId={selectedCard.id}
