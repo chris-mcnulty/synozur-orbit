@@ -33,6 +33,14 @@ declare module "express-session" {
     // Optional same-origin path the user should land on after sign-in
     // (used to resume `/oauth/authorize` flows after Entra/local login).
     postLoginRedirect?: string;
+    // Google OAuth state nonce + pending account-link payload (Task #105)
+    googleOAuthState?: string;
+    pendingGoogleLink?: {
+      googleId: string;
+      email: string;
+      name: string;
+      userId: string;
+    };
   }
 }
 
@@ -439,6 +447,11 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_refresh_token TEXT`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_token_expires_at TIMESTAMP`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS graph_scopes TEXT`);
+
+    // Task #105: Google SSO peer provider + per-tenant allowed providers
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT`);
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_unique ON users(google_id) WHERE google_id IS NOT NULL`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS allowed_auth_providers TEXT[] DEFAULT ARRAY['entra','google','password']::text[]`);
 
     // Planner integration: marketing plan target mapping
     await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS planner_group_id TEXT`);

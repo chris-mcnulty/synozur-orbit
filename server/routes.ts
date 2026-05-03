@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerEntraRoutes } from "./auth/entra-routes";
+import { registerGoogleRoutes } from "./auth/google-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { registerMarketingLinksRoutes } from "./routes/marketing-links";
 import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes } from "./routes/marketing-delivery";
@@ -43,6 +44,7 @@ export async function registerRoutes(
   
   registerObjectStorageRoutes(app);
   registerEntraRoutes(app);
+  registerGoogleRoutes(app);
   registerSaturnMarketingRoutes(app);
   // Register marketing-links BEFORE the Vite/static catch-all so /r/:slug
   // resolves to the redirect handler instead of the SPA HTML.

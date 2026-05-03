@@ -5,6 +5,8 @@ import { sendVerificationEmail, sendWelcomeEmail } from "../services/email-servi
 import * as msal from "@azure/msal-node";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { verifyRecaptcha, checkSignupRateLimit, getClientIp, logAuditEvent, isRecaptchaConfigured } from "./recaptcha";
+import { providerAllowedForTenant } from "./auth-policy";
 
 function generateVerificationToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -348,10 +350,31 @@ export function registerEntraRoutes(app: Express) {
   });
 
   app.post("/api/auth/resend-verification", async (req: Request, res: Response) => {
-    const { email } = req.body;
+    const { email, recaptchaToken, recaptchaV2Token } = req.body;
 
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
+    }
+
+    // Per-IP rate limit + reCAPTCHA gating (Task #105)
+    const ip = getClientIp(req);
+    const rate = checkSignupRateLimit(ip);
+    if (!rate.allowed) {
+      logAuditEvent("resend_rate_limited", { ip });
+      return res.status(429).json({ error: "Too many attempts. Please try again later." });
+    }
+    if (isRecaptchaConfigured()) {
+      let verify = await verifyRecaptcha(recaptchaV2Token, "v2", ip);
+      if (!verify.ok && !recaptchaV2Token) {
+        verify = await verifyRecaptcha(recaptchaToken, "v3", ip);
+      }
+      if (!verify.ok) {
+        logAuditEvent("recaptcha_failed", { ip, route: "resend", reason: verify.reason, score: verify.score });
+        if (verify.needsChallenge) {
+          return res.status(400).json({ error: "Please complete the reCAPTCHA challenge.", requiresChallenge: true });
+        }
+        return res.status(400).json({ error: "reCAPTCHA verification failed. Please try again." });
+      }
     }
 
     try {

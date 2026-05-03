@@ -8,11 +8,38 @@ import { insertUserSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { syncNewAccountToHubSpot } from "../services/hubspot-service";
 import { sendDigestNowForUser } from "../services/scheduled-jobs";
+import { verifyRecaptcha, checkSignupRateLimit, getClientIp, logAuditEvent, isRecaptchaConfigured } from "../auth/recaptcha";
+import { providerAllowedForTenant } from "../auth/auth-policy";
 
 export function registerAuthRoutes(app: Express) {
   
   app.post("/api/register", async (req, res) => {
     try {
+      // ── Per-IP rate limit (sliding window) ────────────────────────────────
+      const ip = getClientIp(req);
+      const rate = checkSignupRateLimit(ip);
+      if (!rate.allowed) {
+        logAuditEvent("signup_rate_limited", { ip });
+        return res.status(429).json({ error: "Too many signup attempts. Please try again later." });
+      }
+
+      // ── Google reCAPTCHA validation (Task #105) ───────────────────────────
+      const recaptchaToken: string | undefined = req.body?.recaptchaToken;
+      const recaptchaV2Token: string | undefined = req.body?.recaptchaV2Token;
+      if (isRecaptchaConfigured()) {
+        let verify = await verifyRecaptcha(recaptchaV2Token, "v2", ip);
+        if (!verify.ok && !recaptchaV2Token) {
+          verify = await verifyRecaptcha(recaptchaToken, "v3", ip);
+        }
+        if (!verify.ok) {
+          logAuditEvent("recaptcha_failed", { ip, reason: verify.reason, score: verify.score, route: "register" });
+          if (verify.needsChallenge) {
+            return res.status(400).json({ error: "Please complete the reCAPTCHA challenge.", requiresChallenge: true });
+          }
+          return res.status(400).json({ error: "reCAPTCHA verification failed. Please try again." });
+        }
+      }
+
       const parsed = insertUserSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: fromError(parsed.error).toString() });
@@ -143,7 +170,15 @@ export function registerAuthRoutes(app: Express) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      if (user.authProvider === "entra") {
+      // Check tenant's allowed-providers list — block password sign-in if disabled.
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
+      const userTenant = userDomain ? await storage.getTenantByDomain(userDomain) : null;
+      if (userTenant && !providerAllowedForTenant(userTenant, "password")) {
+        logAuditEvent("auth_provider_blocked", { provider: "password", tenantDomain: userTenant.domain, userId: user.id });
+        return res.status(401).json({ error: "Your organization requires single sign-on. Please use the SSO option to sign in." });
+      }
+
+      if (user.authProvider === "entra" && !user.googleId) {
         return res.status(401).json({ error: "Please use Microsoft SSO to sign in" });
       }
 
@@ -159,6 +194,16 @@ export function registerAuthRoutes(app: Express) {
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Public config for the auth UI: which SSO providers are configured + the
+  // public reCAPTCHA site key. Frontend reads this to decide which buttons
+  // and challenge widgets to render.
+  app.get("/api/auth/public-config", (_req, res) => {
+    res.json({
+      recaptchaSiteKey: process.env.RECAPTCHA_SITE_KEY || "",
+      recaptchaEnabled: !!(process.env.RECAPTCHA_SITE_KEY && process.env.RECAPTCHA_SECRET_KEY),
+    });
   });
 
   app.post("/api/logout", (req, res) => {

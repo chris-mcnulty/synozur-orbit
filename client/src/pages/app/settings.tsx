@@ -49,6 +49,7 @@ interface TenantSettings {
   userCount: number;
   entraTenantId: string | null;
   entraEnabled: boolean;
+  allowedAuthProviders?: string[] | null;
 }
 
 interface ConsultantGrant {
@@ -323,6 +324,11 @@ export default function Settings() {
   // Entra ID configuration state (simplified - only enable toggle, tenant ID is auto-populated)
   const [entraEnabled, setEntraEnabled] = useState(false);
 
+  // Per-tenant allowed auth providers (Task #105)
+  const [allowEntra, setAllowEntra] = useState(true);
+  const [allowGoogle, setAllowGoogle] = useState(true);
+  const [allowPassword, setAllowPassword] = useState(true);
+
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
     enabled: !!user,
@@ -376,6 +382,12 @@ export default function Settings() {
       setBrandingSecondary(tenant.secondaryColor || "#E60CB3");
       setMonitoringFreq(tenant.monitoringFrequency || "weekly");
       setEntraEnabled(tenant.entraEnabled || false);
+      const allowed = tenant.allowedAuthProviders && tenant.allowedAuthProviders.length > 0
+        ? tenant.allowedAuthProviders
+        : ["entra", "google", "password"];
+      setAllowEntra(allowed.includes("entra"));
+      setAllowGoogle(allowed.includes("google"));
+      setAllowPassword(allowed.includes("password"));
     }
   }, [tenant]);
 
@@ -654,6 +666,11 @@ export default function Settings() {
         credentials: "include",
         body: JSON.stringify({
           entraEnabled,
+          allowedAuthProviders: [
+            allowEntra ? "entra" : null,
+            allowGoogle ? "google" : null,
+            allowPassword ? "password" : null,
+          ].filter(Boolean),
         }),
       });
       if (!res.ok) {
@@ -1142,6 +1159,72 @@ export default function Settings() {
             </CardFooter>
           )}
         </Card>
+
+        {isAdmin && (
+          <Card data-testid="card-allowed-providers">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Allowed Sign-in Methods
+              </CardTitle>
+              <CardDescription>
+                Choose which authentication providers your team can use to sign in.
+                At least one must remain enabled.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="allow-entra">Microsoft Entra (SSO)</Label>
+                  <p className="text-xs text-muted-foreground">Sign in with Microsoft work accounts</p>
+                </div>
+                <Switch
+                  id="allow-entra"
+                  checked={allowEntra}
+                  onCheckedChange={setAllowEntra}
+                  data-testid="switch-allow-entra"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="allow-google">Google (SSO)</Label>
+                  <p className="text-xs text-muted-foreground">Sign in with Google Workspace or personal accounts</p>
+                </div>
+                <Switch
+                  id="allow-google"
+                  checked={allowGoogle}
+                  onCheckedChange={setAllowGoogle}
+                  data-testid="switch-allow-google"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="allow-password">Email + Password</Label>
+                  <p className="text-xs text-muted-foreground">Allow local sign-up and password sign-in</p>
+                </div>
+                <Switch
+                  id="allow-password"
+                  checked={allowPassword}
+                  onCheckedChange={setAllowPassword}
+                  data-testid="switch-allow-password"
+                />
+              </div>
+              {!allowEntra && !allowGoogle && !allowPassword && (
+                <p className="text-sm text-destructive">At least one sign-in method must be enabled.</p>
+              )}
+            </CardContent>
+            <CardFooter className="border-t border-border px-6 py-4">
+              <Button
+                onClick={() => updateEntraMutation.mutate()}
+                disabled={updateEntraMutation.isPending || (!allowEntra && !allowGoogle && !allowPassword)}
+                data-testid="button-save-allowed-providers"
+              >
+                {updateEntraMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Sign-in Methods
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
 
         {isAdmin && (
           <Card data-testid="card-entra-config">

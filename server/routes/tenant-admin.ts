@@ -995,7 +995,7 @@ export function registerTenantAdminRoutes(app: Express) {
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       const validFrequencies = ["daily", "weekly", "disabled"];
       
-      const { name, logoUrl, faviconUrl, primaryColor, secondaryColor, monitoringFrequency, entraClientId, entraTenantId, entraClientSecret, entraEnabled } = req.body;
+      const { name, logoUrl, faviconUrl, primaryColor, secondaryColor, monitoringFrequency, entraClientId, entraTenantId, entraClientSecret, entraEnabled, allowedAuthProviders } = req.body;
       const updateData: Record<string, any> = {};
       
       if (name && typeof name === "string" && name.trim()) {
@@ -1028,6 +1028,16 @@ export function registerTenantAdminRoutes(app: Express) {
       }
       if (typeof entraEnabled === "boolean") {
         updateData.entraEnabled = entraEnabled;
+      }
+      // Task #105: per-tenant allowed auth providers
+      if (Array.isArray(allowedAuthProviders)) {
+        const valid = ["entra", "google", "password"];
+        const cleaned = allowedAuthProviders
+          .filter((p: any) => typeof p === "string" && valid.includes(p));
+        if (cleaned.length === 0) {
+          return res.status(400).json({ error: "At least one auth provider must be allowed" });
+        }
+        updateData.allowedAuthProviders = Array.from(new Set(cleaned));
       }
 
       if (Object.keys(updateData).length === 0) {

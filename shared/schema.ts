@@ -17,6 +17,7 @@ export const users = pgTable("users", {
   country: text("country"),
   avatar: text("avatar").notNull(),
   entraId: text("entra_id"),
+  googleId: text("google_id"),
   authProvider: text("auth_provider").default("local"),
   emailVerified: boolean("email_verified").default(false),
   status: text("status").default("active"), // active, pending_verification, suspended
@@ -96,6 +97,9 @@ export const tenants = pgTable("tenants", {
   entraTenantId: text("entra_tenant_id"), // Azure AD Tenant ID
   entraClientSecret: text("entra_client_secret"), // Azure AD App Registration Client Secret (encrypted)
   entraEnabled: boolean("entra_enabled").default(false), // Whether tenant-level Entra SSO is enabled
+  // Allowed auth providers (subset of: "entra", "google", "password").
+  // Empty array means "no restriction" — frontend treats null/empty as default of all three.
+  allowedAuthProviders: text("allowed_auth_providers").array().default(sql`ARRAY['entra','google','password']::text[]`),
   // Multi-market settings (Enterprise tier feature)
   multiMarketEnabled: boolean("multi_market_enabled").default(false), // Whether tenant can create multiple markets
   marketLimit: integer("market_limit"), // Maximum number of markets allowed (NULL = unlimited)
