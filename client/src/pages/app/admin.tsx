@@ -2684,11 +2684,15 @@ export default function AdminPage() {
               </DialogDescription>
             </DialogHeader>
             <Tabs defaultValue="settings" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
                 <TabsTrigger value="branding" data-testid="tab-branding">
                   <Palette className="h-4 w-4 mr-2" />
                   Branding
+                </TabsTrigger>
+                <TabsTrigger value="billing" data-testid="tab-billing">
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  Billing
                 </TabsTrigger>
                 <TabsTrigger value="quotas" data-testid="tab-quotas">
                   <Zap className="h-4 w-4 mr-2" />
@@ -2806,23 +2810,6 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="space-y-2 pt-4 border-t">
-                  <Label className="text-sm font-medium">Billing Override</Label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    When enabled, the Stripe webhook will not change this tenant's plan automatically.
-                    Use this for tenants billed outside Stripe (e.g. invoiced enterprise deals).
-                  </p>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={editForm.billingManagedManually}
-                      onChange={(e) => setEditForm({ ...editForm, billingManagedManually: e.target.checked })}
-                      data-testid="checkbox-billing-managed-manually"
-                    />
-                    <span className="text-sm">Billing managed manually (Stripe webhook will not auto-update plan)</span>
-                  </label>
-                </div>
-                <div className="space-y-2 pt-4 border-t">
                   <Label className="text-sm font-medium">Multi-Market Settings</Label>
                   <p className="text-xs text-muted-foreground mb-2">Enterprise feature - controlled by service plan</p>
                   <div className="grid grid-cols-2 gap-4">
@@ -2938,6 +2925,96 @@ export default function AdminPage() {
                         style={{ background: `linear-gradient(135deg, ${editForm.primaryColor}, ${editForm.secondaryColor})` }}
                       />
                       <span className="text-xs text-muted-foreground">Gradient</span>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="billing" className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Manual Billing Override</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    When enabled, the Stripe webhook will still record subscription events but will
+                    not change this tenant's plan automatically. Use this for tenants billed outside
+                    Stripe (e.g. wire transfer / invoiced enterprise deals).
+                  </p>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={editForm.billingManagedManually}
+                      onChange={(e) => setEditForm({ ...editForm, billingManagedManually: e.target.checked })}
+                      data-testid="checkbox-billing-managed-manually"
+                    />
+                    <span className="text-sm">Billing managed manually (Stripe webhook will not auto-update plan)</span>
+                  </label>
+                </div>
+                <div className="space-y-2 pt-4 border-t">
+                  <Label className="text-sm font-medium">Pinned Plan</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {editForm.billingManagedManually
+                      ? "Pin the plan this tenant should run on while billing is managed manually."
+                      : "Enable manual billing override above to pin a plan."}
+                  </p>
+                  <Select
+                    value={editForm.plan}
+                    onValueChange={(value) => {
+                      const selectedPlan = servicePlans.find((p) => p.name === value);
+                      if (selectedPlan) {
+                        setEditForm({
+                          ...editForm,
+                          plan: value,
+                          competitorLimit: selectedPlan.competitorLimit,
+                          analysisLimit: selectedPlan.analysisLimit,
+                          adminUserLimit: selectedPlan.adminUserLimit,
+                          readWriteUserLimit: selectedPlan.readWriteUserLimit,
+                          readOnlyUserLimit: selectedPlan.readOnlyUserLimit,
+                          multiMarketEnabled: selectedPlan.multiMarketEnabled,
+                          marketLimit: selectedPlan.marketLimit,
+                        });
+                      }
+                    }}
+                    disabled={!editForm.billingManagedManually}
+                  >
+                    <SelectTrigger data-testid="select-pinned-plan">
+                      <SelectValue placeholder="Select a plan to pin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {servicePlans.filter((p) => p.isActive).map((plan) => (
+                        <SelectItem key={plan.id} value={plan.name}>
+                          {plan.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 pt-4 border-t">
+                  <Label className="text-sm font-medium">Stripe Subscription</Label>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Customer ID</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-xs font-mono break-all" data-testid="text-stripe-customer-id">
+                        {selectedTenant?.stripeCustomerId || "—"}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Subscription ID</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-xs font-mono break-all" data-testid="text-stripe-subscription-id">
+                        {selectedTenant?.stripeSubscriptionId || "—"}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Status</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-xs" data-testid="text-stripe-status">
+                        {selectedTenant?.subscriptionStatus || "—"}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Grace Until</Label>
+                      <div className="px-3 py-2 bg-muted/50 rounded-md text-xs" data-testid="text-stripe-grace">
+                        {selectedTenant?.paymentGraceUntil
+                          ? new Date(selectedTenant.paymentGraceUntil).toLocaleString()
+                          : "—"}
+                      </div>
                     </div>
                   </div>
                 </div>

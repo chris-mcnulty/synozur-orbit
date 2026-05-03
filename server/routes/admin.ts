@@ -1625,7 +1625,69 @@ export function registerAdminRoutes(app: Express) {
         return res.status(400).json({ error: "No valid fields to update" });
       }
 
+      // Capture pre-update state to detect billing-related changes for audit log
+      const before = await storage.getTenant(req.params.id);
+
       const updated = await storage.updateTenant(req.params.id, updateData);
+
+      // Audit log: write a billing_events row whenever a Global Admin flips
+      // the manual-billing flag or changes the pinned plan while the flag is on.
+      // Emit a separate event for each change so combined updates are fully audited.
+      try {
+        const flagChanged =
+          typeof updateData.billingManagedManually === "boolean" &&
+          before?.billingManagedManually !== updateData.billingManagedManually;
+        const planChanged =
+          typeof updateData.plan === "string" && before?.plan !== updateData.plan;
+        const wasOrIsManual =
+          (before?.billingManagedManually ?? false) ||
+          updateData.billingManagedManually === true;
+
+        const auditEvents: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const actor = { actorUserId: user.id, actorEmail: user.email };
+
+        if (flagChanged) {
+          auditEvents.push({
+            type: "admin.billing_managed_manually_changed",
+            payload: {
+              ...actor,
+              before: { billingManagedManually: before?.billingManagedManually ?? null },
+              after: { billingManagedManually: updateData.billingManagedManually },
+            },
+          });
+        }
+        if (planChanged && wasOrIsManual) {
+          auditEvents.push({
+            type: "admin.pinned_plan_changed",
+            payload: {
+              ...actor,
+              before: { plan: before?.plan ?? null },
+              after: { plan: updateData.plan },
+            },
+          });
+        }
+
+        if (auditEvents.length > 0) {
+          const { db } = await import("../db");
+          const { billingEvents } = await import("@shared/schema");
+          for (const evt of auditEvents) {
+            await db
+              .insert(billingEvents)
+              .values({
+                id: `admin_${randomUUID()}`,
+                type: evt.type,
+                tenantId: req.params.id,
+                stripeCustomerId: null,
+                stripeSubscriptionId: null,
+                payload: evt.payload,
+              })
+              .onConflictDoNothing();
+          }
+        }
+      } catch (auditErr) {
+        console.error("[Admin] Failed to write billing audit event:", auditErr);
+      }
+
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
