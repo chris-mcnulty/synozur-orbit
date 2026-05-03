@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { z } from "zod";
+import { socialLinkSchemas } from "@shared/schema";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,35 +26,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import EmptyPageState from "@/components/EmptyPageState";
 import { CompetitorListSkeleton } from "@/components/ui/skeletons";
-
-const optionalUrl = (regex: RegExp, message: string) =>
-  z
-    .string()
-    .trim()
-    .refine((v) => v === "" || regex.test(v), { message });
-
-const socialLinkSchemas = {
-  linkedInUrl: optionalUrl(
-    /^https?:\/\/(www\.)?linkedin\.com\/(company|in|school|showcase)\/[A-Za-z0-9._%+-]+\/?.*$/i,
-    "Use a LinkedIn URL like https://linkedin.com/company/example",
-  ),
-  twitterUrl: optionalUrl(
-    /^https?:\/\/(www\.)?(twitter\.com|x\.com)\/[A-Za-z0-9_]{1,15}\/?.*$/i,
-    "Use a Twitter/X URL like https://x.com/example",
-  ),
-  instagramUrl: optionalUrl(
-    /^https?:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?.*$/i,
-    "Use an Instagram URL like https://instagram.com/example",
-  ),
-  facebookUrl: optionalUrl(
-    /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9.\-_]+\/?.*$/i,
-    "Use a Facebook URL like https://facebook.com/example",
-  ),
-  blogUrl: optionalUrl(
-    /^https?:\/\/[^\s.]+\.[^\s]+/i,
-    "Use a full URL like https://example.com/blog or https://example.com/feed.xml",
-  ),
-};
 
 export default function Competitors() {
   const { toast } = useToast();

@@ -673,11 +673,62 @@ export const insertTenantSchema = createInsertSchema(tenants).omit({
   updatedAt: true,
 });
 
-export const insertCompetitorSchema = createInsertSchema(competitors).omit({
-  id: true,
-  createdAt: true,
-  lastCrawl: true,
+// Shared validators for competitor / company-profile social URL fields.
+// Used by both the client form (client/src/pages/app/competitors.tsx) and
+// the server PATCH/POST routes so malformed URLs are rejected with parity
+// (task #79). Empty strings are accepted to allow clearing a link.
+const optionalSocialUrl = (regex: RegExp, message: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === "" || regex.test(v), { message });
+
+export const socialLinkSchemas = {
+  linkedInUrl: optionalSocialUrl(
+    /^https?:\/\/(www\.)?linkedin\.com\/(company|in|school|showcase)\/[A-Za-z0-9._%+-]+\/?.*$/i,
+    "Use a LinkedIn URL like https://linkedin.com/company/example",
+  ),
+  twitterUrl: optionalSocialUrl(
+    /^https?:\/\/(www\.)?(twitter\.com|x\.com)\/[A-Za-z0-9_]{1,15}\/?.*$/i,
+    "Use a Twitter/X URL like https://x.com/example",
+  ),
+  instagramUrl: optionalSocialUrl(
+    /^https?:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?.*$/i,
+    "Use an Instagram URL like https://instagram.com/example",
+  ),
+  facebookUrl: optionalSocialUrl(
+    /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9.\-_]+\/?.*$/i,
+    "Use a Facebook URL like https://facebook.com/example",
+  ),
+  blogUrl: optionalSocialUrl(
+    /^https?:\/\/[^\s.]+\.[^\s]+/i,
+    "Use a full URL like https://example.com/blog or https://example.com/feed.xml",
+  ),
+} as const;
+
+// Partial schema for PATCH bodies — every field is optional so only
+// the keys actually present in the request are validated.
+export const competitorSocialLinksUpdateSchema = z.object({
+  linkedInUrl: socialLinkSchemas.linkedInUrl.optional().nullable(),
+  twitterUrl: socialLinkSchemas.twitterUrl.optional().nullable(),
+  instagramUrl: socialLinkSchemas.instagramUrl.optional().nullable(),
+  facebookUrl: socialLinkSchemas.facebookUrl.optional().nullable(),
+  blogUrl: socialLinkSchemas.blogUrl.optional().nullable(),
 });
+
+export const insertCompetitorSchema = createInsertSchema(competitors)
+  .omit({
+    id: true,
+    createdAt: true,
+    lastCrawl: true,
+  })
+  .extend({
+    linkedInUrl: socialLinkSchemas.linkedInUrl.optional().nullable(),
+    twitterUrl: socialLinkSchemas.twitterUrl.optional().nullable(),
+    instagramUrl: socialLinkSchemas.instagramUrl.optional().nullable(),
+    facebookUrl: socialLinkSchemas.facebookUrl.optional().nullable(),
+    blogUrl: socialLinkSchemas.blogUrl.optional().nullable(),
+  });
 
 export const insertActivitySchema = createInsertSchema(activity).omit({
   id: true,

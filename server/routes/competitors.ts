@@ -4,7 +4,7 @@ import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature, guardCompetitorLimit, guardAnalysisLimit, guardManualAction } from "./helpers";
 import { parsePaginationParams, buildPaginatedEnvelope } from "../utils/pagination";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
-import { insertCompetitorSchema } from "@shared/schema";
+import { insertCompetitorSchema, competitorSocialLinksUpdateSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
 import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "../services/competitor-document-context";
@@ -137,6 +137,32 @@ export function registerCompetitorRoutes(app: Express) {
       }
 
       const { linkedInUrl, instagramUrl, twitterUrl, facebookUrl, blogUrl, blogFeedUrl, socialCheckFrequency, excludeFromCrawl, name, url, projectId, headquarters, founded, employeeCount, revenue, fundingRaised, industry } = req.body;
+
+      // Task #79 — validate social URLs server-side for parity with the
+      // client-side zod refinements added in task #67. Only the keys
+      // actually present in the request body are validated; empty strings
+      // are accepted to allow clearing a link.
+      const socialPayload: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries({ linkedInUrl, instagramUrl, twitterUrl, facebookUrl, blogUrl })) {
+        if (v !== undefined) socialPayload[k] = v;
+      }
+      if (Object.keys(socialPayload).length > 0) {
+        const socialParsed = competitorSocialLinksUpdateSchema.safeParse(socialPayload);
+        if (!socialParsed.success) {
+          const fieldErrors: Record<string, string> = {};
+          for (const issue of socialParsed.error.issues) {
+            const field = issue.path[0];
+            if (typeof field === "string" && !fieldErrors[field]) {
+              fieldErrors[field] = issue.message;
+            }
+          }
+          return res.status(400).json({
+            error: "Invalid social URL",
+            fieldErrors,
+          });
+        }
+      }
+
       const updateData: any = {};
       
       if (linkedInUrl !== undefined) updateData.linkedInUrl = linkedInUrl || null;
@@ -361,7 +387,30 @@ export function registerCompetitorRoutes(app: Express) {
       });
 
       if (!parsed.success) {
-        return res.status(400).json({ error: fromError(parsed.error).toString() });
+        // Task #79 — extract per-field errors so the create form can render
+        // field-specific messages for malformed social URLs (and other fields).
+        const socialFieldKeys = new Set([
+          "linkedInUrl",
+          "twitterUrl",
+          "instagramUrl",
+          "facebookUrl",
+          "blogUrl",
+        ]);
+        const fieldErrors: Record<string, string> = {};
+        let hasSocialError = false;
+        for (const issue of parsed.error.issues) {
+          const field = issue.path[0];
+          if (typeof field === "string" && !fieldErrors[field]) {
+            fieldErrors[field] = issue.message;
+            if (socialFieldKeys.has(field)) hasSocialError = true;
+          }
+        }
+        return res.status(400).json({
+          error: hasSocialError
+            ? "Invalid social URL"
+            : fromError(parsed.error).toString(),
+          fieldErrors,
+        });
       }
 
       const org = await storage.findOrCreateOrganization(normalizedUrl, competitorData.name, {
