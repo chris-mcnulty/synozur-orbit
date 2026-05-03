@@ -13,6 +13,7 @@ import {
   WEEKLY_DIGEST_EMAIL,
   INTELLIGENCE_BRIEFING_DIGEST_EMAIL,
   COMPETITOR_ALERT_EMAIL,
+  FEEDBACK_STATUS_UPDATE_EMAIL,
   COMPETITOR_TONE_SHIFT_EMAIL,
   SEO_MOVEMENT_ALERT_EMAIL,
   SUPPORT_TICKET_NOTIFICATION_EMAIL,
@@ -1407,6 +1408,66 @@ export async function sendActionItemAssignedEmail(params: {
     subject: `${params.assignerName} assigned you "${params.itemTitle}"`,
     html: wrapEmailContent(content),
     text: `${params.assignerName} assigned you an action item:\n\n${params.itemTitle}\n\nOpen: ${params.link}`,
+  });
+}
+
+export interface FeedbackStatusUpdateEmailParams {
+  to: string;
+  recipientName: string;
+  productName: string;
+  feedbackTitle: string;
+  feedbackDescription?: string | null;
+  status: string;
+  feedbackId: string;
+  publicToken?: string | null;
+  productId: string;
+  asVoter: boolean;
+  baseUrl: string;
+}
+
+export async function sendFeedbackStatusUpdateEmail(
+  params: FeedbackStatusUpdateEmailParams,
+): Promise<boolean> {
+  const copy = FEEDBACK_STATUS_UPDATE_EMAIL;
+  const { to, recipientName, productName, feedbackTitle, feedbackDescription, status, publicToken, productId, feedbackId, asVoter, baseUrl } = params;
+
+  const link = publicToken
+    ? `${baseUrl}/feedback/${publicToken}#feedback-${feedbackId}`
+    : `${baseUrl}/app/products/${productId}?tab=feedback&feedback=${feedbackId}`;
+
+  const safeName = escapeEmailHtml(recipientName || 'there');
+  const safeProduct = escapeEmailHtml(productName);
+  const safeTitle = escapeEmailHtml(feedbackTitle);
+  const safeDescription = feedbackDescription ? escapeEmailHtml(feedbackDescription) : '';
+
+  const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+  const badgeColor = status === 'shipped' ? '#10B981' : status === 'planned' ? '#F59E0B' : '#818CF8';
+
+  const intro = asVoter ? copy.voterIntro(safeProduct, status) : copy.intro(safeProduct, status);
+
+  const content = `
+    <h1>${copy.heading(status)}</h1>
+    <p>${copy.greeting(safeName)}</p>
+    <p>${intro}</p>
+    <div class="feature">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span style="display: inline-block; padding: 2px 10px; border-radius: 6px; background: ${badgeColor}; color: #fff; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">${statusLabel}</span>
+      </div>
+      <div class="feature-title">${safeTitle}</div>
+      ${safeDescription ? `<p class="feature-desc">${safeDescription}</p>` : ''}
+    </div>
+    <div class="button-container">
+      <a href="${link}" class="button">${copy.buttonText}</a>
+    </div>
+    <div class="divider"></div>
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">${copy.footerMessage}</p>
+  `;
+
+  return sendEmail({
+    to,
+    subject: copy.subject(productName, status),
+    html: wrapEmailContent(content),
+    text: copy.plainText(recipientName || 'there', productName, feedbackTitle, status, link, asVoter),
   });
 }
 

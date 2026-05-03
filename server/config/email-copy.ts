@@ -524,6 +524,44 @@ export const COMPETITOR_TONE_SHIFT_EMAIL = {
     `Hi ${name},\n\nTone shift detected for ${competitorName} (${reason}).\n\n${summary}\n\nOpen competitor: ${link}\n\nManage alert preferences: ${settingsLink}`,
 };
 
+export const FEEDBACK_STATUS_UPDATE_EMAIL = {
+  subject: (productName: string, status: string) => {
+    const emoji = status === 'shipped' ? '🚀' : status === 'planned' ? '📋' : '🔔';
+    const label = status === 'shipped' ? 'Shipped' : status === 'planned' ? 'On the roadmap' : 'Status updated';
+    return `${emoji} ${label}: your ${productName} feedback`;
+  },
+  heading: (status: string) =>
+    status === 'shipped'
+      ? `We shipped what you asked for`
+      : status === 'planned'
+      ? `Your idea is on the roadmap`
+      : `Feedback status updated`,
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  intro: (productName: string, status: string) =>
+    status === 'shipped'
+      ? `Great news — feedback you shared on <span class="highlight">${productName}</span> has been shipped.`
+      : status === 'planned'
+      ? `Thanks for the idea on <span class="highlight">${productName}</span>. We've added it to the planned roadmap.`
+      : `An update on feedback you shared for <span class="highlight">${productName}</span>:`,
+  voterIntro: (productName: string, status: string) =>
+    status === 'shipped'
+      ? `An idea you upvoted on <span class="highlight">${productName}</span> has shipped.`
+      : status === 'planned'
+      ? `An idea you upvoted on <span class="highlight">${productName}</span> is now on the planned roadmap.`
+      : `An idea you upvoted on <span class="highlight">${productName}</span> changed status.`,
+  buttonText: 'View on the feedback board',
+  footerMessage: `You're receiving this because you submitted or upvoted this feedback. The product owner can disable these emails per product.`,
+  plainText: (
+    name: string,
+    productName: string,
+    feedbackTitle: string,
+    status: string,
+    link: string,
+    asVoter: boolean,
+  ) =>
+    `Hi ${name},\n\n${asVoter ? 'An idea you upvoted' : 'Your feedback'} on ${productName} is now ${status}.\n\nFeedback: ${feedbackTitle}\n\nView: ${link}\n`,
+};
+
 export const COMPETITOR_ALERT_EMAIL = {
   subject: (competitorName: string, significance: string) =>
     `${significance === 'high' ? '🔴' : significance === 'medium' ? '🟡' : '🔵'} ${competitorName} — ${significance}-significance change detected`,

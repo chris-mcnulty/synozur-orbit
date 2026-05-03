@@ -5,11 +5,107 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, hasAdminAccess, guardFeature } from "./helpers";
-import { products, productFeedback, productFeedbackVotes, productFeatures } from "@shared/schema";
+import { products, productFeedback, productFeedbackVotes, productFeatures, users } from "@shared/schema";
 import { z } from "zod";
 import { completeForFeature } from "../services/ai-provider";
 import { AI_FEATURES } from "@shared/schema";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { checkFeatureAccessAsync, isFeatureEnabledAsync } from "../services/plan-policy";
+import { sendFeedbackStatusUpdateEmail } from "../services/email-service";
+import type { Product, ProductFeedback as FeedbackRow } from "@shared/schema";
+
+function feedbackBaseUrl(): string {
+  if (process.env.BASE_URL) return process.env.BASE_URL;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  if (process.env.REPLIT_DEPLOYMENT_URL) return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
+  return "https://orbit.synozur.com";
+}
+
+const NOTIFY_STATUSES = new Set(["planned", "shipped"]);
+
+async function dispatchFeedbackStatusEmails(
+  product: Product,
+  fb: FeedbackRow,
+  newStatus: string,
+): Promise<void> {
+  try {
+    if (!NOTIFY_STATUSES.has(newStatus)) return;
+    if (!product.feedbackEmailNotificationsEnabled) return;
+
+    const tenant = await storage.getTenantByDomain(product.tenantDomain);
+    if (!tenant) return;
+    if (!(await isFeatureEnabledAsync(tenant.plan, FEEDBACK_FEATURE_KEY))) return;
+
+    const baseUrl = feedbackBaseUrl();
+    const recipients = new Map<string, { email: string; name: string; asVoter: boolean }>();
+
+    // Original submitter
+    if (fb.submitterUserId) {
+      const submitter = await storage.getUser(fb.submitterUserId);
+      if (submitter?.email) {
+        recipients.set(submitter.email.toLowerCase(), {
+          email: submitter.email,
+          name: submitter.name || submitter.email,
+          asVoter: false,
+        });
+      }
+    } else if (fb.submitterEmail) {
+      recipients.set(fb.submitterEmail.toLowerCase(), {
+        email: fb.submitterEmail,
+        name: fb.submitterName || fb.submitterEmail,
+        asVoter: false,
+      });
+    }
+
+    // Voters: internal users (look up email) + public voters with stored email
+    const votes = await db.select().from(productFeedbackVotes)
+      .where(eq(productFeedbackVotes.feedbackId, fb.id));
+
+    const voterUserIds = votes.map(v => v.voterUserId).filter((id): id is string => !!id);
+    if (voterUserIds.length > 0) {
+      const voterUsers = await db.select().from(users).where(
+        sql`${users.id} = ANY(${voterUserIds})`,
+      );
+      for (const u of voterUsers) {
+        if (!u.email) continue;
+        const key = u.email.toLowerCase();
+        if (recipients.has(key)) continue;
+        recipients.set(key, { email: u.email, name: u.name || u.email, asVoter: true });
+      }
+    }
+    for (const v of votes) {
+      if (!v.voterEmail) continue;
+      const key = v.voterEmail.toLowerCase();
+      if (recipients.has(key)) continue;
+      recipients.set(key, { email: v.voterEmail, name: v.voterEmail.split("@")[0], asVoter: true });
+    }
+
+    const publicToken = product.publicFeedbackEnabled ? product.publicFeedbackToken : null;
+
+    await Promise.allSettled(
+      Array.from(recipients.values()).map(r =>
+        sendFeedbackStatusUpdateEmail({
+          to: r.email,
+          recipientName: r.name,
+          productName: product.name,
+          feedbackTitle: fb.title,
+          feedbackDescription: fb.description,
+          status: newStatus,
+          feedbackId: fb.id,
+          productId: product.id,
+          publicToken,
+          asVoter: r.asVoter,
+          baseUrl,
+        }),
+      ),
+    );
+
+    console.log(
+      `[product-feedback] status notifications dispatched for feedback=${fb.id} status=${newStatus} recipients=${recipients.size}`,
+    );
+  } catch (err) {
+    console.error("[product-feedback] failed to dispatch status emails:", err);
+  }
+}
 
 const FEEDBACK_STATUSES = ["new", "planned", "shipped", "declined"] as const;
 const FEEDBACK_FEATURE_KEY = "customerFeedback";
@@ -186,6 +282,7 @@ export function registerProductFeedbackRoutes(app: Express) {
         items: enriched,
         publicEnabled: !!product.publicFeedbackEnabled,
         publicToken: product.publicFeedbackEnabled ? product.publicFeedbackToken : null,
+        emailNotificationsEnabled: !!product.feedbackEmailNotificationsEnabled,
       });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
@@ -252,7 +349,15 @@ export function registerProductFeedbackRoutes(app: Express) {
         return res.status(403).json({ error: "Only the submitter or an admin can edit this item" });
       }
 
+      const previousStatus = fb.status;
       const updated = await storage.updateProductFeedback(fb.id, parsed.data);
+      if (
+        parsed.data.status &&
+        parsed.data.status !== previousStatus &&
+        NOTIFY_STATUSES.has(parsed.data.status)
+      ) {
+        void dispatchFeedbackStatusEmails(product, updated, parsed.data.status);
+      }
       res.json(updated);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
@@ -342,6 +447,7 @@ export function registerProductFeedbackRoutes(app: Express) {
       const year = Number.isInteger(req.body?.year) ? req.body.year : null;
       const effort = ["xs", "s", "m", "l", "xl"].includes(req.body?.effort) ? req.body.effort : null;
 
+      const previousStatus = fb.status;
       const result = await storage.promoteFeedbackToFeature(
         fb.id,
         {
@@ -359,6 +465,9 @@ export function registerProductFeedbackRoutes(app: Express) {
         },
         { quarter, year, effort, status: status === "in_progress" ? "in_progress" : "planned" },
       );
+      if (previousStatus !== "planned" && result.feedback) {
+        void dispatchFeedbackStatusEmails(product, result.feedback, "planned");
+      }
       res.json(result);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
@@ -438,6 +547,35 @@ ${JSON.stringify(condensed, null, 2)}`;
       }
 
       res.json({ groups });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Per-product email notification toggle (admin only)
+  app.post("/api/products/:productId/feedback/notifications", async (req, res) => {
+    if (!await guardFeature(req, res, FEEDBACK_FEATURE_KEY)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const product = await storage.getProduct(req.params.productId);
+      if (!product) return res.status(404).json({ error: "Product not found" });
+      if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
+
+      const me = await storage.getUser(ctx.userId);
+      if (!hasAdminAccess(me?.role || "")) {
+        return res.status(403).json({ error: "Only admins can change notification settings" });
+      }
+
+      const enabled = req.body?.enabled;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+
+      const updated = await storage.updateProduct(product.id, {
+        feedbackEmailNotificationsEnabled: enabled,
+      });
+      res.json({ emailNotificationsEnabled: !!updated.feedbackEmailNotificationsEnabled });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });

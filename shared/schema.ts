@@ -269,6 +269,7 @@ export const products = pgTable("products", {
   crawlFlaggedAt: timestamp("crawl_flagged_at"),
   publicFeedbackEnabled: boolean("public_feedback_enabled").notNull().default(false),
   publicFeedbackToken: text("public_feedback_token"),
+  feedbackEmailNotificationsEnabled: boolean("feedback_email_notifications_enabled").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

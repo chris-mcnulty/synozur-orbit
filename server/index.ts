@@ -893,6 +893,9 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_last_sync_at TIMESTAMP`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS competitors_hubspot_company_idx ON competitors(hubspot_company_id) WHERE hubspot_company_id IS NOT NULL`);
 
+    // Task #84: per-product toggle for feedback status-update emails
+    await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS feedback_email_notifications_enabled BOOLEAN NOT NULL DEFAULT true`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, ThumbsUp, Trash2, Sparkles, Rocket, Link2, Copy, Check, Lock, MessagesSquare, Filter } from "lucide-react";
+import { Loader2, Plus, ThumbsUp, Trash2, Sparkles, Rocket, Link2, Copy, Check, Lock, MessagesSquare, Filter, Mail } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
@@ -50,6 +50,7 @@ interface FeedbackResponse {
   items: FeedbackItem[];
   publicEnabled: boolean;
   publicToken: string | null;
+  emailNotificationsEnabled: boolean;
 }
 
 interface SimilarGroup {
@@ -213,6 +214,27 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
     },
     onError: (err: any) => toast({ title: "Promotion failed", description: err.message, variant: "destructive" }),
     onSettled: () => setPromotingId(null),
+  });
+
+  const notificationsMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch(`/api/products/${productId}/feedback/notifications`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update notification setting");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      toast({ title: "Notification setting updated" });
+    },
+    onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
   });
 
   const shareMutation = useMutation({
@@ -552,6 +574,23 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
                 onCheckedChange={(checked) => shareMutation.mutate(checked ? "enable" : "disable")}
                 disabled={shareMutation.isPending}
                 data-testid="switch-public-feedback"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <p className="font-medium text-sm flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  Email submitters & voters on status changes
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Send an email when feedback moves to Planned or Shipped. Recipients are the original submitter and anyone who upvoted.
+                </p>
+              </div>
+              <Switch
+                checked={!!data?.emailNotificationsEnabled}
+                onCheckedChange={(checked) => notificationsMutation.mutate(checked)}
+                disabled={notificationsMutation.isPending}
+                data-testid="switch-feedback-email-notifications"
               />
             </div>
             {data?.publicEnabled && publicUrl && (
