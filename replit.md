@@ -101,6 +101,11 @@ Preferred communication style: Simple, everyday language.
 - **SendGrid**: For email sharing of intelligence briefings, and for direct campaign delivery (Enterprise) with bounce/unsubscribe webhook + suppression management.
 - **LinkedIn OAuth (`r_liteprofile w_member_social`)**: For direct social publishing (Enterprise). Tokens are encrypted at rest with `encryptSecret`/`decryptSecret`.
 
+### E2E Testing Notes (Task #81)
+- The Playwright-based testing helper hits the public dev URL. With `externalPort = 5000` in `.replit`, that URL returned a "Running" placeholder and tests were unreachable. Fix: map `localPort = 5000` → `externalPort = 80` in `.replit` so the dev URL routes to the app.
+- Test login uses the seeded local-auth user `e2e-test@synozur.com` (Domain Admin on `synozur.com`). Password is reset deterministically when running tests; tenant `synozur.com` has `billing_managed_manually = true` so enterprise feature flags (campaigns, personaBuilder) resolve correctly without an active Stripe subscription.
+- Inline-validation coverage: competitor social-link editor (eager onChange errors), campaign wizard step 0 (badge-click reveals `error-campaign-name`) and step 3 (Create button stays clickable while invalid; clicking it sets `stepAttempted[3]=true` so `error-start-date` / `error-number-of-days` render — both are asserted by the spec), persona TagInput empty/duplicate animated errors.
+
 ### Marketing Delivery (Task #97)
 - **Direct social publishing**: `SocialPublisher` interface in `server/services/social-publishers/`; LinkedIn implemented, Twitter/Instagram/Facebook/Bluesky stubbed. Worker (`marketing-publish-worker.ts`) ticks every 2 minutes processing approved scheduled posts on accounts with `auto_publish=true`. Manual publish-now endpoint `POST /api/generated-posts/:id/publish`.
 - **Direct email delivery**: `email-campaign-sender.ts` honors per-tenant suppressions, generates HMAC unsubscribe tokens (signed with `SESSION_SECRET`) and renders a `List-Unsubscribe` header. Public routes `GET/POST /u/:token` and `POST /api/webhooks/sendgrid` registered BEFORE auth.

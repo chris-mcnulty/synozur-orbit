@@ -717,7 +717,7 @@ export default function CampaignsPage() {
                     </Button>
                     <Button
                       className="flex-1"
-                      disabled={!form.name.trim() || !isStepValid || createMutation.isPending}
+                      disabled={!form.name.trim() || createMutation.isPending}
                       onClick={() => {
                         if (!isStepValid) {
                           setStepAttempted((prev) => ({ ...prev, [step]: true }));
