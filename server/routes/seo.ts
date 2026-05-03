@@ -274,18 +274,45 @@ function toSeoContextFilter(ctx: SeoRefreshContext) {
   };
 }
 
+/**
+ * Maximum SERP queries (≈ tracked keywords) we'll process for a single tenant
+ * in one refresh. Acts as a per-tenant guardrail so a heavy refresh doesn't
+ * blow through the SERP API plan in a single sweep. Configure via
+ * SERP_MAX_KEYWORDS_PER_REFRESH; default 100.
+ */
+const DEFAULT_MAX_KEYWORDS_PER_REFRESH = 100;
+
+function getMaxKeywordsPerRefresh(): number {
+  const raw = process.env.SERP_MAX_KEYWORDS_PER_REFRESH;
+  if (raw === undefined) return DEFAULT_MAX_KEYWORDS_PER_REFRESH;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_KEYWORDS_PER_REFRESH;
+  return parsed;
+}
+
 export async function refreshSeoForContext(
   ctx: SeoRefreshContext,
-): Promise<{ keywordsProcessed: number; rowsRecorded: number; entitiesTracked: number }> {
+): Promise<{ keywordsProcessed: number; rowsRecorded: number; entitiesTracked: number; keywordsSkipped?: number }> {
   const ctxFilter = toSeoContextFilter(ctx);
-  const keywords = await storage.getTrackedKeywordsByContext(ctxFilter);
-  if (keywords.length === 0) {
+  const allKeywords = await storage.getTrackedKeywordsByContext(ctxFilter);
+  if (allKeywords.length === 0) {
     return { keywordsProcessed: 0, rowsRecorded: 0, entitiesTracked: 0 };
   }
 
   const entities = await collectSeoEntities(ctx);
   if (entities.length === 0) {
     return { keywordsProcessed: 0, rowsRecorded: 0, entitiesTracked: 0 };
+  }
+
+  const cap = getMaxKeywordsPerRefresh();
+  const keywords = allKeywords.slice(0, cap);
+  const keywordsSkipped = allKeywords.length - keywords.length;
+  if (keywordsSkipped > 0) {
+    console.warn(
+      `[SEO Refresh] Tenant ${ctx.tenantDomain} has ${allKeywords.length} keywords, ` +
+      `capping this refresh at ${cap} to preserve SERP quota (skipped ${keywordsSkipped}). ` +
+      `Raise SERP_MAX_KEYWORDS_PER_REFRESH if needed.`,
+    );
   }
 
   let rowsRecorded = 0;
@@ -317,7 +344,12 @@ export async function refreshSeoForContext(
     rowsRecorded += recorded.length;
   }
 
-  return { keywordsProcessed: keywords.length, rowsRecorded, entitiesTracked: entities.length };
+  return {
+    keywordsProcessed: keywords.length,
+    rowsRecorded,
+    entitiesTracked: entities.length,
+    ...(keywordsSkipped > 0 ? { keywordsSkipped } : {}),
+  };
 }
 
 async function buildShareOfVoice(ctx: RequestContext) {

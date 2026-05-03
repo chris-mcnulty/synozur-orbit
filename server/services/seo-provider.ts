@@ -131,12 +131,69 @@ interface SerpApiOrganicResult {
   source?: string;
 }
 
+/**
+ * Global daily SERP query budget. Acts as a circuit breaker so a misbehaving
+ * sweep can't burn through the entire SerpAPI plan in one go. Tracked
+ * in-memory; resets every UTC day.
+ *
+ * Configure via SERP_DAILY_QUERY_BUDGET (default 5000, matching SerpAPI's
+ * Production plan). Set to 0 to disable.
+ */
+const DEFAULT_DAILY_QUERY_BUDGET = 5000;
+let dailyQueryCount = 0;
+let dailyQueryDate = "";
+
+function getDailyBudget(): number {
+  const raw = process.env.SERP_DAILY_QUERY_BUDGET;
+  if (raw === undefined) return DEFAULT_DAILY_QUERY_BUDGET;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_DAILY_QUERY_BUDGET;
+  return parsed;
+}
+
+function checkAndIncrementDailyBudget(): { allowed: boolean; used: number; budget: number } {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dailyQueryDate !== today) {
+    dailyQueryDate = today;
+    dailyQueryCount = 0;
+  }
+  const budget = getDailyBudget();
+  if (budget === 0) {
+    dailyQueryCount += 1;
+    return { allowed: true, used: dailyQueryCount, budget: 0 };
+  }
+  if (dailyQueryCount >= budget) {
+    return { allowed: false, used: dailyQueryCount, budget };
+  }
+  dailyQueryCount += 1;
+  return { allowed: true, used: dailyQueryCount, budget };
+}
+
+export function getSerpDailyUsage(): { used: number; budget: number; date: string } {
+  return { used: dailyQueryCount, budget: getDailyBudget(), date: dailyQueryDate };
+}
+
 class SerpApiProvider implements SerpProvider {
   readonly name = "serpapi";
 
   constructor(private readonly apiKey: string) {}
 
   async runQuery(req: SerpQueryRequest): Promise<SerpRankResult[]> {
+    const budgetCheck = checkAndIncrementDailyBudget();
+    if (!budgetCheck.allowed) {
+      console.warn(
+        `[SEO Provider] Daily SERP budget exhausted (${budgetCheck.used}/${budgetCheck.budget}); ` +
+        `skipping query for "${req.keyword}". Raise SERP_DAILY_QUERY_BUDGET to allow more.`,
+      );
+      return req.entities.map((entity) => ({
+        entityId: entity.id,
+        entityName: entity.name,
+        entityDomain: normalizeDomain(entity.url),
+        rank: null,
+        estimatedTraffic: 0,
+      }));
+    }
+
     const url = new URL("https://serpapi.com/search.json");
     url.searchParams.set("engine", "google");
     url.searchParams.set("q", req.keyword);
