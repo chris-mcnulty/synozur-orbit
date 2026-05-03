@@ -27,6 +27,13 @@ import {
 } from "../services/planner-graph-client";
 import { queuePlannerSyncForPlan } from "../services/planner-service";
 import { buildVegaExportBundle } from "../services/vega-export";
+import {
+  getVegaConnectionStatus,
+  setVegaCredentials,
+  clearVegaCredentials,
+  verifyVegaCredentials,
+  pushPlanToVega,
+} from "../services/vega-launchpad";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
@@ -519,6 +526,110 @@ export function registerPlannerRoutes(app: Express) {
   });
 
   // ----- Vega Launchpad export bundle -----
+
+  // ----- Vega Launchpad direct push (Task #117) -----
+
+  app.get("/api/vega/auth/status", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const status = await getVegaConnectionStatus(ctx.tenantDomain);
+      res.json(status);
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/vega/auth/config", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+      const schema = z.object({
+        url: z.string().url(),
+        apiKey: z.string().min(8),
+        workspaceId: z.string().min(1).optional().nullable(),
+        skipVerification: z.boolean().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+
+      if (!parsed.data.skipVerification) {
+        const probe = await verifyVegaCredentials(parsed.data.url, parsed.data.apiKey);
+        if (!probe.ok) {
+          return res.status(400).json({ error: probe.error || "Failed to verify Vega credentials" });
+        }
+      }
+      await setVegaCredentials(tenant.id, {
+        url: parsed.data.url,
+        apiKey: parsed.data.apiKey,
+        workspaceId: parsed.data.workspaceId ?? null,
+      });
+      const status = await getVegaConnectionStatus(ctx.tenantDomain);
+      res.json(status);
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/vega/auth/config", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      await clearVegaCredentials(tenant.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/marketing-plans/:id/vega/push", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const result = await pushPlanToVega(req.params.id, toContextFilter(ctx), ctx.userId);
+      const plan = await storage.getMarketingPlan(req.params.id, toContextFilter(ctx));
+      if (!result.ok) {
+        return res.status(502).json({
+          ok: false,
+          error: result.error,
+          status: result.status,
+          pushedAt: result.pushedAt,
+          plan: plan ? {
+            vegaLastPushAt: plan.vegaLastPushAt,
+            vegaLastPushStatus: plan.vegaLastPushStatus,
+            vegaLastPushError: plan.vegaLastPushError,
+            vegaLastPushBundleId: plan.vegaLastPushBundleId,
+          } : null,
+        });
+      }
+      res.json({
+        ok: true,
+        bundleId: result.bundleId,
+        pushedAt: result.pushedAt,
+        plan: plan ? {
+          vegaLastPushAt: plan.vegaLastPushAt,
+          vegaLastPushStatus: plan.vegaLastPushStatus,
+          vegaLastPushError: plan.vegaLastPushError,
+          vegaLastPushBundleId: plan.vegaLastPushBundleId,
+        } : null,
+      });
+    } catch (err: any) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      const status = err?.status && Number.isInteger(err.status) ? err.status : 500;
+      res.status(status).json({ error: err.message || "Failed to push plan to Vega" });
+    }
+  });
 
   app.get("/api/marketing-plans/:id/vega-export", async (req, res) => {
     if (!await guardFeature(req, res, "marketingPlanner")) return;

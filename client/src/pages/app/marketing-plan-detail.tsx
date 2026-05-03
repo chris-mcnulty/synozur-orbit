@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { PlannerSyncDialog } from "@/components/PlannerSyncDialog";
+import { useUser } from "@/lib/userContext";
 
 const ACTIVITY_CATEGORIES = [
   { value: "events", label: "Events & Trade Shows", description: "Trade shows, conferences, industry events" },
@@ -140,6 +141,18 @@ interface MarketingPlan {
   plannerSyncEnabled?: boolean | null;
   plannerLastSyncAt?: string | null;
   plannerLastSyncError?: string | null;
+  vegaLastPushAt?: string | null;
+  vegaLastPushStatus?: string | null;
+  vegaLastPushError?: string | null;
+  vegaLastPushBundleId?: string | null;
+}
+
+interface VegaAuthStatus {
+  configured: boolean;
+  url: string | null;
+  workspaceId: string | null;
+  connectedAt: string | null;
+  hasApiKey: boolean;
 }
 
 export default function MarketingPlanDetail() {
@@ -281,8 +294,88 @@ export default function MarketingPlanDetail() {
     },
   });
 
+  const { user } = useUser();
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
   const [vegaExportOpen, setVegaExportOpen] = useState(false);
   const [vegaExporting, setVegaExporting] = useState(false);
+  const [vegaCredsOpen, setVegaCredsOpen] = useState(false);
+  const [vegaCredsForm, setVegaCredsForm] = useState({ url: "", apiKey: "", workspaceId: "" });
+  const [vegaCredsSaving, setVegaCredsSaving] = useState(false);
+
+  const { data: vegaAuth, refetch: refetchVegaAuth } = useQuery<VegaAuthStatus>({
+    queryKey: ["/api/vega/auth/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/vega/auth/status", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load Vega connection status");
+      return res.json();
+    },
+  });
+
+  const saveVegaCreds = async () => {
+    setVegaCredsSaving(true);
+    try {
+      const res = await fetch("/api/vega/auth/config", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: vegaCredsForm.url.trim(),
+          apiKey: vegaCredsForm.apiKey.trim(),
+          workspaceId: vegaCredsForm.workspaceId.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to save Vega credentials");
+      }
+      toast({ title: "Vega Launchpad connected" });
+      setVegaCredsOpen(false);
+      setVegaCredsForm({ url: "", apiKey: "", workspaceId: "" });
+      await refetchVegaAuth();
+    } catch (err: any) {
+      toast({ title: "Failed to connect", description: err.message, variant: "destructive" });
+    } finally {
+      setVegaCredsSaving(false);
+    }
+  };
+
+  const disconnectVega = async () => {
+    try {
+      const res = await fetch("/api/vega/auth/config", { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to disconnect");
+      }
+      toast({ title: "Vega Launchpad disconnected" });
+      await refetchVegaAuth();
+    } catch (err: any) {
+      toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const vegaPushMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/marketing-plans/${id}/vega/push`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) {
+        throw new Error(body.error || `Push failed (${res.status})`);
+      }
+      return body;
+    },
+    onSuccess: () => {
+      toast({ title: "Pushed to Vega Launchpad" });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}`] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Push to Vega failed", description: err.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}`] });
+    },
+  });
 
   const exportVega = async (format: "zip" | "json") => {
     setVegaExporting(true);
@@ -945,6 +1038,52 @@ export default function MarketingPlanDetail() {
             )}
           </div>
         )}
+        {(plan.vegaLastPushAt || vegaAuth?.configured) && (
+          <div
+            className="flex flex-wrap items-center gap-3 px-3 py-2 border border-border rounded-md bg-muted/30 text-sm"
+            data-testid="banner-vega-status"
+          >
+            <Link2 className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              {vegaAuth?.configured ? (
+                <>
+                  Vega Launchpad: <strong className="break-all">{vegaAuth.url}</strong>
+                  {vegaAuth.workspaceId && <> • workspace <strong>{vegaAuth.workspaceId}</strong></>}
+                </>
+              ) : (
+                <>Vega Launchpad not connected — historical push only</>
+              )}
+              {plan.vegaLastPushAt && (
+                <div className="text-xs text-muted-foreground mt-0.5" data-testid="text-vega-last-push">
+                  Last push {new Date(plan.vegaLastPushAt).toLocaleString()}
+                  {" • "}
+                  {plan.vegaLastPushStatus === "success" ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">success</span>
+                  ) : (
+                    <span className="text-destructive">failure</span>
+                  )}
+                  {plan.vegaLastPushBundleId && <> • bundle <code>{plan.vegaLastPushBundleId}</code></>}
+                </div>
+              )}
+              {plan.vegaLastPushError && plan.vegaLastPushStatus !== "success" && (
+                <div className="text-xs text-destructive mt-0.5" data-testid="text-vega-last-error">
+                  {plan.vegaLastPushError}
+                </div>
+              )}
+            </div>
+            {vegaAuth?.configured && isAdmin && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => disconnectVega()}
+                data-testid="button-vega-disconnect"
+              >
+                Disconnect
+              </Button>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing-planner")}>
@@ -988,6 +1127,44 @@ export default function MarketingPlanDetail() {
             >
               <FileDown className="w-4 h-4 mr-2" />
               Export for Vega
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!vegaAuth?.configured) {
+                  if (!isAdmin) {
+                    toast({
+                      title: "Admin access required",
+                      description: "Ask a Domain Admin to connect Vega Launchpad before pushing plans.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setVegaCredsOpen(true);
+                  return;
+                }
+                vegaPushMutation.mutate();
+              }}
+              disabled={
+                vegaPushMutation.isPending ||
+                (!vegaAuth?.configured && !isAdmin) ||
+                (vegaAuth?.configured && tasks.length === 0)
+              }
+              data-testid="button-vega-push"
+              title={
+                vegaAuth?.configured
+                  ? `Push this plan to ${vegaAuth.url}`
+                  : isAdmin
+                  ? "Connect to Vega Launchpad to enable direct push"
+                  : "A Domain Admin must connect Vega Launchpad before plans can be pushed"
+              }
+            >
+              {vegaPushMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="w-4 h-4 mr-2" />
+              )}
+              {vegaAuth?.configured ? "Push to Vega" : "Connect Vega"}
             </Button>
             <Button
               variant="outline"
@@ -1656,6 +1833,66 @@ export default function MarketingPlanDetail() {
               data-testid="button-vega-export-zip"
             >
               {vegaExporting ? "Preparing…" : "Download JSON + Markdown (.zip)"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={vegaCredsOpen} onOpenChange={(open) => !vegaCredsSaving && setVegaCredsOpen(open)}>
+        <DialogContent data-testid="dialog-vega-credentials">
+          <DialogHeader>
+            <DialogTitle>Connect Vega Launchpad</DialogTitle>
+            <DialogDescription>
+              Enter the Vega Launchpad API base URL and an API key. Orbit will verify the credentials by hitting
+              {" "}
+              <code>/api/v1/health</code> before saving them. Domain Admins can update or remove these any time.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium">API Base URL</label>
+              <Input
+                placeholder="https://launchpad.vega.example.com"
+                value={vegaCredsForm.url}
+                onChange={(e) => setVegaCredsForm((p) => ({ ...p, url: e.target.value }))}
+                data-testid="input-vega-url"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">API Key</label>
+              <Input
+                type="password"
+                placeholder="vega_pk_..."
+                value={vegaCredsForm.apiKey}
+                onChange={(e) => setVegaCredsForm((p) => ({ ...p, apiKey: e.target.value }))}
+                data-testid="input-vega-api-key"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Workspace ID (optional)</label>
+              <Input
+                placeholder="ws_..."
+                value={vegaCredsForm.workspaceId}
+                onChange={(e) => setVegaCredsForm((p) => ({ ...p, workspaceId: e.target.value }))}
+                data-testid="input-vega-workspace"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVegaCredsOpen(false)} disabled={vegaCredsSaving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveVegaCreds()}
+              disabled={
+                vegaCredsSaving ||
+                !vegaCredsForm.url.trim() ||
+                vegaCredsForm.apiKey.trim().length < 8
+              }
+              data-testid="button-vega-save-credentials"
+            >
+              {vegaCredsSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Save & Verify
             </Button>
           </DialogFooter>
         </DialogContent>

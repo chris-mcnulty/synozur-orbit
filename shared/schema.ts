@@ -121,6 +121,11 @@ export const tenants = pgTable("tenants", {
   seatCount: integer("seat_count"), // Stripe subscription quantity (paid seats)
   paymentGraceUntil: timestamp("payment_grace_until"), // 7-day grace after payment_failed
   billingManagedManually: boolean("billing_managed_manually").notNull().default(false), // Global Admin override
+  // Vega Launchpad direct-push integration (Task #117)
+  vegaLaunchpadUrl: text("vega_launchpad_url"), // Base URL of the Vega Launchpad API the tenant pushes to
+  vegaLaunchpadApiKey: text("vega_launchpad_api_key"), // API key (or OAuth token) used for push auth
+  vegaLaunchpadWorkspaceId: text("vega_launchpad_workspace_id"), // Optional Vega-side workspace/tenant identifier
+  vegaLaunchpadConnectedAt: timestamp("vega_launchpad_connected_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1591,6 +1596,12 @@ export const marketingPlans = pgTable("marketing_plans", {
   plannerSyncEnabled: boolean("planner_sync_enabled").default(false),
   plannerLastSyncAt: timestamp("planner_last_sync_at"),
   plannerLastSyncError: text("planner_last_sync_error"),
+  // Vega Launchpad direct-push history (Task #117)
+  vegaLastPushAt: timestamp("vega_last_push_at"),
+  vegaLastPushStatus: text("vega_last_push_status"), // success | failure
+  vegaLastPushError: text("vega_last_push_error"),
+  vegaLastPushBundleId: text("vega_last_push_bundle_id"), // Remote ID returned by the Launchpad
+  vegaLastPushedBy: varchar("vega_last_pushed_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
