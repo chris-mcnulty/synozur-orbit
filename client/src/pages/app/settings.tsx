@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap, Webhook, Plus, Edit, MessageSquare } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap, Webhook, Plus, Edit, MessageSquare, Plug } from "lucide-react";
+import { Ga4IntegrationCard } from "@/components/Ga4IntegrationCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
@@ -698,6 +699,25 @@ export default function Settings() {
       </div>
 
       <div className="space-y-8">
+        {isAdmin && (
+          <Card data-testid="card-connections">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Plug className="h-5 w-5" />
+                Connections & Integrations
+              </CardTitle>
+              <CardDescription>
+                Connect outside services to enrich Orbit insights. Manage GA4 below or visit the
+                {" "}
+                <a href="/app/settings/integrations" className="text-primary hover:underline" data-testid="link-integrations-page">full integrations page</a>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Ga4IntegrationCard embedded showJustConnectedBanner={false} />
+            </CardContent>
+          </Card>
+        )}
+
         {isAdmin && (
           <Card data-testid="card-team-management">
             <CardHeader>

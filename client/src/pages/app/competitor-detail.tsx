@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 import DataFreshnessBar from "@/components/DataFreshnessBar";
 import { AnnotationRail } from "@/components/collaboration/CollabComponents";
 import { useUser } from "@/lib/userContext";
-import { useFeatureAccess } from "@/components/UpgradePrompt";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
 import { ArrowDown, ArrowRight, ArrowUp, Minus } from "lucide-react";
 
