@@ -705,7 +705,7 @@ export async function autoPushBriefing(opts: {
     const html = buildBriefingNoteHtml({
       title: opts.title,
       summary: opts.executiveSummary,
-      deepLink: `${appBaseUrl()}/app/intelligence/briefings/${encodeURIComponent(opts.briefingId)}`,
+      deepLink: `${appBaseUrl()}/app/intelligence?id=${encodeURIComponent(opts.briefingId)}`,
     });
     let pushed = 0;
     let skipped = 0;
@@ -739,7 +739,7 @@ export async function autoPushBriefing(opts: {
         const body = [
           item.rationale || "",
           item.priority ? `\nPriority: ${item.priority}` : "",
-          `\n\nFrom Orbit briefing: ${appBaseUrl()}/app/intelligence/briefings/${encodeURIComponent(opts.briefingId)}`,
+          `\n\nFrom Orbit briefing: ${appBaseUrl()}/app/intelligence?id=${encodeURIComponent(opts.briefingId)}`,
         ].join("");
         await pushTask(opts.tenantDomain, {
           hubspotCompanyId: companyId,
@@ -754,9 +754,30 @@ export async function autoPushBriefing(opts: {
     }
 
     console.log(`[HubSpot] Auto-pushed briefing tenant=${opts.tenantDomain} briefing=${opts.briefingId} notes=${pushed} skipped=${skipped} tasks=${tasksPushed}`);
+
+    // Task #112: persist push status on the briefing so the UI can render a
+    // "Pushed to HubSpot" indicator. Only mark as pushed when at least one
+    // Note landed on a HubSpot Company.
+    try {
+      const pushedAt = pushed > 0 ? new Date() : null;
+      await storage.updateIntelligenceBriefing(opts.briefingId, {
+        hubspotPushedAt: pushedAt,
+        hubspotPushResult: { pushed, skipped, tasksPushed, at: new Date().toISOString() },
+      });
+    } catch (persistErr: any) {
+      console.warn(`[HubSpot] persisting briefing push result failed:`, persistErr?.message || persistErr);
+    }
+
     return { pushed, skipped, tasksPushed };
   } catch (err: any) {
     console.warn(`[HubSpot] autoPushBriefing failed for tenant=${opts.tenantDomain}:`, err?.message || err);
+    try {
+      await storage.updateIntelligenceBriefing(opts.briefingId, {
+        hubspotPushResult: { pushed: 0, skipped: 0, tasksPushed: 0, reason: "error", error: err?.message || String(err), at: new Date().toISOString() },
+      });
+    } catch {
+      /* ignore — briefing may not exist or update may race */
+    }
     return { pushed: 0, skipped: 0, tasksPushed: 0, reason: "error" };
   }
 }

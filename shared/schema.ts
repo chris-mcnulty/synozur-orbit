@@ -1809,6 +1809,11 @@ export const intelligenceBriefings = pgTable("intelligence_briefings", {
   competitorCount: integer("competitor_count").notNull().default(0),
   podcastAudioUrl: text("podcast_audio_url"),
   podcastStatus: text("podcast_status").default("none"), // none, generating, ready, failed
+  // Task #112: HubSpot auto-push tracking. Set after a successful push so the
+  // UI can render a "Pushed to HubSpot" indicator. `hubspotPushResult` stores
+  // counts/reason from the most recent push attempt for diagnostics.
+  hubspotPushedAt: timestamp("hubspot_pushed_at"),
+  hubspotPushResult: jsonb("hubspot_push_result"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

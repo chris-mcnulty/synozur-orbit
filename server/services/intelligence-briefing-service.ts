@@ -427,39 +427,101 @@ Rules:
     console.error("[Intelligence Briefing] Notification dispatch failed:", notifyErr);
   }
 
-  // Task #100: best-effort auto-push of new briefing to HubSpot Companies
-  // (Notes attached to each related competitor's matched company). Plan
-  // gating + connection state + auto-push toggle are checked inside the
+  // Task #100/#112: best-effort auto-push of new briefing to HubSpot
+  // Companies (Notes attached to each related competitor's matched company).
+  // Plan gating + connection state + auto-push toggle are checked inside the
   // helper. Never throws.
-  try {
-    const tenant = await storage.getTenantByDomain(tenantDomain);
-    if (tenant?.plan) {
-      const { autoPushBriefing } = await import("./hubspot-integration");
-      const actionItemsForPush = (briefingData.actionItems || []).slice(0, 25).map((ai: any) => {
-        const related: string[] = Array.isArray(ai.relatedCompetitors) ? ai.relatedCompetitors : [];
-        return {
-          title: String(ai.title || ai.summary || "Action item"),
-          rationale: typeof ai.rationale === "string" ? ai.rationale : (typeof ai.description === "string" ? ai.description : ""),
-          priority: typeof ai.priority === "string" ? ai.priority : undefined,
-          dueAt: ai.dueAt ? new Date(ai.dueAt) : null,
-          competitorId: related[0] || null,
-        };
-      });
-      autoPushBriefing({
-        tenantDomain,
-        briefingId: briefing.id,
-        title: briefingData.periodLabel || "Intelligence briefing",
-        executiveSummary: briefingData.executiveSummary || "",
-        competitorIds: Array.from(uniqueCompetitorIds).filter((x): x is string => typeof x === "string"),
-        actionItems: actionItemsForPush,
-        planName: tenant.plan,
-      }).catch(() => null);
-    }
-  } catch (pushErr) {
-    console.warn("[Intelligence Briefing] HubSpot auto-push setup failed:", pushErr);
-  }
+  void autoPushBriefingToHubspot({
+    tenantDomain,
+    briefingId: briefing.id,
+    briefingData,
+    competitorIds: Array.from(uniqueCompetitorIds).filter((x): x is string => typeof x === "string"),
+  });
 
   return briefing;
+}
+
+/**
+ * Shared HubSpot auto-push entrypoint used by every code path that finalises
+ * an intelligence briefing (service-level `generateBriefing` + the on-demand
+ * route that uses `generateBriefingData`). Centralising it ensures both
+ * paths use the canonical competitor IDs from the generation inputs rather
+ * than reconstructing them from AI-rendered names.
+ *
+ * Plan / connection / auto-push toggle gating live in `autoPushBriefing`.
+ * This helper never throws.
+ */
+export async function autoPushBriefingToHubspot(opts: {
+  tenantDomain: string;
+  briefingId: string;
+  briefingData: BriefingData;
+  competitorIds: string[];
+}): Promise<void> {
+  try {
+    const tenant = await storage.getTenantByDomain(opts.tenantDomain);
+    if (!tenant?.plan) return;
+    const { autoPushBriefing } = await import("./hubspot-integration");
+
+    // Map AI action-item `relatedCompetitors` (names) to the closest
+    // competitor ID so the helper can attach Tasks to the matched HubSpot
+    // Company. The Notes side uses the canonical `competitorIds` list and
+    // does not depend on this mapping.
+    const competitors = await storage.getCompetitorsByTenantDomain(opts.tenantDomain);
+    const nameToId = new Map<string, string>();
+    for (const c of competitors) {
+      if (c.name) nameToId.set(c.name.toLowerCase(), c.id);
+    }
+
+    const actionItemsForPush = (opts.briefingData.actionItems || []).slice(0, 25).map((ai) => {
+      const aiAny = ai as Record<string, unknown>;
+      const related = Array.isArray(aiAny.relatedCompetitors)
+        ? (aiAny.relatedCompetitors as unknown[]).filter((x): x is string => typeof x === "string")
+        : [];
+      const firstName = related[0];
+      const competitorId = firstName ? nameToId.get(firstName.toLowerCase()) ?? null : null;
+      return {
+        title: String(aiAny.title || aiAny.summary || "Action item"),
+        rationale: typeof aiAny.rationale === "string"
+          ? aiAny.rationale
+          : (typeof aiAny.description === "string" ? aiAny.description : ""),
+        priority: typeof aiAny.priority === "string"
+          ? aiAny.priority
+          : (typeof aiAny.urgency === "string" ? (aiAny.urgency as string) : undefined),
+        dueAt: aiAny.dueAt ? new Date(String(aiAny.dueAt)) : null,
+        competitorId,
+      };
+    });
+
+    await autoPushBriefing({
+      tenantDomain: opts.tenantDomain,
+      briefingId: opts.briefingId,
+      title: opts.briefingData.periodLabel || "Intelligence briefing",
+      executiveSummary: opts.briefingData.executiveSummary || "",
+      competitorIds: opts.competitorIds,
+      actionItems: actionItemsForPush,
+      planName: tenant.plan,
+    });
+  } catch (pushErr) {
+    console.warn(`[Intelligence Briefing] HubSpot auto-push setup failed for ${opts.tenantDomain}:`, pushErr);
+    // Persist the setup-time failure on the briefing row too so the same
+    // diagnostic surface covers all failure modes (helper-internal failures
+    // already write through autoPushBriefing).
+    try {
+      const message = pushErr instanceof Error ? pushErr.message : String(pushErr);
+      await storage.updateIntelligenceBriefing(opts.briefingId, {
+        hubspotPushResult: {
+          pushed: 0,
+          skipped: 0,
+          tasksPushed: 0,
+          reason: "setup_error",
+          error: message,
+          at: new Date().toISOString(),
+        },
+      });
+    } catch {
+      /* ignore — best-effort */
+    }
+  }
 }
 
 /** Briefing generation phases reported to the UI for progress tracking. */
@@ -507,7 +569,7 @@ export async function generateBriefingData(
   marketId?: string,
   ctx?: ContextFilter,
   onProgress?: BriefingProgressReporter,
-): Promise<{ briefingData: BriefingData; signalCount: number; competitorCount: number }> {
+): Promise<{ briefingData: BriefingData; signalCount: number; competitorCount: number; competitorIds: string[] }> {
   const now = new Date();
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - periodDays);
@@ -731,5 +793,6 @@ Rules:
     briefingData,
     signalCount: activities.length,
     competitorCount: uniqueCompetitorIds.size,
+    competitorIds: Array.from(uniqueCompetitorIds).filter((x): x is string => typeof x === "string"),
   };
 }

@@ -232,6 +232,8 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE long_form_recommendations ADD COLUMN IF NOT EXISTS generated_from_data_as_of TIMESTAMP`);
     await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_audio_url TEXT`);
     await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS podcast_status TEXT DEFAULT 'none'`);
+    await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS hubspot_pushed_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE intelligence_briefings ADD COLUMN IF NOT EXISTS hubspot_push_result JSONB`);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS gap_dismissals (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,

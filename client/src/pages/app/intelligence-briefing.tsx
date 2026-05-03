@@ -153,6 +153,14 @@ interface IntelligenceBriefing {
   createdAt: string;
   podcastStatus?: string;
   podcastAudioUrl?: string;
+  hubspotPushedAt?: string | null;
+  hubspotPushResult?: {
+    pushed?: number;
+    skipped?: number;
+    tasksPushed?: number;
+    reason?: string;
+    at?: string;
+  } | null;
 }
 
 type SourceFreshnessItem = SharedSourceFreshnessItem;
@@ -227,6 +235,11 @@ export default function IntelligenceBriefingPage() {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement>(null);
+
+  // Tracks when we first observed a briefing flip to "published", so we
+  // can keep polling for the async HubSpot auto-push result for a short
+  // window after publish (independent of how long generation itself took).
+  const publishObservedAtRef = React.useRef<Map<string, number>>(new Map());
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -310,8 +323,32 @@ export default function IntelligenceBriefingPage() {
     // While the active briefing is generating, refetch every 2s so progress
     // phase + percent flow into the UI even when the user navigates back to
     // an already-running briefing they didn't start in this session.
-    refetchInterval: (query) =>
-      (query.state.data?.status === "generating" ? 2000 : false),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      // While generating, refetch every 2s for progress updates.
+      if (data.status === "generating") {
+        // Also clear any stale publish-observed marker if the briefing
+        // somehow flips back to generating (e.g. a re-run on the same id).
+        publishObservedAtRef.current.delete(data.id);
+        return 2000;
+      }
+      // After publish, the HubSpot auto-push fires asynchronously and
+      // writes `hubspotPushedAt` back to the briefing once it lands. Poll
+      // every 3s for up to ~60s *from the moment we first observed publish*
+      // (not from createdAt — generation itself can run for minutes), so
+      // the "Pushed to HubSpot" indicator appears without a manual reload.
+      if (data.status === "published" && !data.hubspotPushedAt) {
+        const ref = publishObservedAtRef.current;
+        let firstSeenAt = ref.get(data.id);
+        if (firstSeenAt === undefined) {
+          firstSeenAt = Date.now();
+          ref.set(data.id, firstSeenAt);
+        }
+        if (Date.now() - firstSeenAt < 60_000) return 3000;
+      }
+      return false;
+    },
   });
 
   const generationProgress: BriefingProgress | null =
@@ -836,6 +873,25 @@ export default function IntelligenceBriefingPage() {
                   <Share2 className="w-4 h-4 mr-2" />
                   Push to HubSpot
                 </Button>
+                {briefing.hubspotPushedAt && (
+                  <Badge
+                    variant="secondary"
+                    className="h-10 flex items-center gap-1 px-2"
+                    data-testid="badge-pushed-to-hubspot"
+                    title={
+                      briefing.hubspotPushResult
+                        ? `Pushed ${briefing.hubspotPushResult.pushed ?? 0} note(s)` +
+                          (briefing.hubspotPushResult.tasksPushed
+                            ? `, ${briefing.hubspotPushResult.tasksPushed} task(s)`
+                            : "") +
+                          ` on ${new Date(briefing.hubspotPushedAt).toLocaleString()}`
+                        : `Pushed on ${new Date(briefing.hubspotPushedAt).toLocaleString()}`
+                    }
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Pushed to HubSpot
+                  </Badge>
+                )}
                 <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="h-10" data-testid="button-share-briefing">

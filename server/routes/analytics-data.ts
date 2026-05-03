@@ -992,7 +992,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
       const capturedFilter = toContextFilter(ctx);
       (async () => {
         try {
-          const { generateBriefingData } = await import("../services/intelligence-briefing-service");
+          const { generateBriefingData, autoPushBriefingToHubspot } = await import("../services/intelligence-briefing-service");
 
           // Throttled progress writer — updates briefingData.progress so the
           // existing /api/intelligence-briefings/:id poller picks up the
@@ -1044,6 +1044,17 @@ Only use these timeframe values: ${periods.join(", ")}`;
           
           await saveWithRetry();
           console.log(`[Intelligence Briefing] Generation complete for ${capturedCtx.tenantDomain} (${placeholder.id})`);
+
+          // Task #112: best-effort auto-push of the new briefing to HubSpot
+          // Companies as Notes. Goes through the same canonical service-level
+          // helper as the scheduled-job path so both code paths share gating
+          // and behaviour. Never throws.
+          void autoPushBriefingToHubspot({
+            tenantDomain: capturedCtx.tenantDomain,
+            briefingId: placeholder.id,
+            briefingData: result.briefingData,
+            competitorIds: result.competitorIds,
+          });
         } catch (error: any) {
           console.error(`[Intelligence Briefing] Background generation failed for ${capturedCtx.tenantDomain}:`, error);
           await storage.updateIntelligenceBriefing(placeholder.id, {
