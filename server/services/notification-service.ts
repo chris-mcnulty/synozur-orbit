@@ -23,7 +23,9 @@ export type NotificationType =
   | "trial"
   | "support_reply"
   | "seo_movement"
-  | "competitor_tone_shift";
+  | "competitor_tone_shift"
+  | "comment_mention"
+  | "action_item_assigned";
 
 export async function createNotification(data: InsertNotification): Promise<Notification> {
   const [row] = await db.insert(notifications).values(data).returning();
@@ -141,6 +143,51 @@ export async function notifyFreshnessWarning(opts: {
     });
   } catch (err) {
     console.error("[NotificationService] Failed to create freshness_warning notification:", err);
+  }
+}
+
+export async function notifyCommentMention(opts: {
+  userId: string;
+  tenantDomain: string;
+  authorName: string;
+  targetLabel: string;
+  link: string;
+  excerpt: string;
+}): Promise<void> {
+  try {
+    await createNotification({
+      userId: opts.userId,
+      tenantDomain: opts.tenantDomain,
+      type: "comment_mention",
+      title: `${opts.authorName} mentioned you on ${opts.targetLabel}`,
+      message: opts.excerpt.slice(0, 280),
+      link: opts.link,
+      readAt: null,
+    });
+  } catch (err) {
+    console.error("[NotificationService] Failed to create comment_mention notification:", err);
+  }
+}
+
+export async function notifyActionItemAssigned(opts: {
+  userId: string;
+  tenantDomain: string;
+  assignerName: string;
+  itemTitle: string;
+  link: string;
+}): Promise<void> {
+  try {
+    await createNotification({
+      userId: opts.userId,
+      tenantDomain: opts.tenantDomain,
+      type: "action_item_assigned",
+      title: `${opts.assignerName} assigned you an action item`,
+      message: opts.itemTitle.slice(0, 280),
+      link: opts.link,
+      readAt: null,
+    });
+  } catch (err) {
+    console.error("[NotificationService] Failed to create action_item_assigned notification:", err);
   }
 }
 

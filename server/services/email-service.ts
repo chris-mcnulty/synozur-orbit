@@ -1342,6 +1342,74 @@ export async function sendCompetitorToneShiftEmail(params: CompetitorToneShiftEm
   });
 }
 
+export async function sendCommentMentionEmail(params: {
+  to: string;
+  recipientName: string;
+  authorName: string;
+  targetLabel: string;
+  excerpt: string;
+  link: string;
+}): Promise<boolean> {
+  const safeName = escapeEmailHtml(params.recipientName);
+  const safeAuthor = escapeEmailHtml(params.authorName);
+  const safeTarget = escapeEmailHtml(params.targetLabel);
+  const safeExcerpt = escapeEmailHtml(params.excerpt);
+  const content = `
+    <h1>${safeAuthor} mentioned you</h1>
+    <p>Hi ${safeName},</p>
+    <p>${safeAuthor} mentioned you in a comment on <strong>${safeTarget}</strong> in Orbit.</p>
+    <div class="feature">
+      <p class="feature-desc" style="margin: 0; white-space: pre-wrap;">${safeExcerpt}</p>
+    </div>
+    <div class="button-container">
+      <a href="${params.link}" class="button">Open thread</a>
+    </div>
+    <div class="divider"></div>
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      You received this because you were @mentioned. Manage notifications in Orbit settings.
+    </p>
+  `;
+  return sendEmail({
+    to: params.to,
+    subject: `${params.authorName} mentioned you on ${params.targetLabel}`,
+    html: wrapEmailContent(content),
+    text: `${params.authorName} mentioned you on ${params.targetLabel}\n\n${params.excerpt}\n\nOpen: ${params.link}`,
+  });
+}
+
+export async function sendActionItemAssignedEmail(params: {
+  to: string;
+  recipientName: string;
+  assignerName: string;
+  itemTitle: string;
+  link: string;
+}): Promise<boolean> {
+  const safeName = escapeEmailHtml(params.recipientName);
+  const safeAssigner = escapeEmailHtml(params.assignerName);
+  const safeTitle = escapeEmailHtml(params.itemTitle);
+  const content = `
+    <h1>You have a new action item</h1>
+    <p>Hi ${safeName},</p>
+    <p>${safeAssigner} assigned you an action item in Orbit.</p>
+    <div class="feature">
+      <p class="feature-desc" style="margin: 0;"><strong>${safeTitle}</strong></p>
+    </div>
+    <div class="button-container">
+      <a href="${params.link}" class="button">Open action item</a>
+    </div>
+    <div class="divider"></div>
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      You received this because an action item was assigned to you. Manage notifications in Orbit settings.
+    </p>
+  `;
+  return sendEmail({
+    to: params.to,
+    subject: `${params.assignerName} assigned you "${params.itemTitle}"`,
+    html: wrapEmailContent(content),
+    text: `${params.assignerName} assigned you an action item:\n\n${params.itemTitle}\n\nOpen: ${params.link}`,
+  });
+}
+
 export async function sendCompetitorAlertEmail(params: CompetitorAlertEmailParams): Promise<boolean> {
   const { to, userName, competitorName, competitorId, summary, significance, baseUrl } = params;
   const copy = COMPETITOR_ALERT_EMAIL;

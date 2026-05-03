@@ -33,6 +33,8 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useToast } from "@/hooks/use-toast";
+import { AssigneePicker, CommentPopoverButton, OwnerAvatar, useCollabUsers } from "@/components/collaboration/CollabComponents";
+import { useUser } from "@/lib/userContext";
 
 interface ActionItem {
   id: string;
@@ -106,10 +108,13 @@ function StatusIcon({ status }: { status: string }) {
 export default function ActionItems() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useUser();
+  const isReadOnlyRole = user?.role === "Consultant";
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSource, setFilterSource] = useState("all");
   const [filterImpact, setFilterImpact] = useState("all");
   const [filterStatus, setFilterStatus] = useState("active");
+  const [filterAssignee, setFilterAssignee] = useState<string>("all"); // "all" | "__mine__" | "__none__" | userId
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
@@ -257,6 +262,13 @@ export default function ActionItems() {
       if (filterStatus === "active" && (item.status === "dismissed" || item.status === "hidden")) return false;
       if (filterStatus === "accepted" && item.status !== "accepted") return false;
       if (filterStatus === "dismissed" && item.status !== "dismissed" && item.status !== "hidden") return false;
+      if (filterAssignee === "__mine__") {
+        if (!user?.id || item.assignedTo !== user.id) return false;
+      } else if (filterAssignee === "__none__") {
+        if (item.assignedTo) return false;
+      } else if (filterAssignee !== "all") {
+        if (item.assignedTo !== filterAssignee) return false;
+      }
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         return (
@@ -268,7 +280,14 @@ export default function ActionItems() {
       }
       return true;
     });
-  }, [actionItems, filterSource, filterImpact, filterStatus, searchQuery]);
+  }, [actionItems, filterSource, filterImpact, filterStatus, filterAssignee, user?.id, searchQuery]);
+
+  const collabUsersQuery = useCollabUsers();
+  const collabUsers = collabUsersQuery.data?.users || [];
+  const myAssignedCount = useMemo(
+    () => actionItems.filter((i) => user?.id && i.assignedTo === user.id && i.status !== "dismissed" && i.status !== "hidden").length,
+    [actionItems, user?.id],
+  );
 
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every(item => selectedItems.has(item.id));
 
@@ -397,6 +416,30 @@ export default function ActionItems() {
             <SelectItem value="Low">Low</SelectItem>
           </SelectContent>
         </Select>
+        <Button
+          variant={filterAssignee === "__mine__" ? "default" : "outline"}
+          size="sm"
+          className="h-9"
+          onClick={() => setFilterAssignee(filterAssignee === "__mine__" ? "all" : "__mine__")}
+          data-testid="button-filter-mine"
+        >
+          My items{myAssignedCount > 0 ? ` (${myAssignedCount})` : ""}
+        </Button>
+        <Select value={filterAssignee} onValueChange={setFilterAssignee}>
+          <SelectTrigger className="w-[180px]" data-testid="select-assignee-filter">
+            <SelectValue placeholder="Assigned to" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Anyone</SelectItem>
+            <SelectItem value="__mine__">Assigned to me</SelectItem>
+            <SelectItem value="__none__">Unassigned</SelectItem>
+            {collabUsers.map((u) => (
+              <SelectItem key={u.id} value={u.id} data-testid={`option-filter-assignee-${u.id}`}>
+                {u.name || u.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Tabs value={filterStatus} onValueChange={setFilterStatus} className="w-auto">
           <TabsList className="h-9">
             <TabsTrigger value="active" className="text-xs" data-testid="tab-active">Active ({actionItems.filter(i => i.status !== "dismissed" && i.status !== "hidden").length})</TabsTrigger>
@@ -512,6 +555,12 @@ export default function ActionItems() {
                             <span>Target: {item.suggestedQuarter}</span>
                           </>
                         )}
+                        {item.type !== "gap" && (
+                          <>
+                            <span>·</span>
+                            <OwnerAvatar userId={item.assignedTo} hideUnassigned />
+                          </>
+                        )}
                       </div>
                       {!isExpanded && item.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
@@ -561,6 +610,21 @@ export default function ActionItems() {
                                 <Star className={`w-3 h-3 mr-1 ${item.isPriority ? "fill-amber-400 text-amber-400" : ""}`} />
                                 {item.isPriority ? "Unstar" : "Star"}
                               </Button>
+                            )}
+                            {(item.type === "recommendation" || item.type === "feature_recommendation") && (
+                              <>
+                                <AssigneePicker
+                                  kind={item.type}
+                                  id={item.id}
+                                  value={item.assignedTo}
+                                  readOnly={isReadOnlyRole}
+                                />
+                                <CommentPopoverButton
+                                  targetKind={item.type}
+                                  targetId={item.id}
+                                  readOnly={isReadOnlyRole}
+                                />
+                              </>
                             )}
                           </div>
                         </div>

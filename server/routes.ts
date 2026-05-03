@@ -13,6 +13,7 @@ import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
 import { registerCompetitorDocumentRoutes } from "./routes/competitor-documents";
 import { registerNotificationsActivityRoutes } from "./routes/notifications-activity";
+import { registerCollaborationRoutes } from "./routes/collaboration";
 import { registerReportsAnalysisRoutes } from "./routes/reports-analysis";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerConsultantPlansRoutes } from "./routes/consultant-plans";
@@ -81,6 +82,7 @@ export async function registerRoutes(
   registerBattlecardRoutes(app);
   registerCompetitorDocumentRoutes(app);
   registerNotificationsActivityRoutes(app);
+  registerCollaborationRoutes(app);
   registerReportsAnalysisRoutes(app);
   registerAdminRoutes(app);
   registerConsultantPlansRoutes(app);

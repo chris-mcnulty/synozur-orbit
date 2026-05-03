@@ -74,6 +74,7 @@ import {
 } from "@/components/ui/tooltip";
 import SharedSourceFreshnessRow, { type SourceFreshnessItem as SharedSourceFreshnessItem, type SourceFreshnessData as SharedSourceFreshnessData } from "@/components/SourceFreshnessRow";
 import { BriefingPanelSkeleton } from "@/components/ui/skeletons";
+import { AnnotationRail } from "@/components/collaboration/CollabComponents";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -693,6 +694,15 @@ export default function IntelligenceBriefingPage() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6 p-4 md:p-6">
+        {activeBriefingId && (
+          <div className="lg:hidden">
+            <AnnotationRail
+              targetKind="briefing"
+              targetId={activeBriefingId}
+              readOnly={user?.role === "Consultant"}
+            />
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="heading-intelligence-briefing">

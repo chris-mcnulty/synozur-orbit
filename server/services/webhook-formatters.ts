@@ -307,3 +307,34 @@ export function buildJobFailedPayload(opts: {
     color: "#DC2626",
   };
 }
+
+export function buildCommentMentionPayload(opts: {
+  authorName: string;
+  recipientName?: string;
+  targetLabel: string;
+  excerpt: string;
+  link?: string;
+}): WebhookPayload {
+  return {
+    category: "comment_mention",
+    title: `${opts.authorName} mentioned ${opts.recipientName ? opts.recipientName : "you"} on ${opts.targetLabel}`,
+    summary: opts.excerpt,
+    link: opts.link ? { label: "Open thread", url: opts.link } : undefined,
+    color: "#810FFB",
+  };
+}
+
+export function buildActionItemAssignedPayload(opts: {
+  assignerName: string;
+  recipientName?: string;
+  itemTitle: string;
+  link?: string;
+}): WebhookPayload {
+  return {
+    category: "action_item_assigned",
+    title: `${opts.assignerName} assigned ${opts.recipientName ? opts.recipientName : "you"} an action item`,
+    summary: opts.itemTitle,
+    link: opts.link ? { label: "Open action item", url: opts.link } : undefined,
+    color: "#10B981",
+  };
+}

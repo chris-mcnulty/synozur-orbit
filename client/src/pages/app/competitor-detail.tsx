@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import DataFreshnessBar from "@/components/DataFreshnessBar";
+import { AnnotationRail } from "@/components/collaboration/CollabComponents";
 import { useUser } from "@/lib/userContext";
 import { useFeatureAccess } from "@/components/UpgradePrompt";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
@@ -480,6 +481,15 @@ export default function CompetitorDetail() {
   return (
     <AppLayout breadcrumbs={breadcrumbs}>
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {id && (
+          <div className="mb-6">
+            <AnnotationRail
+              targetKind="competitor"
+              targetId={id}
+              readOnly={currentUser?.role === "Consultant"}
+            />
+          </div>
+        )}
         <div className="mb-8">
           <Link href="/app/competitors" className="text-sm text-muted-foreground hover:text-foreground flex items-center mb-4 transition-colors">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Competitors

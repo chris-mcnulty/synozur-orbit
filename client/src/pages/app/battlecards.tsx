@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
 import EmptyPageState from "@/components/EmptyPageState";
+import { AnnotationRail } from "@/components/collaboration/CollabComponents";
+import { useUser } from "@/lib/userContext";
 import {
   Select,
   SelectContent,
@@ -87,6 +89,8 @@ export default function BattleCardsPage() {
   const [selectedCompetitor, setSelectedCompetitor] = useState<string>("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
+  const { user } = useUser();
+  const isReadOnlyRole = user?.role === "Consultant";
   const [downloading, setDownloading] = useState<"pdf" | "txt" | null>(null);
   const pdfJobStatus = useJobStatus(
     selectedCard ? `battlecard-pdf:${selectedCard.id}` : null,
@@ -515,7 +519,7 @@ export default function BattleCardsPage() {
       </div>
 
       <Dialog open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-3">
               <Building2 className="w-5 h-5 text-primary" />
@@ -529,7 +533,7 @@ export default function BattleCardsPage() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto pr-4" style={{ maxHeight: 'calc(85vh - 140px)' }}>
+          <div className="flex-1 overflow-y-auto pr-4 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6" style={{ maxHeight: 'calc(85vh - 140px)' }}>
             <div className="space-y-6 py-4">
               {/* Company Directory Info */}
               {(() => {
@@ -766,6 +770,15 @@ export default function BattleCardsPage() {
                 </>
               )}
             </div>
+            {selectedCard && (
+              <div className="hidden lg:block py-4 border-l pl-6">
+                <AnnotationRail
+                  targetKind="battlecard"
+                  targetId={selectedCard.id}
+                  readOnly={isReadOnlyRole}
+                />
+              </div>
+            )}
           </div>
           
           <div className="flex-shrink-0 pt-4 border-t flex items-center justify-between">

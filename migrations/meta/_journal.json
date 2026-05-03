@@ -71,6 +71,13 @@
       "when": 1778025600000,
       "tag": "0009_competitor_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0010_collaboration",
+      "breakpoints": true
     }
   ]
 }

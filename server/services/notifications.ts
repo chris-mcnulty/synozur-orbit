@@ -24,6 +24,8 @@ import {
   sendWeeklyDigestEmail,
   sendSeoMovementAlertEmail,
   sendCompetitorToneShiftEmail,
+  sendCommentMentionEmail,
+  sendActionItemAssignedEmail,
   type BriefingDigestData,
 } from "./email-service";
 import {
@@ -35,6 +37,8 @@ import {
   buildJobFailedPayload,
   buildSeoMovementPayload,
   buildCompetitorToneShiftPayload,
+  buildCommentMentionPayload,
+  buildActionItemAssignedPayload,
   type WebhookPayload,
   type SeoMover,
 } from "./webhook-formatters";
@@ -213,6 +217,23 @@ export interface CompetitorToneShiftCtx {
   sampleCount: number;
 }
 
+export interface CommentMentionCtx {
+  recipientUserId: string;
+  authorUserId: string;
+  authorName: string;
+  targetLabel: string;
+  excerpt: string;
+  link: string; // app-relative path (e.g. /app/action-items?id=...)
+}
+
+export interface ActionItemAssignedCtx {
+  recipientUserId: string;
+  assignerUserId: string;
+  assignerName: string;
+  itemTitle: string;
+  link: string; // app-relative path
+}
+
 type DispatchCtxMap = {
   competitor_change: CompetitorChangeCtx;
   briefing_ready: BriefingReadyCtx;
@@ -220,6 +241,8 @@ type DispatchCtxMap = {
   job_failed: JobFailedCtx;
   seo_movement: SeoMovementCtx;
   competitor_tone_shift: CompetitorToneShiftCtx;
+  comment_mention: CommentMentionCtx;
+  action_item_assigned: ActionItemAssignedCtx;
 };
 
 // ---------------------------------------------------------------------------
@@ -535,6 +558,115 @@ async function handleCompetitorToneShift(
   );
 }
 
+async function handleCommentMention(
+  tenantDomain: string,
+  ctx: CommentMentionCtx,
+): Promise<void> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant) return;
+  if (!(await isFeatureEnabledAsync(tenant.plan, "collaboration"))) return;
+
+  const baseUrl = defaultBaseUrl();
+  const fullLink = ctx.link.startsWith("http") ? ctx.link : `${baseUrl}${ctx.link}`;
+
+  const recipient = await storage.getUser(ctx.recipientUserId);
+  if (!recipient || recipient.id === ctx.authorUserId) return;
+
+  // In-app notification
+  try {
+    await createNotification({
+      userId: recipient.id,
+      tenantDomain,
+      type: "comment_mention",
+      title: `${ctx.authorName} mentioned you on ${ctx.targetLabel}`,
+      message: ctx.excerpt.slice(0, 280),
+      link: ctx.link,
+      readAt: null,
+    });
+  } catch (err) {
+    console.error(`[Notifications] in-app comment_mention failed for user ${recipient.id}:`, err);
+  }
+
+  // Email — always on for comment_mention (no per-user opt-out yet)
+  try {
+    await sendCommentMentionEmail({
+      to: recipient.email,
+      recipientName: recipient.name || recipient.email,
+      authorName: ctx.authorName,
+      targetLabel: ctx.targetLabel,
+      excerpt: ctx.excerpt,
+      link: fullLink,
+    });
+  } catch (err) {
+    console.error(`[Notifications] comment_mention email failed for user ${recipient.id}:`, err);
+  }
+
+  // Webhook fan-out (Slack/Teams)
+  await fanOutWebhook(
+    tenantDomain,
+    "comment_mention",
+    buildCommentMentionPayload({
+      authorName: ctx.authorName,
+      recipientName: recipient.name || recipient.email,
+      targetLabel: ctx.targetLabel,
+      excerpt: ctx.excerpt.slice(0, 500),
+      link: fullLink,
+    }),
+  );
+}
+
+async function handleActionItemAssigned(
+  tenantDomain: string,
+  ctx: ActionItemAssignedCtx,
+): Promise<void> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant) return;
+  if (!(await isFeatureEnabledAsync(tenant.plan, "collaboration"))) return;
+
+  const baseUrl = defaultBaseUrl();
+  const fullLink = ctx.link.startsWith("http") ? ctx.link : `${baseUrl}${ctx.link}`;
+
+  const recipient = await storage.getUser(ctx.recipientUserId);
+  if (!recipient || recipient.id === ctx.assignerUserId) return;
+
+  try {
+    await createNotification({
+      userId: recipient.id,
+      tenantDomain,
+      type: "action_item_assigned",
+      title: `${ctx.assignerName} assigned you an action item`,
+      message: ctx.itemTitle.slice(0, 280),
+      link: ctx.link,
+      readAt: null,
+    });
+  } catch (err) {
+    console.error(`[Notifications] in-app action_item_assigned failed for user ${recipient.id}:`, err);
+  }
+
+  try {
+    await sendActionItemAssignedEmail({
+      to: recipient.email,
+      recipientName: recipient.name || recipient.email,
+      assignerName: ctx.assignerName,
+      itemTitle: ctx.itemTitle,
+      link: fullLink,
+    });
+  } catch (err) {
+    console.error(`[Notifications] action_item_assigned email failed for user ${recipient.id}:`, err);
+  }
+
+  await fanOutWebhook(
+    tenantDomain,
+    "action_item_assigned",
+    buildActionItemAssignedPayload({
+      assignerName: ctx.assignerName,
+      recipientName: recipient.name || recipient.email,
+      itemTitle: ctx.itemTitle,
+      link: fullLink,
+    }),
+  );
+}
+
 async function handleJobFailed(
   tenantDomain: string,
   ctx: JobFailedCtx,
@@ -587,6 +719,12 @@ export const notifications = {
           break;
         case "competitor_tone_shift":
           await handleCompetitorToneShift(tenantDomain, ctx as CompetitorToneShiftCtx);
+          break;
+        case "comment_mention":
+          await handleCommentMention(tenantDomain, ctx as CommentMentionCtx);
+          break;
+        case "action_item_assigned":
+          await handleActionItemAssigned(tenantDomain, ctx as ActionItemAssignedCtx);
           break;
       }
     } catch (err) {

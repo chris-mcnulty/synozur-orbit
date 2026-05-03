@@ -212,7 +212,7 @@ export function registerNotificationsActivityRoutes(app: Express) {
           sourceId: fr.productId,
           productName: productMap.get(fr.productId) || null,
           suggestedQuarter: fr.suggestedQuarter,
-          assignedTo: null,
+          assignedTo: fr.assignedToUserId ?? null,
           createdAt: fr.createdAt,
         });
       }

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap } from "lucide-react";
+import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap, MessageSquare, AtSign, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { useSearch, useLocation } from "wouter";
@@ -276,6 +276,10 @@ export default function Activity() {
           <TabsTrigger value="feed" className="gap-2" data-testid="tab-feed">
             <FileText className="h-4 w-4" />
             Activity Log
+          </TabsTrigger>
+          <TabsTrigger value="collaboration" className="gap-2" data-testid="tab-collaboration">
+            <MessageSquare className="h-4 w-4" />
+            Collaboration
           </TabsTrigger>
         </TabsList>
 
@@ -815,7 +819,175 @@ export default function Activity() {
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="collaboration" className="space-y-4">
+          <CollaborationFeed />
+        </TabsContent>
       </Tabs>
     </AppLayout>
+  );
+}
+
+interface CollabActivity {
+  comments: Array<{
+    id: string;
+    body: string;
+    authorName: string | null;
+    targetKind: string | null;
+    targetId: string | null;
+    createdAt: string;
+    mentions: string[];
+  }>;
+  annotations: Array<{
+    id: string;
+    targetKind: string;
+    targetId: string;
+    selectedText: string | null;
+    createdAt: string;
+  }>;
+  assignments: Array<{ id: string; recipientUserId: string; recipientName: string | null; title: string; message: string; link: string | null; createdAt: string }>;
+}
+
+function CollaborationFeed() {
+  const { data, isLoading, isError } = useQuery<CollabActivity>({
+    queryKey: ["/api/collab/activity"],
+    queryFn: async () => {
+      const res = await fetch("/api/collab/activity?days=14", { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="p-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading collaboration activity…
+        </div>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="p-8" data-testid="card-collab-locked">
+        <div className="text-center">
+          <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Collaboration is not available on your plan</h3>
+          <p className="text-muted-foreground max-w-md mx-auto text-sm">
+            Threaded comments, @mentions, annotations and assignments are available on Pro,
+            Enterprise and Unlimited plans.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  const items: Array<{
+    kind: "comment" | "mention" | "annotation" | "assignment";
+    id: string;
+    when: string;
+    title: React.ReactNode;
+    body?: string;
+  }> = [];
+
+  for (const c of data?.comments || []) {
+    if ((c.mentions || []).length > 0) {
+      items.push({
+        kind: "mention",
+        id: `m-${c.id}`,
+        when: c.createdAt,
+        title: (
+          <span>
+            <strong>{c.authorName || "Someone"}</strong> mentioned a teammate on{" "}
+            <em>{(c.targetKind || "").replace(/_/g, " ")}</em>
+          </span>
+        ),
+        body: c.body,
+      });
+    } else {
+      items.push({
+        kind: "comment",
+        id: `c-${c.id}`,
+        when: c.createdAt,
+        title: (
+          <span>
+            <strong>{c.authorName || "Someone"}</strong> commented on{" "}
+            <em>{(c.targetKind || "").replace(/_/g, " ")}</em>
+          </span>
+        ),
+        body: c.body,
+      });
+    }
+  }
+  for (const a of data?.annotations || []) {
+    items.push({
+      kind: "annotation",
+      id: `a-${a.id}`,
+      when: a.createdAt,
+      title: (
+        <span>
+          New annotation on <em>{a.targetKind.replace(/_/g, " ")}</em>
+        </span>
+      ),
+      body: a.selectedText || undefined,
+    });
+  }
+  for (const a of data?.assignments || []) {
+    items.push({
+      kind: "assignment",
+      id: `as-${a.id}`,
+      when: a.createdAt,
+      title: (
+        <span>
+          {a.recipientName ? <strong>{a.recipientName}</strong> : "Someone"} was assigned an action item
+        </span>
+      ),
+      body: a.message,
+    });
+  }
+  items.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
+
+  if (items.length === 0) {
+    return (
+      <Card className="p-8" data-testid="card-collab-empty">
+        <div className="text-center">
+          <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No collaboration activity in the last 14 days</h3>
+          <p className="text-muted-foreground text-sm">
+            Mentions, comments, annotations and assignments will appear here.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  const iconFor = (kind: string) => {
+    if (kind === "mention") return <AtSign className="h-4 w-4 text-primary" />;
+    if (kind === "annotation") return <FileText className="h-4 w-4 text-primary" />;
+    if (kind === "assignment") return <UserPlus className="h-4 w-4 text-primary" />;
+    return <MessageSquare className="h-4 w-4 text-primary" />;
+  };
+
+  return (
+    <div className="space-y-2" data-testid="list-collab-activity">
+      {items.map((it) => (
+        <Card key={it.id} className="p-3" data-testid={`collab-item-${it.id}`}>
+          <div className="flex items-start gap-3">
+            <div className="mt-1">{iconFor(it.kind)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm">{it.title}</div>
+              {it.body && (
+                <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{it.body}</div>
+              )}
+              <div className="mt-1 text-xs text-muted-foreground">
+                {formatDistanceToNow(new Date(it.when), { addSuffix: true })}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
   );
 }

@@ -347,8 +347,11 @@ export const featureRecommendations = pgTable("feature_recommendations", {
   suggestedPriority: text("suggested_priority"), // high, medium, low
   suggestedQuarter: text("suggested_quarter"),
   status: text("status").notNull().default("pending"), // pending, accepted, dismissed
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  assignedToIdx: index("feature_rec_assigned_to_idx").on(table.assignedToUserId),
+}));
 
 export const projectProducts = pgTable("project_products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2407,6 +2410,8 @@ export const WEBHOOK_EVENT_CATEGORIES = [
   "job_failed",
   "seo_movement",
   "competitor_tone_shift",
+  "comment_mention",
+  "action_item_assigned",
 ] as const;
 export type WebhookEventCategory = (typeof WEBHOOK_EVENT_CATEGORIES)[number];
 
@@ -2890,6 +2895,90 @@ export const orbitScoreBenchmarks = pgTable("orbit_score_benchmarks", {
 });
 
 export type OrbitScoreBenchmark = typeof orbitScoreBenchmarks.$inferSelect;
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Collaboration — Task #103
+// Threaded comments + @mentions, shared annotations on artifacts, action item
+// assignments. Plan-gated by `collaboration` feature key.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const COLLAB_TARGET_KINDS = [
+  "battlecard",
+  "product_battlecard",
+  "briefing",
+  "gtm_plan",
+  "messaging_framework",
+  "competitor",
+  "recommendation",
+  "feature_recommendation",
+  "gap",
+  "annotation",
+] as const;
+export type CollabTargetKind = (typeof COLLAB_TARGET_KINDS)[number];
+
+export const collaborationThreads = pgTable("collaboration_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  targetKind: text("target_kind").notNull(),
+  targetId: text("target_id").notNull(),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  targetIdx: index("collab_threads_target_idx").on(table.tenantDomain, table.targetKind, table.targetId),
+}));
+
+export const collaborationComments = pgTable("collaboration_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  threadId: varchar("thread_id").notNull().references(() => collaborationThreads.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  authorUserId: varchar("author_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  mentions: jsonb("mentions").notNull().default(sql`'[]'::jsonb`), // string[] of user ids
+  editedAt: timestamp("edited_at"),
+  deletedAt: timestamp("deleted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  threadIdx: index("collab_comments_thread_idx").on(table.threadId, table.createdAt),
+  tenantIdx: index("collab_comments_tenant_idx").on(table.tenantDomain, table.createdAt),
+}));
+
+export const annotations = pgTable("annotations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  targetKind: text("target_kind").notNull(),
+  targetId: text("target_id").notNull(),
+  fieldPath: text("field_path"), // optional dotted path for nested artifact fields
+  rangeStart: integer("range_start"),
+  rangeEnd: integer("range_end"),
+  selectedText: text("selected_text"),
+  threadId: varchar("thread_id").notNull().references(() => collaborationThreads.id, { onDelete: "cascade" }),
+  createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: varchar("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  targetIdx: index("annotations_target_idx").on(table.tenantDomain, table.targetKind, table.targetId),
+}));
+
+export const insertCollaborationThreadSchema = createInsertSchema(collaborationThreads).omit({
+  id: true, createdAt: true,
+});
+export const insertCollaborationCommentSchema = createInsertSchema(collaborationComments).omit({
+  id: true, createdAt: true, editedAt: true, deletedAt: true,
+});
+export const insertAnnotationSchema = createInsertSchema(annotations).omit({
+  id: true, createdAt: true, resolvedAt: true, resolvedByUserId: true,
+});
+
+export type CollaborationThread = typeof collaborationThreads.$inferSelect;
+export type CollaborationComment = typeof collaborationComments.$inferSelect;
+export type Annotation = typeof annotations.$inferSelect;
+export type InsertCollaborationThread = z.infer<typeof insertCollaborationThreadSchema>;
+export type InsertCollaborationComment = z.infer<typeof insertCollaborationCommentSchema>;
+export type InsertAnnotation = z.infer<typeof insertAnnotationSchema>;
 
 export const CURRENT_APP_VERSION = "2.0.0";
 

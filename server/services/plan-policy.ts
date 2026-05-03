@@ -44,6 +44,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "outcomeMetrics", label: "Outcome Metrics & Orbit Score", description: "ROI dashboard with Orbit Score, GA4 analytics integration, and outcome trend charts", category: "intelligence" },
   { key: "industryBenchmarks", label: "Industry Benchmarks", description: "Compare your Orbit Score against anonymized SIC-code peer cohorts (≥5 tenants)", category: "intelligence" },
   { key: "competitorDocuments", label: "Competitor Documents", description: "Upload per-competitor PDF/DOCX/TXT documents (datasheets, case studies, annual reports) to ground analyses, gap analysis, battlecards, and briefings", category: "intelligence" },
+  { key: "collaboration", label: "Collaboration", description: "Threaded comments, @mentions, shared annotations and action item assignments across artifacts", category: "platform" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -103,6 +104,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outcomeMetrics: false,
     industryBenchmarks: false,
     competitorDocuments: false,
+    collaboration: false,
   },
   trial: {
     battlecards: true,
@@ -141,6 +143,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outcomeMetrics: false,
     industryBenchmarks: false,
     competitorDocuments: false,
+    collaboration: false,
   },
   pro: {
     battlecards: true,
@@ -179,6 +182,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outcomeMetrics: true,
     industryBenchmarks: false,
     competitorDocuments: true,
+    collaboration: true,
   },
   enterprise: {
     battlecards: true,
@@ -217,6 +221,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outcomeMetrics: true,
     industryBenchmarks: true,
     competitorDocuments: true,
+    collaboration: true,
   },
   unlimited: {
     battlecards: true,
@@ -255,6 +260,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outcomeMetrics: true,
     industryBenchmarks: true,
     competitorDocuments: true,
+    collaboration: true,
   },
 };
 
