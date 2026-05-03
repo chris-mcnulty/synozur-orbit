@@ -87,6 +87,28 @@ export default function Competitors() {
   }>>([]);
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [orgSearchLoading, setOrgSearchLoading] = useState(false);
+
+  const { data: hubspotSuggestions } = useQuery<{ items: Array<{ hubspotCompanyId: string; name: string; domain: string | null; industry: string | null; numberOfDeals: number; totalDealValue: number }> }>({
+    queryKey: ["/api/integrations/hubspot/suggested-competitors"],
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/suggested-competitors", { credentials: "include" });
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    retry: false,
+  });
+  const suggestionsFromHubspot = hubspotSuggestions?.items ?? [];
+
+  const { data: hubspotStatus } = useQuery<{ connected: boolean; connection: { hubspotPortalId: string | null } | null }>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
+      if (!res.ok) return { connected: false, connection: null };
+      return res.json();
+    },
+    retry: false,
+  });
+  const hubspotPortalId = hubspotStatus?.connection?.hubspotPortalId ?? null;
   
   // Social/Blog links editing state
   const [linksEditOpen, setLinksEditOpen] = useState(false);
@@ -725,6 +747,32 @@ export default function Competitors() {
                 Enter the details of the competitor you want to track. We'll start gathering intelligence immediately.
               </DialogDescription>
             </DialogHeader>
+            {suggestionsFromHubspot.length > 0 && (
+              <div className="rounded-md border bg-muted/30 p-3 mb-2" data-testid="section-hubspot-suggestions">
+                <div className="text-xs font-medium text-muted-foreground mb-2">
+                  Suggested from HubSpot ({suggestionsFromHubspot.length})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {suggestionsFromHubspot.slice(0, 6).map((s) => (
+                    <button
+                      key={s.hubspotCompanyId}
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border hover:bg-accent text-left"
+                      onClick={() => {
+                        setName(s.name);
+                        if (s.domain) setUrl(`https://${s.domain}`);
+                      }}
+                      data-testid={`button-hubspot-suggestion-${s.hubspotCompanyId}`}
+                    >
+                      <div className="font-medium">{s.name}</div>
+                      <div className="text-muted-foreground">
+                        {s.domain || ""}{s.numberOfDeals ? ` · ${s.numberOfDeals} deal${s.numberOfDeals === 1 ? "" : "s"}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <form onSubmit={handleAddCompetitor}>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -1159,6 +1207,29 @@ export default function Competitors() {
                                       <Ban className="w-3 h-3 mr-1" /> No Crawl
                                     </Badge>
                                   )}
+                                  {(competitor as { hubspotCompanyId?: string | null }).hubspotCompanyId && (() => {
+                                    const c = competitor as { hubspotCompanyId?: string | null; hubspotOpenDealCount?: number | null; hubspotOpenDealValue?: number | null };
+                                    const dealCount = c.hubspotOpenDealCount ?? 0;
+                                    const dealValue = c.hubspotOpenDealValue ?? 0;
+                                    const portalSegment = hubspotPortalId ?? "0";
+                                    const dealsHref = `https://app.hubspot.com/contacts/${portalSegment}/record/0-2/${encodeURIComponent(c.hubspotCompanyId!)}/?objectTypeId=0-3`;
+                                    return (
+                                      <a
+                                        href={dealsHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        data-testid={`badge-hubspot-${competitor.id}`}
+                                      >
+                                        <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30">
+                                          HubSpot
+                                          {dealCount > 0 ? ` · ${dealCount} open deal${dealCount === 1 ? "" : "s"}` : ""}
+                                          {dealValue > 0 ? ` · $${Number(dealValue).toLocaleString()}` : ""}
+                                          <ExternalLink className="w-3 h-3 ml-1" />
+                                        </Badge>
+                                      </a>
+                                    );
+                                  })()}
                                 </div>
                                 {analysis?.summary && (
                                   <p className="text-sm text-muted-foreground mt-1 line-clamp-1" data-testid={`text-summary-${competitor.id}`}>

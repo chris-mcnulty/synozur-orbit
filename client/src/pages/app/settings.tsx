@@ -1390,13 +1390,7 @@ export default function Settings() {
             <CardDescription>Connect Orbit to your existing stack.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-base">HubSpot</Label>
-                <p className="text-sm text-muted-foreground">Sync reports to your CRM.</p>
-              </div>
-              <Button variant="outline" size="sm">Connect</Button>
-            </div>
+            {isAdmin && <HubspotIntegrationSection tenantPlan={tenant?.plan} />}
             <Separator />
             <div className="flex items-center justify-between" data-testid="row-developer-portal">
               <div className="space-y-0.5">
@@ -1446,6 +1440,277 @@ const EVENT_CATEGORY_OPTIONS: Array<{ value: string; label: string; description:
   { value: "weekly_digest", label: "Weekly digest", description: "Once per week, a recap of competitor activity." },
   { value: "job_failed", label: "Job failures", description: "When a scheduled monitoring or briefing job fails." },
 ];
+
+interface HubspotStatus {
+  connected: boolean;
+  oauthConfigured: boolean;
+  outboundAllowed: boolean;
+  connection: null | {
+    tenantDomain: string;
+    hubspotPortalId: string | null;
+    hubspotPortalName: string | null;
+    scopes: string[];
+    autoPushEnabled: boolean;
+    defaultOwnerId: string | null;
+    connectedAt: string;
+    lastSyncAt: string | null;
+    lastSyncError: string | null;
+    lastSyncStats: any;
+  };
+}
+
+function HubspotOwnerPicker({
+  currentOwnerId,
+  onChange,
+}: {
+  currentOwnerId: string | null;
+  onChange: (ownerId: string | null) => void;
+}) {
+  const { data, isLoading } = useQuery<{ owners: Array<{ id: string; email: string | null; name: string | null }> }>({
+    queryKey: ["/api/integrations/hubspot/owners"],
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/owners", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load owners");
+      return res.json();
+    },
+  });
+  const owners = data?.owners ?? [];
+  return (
+    <div className="flex items-center justify-between pt-2" data-testid="row-hubspot-default-owner">
+      <div>
+        <Label className="text-sm">Default task owner</Label>
+        <p className="text-xs text-muted-foreground">Owner assigned to action-item Tasks pushed back to HubSpot.</p>
+      </div>
+      <Select
+        value={currentOwnerId ?? "__none__"}
+        onValueChange={(v) => onChange(v === "__none__" ? null : v)}
+        disabled={isLoading || owners.length === 0}
+      >
+        <SelectTrigger className="w-64" data-testid="select-hubspot-default-owner">
+          <SelectValue placeholder={isLoading ? "Loading owners…" : "Unassigned"} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Unassigned</SelectItem>
+          {owners.map((o) => (
+            <SelectItem key={o.id} value={o.id}>
+              {o.name || o.email || o.id}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
+  const queryClient = useQueryClient();
+  const planEligible = !!tenantPlan && ["pro", "enterprise", "unlimited"].includes(tenantPlan);
+
+  const { data: status, isLoading } = useQuery<HubspotStatus>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    enabled: planEligible,
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/connect", { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to start HubSpot connect flow");
+      return (await res.json()) as { authorizeUrl: string };
+    },
+    onSuccess: (data) => {
+      window.location.href = data.authorizeUrl;
+    },
+    onError: (err: any) => toast.error(err?.message || "Could not start HubSpot connection"),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/integrations/hubspot", { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to disconnect");
+    },
+    onSuccess: () => {
+      toast.success("HubSpot disconnected");
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Could not disconnect HubSpot"),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/sync", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Sync failed");
+      return (await res.json()) as { stats: { matched: number; enriched: number; dealsAggregated: number; errors: number } };
+    },
+    onSuccess: (data) => {
+      toast.success(`HubSpot sync complete — matched ${data.stats.matched}, enriched ${data.stats.enriched}, deals ${data.stats.dealsAggregated}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "HubSpot sync failed"),
+  });
+
+  const autoPushMutation = useMutation({
+    mutationFn: async (autoPushEnabled: boolean) => {
+      const res = await fetch("/api/integrations/hubspot", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoPushEnabled }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Could not update preference"),
+  });
+
+  if (!planEligible) {
+    return (
+      <div className="flex items-center justify-between" data-testid="row-hubspot-locked">
+        <div className="space-y-0.5">
+          <Label className="text-base">HubSpot CRM</Label>
+          <p className="text-sm text-muted-foreground">
+            Enrich competitors from your CRM, surface deal context on briefings, and push battlecards back to HubSpot. Available on Pro and above.
+          </p>
+        </div>
+        <Badge variant="outline">Pro plan required</Badge>
+      </div>
+    );
+  }
+
+  const conn = status?.connection;
+  const stats = (conn?.lastSyncStats || {}) as { matched?: number; enriched?: number; dealsAggregated?: number; errors?: number };
+
+  return (
+    <div className="space-y-4" data-testid="section-hubspot-integration">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <Label className="text-base">HubSpot CRM</Label>
+          <p className="text-sm text-muted-foreground">
+            {status?.outboundAllowed
+              ? "Two-way sync: pull deal context onto competitors, push battlecards and action items back to HubSpot Companies."
+              : "Inbound sync only on your plan — competitors are enriched with HubSpot data and deal counts. Upgrade to Enterprise to push battlecards / tasks back to HubSpot."}
+          </p>
+          {status && !status.oauthConfigured && (
+            <p className="text-sm text-amber-600" data-testid="text-hubspot-oauth-missing">
+              HubSpot OAuth credentials are not configured on this Orbit instance. Ask your administrator to set <code>HUBSPOT_CLIENT_ID</code> and <code>HUBSPOT_CLIENT_SECRET</code>.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : status?.connected ? (
+            <Badge variant="default" data-testid="badge-hubspot-connected">Connected</Badge>
+          ) : (
+            <Badge variant="outline" data-testid="badge-hubspot-disconnected">Not connected</Badge>
+          )}
+          {!status?.connected ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => connectMutation.mutate()}
+              disabled={!status?.oauthConfigured || connectMutation.isPending}
+              data-testid="button-hubspot-connect"
+            >
+              {connectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+              Connect HubSpot
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                data-testid="button-hubspot-sync"
+              >
+                {syncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                Sync now
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (confirm("Disconnect HubSpot? Tokens will be revoked and CRM enrichment will stop.")) {
+                    disconnectMutation.mutate();
+                  }
+                }}
+                disabled={disconnectMutation.isPending}
+                data-testid="button-hubspot-disconnect"
+              >
+                Disconnect
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {conn && (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1" data-testid="text-hubspot-details">
+          <div>
+            <span className="text-muted-foreground">Portal:</span>{" "}
+            <span data-testid="text-hubspot-portal">{conn.hubspotPortalName || conn.hubspotPortalId || "—"}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Last sync:</span>{" "}
+            <span data-testid="text-hubspot-last-sync">{conn.lastSyncAt ? new Date(conn.lastSyncAt).toLocaleString() : "Never"}</span>
+            {conn.lastSyncError && (
+              <span className="ml-2 text-destructive" data-testid="text-hubspot-last-error">— {conn.lastSyncError}</span>
+            )}
+          </div>
+          {conn.lastSyncStats && (
+            <div className="text-muted-foreground" data-testid="text-hubspot-stats">
+              Matched {stats.matched ?? 0} competitors · Enriched {stats.enriched ?? 0} · Competitor-deals {stats.dealsAggregated ?? 0}
+              {stats.errors ? ` · ${stats.errors} errors` : ""}
+            </div>
+          )}
+          {Array.isArray(conn.scopes) && conn.scopes.length > 0 && (
+            <div className="pt-1" data-testid="text-hubspot-scopes">
+              <span className="text-muted-foreground text-xs">Granted scopes:</span>{" "}
+              <span className="inline-flex flex-wrap gap-1 align-middle">
+                {conn.scopes.map((s) => (
+                  <Badge key={s} variant="outline" className="text-xs font-normal">{s}</Badge>
+                ))}
+              </span>
+            </div>
+          )}
+          {status?.outboundAllowed && (
+            <HubspotOwnerPicker
+              currentOwnerId={conn.defaultOwnerId}
+              onChange={(id) =>
+                fetch("/api/integrations/hubspot", {
+                  method: "PATCH",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ defaultOwnerId: id }),
+                })
+                  .then(() => queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] }))
+                  .catch(() => null)
+              }
+            />
+          )}
+          {status?.outboundAllowed && (
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <Label htmlFor="hubspot-auto-push" className="text-sm">Auto-push briefings as Notes</Label>
+                <p className="text-xs text-muted-foreground">When new intelligence briefings are generated, automatically attach them to the matched HubSpot Company.</p>
+              </div>
+              <Switch
+                id="hubspot-auto-push"
+                checked={!!conn.autoPushEnabled}
+                onCheckedChange={(v) => autoPushMutation.mutate(v)}
+                disabled={autoPushMutation.isPending}
+                data-testid="switch-hubspot-auto-push"
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function WebhookIntegrationsCard({ tenantPlan }: { tenantPlan?: string }) {
   const queryClient = useQueryClient();

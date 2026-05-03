@@ -179,6 +179,7 @@ const jobStatus: Record<string, JobStatus> = {
   trialReminder: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   weeklyDigest: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   seoRefresh: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  hubspotSync: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -1960,6 +1961,69 @@ export async function triggerSeoRefreshNow(): Promise<void> {
   runSeoRefreshJob();
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// HubSpot daily sync (Task #100)
+// ───────────────────────────────────────────────────────────────────────────
+
+let hubspotSyncInterval: NodeJS.Timeout | null = null;
+
+async function runHubspotSyncJob(): Promise<void> {
+  if (jobStatus.hubspotSync.isRunning) {
+    console.log("[HubSpot Sync] Already running, skipping...");
+    return;
+  }
+  jobStatus.hubspotSync.isRunning = true;
+  console.log("[HubSpot Sync] Starting daily HubSpot sync sweep...");
+  try {
+    const { syncTenant, isHubspotOauthConfigured } = await import("./hubspot-integration");
+    if (!isHubspotOauthConfigured()) {
+      console.log("[HubSpot Sync] OAuth not configured — skipping");
+      return;
+    }
+    const connections = await storage.listAllHubspotConnections();
+    let okCount = 0;
+    let failCount = 0;
+    for (const conn of connections) {
+      const tenant = await storage.getTenantByDomain(conn.tenantDomain).catch(() => null);
+      if (!tenant) continue;
+      const planAllowsSync = await checkFeatureAccessAsync(tenant.plan, "hubspotIntegration");
+      if (!planAllowsSync.allowed) {
+        console.log(`[HubSpot Sync] Skipping ${conn.tenantDomain} — plan ${tenant.plan} no longer permits HubSpot integration`);
+        continue;
+      }
+      await trackJobRun(
+        "hubspotSync",
+        conn.tenantDomain,
+        conn.hubspotPortalId ?? conn.id,
+        `${conn.tenantDomain}/hubspot`,
+        async () => {
+          const stats = await syncTenant(conn.tenantDomain);
+          okCount += 1;
+          return stats;
+        },
+        {
+          onError: async () => {
+            failCount += 1;
+            try {
+              await storage.markHubspotSyncResult(conn.tenantDomain, { stats: null, error: "Daily sync failed" });
+            } catch { /* ignore */ }
+          },
+        },
+      );
+    }
+    console.log(`[HubSpot Sync] Sweep complete — connections=${connections.length}, ok=${okCount}, failed=${failCount}`);
+  } catch (err) {
+    console.error("[HubSpot Sync] Sweep failed:", err);
+  } finally {
+    jobStatus.hubspotSync.isRunning = false;
+    jobStatus.hubspotSync.lastRun = new Date();
+  }
+}
+
+export async function triggerHubspotSyncNow(): Promise<void> {
+  runHubspotSyncJob();
+}
+
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
 
@@ -1972,10 +2036,17 @@ export function startScheduledJobs(): void {
   if (scheduledBriefingInterval) clearInterval(scheduledBriefingInterval);
   if (plannerSyncInterval) clearInterval(plannerSyncInterval);
   if (seoRefreshInterval) clearInterval(seoRefreshInterval);
+  if (hubspotSyncInterval) clearInterval(hubspotSyncInterval);
 
   jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
   jobStatus.plannerSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
   jobStatus.seoRefresh = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+  jobStatus.hubspotSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
+
+  // HubSpot daily sync — runs every 24 hours after a 2 minute warm-up.
+  hubspotSyncInterval = setInterval(() => {
+    runHubspotSyncJob();
+  }, 24 * 60 * 60 * 1000);
 
   // Set up recurring intervals
   websiteCrawlInterval = setInterval(() => {
@@ -2145,6 +2216,11 @@ export function startScheduledJobs(): void {
     }
   }, 60 * 60 * 1000);
 
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting initial HubSpot sync sweep...");
+    runHubspotSyncJob();
+  }, 120 * 1000);
+
   console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes), SEO refresh (weekly)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
@@ -2185,6 +2261,10 @@ export function stopScheduledJobs(): void {
   if (seoRefreshInterval) {
     clearInterval(seoRefreshInterval);
     seoRefreshInterval = null;
+  }
+  if (hubspotSyncInterval) {
+    clearInterval(hubspotSyncInterval);
+    hubspotSyncInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }

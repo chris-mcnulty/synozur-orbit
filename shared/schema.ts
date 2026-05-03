@@ -463,6 +463,12 @@ export const competitors = pgTable("competitors", {
   industry: text("industry"), // Industry/sector
   consecutiveCrawlFailures: integer("consecutive_crawl_failures").notNull().default(0),
   crawlFlaggedAt: timestamp("crawl_flagged_at"),
+  // Task #100: HubSpot CRM enrichment
+  hubspotCompanyId: text("hubspot_company_id"), // HubSpot Company object ID for matched competitor
+  hubspotLifecycleStage: text("hubspot_lifecycle_stage"),
+  hubspotOpenDealCount: integer("hubspot_open_deal_count").notNull().default(0),
+  hubspotOpenDealValue: integer("hubspot_open_deal_value").notNull().default(0), // total amount across open deals (whole units of portal currency)
+  hubspotLastSyncAt: timestamp("hubspot_last_sync_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -2447,6 +2453,51 @@ export const insertIntegrationConfigSchema = createInsertSchema(integrationConfi
 });
 export type IntegrationConfig = typeof integrationConfigs.$inferSelect;
 export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HubSpot CRM connections (Task #100) — per-tenant OAuth
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const HUBSPOT_OAUTH_SCOPES = [
+  "oauth",
+  "crm.objects.companies.read",
+  "crm.objects.companies.write",
+  "crm.objects.deals.read",
+  "crm.objects.contacts.read",
+  "crm.objects.owners.read",
+  // Required to push battlecards/briefings as Notes
+  "crm.objects.notes.read",
+  "crm.objects.notes.write",
+  // Required to push action items as Tasks
+  "crm.objects.tasks.read",
+  "crm.objects.tasks.write",
+] as const;
+
+export const hubspotConnections = pgTable("hubspot_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull().unique(), // one connection per tenant
+  hubspotPortalId: text("hubspot_portal_id"), // HubSpot Hub ID
+  hubspotPortalName: text("hubspot_portal_name"),
+  encryptedAccessToken: text("encrypted_access_token").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+  autoPushEnabled: boolean("auto_push_enabled").notNull().default(false),
+  defaultOwnerId: text("default_owner_id"), // HubSpot owner ID for pushed Tasks
+  connectedByUserId: varchar("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  connectedAt: timestamp("connected_at").notNull().defaultNow(),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncError: text("last_sync_error"),
+  lastSyncStats: jsonb("last_sync_stats"), // { matched, enriched, dealsAggregated, suggestedCount }
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertHubspotConnectionSchema = createInsertSchema(hubspotConnections).omit({
+  id: true, createdAt: true, updatedAt: true, connectedAt: true,
+});
+export type HubspotConnection = typeof hubspotConnections.$inferSelect;
+export type InsertHubspotConnection = z.infer<typeof insertHubspotConnectionSchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SEO & Share-of-Voice Tracking

@@ -427,6 +427,38 @@ Rules:
     console.error("[Intelligence Briefing] Notification dispatch failed:", notifyErr);
   }
 
+  // Task #100: best-effort auto-push of new briefing to HubSpot Companies
+  // (Notes attached to each related competitor's matched company). Plan
+  // gating + connection state + auto-push toggle are checked inside the
+  // helper. Never throws.
+  try {
+    const tenant = await storage.getTenantByDomain(tenantDomain);
+    if (tenant?.plan) {
+      const { autoPushBriefing } = await import("./hubspot-integration");
+      const actionItemsForPush = (briefingData.actionItems || []).slice(0, 25).map((ai: any) => {
+        const related: string[] = Array.isArray(ai.relatedCompetitors) ? ai.relatedCompetitors : [];
+        return {
+          title: String(ai.title || ai.summary || "Action item"),
+          rationale: typeof ai.rationale === "string" ? ai.rationale : (typeof ai.description === "string" ? ai.description : ""),
+          priority: typeof ai.priority === "string" ? ai.priority : undefined,
+          dueAt: ai.dueAt ? new Date(ai.dueAt) : null,
+          competitorId: related[0] || null,
+        };
+      });
+      autoPushBriefing({
+        tenantDomain,
+        briefingId: briefing.id,
+        title: briefingData.periodLabel || "Intelligence briefing",
+        executiveSummary: briefingData.executiveSummary || "",
+        competitorIds: Array.from(uniqueCompetitorIds).filter((x): x is string => typeof x === "string"),
+        actionItems: actionItemsForPush,
+        planName: tenant.plan,
+      }).catch(() => null);
+    }
+  } catch (pushErr) {
+    console.warn("[Intelligence Briefing] HubSpot auto-push setup failed:", pushErr);
+  }
+
   return briefing;
 }
 

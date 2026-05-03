@@ -180,6 +180,10 @@ Return ONLY valid JSON, no markdown or explanation.`;
         });
       }
 
+      // Task #100: Auto-push to HubSpot is gated to the publish
+      // transition (PATCH status: draft → published), not generation.
+      // Generated battlecards land in `draft` so they are not pushed here.
+
       // Surface "sources used" so the UI can show which competitor docs
       // contributed to this battlecard generation.
       res.json({ ...battlecard, competitorDocSources: competitorDocCtx.sources });
@@ -215,6 +219,33 @@ Return ONLY valid JSON, no markdown or explanation.`;
         ...(customNotes !== undefined && { customNotes }),
         ...(status !== undefined && { status }),
       });
+
+      // Task #100: HubSpot auto-push fires on the publish transition.
+      // Only when status changed to "published" (and was not already
+      // published). Best-effort; never blocks the response.
+      if (
+        updatedBattlecard &&
+        status === "published" &&
+        battlecard.status !== "published"
+      ) {
+        try {
+          const { autoPushBattlecard } = await import("../services/hubspot-integration");
+          const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+          const competitor = await storage.getCompetitor(updatedBattlecard.competitorId);
+          if (tenant?.plan && competitor) {
+            autoPushBattlecard({
+              tenantDomain: ctx.tenantDomain,
+              competitorId: updatedBattlecard.competitorId,
+              competitorName: competitor.name,
+              battlecardId: updatedBattlecard.id,
+              strengths: updatedBattlecard.strengths,
+              weaknesses: updatedBattlecard.weaknesses,
+              ourAdvantages: updatedBattlecard.ourAdvantages,
+              planName: tenant.plan,
+            }).catch(() => null);
+          }
+        } catch { /* hubspot push is best-effort */ }
+      }
 
       res.json(updatedBattlecard);
     } catch (error: any) {

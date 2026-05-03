@@ -804,6 +804,32 @@ export default function IntelligenceBriefingPage() {
                   )}
                   {isDownloading ? jobStatusLabel(pdfJobStatus, "Generating…") : "PDF"}
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10"
+                  data-testid="button-push-briefing-hubspot"
+                  onClick={async () => {
+                    if (!briefing) return;
+                    try {
+                      const res = await fetch(`/api/briefings/${encodeURIComponent(briefing.id)}/hubspot/push-summary`, {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                      });
+                      if (!res.ok) {
+                        const e = await res.json().catch(() => ({}));
+                        throw new Error(e.error || "Failed to push to HubSpot");
+                      }
+                      toast({ title: "Pushed to HubSpot", description: "Briefing attached as a Note on matched companies." });
+                    } catch (err: any) {
+                      toast({ title: "HubSpot push failed", description: err?.message || "Unknown error", variant: "destructive" });
+                    }
+                  }}
+                >
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Push to HubSpot
+                </Button>
                 <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="h-10" data-testid="button-share-briefing">
@@ -1341,6 +1367,40 @@ export default function IntelligenceBriefingPage() {
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent>Create a social post about this action item</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      data-testid={`action-hubspot-${i}`}
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch("/api/integrations/hubspot/push-task", {
+                                            method: "POST",
+                                            credentials: "include",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                              subject: item.title.slice(0, 500),
+                                              body: `${item.description || ""}\n\nFrom Orbit briefing.`,
+                                            }),
+                                          });
+                                          if (!res.ok) {
+                                            const e = await res.json().catch(() => ({}));
+                                            throw new Error(e.error || "Failed to push task");
+                                          }
+                                          toast({ title: "Task pushed to HubSpot" });
+                                        } catch (err: any) {
+                                          toast({ title: "HubSpot push failed", description: err?.message || "Unknown error", variant: "destructive" });
+                                        }
+                                      }}
+                                    >
+                                      <Share2 className="w-3 h-3 mr-1" />
+                                      HubSpot Task
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Push this action item as a HubSpot Task</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                             </div>

@@ -118,6 +118,9 @@ import {
   scoreHistory,
   executiveSummaries,
   scheduledJobRuns,
+  hubspotConnections,
+  type HubspotConnection,
+  type InsertHubspotConnection,
   type ScheduledJobRun,
   type InsertScheduledJobRun,
   type ScoreHistory,
@@ -604,6 +607,14 @@ export interface IStorage {
   deleteIntegrationConfig(id: string): Promise<void>;
   markIntegrationConfigSuccess(id: string): Promise<void>;
   markIntegrationConfigError(id: string, error: string): Promise<void>;
+
+  // HubSpot CRM connections (Task #100)
+  getHubspotConnection(tenantDomain: string): Promise<HubspotConnection | undefined>;
+  createHubspotConnection(data: InsertHubspotConnection): Promise<HubspotConnection>;
+  updateHubspotConnection(tenantDomain: string, data: Partial<InsertHubspotConnection>): Promise<HubspotConnection>;
+  deleteHubspotConnection(tenantDomain: string): Promise<void>;
+  markHubspotSyncResult(tenantDomain: string, result: { stats: any; error: string | null }): Promise<void>;
+  listAllHubspotConnections(): Promise<HubspotConnection[]>;
 
   // SEO & Share-of-Voice Tracking
   getTrackedKeyword(id: string): Promise<TrackedKeyword | undefined>;
@@ -4153,6 +4164,55 @@ export class DatabaseStorage implements IStorage {
       .update(integrationConfigs)
       .set({ lastUsedAt: new Date(), lastError: error })
       .where(eq(integrationConfigs.id, id));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // HubSpot CRM connections (Task #100)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getHubspotConnection(tenantDomain: string): Promise<HubspotConnection | undefined> {
+    const [row] = await db.select().from(hubspotConnections).where(eq(hubspotConnections.tenantDomain, tenantDomain));
+    return row || undefined;
+  }
+
+  async createHubspotConnection(data: InsertHubspotConnection): Promise<HubspotConnection> {
+    const [row] = await db.insert(hubspotConnections).values(data).returning();
+    return row;
+  }
+
+  async updateHubspotConnection(
+    tenantDomain: string,
+    data: Partial<InsertHubspotConnection>,
+  ): Promise<HubspotConnection> {
+    const [row] = await db
+      .update(hubspotConnections)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(hubspotConnections.tenantDomain, tenantDomain))
+      .returning();
+    return row;
+  }
+
+  async deleteHubspotConnection(tenantDomain: string): Promise<void> {
+    await db.delete(hubspotConnections).where(eq(hubspotConnections.tenantDomain, tenantDomain));
+  }
+
+  async markHubspotSyncResult(
+    tenantDomain: string,
+    result: { stats: any; error: string | null },
+  ): Promise<void> {
+    await db
+      .update(hubspotConnections)
+      .set({
+        lastSyncAt: new Date(),
+        lastSyncError: result.error,
+        lastSyncStats: result.stats,
+        updatedAt: new Date(),
+      })
+      .where(eq(hubspotConnections.tenantDomain, tenantDomain));
+  }
+
+  async listAllHubspotConnections(): Promise<HubspotConnection[]> {
+    return db.select().from(hubspotConnections);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

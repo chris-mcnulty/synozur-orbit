@@ -45,6 +45,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "industryBenchmarks", label: "Industry Benchmarks", description: "Compare your Orbit Score against anonymized SIC-code peer cohorts (≥5 tenants)", category: "intelligence" },
   { key: "competitorDocuments", label: "Competitor Documents", description: "Upload per-competitor PDF/DOCX/TXT documents (datasheets, case studies, annual reports) to ground analyses, gap analysis, battlecards, and briefings", category: "intelligence" },
   { key: "collaboration", label: "Collaboration", description: "Threaded comments, @mentions, shared annotations and action item assignments across artifacts", category: "platform" },
+  { key: "hubspotIntegration", label: "HubSpot CRM Sync", description: "Connect a HubSpot portal to enrich competitors with CRM data, surface deal context, and push battlecards / briefings / action items into HubSpot. Pro: inbound only. Enterprise/Unlimited: inbound + outbound + auto-push.", category: "platform" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -105,6 +106,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     industryBenchmarks: false,
     competitorDocuments: false,
     collaboration: false,
+    hubspotIntegration: false,
   },
   trial: {
     battlecards: true,
@@ -144,6 +146,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     industryBenchmarks: false,
     competitorDocuments: false,
     collaboration: false,
+    hubspotIntegration: false,
   },
   pro: {
     battlecards: true,
@@ -183,6 +186,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     industryBenchmarks: false,
     competitorDocuments: true,
     collaboration: true,
+    hubspotIntegration: true,
   },
   enterprise: {
     battlecards: true,
@@ -222,6 +226,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     industryBenchmarks: true,
     competitorDocuments: true,
     collaboration: true,
+    hubspotIntegration: true,
   },
   unlimited: {
     battlecards: true,
@@ -261,6 +266,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     industryBenchmarks: true,
     competitorDocuments: true,
     collaboration: true,
+    hubspotIntegration: true,
   },
 };
 

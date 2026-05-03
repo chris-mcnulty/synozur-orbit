@@ -862,6 +862,35 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS planner_subscriptions_plan_idx ON planner_subscriptions(plan_id)`);
 
+    // ── Task #100: HubSpot CRM integration (idempotent) ──────────────────
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS hubspot_connections (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL UNIQUE,
+        hubspot_portal_id TEXT,
+        hubspot_portal_name TEXT,
+        encrypted_access_token TEXT NOT NULL,
+        encrypted_refresh_token TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        scopes TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        auto_push_enabled BOOLEAN NOT NULL DEFAULT false,
+        default_owner_id TEXT,
+        connected_by_user_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        connected_at TIMESTAMP NOT NULL DEFAULT now(),
+        last_sync_at TIMESTAMP,
+        last_sync_error TEXT,
+        last_sync_stats JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_company_id TEXT`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_lifecycle_stage TEXT`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_open_deal_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_open_deal_value INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE competitors ADD COLUMN IF NOT EXISTS hubspot_last_sync_at TIMESTAMP`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS competitors_hubspot_company_idx ON competitors(hubspot_company_id) WHERE hubspot_company_id IS NOT NULL`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
