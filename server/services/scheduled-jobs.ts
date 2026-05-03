@@ -11,7 +11,6 @@ import { notifications } from "./notifications";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
-import { syncMarketingPlanToPlanner } from "./planner-service";
 import {
   getValidGraphToken,
   renewGraphSubscription,
@@ -1660,22 +1659,20 @@ async function runPlannerSyncJob(): Promise<void> {
       .from(marketingPlans)
       .where(eq(marketingPlans.plannerSyncEnabled, true));
 
+    const { queuePlannerSyncForPlan } = await import("./planner-service");
     for (const plan of enabledPlans) {
       try {
         const ctx = { tenantDomain: plan.tenantDomain, marketId: plan.marketId };
-        const result = await syncMarketingPlanToPlanner(plan.id, ctx);
-        if (result.ok) {
-          synced += 1;
-        } else {
-          failed += 1;
-          console.warn(`[Planner Sync] Plan ${plan.id} (${plan.tenantDomain}) completed with errors:`, result.errors.slice(0, 2));
-        }
+        // Hand off to the background queue (retry/back-off + DLQ) instead of
+        // running sequentially and tying up the sweep on a single slow tenant.
+        queuePlannerSyncForPlan(plan.id, ctx);
+        synced += 1;
       } catch (planErr: any) {
         failed += 1;
-        console.error(`[Planner Sync] Plan ${plan.id} (${plan.tenantDomain}) threw:`, planErr.message);
+        console.error(`[Planner Sync] Plan ${plan.id} (${plan.tenantDomain}) failed to enqueue:`, planErr.message);
       }
     }
-    console.log(`[Planner Sync] Auto-sync sweep complete — ${synced} ok, ${failed} failed out of ${enabledPlans.length} connected plans`);
+    console.log(`[Planner Sync] Auto-sync sweep complete — ${synced} queued, ${failed} failed to enqueue out of ${enabledPlans.length} connected plans`);
   } catch (err: any) {
     console.error("[Planner Sync] Sweep failed:", err.message);
   } finally {

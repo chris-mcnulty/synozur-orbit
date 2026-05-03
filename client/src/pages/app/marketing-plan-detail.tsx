@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
@@ -178,6 +178,28 @@ export default function MarketingPlanDetail() {
     dueDate: "",
   });
   const [plannerDialogOpen, setPlannerDialogOpen] = useState(false);
+  // Stable label derived from plan id so the queued/running state survives
+  // reloads, other tabs, and scheduled background sweeps.
+  const plannerSyncJobLabel = id ? `planner-sync:${id}` : null;
+
+  type JobStatusResponse = {
+    status: "active" | "pending" | "not_found";
+    progress?: { phase?: string; percent?: number };
+    runningSec?: number;
+    queuePosition?: number;
+    pendingAhead?: number;
+    type?: string;
+  };
+  const { data: plannerSyncJob } = useQuery<JobStatusResponse>({
+    queryKey: ["planner-sync-job", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/queue/job-status?label=${encodeURIComponent(plannerSyncJobLabel!)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load job status");
+      return res.json();
+    },
+    enabled: !!plannerSyncJobLabel,
+    refetchInterval: 2000,
+  });
 
   const plannerSyncMutation = useMutation({
     mutationFn: async () => {
@@ -190,21 +212,41 @@ export default function MarketingPlanDetail() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Sync failed");
       }
-      return res.json();
+      return res.json() as Promise<{ queued: true; label: string; status: "active" | "pending"; queuePosition?: number; pendingAhead?: number }>;
     },
-    onSuccess: (result: any) => {
-      const summary = `${result.pulled ? `${result.pulled} pulled, ` : ""}${result.created} created, ${result.updated} updated${result.failed ? `, ${result.failed} failed` : ""}`;
+    onSuccess: (result) => {
       toast({
-        title: result.ok ? "Synced to Planner" : "Sync completed with errors",
-        description: summary,
-        variant: result.ok ? "default" : "destructive",
+        title: result.status === "active" ? "Sync in progress" : "Sync queued",
+        description: result.status === "pending" && result.queuePosition
+          ? `Position ${result.queuePosition} in the Planner queue — running in the background.`
+          : "Running in the background — this banner will update when it finishes.",
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["planner-sync-job", id] });
     },
     onError: (err: any) => {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     },
   });
+
+  // Track transitions from active/pending → not_found so we can refresh the
+  // plan + status (which carry the final `plannerLastSyncAt` /
+  // `plannerLastSyncError` fields) regardless of whether the sync was
+  // initiated from this tab, another tab, or a scheduled sweep.
+  const prevSyncJobStatus = useRef<JobStatusResponse["status"] | undefined>(undefined);
+  useEffect(() => {
+    const cur = plannerSyncJob?.status;
+    const prev = prevSyncJobStatus.current;
+    if ((prev === "active" || prev === "pending") && cur === "not_found") {
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/planner/status`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
+    }
+    prevSyncJobStatus.current = cur;
+  }, [plannerSyncJob?.status, id, queryClient]);
+
+  const plannerSyncBusy = plannerSyncMutation.isPending
+    || plannerSyncJob?.status === "active"
+    || plannerSyncJob?.status === "pending";
 
   const { data: plannerStatus } = useQuery<PlannerStatus>({
     queryKey: [`/api/marketing-plans/${id}/planner/status`],
@@ -842,8 +884,18 @@ export default function MarketingPlanDetail() {
               <div className="flex-1">
                 Connected to <strong>{plan.plannerPlanName}</strong> in <strong>{plan.plannerGroupName}</strong>
                 {plan.plannerBucketName && <> • default bucket <strong>{plan.plannerBucketName}</strong></>}
-                {plan.plannerLastSyncAt && (
-                  <span className="text-muted-foreground"> • Last synced {new Date(plan.plannerLastSyncAt).toLocaleString()}</span>
+                {(plannerStatus?.plannerLastSyncAt || plan.plannerLastSyncAt) && (
+                  <span className="text-muted-foreground"> • Last synced {new Date(plannerStatus?.plannerLastSyncAt || plan.plannerLastSyncAt!).toLocaleString()}</span>
+                )}
+                {plannerSyncJob?.status === "active" && (
+                  <span className="ml-2 text-primary" data-testid="status-planner-sync-running">
+                    • Syncing now{plannerSyncJob.runningSec ? ` (${plannerSyncJob.runningSec}s)` : "…"}
+                  </span>
+                )}
+                {plannerSyncJob?.status === "pending" && (
+                  <span className="ml-2 text-muted-foreground" data-testid="status-planner-sync-queued">
+                    • Queued{plannerSyncJob.queuePosition ? ` (position ${plannerSyncJob.queuePosition})` : "…"}
+                  </span>
                 )}
               </div>
               {plannerStatus?.deepLink && (
@@ -888,8 +940,8 @@ export default function MarketingPlanDetail() {
                 </span>
               )}
             </div>
-            {plan.plannerLastSyncError && (
-              <span className="text-xs text-destructive pl-7">{plan.plannerLastSyncError}</span>
+            {(plannerStatus?.plannerLastSyncError || plan.plannerLastSyncError) && (
+              <span className="text-xs text-destructive pl-7">{plannerStatus?.plannerLastSyncError || plan.plannerLastSyncError}</span>
             )}
           </div>
         )}
@@ -950,15 +1002,19 @@ export default function MarketingPlanDetail() {
               <Button
                 variant="outline"
                 onClick={() => plannerSyncMutation.mutate()}
-                disabled={plannerSyncMutation.isPending || tasks.length === 0}
+                disabled={plannerSyncBusy || tasks.length === 0}
                 data-testid="button-planner-sync"
               >
-                {plannerSyncMutation.isPending ? (
+                {plannerSyncBusy ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <RefreshCw className="w-4 h-4 mr-2" />
                 )}
-                Sync to Planner
+                {plannerSyncJob?.status === "active"
+                  ? "Syncing…"
+                  : plannerSyncJob?.status === "pending"
+                  ? "Queued…"
+                  : "Sync to Planner"}
               </Button>
             )}
             <Button variant="outline" onClick={() => setIsConfiguring(true)}>

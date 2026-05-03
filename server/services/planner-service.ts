@@ -35,6 +35,12 @@ import {
   buildAssignmentsPayload,
   type PlannerTask,
 } from "./planner-graph-client";
+import { enqueuePlannerSync, getJobStatusByLabel } from "./job-queue";
+
+/** Stable label prefix for queued plan sync jobs — used by status polling. */
+export function plannerSyncJobLabel(planId: string): string {
+  return `planner-sync:${planId}`;
+}
 
 export interface SyncResult {
   ok: boolean;
@@ -587,4 +593,98 @@ export async function pullAndReconcileTask(
     });
     return { matched: true, updated: false, error: err.message };
   }
+}
+
+export interface QueuedPlannerSync {
+  queued: true;
+  label: string;
+  status: "active" | "pending";
+  queuePosition?: number;
+  pendingAhead?: number;
+}
+
+/**
+ * Enqueue a Planner sync for a marketing plan. The HTTP request returns
+ * immediately with the queue label; the caller polls
+ * `/api/queue/job-status?label=...` to observe progress, and the existing
+ * `plannerLastSyncAt` / `plannerLastSyncError` fields on the plan capture
+ * the final outcome (which is also reflected on the sync banner).
+ *
+ * If a sync for this plan is already queued or running, that existing job
+ * is returned instead of stacking duplicates — the queue's retry / DLQ
+ * handling will surface any failure.
+ */
+export function queuePlannerSyncForPlan(
+  planId: string,
+  ctx: ContextFilter,
+): QueuedPlannerSync {
+  const label = plannerSyncJobLabel(planId);
+  const existing = getJobStatusByLabel(label, ctx.tenantDomain);
+  if (existing.status === "active" || existing.status === "pending") {
+    return {
+      queued: true,
+      label,
+      status: existing.status,
+      queuePosition: existing.queuePosition,
+      pendingAhead: existing.pendingAhead,
+    };
+  }
+
+  const promise = enqueuePlannerSync(
+    label,
+    async () => {
+      try {
+        const result = await syncMarketingPlanToPlanner(planId, ctx);
+        // Surface partial failure as a thrown error so the queue applies
+        // retry/back-off and ultimately moves the job to the DLQ once
+        // attempts are exhausted. `syncMarketingPlanToPlanner` has already
+        // recorded `plannerLastSyncError` on the plan for the banner.
+        if (!result.ok && result.failed > 0) {
+          throw new Error(
+            `Planner sync completed with ${result.failed} task failure(s): ${result.errors
+              .slice(0, 3)
+              .map((e) => e.message)
+              .join("; ")}`,
+          );
+        }
+        return result;
+      } catch (err: any) {
+        // Persist the error onto the plan so the banner reflects the
+        // failure even when the caller has long since disconnected.
+        try {
+          await storage.updateMarketingPlan(
+            planId,
+            { plannerLastSyncError: err?.message || String(err) } as Partial<InsertMarketingPlan>,
+            ctx,
+          );
+        } catch {
+          // Swallow secondary error — primary failure already logged.
+        }
+        throw err;
+      }
+    },
+    {
+      ctx: {
+        tenantDomain: ctx.tenantDomain,
+        targetId: planId,
+        targetName: `marketing-plan:${planId}`,
+      },
+    },
+  );
+  promise.catch((err) => {
+    // Final failure (retries exhausted). The plan's error column has
+    // already been updated above; just log so it's visible in console.
+    console.error(`[Planner] Queued sync for ${planId} failed permanently:`, err.message);
+  });
+
+  // Re-query immediately so the caller sees the real initial state — the
+  // job may already be active if a queue slot was free.
+  const initial = getJobStatusByLabel(label, ctx.tenantDomain);
+  return {
+    queued: true,
+    label,
+    status: initial.status === "active" ? "active" : "pending",
+    queuePosition: initial.queuePosition,
+    pendingAhead: initial.pendingAhead,
+  };
 }

@@ -25,7 +25,7 @@ import {
   GraphHttpError,
   PLANNER_SCOPES,
 } from "../services/planner-graph-client";
-import { syncMarketingPlanToPlanner } from "../services/planner-service";
+import { queuePlannerSyncForPlan } from "../services/planner-service";
 import { buildVegaExportBundle } from "../services/vega-export";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -388,8 +388,10 @@ export function registerPlannerRoutes(app: Express) {
       if (!plan.plannerSyncEnabled || !plan.plannerPlanId) {
         return res.status(400).json({ error: "This plan is not connected to Microsoft Planner" });
       }
-      const result = await syncMarketingPlanToPlanner(plan.id, toContextFilter(ctx));
-      res.json(result);
+      // Sync runs through the background queue with retry/back-off + DLQ so
+      // the HTTP request stays responsive even if Microsoft Graph is slow.
+      const queued = queuePlannerSyncForPlan(plan.id, toContextFilter(ctx));
+      res.status(202).json(queued);
     } catch (err: any) {
       if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
       handleGraphError(res, err);

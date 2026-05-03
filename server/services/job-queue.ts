@@ -1,4 +1,4 @@
-type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "other";
+type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "planner" | "other";
 type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
 
 /** Optional context passed alongside a job for DB persistence and display. */
@@ -127,6 +127,7 @@ const DEFAULT_CONFIG: QueueConfig = {
     crawl: 2,
     monitor: 2,
     analysis: 1,
+    planner: 2,
   },
   defaultTimeoutMs: 5 * 60 * 1000,
 };
@@ -134,6 +135,7 @@ const DEFAULT_CONFIG: QueueConfig = {
 const PRIORITY = {
   pdf: 10,
   analysis: 5,
+  planner: 4,
   crawl: 3,
   monitor: 2,
   other: 1,
@@ -357,6 +359,24 @@ export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => 
 
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
   return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
+}
+
+/**
+ * Enqueue an outbound Microsoft Planner sync job. Planner sync runs through
+ * the queue so slow/failing Graph calls don't block the originating HTTP
+ * request, and so retry/back-off + DLQ behaviour is applied uniformly.
+ */
+export function enqueuePlannerSync<T>(
+  label: string,
+  work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
+  options?: { timeoutMs?: number; ctx?: JobContext; maxRetries?: number },
+): Promise<T> {
+  return enqueue("planner", label, work, {
+    priority: PRIORITY.planner,
+    timeoutMs: options?.timeoutMs ?? 5 * 60 * 1000,
+    ctx: options?.ctx,
+    maxRetries: options?.maxRetries ?? 3,
+  });
 }
 
 /**
