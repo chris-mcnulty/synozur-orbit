@@ -40,6 +40,7 @@ export function registerCompetitorRoutes(app: Express) {
       linkedInUrl: competitor.linkedInUrl || org.linkedInUrl || null,
       instagramUrl: competitor.instagramUrl || org.instagramUrl || null,
       twitterUrl: competitor.twitterUrl || org.twitterUrl || null,
+      facebookUrl: competitor.facebookUrl || org.facebookUrl || null,
     };
   }
 
@@ -307,6 +308,7 @@ export function registerCompetitorRoutes(app: Express) {
         linkedInUrl: org.linkedInUrl,
         instagramUrl: org.instagramUrl,
         twitterUrl: org.twitterUrl,
+        facebookUrl: org.facebookUrl,
         blogUrl: org.blogUrl,
       }));
 
@@ -366,6 +368,7 @@ export function registerCompetitorRoutes(app: Express) {
         linkedInUrl: competitorData.linkedInUrl,
         instagramUrl: competitorData.instagramUrl,
         twitterUrl: competitorData.twitterUrl,
+        facebookUrl: competitorData.facebookUrl,
         blogUrl: competitorData.blogUrl,
         headquarters: competitorData.headquarters,
         founded: competitorData.founded,

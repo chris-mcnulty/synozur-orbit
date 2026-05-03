@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
-import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban } from "lucide-react";
+import { Plus, MoreHorizontal, ExternalLink, RefreshCw, Building2, Loader2, ChevronDown, ChevronUp, Brain, Target, MessageSquare, Tags, FolderKanban, Search, Sparkles, Check, X, ClipboardPaste, Rss, Pencil, Lock, AlertTriangle, Ban, Linkedin, Twitter, Instagram, Facebook } from "lucide-react";
 import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
@@ -46,6 +46,10 @@ const socialLinkSchemas = {
     /^https?:\/\/(www\.)?instagram\.com\/[A-Za-z0-9_.]+\/?.*$/i,
     "Use an Instagram URL like https://instagram.com/example",
   ),
+  facebookUrl: optionalUrl(
+    /^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9.\-_]+\/?.*$/i,
+    "Use a Facebook URL like https://facebook.com/example",
+  ),
   blogUrl: optionalUrl(
     /^https?:\/\/[^\s.]+\.[^\s]+/i,
     "Use a full URL like https://example.com/blog or https://example.com/feed.xml",
@@ -83,7 +87,7 @@ export default function Competitors() {
     id: string; name: string; canonicalDomain: string; faviconUrl: string | null;
     industry: string | null; description: string | null; category: string | null;
     url: string; linkedInUrl: string | null; instagramUrl: string | null;
-    twitterUrl: string | null; blogUrl: string | null;
+    twitterUrl: string | null; facebookUrl: string | null; blogUrl: string | null;
   }>>([]);
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
   const [orgSearchLoading, setOrgSearchLoading] = useState(false);
@@ -118,6 +122,7 @@ export default function Competitors() {
     linkedInUrl: string; 
     twitterUrl: string; 
     instagramUrl: string;
+    facebookUrl: string;
     blogUrl: string;
     projectId: string | null;
     socialCheckFrequency: string;
@@ -128,7 +133,7 @@ export default function Competitors() {
     fundingRaised: string;
   } | null>(null);
   const [linksForm, setLinksForm] = useState({ 
-    linkedInUrl: "", twitterUrl: "", instagramUrl: "", blogUrl: "", projectId: "",
+    linkedInUrl: "", twitterUrl: "", instagramUrl: "", facebookUrl: "", blogUrl: "", projectId: "",
     socialCheckFrequency: "daily", excludeFromCrawl: false, headquarters: "", founded: "", employeeCount: "", revenue: "", fundingRaised: ""
   });
   const [isBlogTesting, setIsBlogTesting] = useState(false);
@@ -144,7 +149,7 @@ export default function Competitors() {
       }
     });
     return errs;
-  }, [linksForm.linkedInUrl, linksForm.twitterUrl, linksForm.instagramUrl, linksForm.blogUrl]);
+  }, [linksForm.linkedInUrl, linksForm.twitterUrl, linksForm.instagramUrl, linksForm.facebookUrl, linksForm.blogUrl]);
   const hasLinkErrors = Object.keys(linkErrors).length > 0;
 
   // Validate and normalize URL - basic frontend validation, backend does authoritative security checks
@@ -259,7 +264,7 @@ export default function Competitors() {
   const isAtCompetitorLimit = competitorLimit !== -1 && competitorCount >= competitorLimit;
 
   const addCompetitor = useMutation({
-    mutationFn: async (data: { name: string; url: string; projectId?: string; linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; blogUrl?: string }) => {
+    mutationFn: async (data: { name: string; url: string; projectId?: string; linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; facebookUrl?: string; blogUrl?: string }) => {
       const response = await fetch("/api/competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -422,6 +427,7 @@ export default function Competitors() {
           linkedInUrl: linksForm.linkedInUrl.trim() || "",
           twitterUrl: linksForm.twitterUrl.trim() || "",
           instagramUrl: linksForm.instagramUrl.trim() || "",
+          facebookUrl: linksForm.facebookUrl.trim() || "",
           blogUrl: linksForm.blogUrl.trim() || "",
           projectId: linksForm.projectId || null,
           socialCheckFrequency: linksForm.socialCheckFrequency || "daily",
@@ -474,6 +480,7 @@ export default function Competitors() {
       linkedInUrl: competitor.linkedInUrl || "",
       twitterUrl: competitor.twitterUrl || "",
       instagramUrl: competitor.instagramUrl || "",
+      facebookUrl: competitor.facebookUrl || "",
       blogUrl: competitor.blogUrl || "",
       projectId: competitor.projectId || null,
       socialCheckFrequency: competitor.socialCheckFrequency || "daily",
@@ -487,6 +494,7 @@ export default function Competitors() {
       linkedInUrl: competitor.linkedInUrl || "",
       twitterUrl: competitor.twitterUrl || "",
       instagramUrl: competitor.instagramUrl || "",
+      facebookUrl: competitor.facebookUrl || "",
       blogUrl: competitor.blogUrl || "",
       projectId: competitor.projectId || "",
       socialCheckFrequency: competitor.socialCheckFrequency || "daily",
@@ -531,7 +539,7 @@ export default function Competitors() {
   };
 
   const [selectedOrgSocialLinks, setSelectedOrgSocialLinks] = useState<{
-    linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; blogUrl?: string;
+    linkedInUrl?: string; twitterUrl?: string; instagramUrl?: string; facebookUrl?: string; blogUrl?: string;
   }>({});
 
   const handleSelectOrg = (org: typeof orgSearchResults[0]) => {
@@ -543,6 +551,7 @@ export default function Competitors() {
       linkedInUrl: org.linkedInUrl || undefined,
       twitterUrl: org.twitterUrl || undefined,
       instagramUrl: org.instagramUrl || undefined,
+      facebookUrl: org.facebookUrl || undefined,
       blogUrl: org.blogUrl || undefined,
     });
   };
@@ -1231,6 +1240,75 @@ export default function Competitors() {
                                     );
                                   })()}
                                 </div>
+                                {(competitor.linkedInUrl || competitor.twitterUrl || competitor.instagramUrl || competitor.facebookUrl || competitor.blogUrl) && (
+                                  <div className="flex items-center gap-2 mt-1" data-testid={`social-links-${competitor.id}`}>
+                                    {competitor.linkedInUrl && (
+                                      <a
+                                        href={competitor.linkedInUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-muted-foreground hover:text-primary transition-colors"
+                                        aria-label={`${competitor.name} on LinkedIn`}
+                                        data-testid={`link-linkedin-${competitor.id}`}
+                                      >
+                                        <Linkedin className="w-4 h-4" />
+                                      </a>
+                                    )}
+                                    {competitor.twitterUrl && (
+                                      <a
+                                        href={competitor.twitterUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-muted-foreground hover:text-primary transition-colors"
+                                        aria-label={`${competitor.name} on Twitter/X`}
+                                        data-testid={`link-twitter-${competitor.id}`}
+                                      >
+                                        <Twitter className="w-4 h-4" />
+                                      </a>
+                                    )}
+                                    {competitor.instagramUrl && (
+                                      <a
+                                        href={competitor.instagramUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-muted-foreground hover:text-primary transition-colors"
+                                        aria-label={`${competitor.name} on Instagram`}
+                                        data-testid={`link-instagram-${competitor.id}`}
+                                      >
+                                        <Instagram className="w-4 h-4" />
+                                      </a>
+                                    )}
+                                    {competitor.facebookUrl && (
+                                      <a
+                                        href={competitor.facebookUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-muted-foreground hover:text-primary transition-colors"
+                                        aria-label={`${competitor.name} on Facebook`}
+                                        data-testid={`link-facebook-${competitor.id}`}
+                                      >
+                                        <Facebook className="w-4 h-4" />
+                                      </a>
+                                    )}
+                                    {competitor.blogUrl && (
+                                      <a
+                                        href={competitor.blogUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-muted-foreground hover:text-primary transition-colors"
+                                        aria-label={`${competitor.name} blog or RSS feed`}
+                                        data-testid={`link-blog-${competitor.id}`}
+                                      >
+                                        <Rss className="w-4 h-4" />
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
                                 {analysis?.summary && (
                                   <p className="text-sm text-muted-foreground mt-1 line-clamp-1" data-testid={`text-summary-${competitor.id}`}>
                                     {analysis.summary}
@@ -1445,7 +1523,7 @@ export default function Competitors() {
           entityType="competitor"
           sources={{
             website: { lastUpdated: refreshStrategyTarget.lastCrawledAt || refreshStrategyTarget.lastCrawl || null },
-            ...(refreshStrategyTarget.linkedInUrl || refreshStrategyTarget.twitterUrl || refreshStrategyTarget.instagramUrl
+            ...(refreshStrategyTarget.linkedInUrl || refreshStrategyTarget.twitterUrl || refreshStrategyTarget.instagramUrl || refreshStrategyTarget.facebookUrl
               ? { social: { lastUpdated: refreshStrategyTarget.socialLastFetchedAt || null } }
               : {}),
           }}
@@ -1522,6 +1600,22 @@ export default function Competitors() {
               />
               {linkErrors.instagramUrl && (
                 <p className="text-xs text-destructive" data-testid="error-instagram-url">{linkErrors.instagramUrl}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="facebookUrl">Facebook Page</Label>
+              <Input
+                id="facebookUrl"
+                placeholder="https://facebook.com/example"
+                value={linksForm.facebookUrl}
+                onChange={(e) => setLinksForm(f => ({ ...f, facebookUrl: e.target.value }))}
+                aria-invalid={!!linkErrors.facebookUrl}
+                className={linkErrors.facebookUrl ? "border-destructive focus-visible:ring-destructive" : ""}
+                data-testid="input-facebook-url"
+              />
+              {linkErrors.facebookUrl && (
+                <p className="text-xs text-destructive" data-testid="error-facebook-url">{linkErrors.facebookUrl}</p>
               )}
             </div>
             
