@@ -3,6 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ObjectUploader } from "@/components/ObjectUploader";
@@ -963,6 +964,46 @@ export default function AdminPage() {
       return response.json();
     },
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const { data: queueStatus } = useQuery<{
+    active: number;
+    pending: number;
+    completed: number;
+    failed: number;
+    activeByType: Record<string, number>;
+    pendingByType: Record<string, number>;
+    activeJobs: Array<{
+      id: string;
+      type: string;
+      label: string;
+      runningSec: number;
+      progress?: {
+        percent?: number;
+        phase?: string;
+        currentItem?: number;
+        totalItems?: number;
+        currentItemName?: string;
+      };
+    }>;
+    pendingJobs: Array<{
+      id: string;
+      type: string;
+      label: string;
+      waitingSec: number;
+      priority: number;
+    }>;
+    paused: boolean;
+  }>({
+    queryKey: ["/api/admin/queue-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/queue-status", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch queue status");
+      return response.json();
+    },
+    refetchInterval: 3000,
   });
 
   const { data: jobHistory = [], refetch: refetchJobHistory } = useQuery<ScheduledJobRun[]>({
@@ -1937,6 +1978,181 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             <AiUsageDashboard />
+          </CardContent>
+        </Card>
+
+        {/* Job Queue Status */}
+        <Card data-testid="card-queue-status">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" />
+              Job Queue
+              {queueStatus?.paused && (
+                <Badge variant="destructive" className="ml-2">Paused</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Live progress of background jobs running across all tenants
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="border rounded-lg p-3 bg-muted/30" data-testid="stat-queue-active">
+                <div className="text-xs text-muted-foreground">Active</div>
+                <div className="text-2xl font-bold text-blue-500">
+                  {queueStatus?.active ?? 0}
+                </div>
+              </div>
+              <div className="border rounded-lg p-3 bg-muted/30" data-testid="stat-queue-pending">
+                <div className="text-xs text-muted-foreground">Pending</div>
+                <div className="text-2xl font-bold text-amber-500">
+                  {queueStatus?.pending ?? 0}
+                </div>
+              </div>
+              <div className="border rounded-lg p-3 bg-muted/30" data-testid="stat-queue-completed">
+                <div className="text-xs text-muted-foreground">Completed</div>
+                <div className="text-2xl font-bold text-green-500">
+                  {queueStatus?.completed ?? 0}
+                </div>
+              </div>
+              <div className="border rounded-lg p-3 bg-muted/30" data-testid="stat-queue-failed">
+                <div className="text-xs text-muted-foreground">Failed</div>
+                <div className="text-2xl font-bold text-destructive">
+                  {queueStatus?.failed ?? 0}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-sm mb-2">
+                Active Jobs ({queueStatus?.activeJobs.length ?? 0})
+              </h3>
+              {!queueStatus?.activeJobs.length ? (
+                <p className="text-sm text-muted-foreground py-3 text-center border rounded-lg">
+                  No jobs currently running.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {queueStatus.activeJobs.map(job => {
+                    const progress = job.progress;
+                    const percent = typeof progress?.percent === "number"
+                      ? Math.max(0, Math.min(100, progress.percent))
+                      : undefined;
+                    return (
+                      <div
+                        key={job.id}
+                        className="border rounded-lg p-3 bg-muted/20"
+                        data-testid={`active-job-${job.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">{job.type}</Badge>
+                              <span
+                                className="font-medium text-sm truncate"
+                                data-testid={`text-job-label-${job.id}`}
+                              >
+                                {job.label}
+                              </span>
+                            </div>
+                            {(progress?.phase ||
+                              (typeof progress?.currentItem === "number" &&
+                                typeof progress?.totalItems === "number")) && (
+                              <div
+                                className="text-xs text-muted-foreground mt-1"
+                                data-testid={`text-job-phase-${job.id}`}
+                              >
+                                {progress?.phase}
+                                {typeof progress?.currentItem === "number" &&
+                                  typeof progress?.totalItems === "number" && (
+                                    <span className={progress?.phase ? "ml-1" : ""}>
+                                      {progress?.phase ? "(" : ""}
+                                      {progress.currentItem}/{progress.totalItems}
+                                      {progress?.phase ? ")" : ""}
+                                    </span>
+                                  )}
+                              </div>
+                            )}
+                            {progress?.currentItemName && (
+                              <div
+                                className="text-xs text-muted-foreground truncate"
+                                data-testid={`text-job-item-${job.id}`}
+                              >
+                                {progress.currentItemName}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            {job.runningSec}s
+                          </div>
+                        </div>
+                        {(typeof percent === "number" ||
+                          (typeof progress?.currentItem === "number" &&
+                            typeof progress?.totalItems === "number" &&
+                            progress.totalItems > 0)) && (
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={
+                                typeof percent === "number"
+                                  ? percent
+                                  : Math.round(
+                                      ((progress!.currentItem || 0) /
+                                        (progress!.totalItems || 1)) *
+                                        100,
+                                    )
+                              }
+                              className="h-2 flex-1"
+                              data-testid={`progress-job-${job.id}`}
+                            />
+                            <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                              {typeof percent === "number"
+                                ? `${Math.round(percent)}%`
+                                : `${Math.round(
+                                    ((progress!.currentItem || 0) /
+                                      (progress!.totalItems || 1)) *
+                                      100,
+                                  )}%`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {queueStatus?.pendingJobs && queueStatus.pendingJobs.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-sm mb-2">
+                  Pending Jobs ({queueStatus.pending})
+                </h3>
+                <div className="space-y-1">
+                  {queueStatus.pendingJobs.map((job, idx) => (
+                    <div
+                      key={job.id}
+                      className="flex items-center justify-between gap-3 border rounded-lg px-3 py-2 text-sm"
+                      data-testid={`pending-job-${job.id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <Badge
+                          variant="secondary"
+                          className="text-xs tabular-nums"
+                          data-testid={`text-queue-position-${job.id}`}
+                        >
+                          #{idx + 1}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">{job.type}</Badge>
+                        <span className="truncate">{job.label}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        waiting {job.waitingSec}s
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
