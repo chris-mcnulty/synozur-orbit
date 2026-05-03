@@ -11,6 +11,7 @@ import { completeForFeature } from "../services/ai-provider";
 import { AI_FEATURES } from "@shared/schema";
 import { checkFeatureAccessAsync, isFeatureEnabledAsync } from "../services/plan-policy";
 import { sendFeedbackStatusUpdateEmail } from "../services/email-service";
+import { consumeRateLimit, getTenantPublicRateLimit, GLOBAL_TENANT } from "../services/rate-limiter";
 import type { Product, ProductFeedback as FeedbackRow } from "@shared/schema";
 
 function feedbackBaseUrl(): string {
@@ -215,24 +216,73 @@ function hashKey(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
-const publicRateBuckets = new Map<string, { count: number; resetAt: number }>();
 const PUBLIC_RATE_WINDOW_MS = 60_000;
-const PUBLIC_RATE_MAX = 10;
+// Hard ceiling applied per-IP BEFORE the product token lookup. Acts both as
+// (a) anti-enumeration guard against attackers cycling invalid tokens, and
+// (b) an absolute upper bound on per-IP traffic to any public feedback
+// endpoint. Tenant overrides are validated against this ceiling on the
+// admin side (see PUBLIC_TENANT_RATE_LIMIT_MAX export below) so they can
+// never silently exceed it.
+export const PUBLIC_TENANT_RATE_LIMIT_MAX = 600;
+const PUBLIC_ENUMERATION_GUARD_MAX = PUBLIC_TENANT_RATE_LIMIT_MAX;
 
-function rateLimitPublic(req: Request, res: Response): boolean {
+type PublicFeedbackAction = "list" | "submit" | "vote";
+
+/**
+ * Anti-enumeration global rate limit. Called BEFORE the token lookup so
+ * attackers can't bypass protection by varying invalid tokens / feedback
+ * IDs. Cap is intentionally high so it does not constrain valid tenant
+ * traffic (the tenant-aware check below applies the real per-tenant cap).
+ */
+async function rateLimitPublicGlobal(
+  req: Request,
+  res: Response,
+  action: PublicFeedbackAction,
+): Promise<boolean> {
   const ip = getClientIp(req);
-  const key = `${ip}:${req.path}`;
-  const now = Date.now();
-  const bucket = publicRateBuckets.get(key);
-  if (!bucket || bucket.resetAt < now) {
-    publicRateBuckets.set(key, { count: 1, resetAt: now + PUBLIC_RATE_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= PUBLIC_RATE_MAX) {
+  const result = await consumeRateLimit({
+    tenantDomain: GLOBAL_TENANT,
+    scope: `public-feedback:${action}`,
+    key: `ip:${hashKey(ip)}`,
+    max: PUBLIC_ENUMERATION_GUARD_MAX,
+    windowMs: PUBLIC_RATE_WINDOW_MS,
+  });
+  if (!result.allowed) {
+    res.setHeader("X-RateLimit-Limit", String(PUBLIC_ENUMERATION_GUARD_MAX));
+    res.setHeader("X-RateLimit-Remaining", "0");
+    res.setHeader("X-RateLimit-Reset", String(Math.floor(result.resetAt / 1000)));
     res.status(429).json({ error: "Too many requests. Please slow down." });
     return false;
   }
-  bucket.count += 1;
+  return true;
+}
+
+/**
+ * Tenant-aware rate limit applied AFTER the product is resolved. Honours
+ * the `tenants.public_rate_limit_per_minute` admin override.
+ */
+async function rateLimitPublicTenant(
+  req: Request,
+  res: Response,
+  tenantDomain: string,
+  action: PublicFeedbackAction,
+): Promise<boolean> {
+  const ip = getClientIp(req);
+  const max = await getTenantPublicRateLimit(tenantDomain);
+  const result = await consumeRateLimit({
+    tenantDomain,
+    scope: `public-feedback:${action}`,
+    key: `ip:${hashKey(ip)}`,
+    max,
+    windowMs: PUBLIC_RATE_WINDOW_MS,
+  });
+  res.setHeader("X-RateLimit-Limit", String(max));
+  res.setHeader("X-RateLimit-Remaining", String(result.remaining));
+  res.setHeader("X-RateLimit-Reset", String(Math.floor(result.resetAt / 1000)));
+  if (!result.allowed) {
+    res.status(429).json({ error: "Too many requests. Please slow down." });
+    return false;
+  }
   return true;
 }
 
@@ -630,10 +680,11 @@ ${JSON.stringify(condensed, null, 2)}`;
   // ==================== PUBLIC ROUTES ====================
 
   app.get("/api/public/feedback/:token", async (req, res) => {
-    if (!rateLimitPublic(req, res)) return;
+    if (!await rateLimitPublicGlobal(req, res, "list")) return;
     try {
       const product = await loadProductByToken(req.params.token);
       if (!product) return res.status(404).json({ error: "Feedback board not found" });
+      if (!await rateLimitPublicTenant(req, res, product.tenantDomain, "list")) return;
       if (!await ensurePublicFeedbackPlan(product.tenantDomain, res)) return;
 
       const items = await storage.getProductFeedbackByProduct(product.id);
@@ -659,10 +710,11 @@ ${JSON.stringify(condensed, null, 2)}`;
   });
 
   app.post("/api/public/feedback/:token/submit", async (req, res) => {
-    if (!rateLimitPublic(req, res)) return;
+    if (!await rateLimitPublicGlobal(req, res, "submit")) return;
     try {
       const product = await loadProductByToken(req.params.token);
       if (!product) return res.status(404).json({ error: "Feedback board not found" });
+      if (!await rateLimitPublicTenant(req, res, product.tenantDomain, "submit")) return;
       if (!await ensurePublicFeedbackPlan(product.tenantDomain, res)) return;
 
       const parsed = publicSubmitSchema.safeParse(req.body);
@@ -695,10 +747,11 @@ ${JSON.stringify(condensed, null, 2)}`;
   });
 
   app.post("/api/public/feedback/:token/vote/:feedbackId", async (req, res) => {
-    if (!rateLimitPublic(req, res)) return;
+    if (!await rateLimitPublicGlobal(req, res, "vote")) return;
     try {
       const product = await loadProductByToken(req.params.token);
       if (!product) return res.status(404).json({ error: "Feedback board not found" });
+      if (!await rateLimitPublicTenant(req, res, product.tenantDomain, "vote")) return;
       if (!await ensurePublicFeedbackPlan(product.tenantDomain, res)) return;
 
       const fb = await storage.getProductFeedback(req.params.feedbackId);

@@ -18,6 +18,7 @@ import { monitorCompetitorSocialMedia } from "../services/social-monitoring";
 import { invalidateMarketStatusCache } from "../services/scheduled-jobs";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { calculateBaselineScore, getCurrentWeeklyPeriod } from "../services/scoring-service";
+import { PUBLIC_TENANT_RATE_LIMIT_MAX } from "./product-feedback";
 
 export function registerAdminRoutes(app: Express) {
   // ==================== USER MANAGEMENT ROUTES ====================
@@ -1592,8 +1593,15 @@ export function registerAdminRoutes(app: Express) {
       const validStatuses = ["active", "suspended", "inactive"];
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       
-      const { domain, plan, status, name, logoUrl, faviconUrl, primaryColor, secondaryColor, billingManagedManually } = req.body;
-      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; adminUserLimit?: number; readWriteUserLimit?: number; readOnlyUserLimit?: number; multiMarketEnabled?: boolean; marketLimit?: number | null; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string; billingManagedManually?: boolean } = {};
+      const { domain, plan, status, name, logoUrl, faviconUrl, primaryColor, secondaryColor, billingManagedManually, publicRateLimitPerMinute } = req.body;
+      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; adminUserLimit?: number; readWriteUserLimit?: number; readOnlyUserLimit?: number; multiMarketEnabled?: boolean; marketLimit?: number | null; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string; billingManagedManually?: boolean; publicRateLimitPerMinute?: number | null } = {};
+      // Per-tenant override for public/anonymous endpoint rate limits (rpm).
+      // null clears the override and reverts to platform default.
+      if (publicRateLimitPerMinute === null) {
+        updateData.publicRateLimitPerMinute = null;
+      } else if (typeof publicRateLimitPerMinute === "number" && Number.isInteger(publicRateLimitPerMinute) && publicRateLimitPerMinute > 0 && publicRateLimitPerMinute <= PUBLIC_TENANT_RATE_LIMIT_MAX) {
+        updateData.publicRateLimitPerMinute = publicRateLimitPerMinute;
+      }
       // Global Admin manual billing override — when true, Stripe webhook plan sync is skipped.
       if (typeof billingManagedManually === "boolean") updateData.billingManagedManually = billingManagedManually;
       

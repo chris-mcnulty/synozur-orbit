@@ -2146,6 +2146,15 @@ export function startScheduledJobs(): void {
     checkAndRunSeoRefresh();
   }, 60 * 60 * 1000);
 
+  // Task #86: Persistent rate limit bucket cleanup — drops expired rows so
+  // the table doesn't accumulate stale per-IP / per-email keys. Runs every
+  // 6 hours; cheap WHERE reset_at < now() query backed by an index.
+  setInterval(() => {
+    import("./rate-limiter")
+      .then(({ cleanupExpiredBuckets }) => cleanupExpiredBuckets())
+      .catch((err) => console.error("[rate-limiter] cleanup error:", err?.message || err));
+  }, 6 * 60 * 60 * 1000);
+
   // Task #102: Sentiment & tone backfill — drains rows where analyzedAt IS
   // NULL in small batches so the analyzer does not spike LLM spend. Runs
   // every 15 minutes; each tick processes up to 50 rows captured in the

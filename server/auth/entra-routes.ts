@@ -358,7 +358,7 @@ export function registerEntraRoutes(app: Express) {
 
     // Per-IP rate limit + reCAPTCHA gating (Task #105)
     const ip = getClientIp(req);
-    const rate = checkSignupRateLimit(ip);
+    const rate = await checkSignupRateLimit(ip);
     if (!rate.allowed) {
       logAuditEvent("resend_rate_limited", { ip });
       return res.status(429).json({ error: "Too many attempts. Please try again later." });

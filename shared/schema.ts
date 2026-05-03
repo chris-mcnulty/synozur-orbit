@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, real } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, real, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -126,9 +126,28 @@ export const tenants = pgTable("tenants", {
   vegaLaunchpadApiKey: text("vega_launchpad_api_key"), // API key (or OAuth token) used for push auth
   vegaLaunchpadWorkspaceId: text("vega_launchpad_workspace_id"), // Optional Vega-side workspace/tenant identifier
   vegaLaunchpadConnectedAt: timestamp("vega_launchpad_connected_at"),
+  // Public/anonymous endpoint rate limit override (requests per minute).
+  // NULL falls back to the platform default (10 rpm).
+  publicRateLimitPerMinute: integer("public_rate_limit_per_minute"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Persistent rate limit buckets — survives server restarts and works across
+// multiple processes. Keyed by (tenant_domain, scope, key). Use the literal
+// "_global" tenant_domain for non-tenant-scoped limits (e.g. signup by IP).
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  tenantDomain: text("tenant_domain").notNull(),
+  scope: text("scope").notNull(),
+  key: text("key").notNull(),
+  count: integer("count").notNull().default(0),
+  resetAt: timestamp("reset_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.tenantDomain, t.scope, t.key] }),
+}));
+
+export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
 
 // Billing event audit log — provides idempotency for Stripe webhooks
 export const billingEvents = pgTable("billing_events", {

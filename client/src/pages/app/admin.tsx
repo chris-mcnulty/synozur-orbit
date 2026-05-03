@@ -664,6 +664,7 @@ export default function AdminPage() {
     primaryColor: "#810FFB",
     secondaryColor: "#E60CB3",
     billingManagedManually: false,
+    publicRateLimitPerMinute: null as number | null,
   });
   const [addTenantOpen, setAddTenantOpen] = useState(false);
   const [newTenant, setNewTenant] = useState({
@@ -1242,6 +1243,7 @@ export default function AdminPage() {
       primaryColor: tenant.primaryColor || "#810FFB",
       secondaryColor: tenant.secondaryColor || "#E60CB3",
       billingManagedManually: (tenant as any).billingManagedManually ?? false,
+      publicRateLimitPerMinute: tenant.publicRateLimitPerMinute ?? null,
     });
     setEditDialogOpen(true);
   };
@@ -1282,6 +1284,9 @@ export default function AdminPage() {
     }
     if (editForm.billingManagedManually !== ((selectedTenant as any).billingManagedManually ?? false)) {
       (changedFields as any).billingManagedManually = editForm.billingManagedManually;
+    }
+    if (editForm.publicRateLimitPerMinute !== (selectedTenant.publicRateLimitPerMinute ?? null)) {
+      changedFields.publicRateLimitPerMinute = editForm.publicRateLimitPerMinute;
     }
 
     if (Object.keys(changedFields).length === 0) {
@@ -3146,6 +3151,34 @@ export default function AdminPage() {
                 </div>
               </TabsContent>
               <TabsContent value="billing" className="space-y-4 py-4">
+                <div className="space-y-2 pb-4 border-b">
+                  <Label className="text-sm font-medium">Public Endpoint Rate Limit (per minute)</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Per-IP cap applied to this tenant's public/anonymous feedback endpoints.
+                    Leave blank to use the platform default (10/min). Maximum 600/min.
+                  </p>
+                  <input
+                    type="number"
+                    min={1}
+                    max={600}
+                    step={1}
+                    placeholder="Default (10)"
+                    className="w-40 px-3 py-2 border rounded-md text-sm bg-background"
+                    value={editForm.publicRateLimitPerMinute ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setEditForm({ ...editForm, publicRateLimitPerMinute: null });
+                        return;
+                      }
+                      const n = Number.parseInt(raw, 10);
+                      if (Number.isFinite(n)) {
+                        setEditForm({ ...editForm, publicRateLimitPerMinute: Math.min(600, Math.max(1, n)) });
+                      }
+                    }}
+                    data-testid="input-public-rate-limit"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Manual Billing Override</Label>
                   <p className="text-xs text-muted-foreground mb-2">

@@ -62,10 +62,17 @@ export async function verifyRecaptcha(
   }
 }
 
-// ─── Per-IP sliding-window rate limiter for signup / resend routes ─────────
-const RATE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const RATE_MAX = 10;
-const buckets = new Map<string, number[]>();
+// ─── Persistent per-IP rate limiter for signup / resend routes ─────────────
+// Backed by the rate_limit_buckets table so limits survive restarts and apply
+// across multiple processes. See server/services/rate-limiter.ts.
+import { createHash } from "crypto";
+import { consumeRateLimit, GLOBAL_TENANT, SIGNUP_RATE_LIMIT_PER_10_MIN } from "../services/rate-limiter";
+
+function hashIp(ip: string): string {
+  return createHash("sha256").update(ip).digest("hex").slice(0, 32);
+}
+
+const SIGNUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 export function getClientIp(req: Request): string {
   const xff = req.headers["x-forwarded-for"];
@@ -75,16 +82,15 @@ export function getClientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
-export function checkSignupRateLimit(ip: string): { allowed: boolean; resetAt: number } {
-  const now = Date.now();
-  const cutoff = now - RATE_WINDOW_MS;
-  const arr = (buckets.get(ip) || []).filter((t) => t > cutoff);
-  if (arr.length >= RATE_MAX) {
-    return { allowed: false, resetAt: arr[0] + RATE_WINDOW_MS };
-  }
-  arr.push(now);
-  buckets.set(ip, arr);
-  return { allowed: true, resetAt: now + RATE_WINDOW_MS };
+export async function checkSignupRateLimit(ip: string): Promise<{ allowed: boolean; resetAt: number }> {
+  const result = await consumeRateLimit({
+    tenantDomain: GLOBAL_TENANT,
+    scope: "auth-signup",
+    key: `ip:${hashIp(ip)}`,
+    max: SIGNUP_RATE_LIMIT_PER_10_MIN,
+    windowMs: SIGNUP_WINDOW_MS,
+  });
+  return { allowed: result.allowed, resetAt: result.resetAt };
 }
 
 export function logAuditEvent(

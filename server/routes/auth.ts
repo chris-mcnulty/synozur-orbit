@@ -9,6 +9,8 @@ import { fromError } from "zod-validation-error";
 import { syncNewAccountToHubSpot } from "../services/hubspot-service";
 import { sendDigestNowForUser } from "../services/scheduled-jobs";
 import { verifyRecaptcha, checkSignupRateLimit, getClientIp, logAuditEvent, isRecaptchaConfigured } from "../auth/recaptcha";
+import { consumeRateLimit, GLOBAL_TENANT, PASSWORD_RESET_RATE_LIMIT_PER_HOUR } from "../services/rate-limiter";
+import { createHash } from "crypto";
 import { providerAllowedForTenant } from "../auth/auth-policy";
 
 export function registerAuthRoutes(app: Express) {
@@ -17,7 +19,7 @@ export function registerAuthRoutes(app: Express) {
     try {
       // ── Per-IP rate limit (sliding window) ────────────────────────────────
       const ip = getClientIp(req);
-      const rate = checkSignupRateLimit(ip);
+      const rate = await checkSignupRateLimit(ip);
       if (!rate.allowed) {
         logAuditEvent("signup_rate_limited", { ip });
         return res.status(429).json({ error: "Too many signup attempts. Please try again later." });
@@ -218,10 +220,38 @@ export function registerAuthRoutes(app: Express) {
   // Forgot password - request reset link
   app.post("/api/auth/forgot-password", async (req, res) => {
     try {
+      const ip = getClientIp(req);
+      // Per-IP rate limit: this endpoint triggers email sends, so we cap it
+      // tighter than signup. Hashed-email key ensures one attacker can't
+      // enumerate by rotating only the email value either.
+      const ipRate = await consumeRateLimit({
+        tenantDomain: GLOBAL_TENANT,
+        scope: "auth-password-reset:ip",
+        key: `ip:${createHash("sha256").update(ip).digest("hex").slice(0, 32)}`,
+        max: PASSWORD_RESET_RATE_LIMIT_PER_HOUR,
+        windowMs: 60 * 60 * 1000,
+      });
+      if (!ipRate.allowed) {
+        logAuditEvent("password_reset_rate_limited", { ip });
+        return res.status(429).json({ error: "Too many password reset requests. Please try again later." });
+      }
+
       const { email } = req.body;
 
       if (!email) {
         return res.status(400).json({ error: "Email is required" });
+      }
+
+      const emailRate = await consumeRateLimit({
+        tenantDomain: GLOBAL_TENANT,
+        scope: "auth-password-reset:email",
+        key: `email:${createHash("sha256").update(String(email).toLowerCase()).digest("hex").slice(0, 32)}`,
+        max: PASSWORD_RESET_RATE_LIMIT_PER_HOUR,
+        windowMs: 60 * 60 * 1000,
+      });
+      if (!emailRate.allowed) {
+        logAuditEvent("password_reset_rate_limited", { ip, reason: "email" });
+        return res.status(429).json({ error: "Too many password reset requests. Please try again later." });
       }
 
       const user = await storage.getUserByEmail(email);
@@ -265,6 +295,20 @@ export function registerAuthRoutes(app: Express) {
   // Reset password - verify token and set new password
   app.post("/api/auth/reset-password", async (req, res) => {
     try {
+      const ip = getClientIp(req);
+      // Cap per-IP attempts so an attacker can't brute-force reset tokens.
+      const rate = await consumeRateLimit({
+        tenantDomain: GLOBAL_TENANT,
+        scope: "auth-password-reset:confirm",
+        key: `ip:${createHash("sha256").update(ip).digest("hex").slice(0, 32)}`,
+        max: 20,
+        windowMs: 60 * 60 * 1000,
+      });
+      if (!rate.allowed) {
+        logAuditEvent("password_reset_confirm_rate_limited", { ip });
+        return res.status(429).json({ error: "Too many attempts. Please try again later." });
+      }
+
       const { token, newPassword } = req.body;
 
       if (!token || !newPassword) {

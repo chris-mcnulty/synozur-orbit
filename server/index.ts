@@ -896,6 +896,21 @@ app.use((req, res, next) => {
     // Task #84: per-product toggle for feedback status-update emails
     await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS feedback_email_notifications_enabled BOOLEAN NOT NULL DEFAULT true`);
 
+    // ── Task #86: Persistent tenant-aware rate limiter ──────────────────
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS public_rate_limit_per_minute INTEGER`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+        tenant_domain TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        reset_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT now(),
+        CONSTRAINT rate_limit_buckets_pkey PRIMARY KEY (tenant_domain, scope, key)
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS rate_limit_buckets_reset_at_idx ON rate_limit_buckets(reset_at)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
