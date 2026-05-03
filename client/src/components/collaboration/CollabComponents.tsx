@@ -409,6 +409,7 @@ export function AnnotationRail({ targetKind, targetId, readOnly, className }: An
   const { toast } = useToast();
   const [text, setText] = useState("");
   const [selected, setSelected] = useState("");
+  const [showResolved, setShowResolved] = useState(false);
   const usersQuery = useCollabUsers();
   const users = usersQuery.data?.users || [];
 
@@ -459,14 +460,27 @@ export function AnnotationRail({ targetKind, targetId, readOnly, className }: An
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   });
 
-  const list = q.data?.annotations || [];
+  const allAnnotations = q.data?.annotations || [];
+  const resolvedCount = allAnnotations.filter((a) => !!a.resolvedAt).length;
+  const openCount = allAnnotations.length - resolvedCount;
+  const list = showResolved ? allAnnotations : allAnnotations.filter((a) => !a.resolvedAt);
 
   return (
     <div className={className} data-testid={`annotation-rail-${targetKind}-${targetId}`}>
       <div className="mb-3 flex items-center gap-2">
         <AtSign className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-medium">Annotations</h3>
-        <Badge variant="outline">{list.length}</Badge>
+        <Badge variant="outline">{openCount}</Badge>
+        {resolvedCount > 0 && (
+          <button
+            type="button"
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+            onClick={() => setShowResolved((v) => !v)}
+            data-testid={`button-toggle-resolved-${targetKind}-${targetId}`}
+          >
+            {showResolved ? `Hide resolved (${resolvedCount})` : `Show resolved (${resolvedCount})`}
+          </button>
+        )}
       </div>
 
       {!readOnly && (
@@ -505,9 +519,16 @@ export function AnnotationRail({ targetKind, targetId, readOnly, className }: An
         {list.map((a) => (
           <div
             key={a.id}
-            className="rounded border p-2"
+            className={`rounded border p-2 ${a.resolvedAt ? "opacity-60 bg-muted/40" : ""}`}
             data-testid={`annotation-${a.id}`}
           >
+            {a.resolvedAt && (
+              <div className="mb-1 flex items-center gap-1">
+                <Badge variant="secondary" className="text-[10px]" data-testid={`badge-resolved-${a.id}`}>
+                  Resolved
+                </Badge>
+              </div>
+            )}
             {a.selectedText && (
               <blockquote className="mb-2 border-l-2 pl-2 text-xs italic text-muted-foreground">
                 {a.selectedText}

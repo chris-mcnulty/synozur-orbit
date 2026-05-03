@@ -20,8 +20,8 @@ import { tickMarketingPublishWorker } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
-import { marketingPlans, seoMetrics, trackedKeywords, type SeoMetric } from "@shared/schema";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, type SeoMetric } from "@shared/schema";
+import { eq, and, desc, isNull, lt, sql } from "drizzle-orm";
 import type { SeoMover } from "./webhook-formatters";
 
 // Cache for market status to avoid repeated DB queries
@@ -1966,6 +1966,7 @@ export async function triggerSeoRefreshNow(): Promise<void> {
 // ───────────────────────────────────────────────────────────────────────────
 
 let hubspotSyncInterval: NodeJS.Timeout | null = null;
+let collabCleanupInterval: NodeJS.Timeout | null = null;
 
 async function runHubspotSyncJob(): Promise<void> {
   if (jobStatus.hubspotSync.isRunning) {
@@ -2022,6 +2023,67 @@ async function runHubspotSyncJob(): Promise<void> {
 
 export async function triggerHubspotSyncNow(): Promise<void> {
   runHubspotSyncJob();
+}
+
+/**
+ * Task #123 — Collaboration data hygiene.
+ *
+ * Hard-deletes comments that have been soft-deleted for 30+ days, then
+ * removes orphaned threads (no remaining comments) that aren't tied to an
+ * annotation. Annotation-owned threads stay intact since their lifecycle is
+ * driven by the annotation row — deleting an annotation also removes its
+ * thread (and the thread's comments cascade) via the explicit DELETE in
+ * the annotation route.
+ */
+export async function runCollaborationCleanupJob(): Promise<{
+  commentsDeleted: number;
+  threadsDeleted: number;
+}> {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  let commentsDeleted = 0;
+  let threadsDeleted = 0;
+  try {
+    const removed = await db
+      .delete(collaborationComments)
+      .where(
+        and(
+          lt(collaborationComments.deletedAt, cutoff),
+          sql`${collaborationComments.deletedAt} IS NOT NULL`,
+        ),
+      )
+      .returning({ id: collaborationComments.id });
+    commentsDeleted = removed.length;
+
+    // Find threads with no remaining comments and not referenced by an
+    // annotation. Skip annotation-targeted threads regardless.
+    const orphaned = await db.execute<{ id: string }>(sql`
+      SELECT t.id FROM ${collaborationThreads} t
+      WHERE t.target_kind <> 'annotation'
+        AND NOT EXISTS (
+          SELECT 1 FROM ${collaborationComments} c WHERE c.thread_id = t.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM ${annotations} a WHERE a.thread_id = t.id
+        )
+    `);
+    const orphanIds = (orphaned.rows as Array<{ id: string }>).map((r) => r.id);
+    if (orphanIds.length > 0) {
+      const finalRemoved = await db
+        .delete(collaborationThreads)
+        .where(sql`${collaborationThreads.id} = ANY(${orphanIds})`)
+        .returning({ id: collaborationThreads.id });
+      threadsDeleted = finalRemoved.length;
+    }
+
+    if (commentsDeleted > 0 || threadsDeleted > 0) {
+      console.log(
+        `[Collab Cleanup] Hard-deleted ${commentsDeleted} comment(s) and ${threadsDeleted} orphaned thread(s)`,
+      );
+    }
+  } catch (err) {
+    console.error("[Collab Cleanup] Sweep failed:", (err as Error).message);
+  }
+  return { commentsDeleted, threadsDeleted };
 }
 
 export function startScheduledJobs(): void {
@@ -2162,6 +2224,20 @@ export function startScheduledJobs(): void {
       console.error("[Scheduled Jobs] Periodic stuck job cleanup error:", err);
     });
   }, 15 * 60 * 1000);
+
+  // Task #123: Collaboration data hygiene — daily sweep that hard-deletes
+  // soft-deleted comments older than 30 days plus orphaned threads.
+  if (collabCleanupInterval) clearInterval(collabCleanupInterval);
+  collabCleanupInterval = setInterval(() => {
+    runCollaborationCleanupJob().catch((err) =>
+      console.error("[Collab Cleanup] Tick error:", err?.message || err),
+    );
+  }, 24 * 60 * 60 * 1000);
+  setTimeout(() => {
+    runCollaborationCleanupJob().catch((err) =>
+      console.error("[Collab Cleanup] Initial sweep error:", err?.message || err),
+    );
+  }, 3 * 60 * 1000);
   
   console.log("[Scheduled Jobs] Running initial job sweep for any overdue items...");
   

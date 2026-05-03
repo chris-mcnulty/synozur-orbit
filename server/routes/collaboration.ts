@@ -561,6 +561,7 @@ export function registerCollaborationRoutes(app: Express) {
             and(
               eq(annotations.tenantDomain, ctx.tenantDomain),
               gte(annotations.createdAt, since),
+              isNull(annotations.resolvedAt),
             ),
           )
           .orderBy(desc(annotations.createdAt))
