@@ -8,10 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown, Table as TableIcon } from "lucide-react";
+import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, AlertCircle, Wand2, Globe, FileText, LayoutList, LayoutGrid, ArrowUpDown, Table as TableIcon, MessageSquare, ThumbsUp, Quote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+interface FeedbackComment {
+  id: string;
+  title: string;
+  description: string | null;
+  voteCount: number;
+  submitterName: string | null;
+  createdAt: string;
+}
 
 interface RoadmapItem {
   id: string;
@@ -26,6 +35,9 @@ interface RoadmapItem {
   aiRecommended: boolean;
   fromFeedback?: boolean;
   createdAt: string;
+  feedbackCount?: number;
+  totalUpvotes?: number;
+  topComments?: FeedbackComment[];
 }
 
 interface Product {
@@ -361,6 +373,71 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
   };
 
   const unscheduledItems = roadmapItems.filter(item => !item.quarter || !item.year);
+
+  const FeedbackSignals = ({ item }: { item: RoadmapItem }) => {
+    const feedbackCount = item.feedbackCount ?? 0;
+    const totalUpvotes = item.totalUpvotes ?? 0;
+    const topComments = item.topComments ?? [];
+    if (!item.fromFeedback && feedbackCount === 0) return null;
+    return (
+      <div className="mt-2 space-y-2">
+        {(feedbackCount > 0 || totalUpvotes > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {feedbackCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 border-purple-500/40 text-purple-300"
+                data-testid={`badge-feedback-count-${item.id}`}
+                title={`${feedbackCount} related feedback item${feedbackCount === 1 ? "" : "s"}`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                {feedbackCount}
+              </Badge>
+            )}
+            {totalUpvotes > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1 border-purple-500/40 text-purple-300"
+                data-testid={`badge-feedback-votes-${item.id}`}
+                title={`${totalUpvotes} customer upvote${totalUpvotes === 1 ? "" : "s"}`}
+              >
+                <ThumbsUp className="h-3 w-3" />
+                {totalUpvotes}
+              </Badge>
+            )}
+          </div>
+        )}
+        {topComments.length > 0 && (
+          <details className="group rounded border border-purple-500/20 bg-purple-500/5 p-2" data-testid={`customer-voice-${item.id}`}>
+            <summary className="cursor-pointer list-none text-xs font-medium text-purple-300 flex items-center gap-1.5">
+              <Quote className="h-3 w-3" />
+              Customer voice
+              <span className="text-muted-foreground ml-1">({topComments.length})</span>
+            </summary>
+            <ul className="mt-2 space-y-2">
+              {topComments.map((c) => (
+                <li key={c.id} className="text-xs border-l-2 border-purple-500/40 pl-2" data-testid={`customer-voice-quote-${c.id}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{c.title}</span>
+                    <span className="flex items-center gap-1 text-muted-foreground shrink-0">
+                      <ThumbsUp className="h-3 w-3" />
+                      {c.voteCount}
+                    </span>
+                  </div>
+                  {c.description && (
+                    <p className="text-muted-foreground mt-0.5 line-clamp-3">{c.description}</p>
+                  )}
+                  {c.submitterName && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">— {c.submitterName}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    );
+  };
 
   const RoadmapForm = ({ onSubmit, isEdit = false }: { onSubmit: (e: React.FormEvent) => void; isEdit?: boolean }) => (
     <form onSubmit={onSubmit}>
@@ -795,8 +872,9 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                     <div className="flex items-center gap-2 mt-1">
                       {getEffortBadge(item.effort)}
                       {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
-                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>From feedback</Badge>}
+                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>Originated from feedback</Badge>}
                     </div>
+                    <FeedbackSignals item={item} />
                   </div>
                 ))}
                 {(!itemsByQuarter[quarter] || itemsByQuarter[quarter].length === 0) && (
@@ -841,8 +919,9 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                         <Badge variant="outline" className="text-xs">{item.quarter} {item.year}</Badge>
                       )}
                       {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
-                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>From feedback</Badge>}
+                      {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>Originated from feedback</Badge>}
                     </div>
+                    <FeedbackSignals item={item} />
                   </div>
                 ))}
               </CardContent>
@@ -865,7 +944,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
           </CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {unscheduledItems.map((item) => (
-              <div key={item.id} className="p-2 rounded border bg-card">
+              <div key={item.id} className="p-2 rounded border bg-card" data-testid={`roadmap-item-${item.id}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">{item.title}</span>
                   <div className="flex items-center gap-1">
@@ -874,7 +953,12 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
                     </Button>
                   </div>
                 </div>
-                {getEffortBadge(item.effort)}
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {getEffortBadge(item.effort)}
+                  {item.aiRecommended && <Badge variant="secondary" className="text-xs">AI</Badge>}
+                  {item.fromFeedback && <Badge variant="secondary" className="text-xs bg-purple-500/15 text-purple-300 border-purple-500/30" data-testid={`badge-from-feedback-${item.id}`}>Originated from feedback</Badge>}
+                </div>
+                <FeedbackSignals item={item} />
               </div>
             ))}
           </CardContent>

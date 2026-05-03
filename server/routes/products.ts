@@ -1,13 +1,13 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, logAiUsage, guardFeature, guardManualAction } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
 import { z } from "zod";
-import { contentAssets, projectProducts as projectProductsTable } from "@shared/schema";
+import { contentAssets, projectProducts as projectProductsTable, productFeedback } from "@shared/schema";
 import { generateRoadmapRecommendations } from "../ai-service";
 import { documentExtractionService } from "../services/document-extraction";
 import type { ContextFilter } from "../storage";
@@ -819,7 +819,45 @@ Provide analysis in this JSON format:
       if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
       
       const items = await storage.getRoadmapItemsByProduct(req.params.productId);
-      res.json(items);
+
+      const featureIds = items.map(i => i.featureId).filter((id): id is string => !!id);
+      const feedbackByFeature = new Map<string, Array<typeof productFeedback.$inferSelect>>();
+      if (featureIds.length > 0) {
+        const feedbackRows = await db.select().from(productFeedback)
+          .where(and(
+            eq(productFeedback.productId, req.params.productId),
+            inArray(productFeedback.promotedFeatureId, featureIds),
+          ))
+          .orderBy(desc(productFeedback.voteCount), desc(productFeedback.createdAt));
+        for (const row of feedbackRows) {
+          if (!row.promotedFeatureId) continue;
+          const list = feedbackByFeature.get(row.promotedFeatureId) ?? [];
+          list.push(row);
+          feedbackByFeature.set(row.promotedFeatureId, list);
+        }
+      }
+
+      const enriched = items.map(item => {
+        const related = item.featureId ? (feedbackByFeature.get(item.featureId) ?? []) : [];
+        const feedbackCount = related.length;
+        const totalUpvotes = related.reduce((sum, f) => sum + (f.voteCount || 0), 0);
+        const topComments = related.slice(0, 3).map(f => ({
+          id: f.id,
+          title: f.title,
+          description: f.description,
+          voteCount: f.voteCount || 0,
+          submitterName: f.submitterName,
+          createdAt: f.createdAt,
+        }));
+        return {
+          ...item,
+          feedbackCount,
+          totalUpvotes,
+          topComments,
+        };
+      });
+
+      res.json(enriched);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
