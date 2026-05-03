@@ -832,7 +832,7 @@ export default function BrandLibraryPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-5 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 items-start">
+          <div className="grid gap-5 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 items-start animate-in fade-in duration-200 motion-reduce:animate-none">
             {filtered.map(renderAssetCard)}
           </div>
         )}

@@ -1047,7 +1047,7 @@ export default function IntelligenceBriefingPage() {
         )}
 
         {bd && briefing && briefing.status !== "generating" && briefing.status !== "failed" && (
-          <>
+          <div className="space-y-6 animate-in fade-in duration-200 motion-reduce:animate-none">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>
                 <CardContent className="pt-4 pb-3 px-4">
@@ -1501,7 +1501,7 @@ export default function IntelligenceBriefingPage() {
                 </CardContent>
               </Card>
             )}
-          </>
+          </div>
         )}
         <Dialog open={isGenerateDialogOpen} onOpenChange={setIsGenerateDialogOpen}>
           <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">

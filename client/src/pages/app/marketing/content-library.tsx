@@ -1441,7 +1441,7 @@ export default function ContentLibraryPage() {
             </CardContent>
           </Card>
         ) : viewMode === "table" ? (
-          <div className="rounded-lg border overflow-hidden">
+          <div className="rounded-lg border overflow-hidden animate-in fade-in duration-200 motion-reduce:animate-none">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -1537,7 +1537,7 @@ export default function ContentLibraryPage() {
             </table>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start animate-in fade-in duration-200 motion-reduce:animate-none">
             {filtered.map(renderAssetCard)}
           </div>
         )}

@@ -536,7 +536,7 @@ export default function PersonasPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in duration-200 motion-reduce:animate-none">
           {personas.map(persona => (
             <Card key={persona.id} className="group relative overflow-hidden" data-testid={`card-persona-${persona.id}`}>
               <CardHeader className="pb-3">

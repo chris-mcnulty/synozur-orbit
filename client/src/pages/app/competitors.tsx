@@ -1151,7 +1151,7 @@ export default function Competitors() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards delay-100">
+            <div className="grid gap-6 animate-in fade-in duration-200 motion-reduce:animate-none">
               {competitors.map((competitor: any) => {
                 const analysis = competitor.analysisData as any;
                 const isExpanded = expandedCompetitors.has(competitor.id);
