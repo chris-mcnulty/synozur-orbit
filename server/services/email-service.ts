@@ -13,6 +13,7 @@ import {
   WEEKLY_DIGEST_EMAIL,
   INTELLIGENCE_BRIEFING_DIGEST_EMAIL,
   COMPETITOR_ALERT_EMAIL,
+  SEO_MOVEMENT_ALERT_EMAIL,
   SUPPORT_TICKET_NOTIFICATION_EMAIL,
   SUPPORT_TICKET_CONFIRMATION_EMAIL,
   SUPPORT_TICKET_REPLY_EMAIL,
@@ -1163,6 +1164,106 @@ function escapeEmailHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+export interface SeoMovementAlertEmailParams {
+  to: string;
+  userName: string;
+  companyName: string;
+  marketLabel?: string;
+  topGainers: Array<{
+    keyword: string;
+    entityName: string;
+    entityType: "baseline" | "competitor";
+    previousRank: number | null;
+    currentRank: number | null;
+    delta: number;
+  }>;
+  topLosers: Array<{
+    keyword: string;
+    entityName: string;
+    entityType: "baseline" | "competitor";
+    previousRank: number | null;
+    currentRank: number | null;
+    delta: number;
+  }>;
+  baseUrl: string;
+}
+
+export async function sendSeoMovementAlertEmail(params: SeoMovementAlertEmailParams): Promise<boolean> {
+  const { to, userName, companyName, marketLabel, topGainers, topLosers, baseUrl } = params;
+  const copy = SEO_MOVEMENT_ALERT_EMAIL;
+  const seoLink = `${baseUrl}/app/seo`;
+  const settingsLink = `${baseUrl}/app/settings`;
+
+  const safeUserName = escapeEmailHtml(userName);
+  const safeCompany = escapeEmailHtml(companyName);
+  const safeMarket = marketLabel ? escapeEmailHtml(marketLabel) : undefined;
+
+  const fmtRank = (r: number | null) => (r === null ? "—" : `#${r}`);
+  const renderMover = (m: SeoMovementAlertEmailParams["topGainers"][number]) => {
+    const tag = m.entityType === "baseline" ? "you" : "competitor";
+    const direction = m.delta > 0 ? "up" : m.delta < 0 ? "down" : "no change";
+    const arrow = m.delta > 0 ? "▲" : m.delta < 0 ? "▼" : "•";
+    const change = m.delta === 0 ? "no change" : `${Math.abs(m.delta)} positions ${direction}`;
+    return `
+      <div class="feature">
+        <div class="feature-title">${arrow} ${escapeEmailHtml(m.entityName)} <span class="muted" style="font-weight: 400; font-size: 12px;">(${tag})</span></div>
+        <p class="feature-desc">"${escapeEmailHtml(m.keyword)}" — ${fmtRank(m.previousRank)} → ${fmtRank(m.currentRank)} (${change})</p>
+      </div>
+    `;
+  };
+
+  const gainersHtml = topGainers.length > 0
+    ? `<h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 24px 0 12px 0;">${copy.gainersHeading}</h2>
+       <div class="feature-list">${topGainers.map(renderMover).join("")}</div>`
+    : "";
+  const losersHtml = topLosers.length > 0
+    ? `<h2 style="color: #ffffff; font-size: 18px; font-weight: 600; margin: 24px 0 12px 0;">${copy.losersHeading}</h2>
+       <div class="feature-list">${topLosers.map(renderMover).join("")}</div>`
+    : "";
+
+  const noMoversHtml = topGainers.length === 0 && topLosers.length === 0
+    ? `<p class="muted">${copy.noMoversMessage}</p>`
+    : "";
+
+  const content = `
+    <h1>${copy.heading}</h1>
+    <p>${copy.greeting(safeUserName)}</p>
+    <p>${copy.intro(safeCompany, safeMarket)}</p>
+
+    ${gainersHtml}
+    ${losersHtml}
+    ${noMoversHtml}
+
+    <div class="button-container">
+      <a href="${seoLink}" class="button">${copy.buttonText}</a>
+    </div>
+
+    <div class="divider"></div>
+
+    <p class="muted" style="font-size: 12px; text-align: center; margin-top: 24px;">
+      ${copy.footerMessage}<br/>
+      <a href="${settingsLink}" class="link" style="font-size: 12px;">${copy.unsubscribeText}</a>
+    </p>
+  `;
+
+  const moverText = (m: SeoMovementAlertEmailParams["topGainers"][number]) => {
+    const direction = m.delta > 0 ? "up" : m.delta < 0 ? "down" : "no change";
+    const change = m.delta === 0 ? "no change" : `${Math.abs(m.delta)} pos ${direction}`;
+    const tag = m.entityType === "baseline" ? "you" : "competitor";
+    return `- ${m.entityName} (${tag}) "${m.keyword}" ${fmtRank(m.previousRank)} → ${fmtRank(m.currentRank)} (${change})`;
+  };
+  const gainersText = topGainers.map(moverText).join("\n");
+  const losersText = topLosers.map(moverText).join("\n");
+  const text = copy.plainText(userName, companyName, marketLabel, gainersText, losersText, seoLink, settingsLink);
+
+  return sendEmail({
+    to,
+    subject: copy.subject(companyName, marketLabel),
+    html: wrapEmailContent(content),
+    text,
+  });
 }
 
 export async function sendCompetitorAlertEmail(params: CompetitorAlertEmailParams): Promise<boolean> {

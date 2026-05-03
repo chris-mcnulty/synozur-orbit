@@ -207,6 +207,53 @@ export function buildWeeklyDigestPayload(opts: {
   };
 }
 
+export interface SeoMover {
+  keyword: string;
+  entityName: string;
+  entityType: "baseline" | "competitor";
+  previousRank: number | null;
+  currentRank: number | null;
+  delta: number; // positive = rank improved (smaller is better)
+}
+
+export function buildSeoMovementPayload(opts: {
+  tenantName: string;
+  marketName?: string;
+  topGainers: SeoMover[];
+  topLosers: SeoMover[];
+  link?: string;
+}): WebhookPayload {
+  const fmtRank = (r: number | null) => (r === null ? "—" : `#${r}`);
+  const moverLine = (m: SeoMover) => {
+    const arrow = m.delta > 0 ? "▲" : m.delta < 0 ? "▼" : "•";
+    const tag = m.entityType === "baseline" ? "you" : "competitor";
+    const change = m.delta === 0
+      ? "no change"
+      : `${Math.abs(m.delta)} pos ${m.delta > 0 ? "up" : "down"}`;
+    return `${arrow} *${m.entityName}* (${tag}) — "${m.keyword}" ${fmtRank(m.previousRank)} → ${fmtRank(m.currentRank)} (${change})`;
+  };
+
+  const bullets: string[] = [];
+  if (opts.topGainers.length > 0) {
+    bullets.push(...opts.topGainers.map(moverLine));
+  }
+  if (opts.topLosers.length > 0) {
+    bullets.push(...opts.topLosers.map(moverLine));
+  }
+
+  const total = opts.topGainers.length + opts.topLosers.length;
+  const marketSuffix = opts.marketName ? ` — ${opts.marketName}` : "";
+
+  return {
+    category: "seo_movement",
+    title: `SEO movement detected — ${opts.tenantName}${marketSuffix}`,
+    summary: `${total} significant week-over-week ranking change${total === 1 ? "" : "s"} in ${opts.tenantName}'s tracked keywords.`,
+    bullets,
+    link: opts.link ? { label: "Open SEO dashboard", url: opts.link } : undefined,
+    color: "#0EA5E9",
+  };
+}
+
 export function buildJobFailedPayload(opts: {
   jobType: string;
   targetName?: string;

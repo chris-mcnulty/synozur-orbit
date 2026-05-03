@@ -14,8 +14,9 @@ import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { syncMarketingPlanToPlanner } from "./planner-service";
 import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
-import { marketingPlans } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { marketingPlans, seoMetrics, trackedKeywords, type SeoMetric } from "@shared/schema";
+import { eq, and, desc, isNull } from "drizzle-orm";
+import type { SeoMover } from "./webhook-formatters";
 
 // Cache for market status to avoid repeated DB queries
 const marketStatusCache: Map<string, { status: string; timestamp: number }> = new Map();
@@ -1647,6 +1648,124 @@ function getTenantSeoIntervalMs(tenant: { seoRefreshIntervalDays?: number | null
   return clamped * DAY_MS;
 }
 
+// ---------------------------------------------------------------------------
+// Movement detection — compares the metrics just recorded by a market sweep
+// against the most recent prior capture for each (keyword, entity) pair and
+// returns the top gainers/losers ready for `notifications.dispatch`.
+// ---------------------------------------------------------------------------
+
+const SEO_MOVEMENT_RANK_DELTA_THRESHOLD = 5;
+const SEO_MOVEMENT_PAGE_ONE_THRESHOLD = 10;
+const SEO_MOVEMENT_TOP_N = 5;
+// SerpAPI is queried with num=100, so the worst observable rank is 100.
+// Any sentinel beyond that is "worse than not appearing in results", which
+// guarantees `null -> rank` is always a positive delta (gain) and
+// `rank -> null` is always negative (loss), regardless of the rank value.
+const SEO_MOVEMENT_NULL_SENTINEL = 1000;
+
+function isSignificantMovement(prev: number | null, curr: number | null): boolean {
+  if (prev === null && curr === null) return false;
+  // Entry to / exit from page 1 is always notable.
+  const prevOnPageOne = prev !== null && prev <= SEO_MOVEMENT_PAGE_ONE_THRESHOLD;
+  const currOnPageOne = curr !== null && curr <= SEO_MOVEMENT_PAGE_ONE_THRESHOLD;
+  if (prevOnPageOne !== currOnPageOne) return true;
+  // Newly ranked or fell out of results entirely.
+  if (prev === null || curr === null) return true;
+  // Otherwise require at least the rank-delta threshold.
+  return Math.abs(prev - curr) >= SEO_MOVEMENT_RANK_DELTA_THRESHOLD;
+}
+
+function moverDelta(prev: number | null, curr: number | null): number {
+  // Positive = improvement (rank got smaller). Use a sentinel that is worse
+  // than any observable rank so a transition into the SERP from `null` is
+  // always a gain and a transition out of the SERP to `null` is always a
+  // loss — independent of how deep in the results the ranked side sits.
+  const p = prev ?? SEO_MOVEMENT_NULL_SENTINEL;
+  const c = curr ?? SEO_MOVEMENT_NULL_SENTINEL;
+  return p - c;
+}
+
+async function computeSeoMoversForMarket(opts: {
+  tenantDomain: string;
+  marketId: string | null;
+  isDefaultMarket: boolean;
+  sweepStart: Date;
+}): Promise<{ topGainers: SeoMover[]; topLosers: SeoMover[] }> {
+  const { tenantDomain, marketId, isDefaultMarket, sweepStart } = opts;
+
+  const marketCondition = isDefaultMarket
+    ? isNull(seoMetrics.marketId)
+    : marketId
+      ? eq(seoMetrics.marketId, marketId)
+      : isNull(seoMetrics.marketId);
+
+  // Pull every metric for the (tenant, market) sorted newest-first. We dedupe
+  // down to the latest two rows per (keyword, entity) pair below, so an
+  // explicit time cutoff would risk silently hiding the previous capture for
+  // tenants whose `seoRefreshIntervalDays` is set to the cadence cap (90)
+  // or who skipped a run. Keeping the dataset trim is the responsibility of
+  // SEO retention; alerting must work whatever the cadence is.
+  const rows = await db
+    .select()
+    .from(seoMetrics)
+    .where(
+      and(
+        eq(seoMetrics.tenantDomain, tenantDomain),
+        marketCondition,
+      ),
+    )
+    .orderBy(desc(seoMetrics.capturedAt));
+
+  if (rows.length === 0) return { topGainers: [], topLosers: [] };
+
+  // Fetch keyword text in one shot for display.
+  const keywordIds = Array.from(new Set(rows.map((r) => r.keywordId)));
+  const keywordRows = keywordIds.length === 0
+    ? []
+    : await db.select().from(trackedKeywords).where(
+        eq(trackedKeywords.tenantDomain, tenantDomain),
+      );
+  const keywordById = new Map(keywordRows.map((k) => [k.id, k.keyword]));
+
+  type Pair = { current: SeoMetric; previous: SeoMetric | null };
+  const byPair = new Map<string, Pair>();
+  for (const row of rows) {
+    if (!row.entityId) continue;
+    const key = `${row.keywordId}::${row.entityId}`;
+    const existing = byPair.get(key);
+    if (!existing) {
+      byPair.set(key, { current: row, previous: null });
+    } else if (existing.previous === null && row.id !== existing.current.id) {
+      existing.previous = row;
+    }
+  }
+
+  const movers: SeoMover[] = [];
+  for (const { current, previous } of Array.from(byPair.values())) {
+    // Only consider pairs where the current row is actually from this sweep —
+    // otherwise we'd alert on stale data for an entity that wasn't refreshed.
+    if (new Date(current.capturedAt).getTime() < sweepStart.getTime()) continue;
+    if (!previous) continue;
+    if (!isSignificantMovement(previous.rank, current.rank)) continue;
+
+    const entityType: "baseline" | "competitor" =
+      current.entityType === "baseline" ? "baseline" : "competitor";
+    movers.push({
+      keyword: keywordById.get(current.keywordId) ?? "(unknown keyword)",
+      entityName: current.entityName,
+      entityType,
+      previousRank: previous.rank,
+      currentRank: current.rank,
+      delta: moverDelta(previous.rank, current.rank),
+    });
+  }
+
+  const sorted = movers.slice().sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const topGainers = sorted.filter((m) => m.delta > 0).slice(0, SEO_MOVEMENT_TOP_N);
+  const topLosers = sorted.filter((m) => m.delta < 0).slice(0, SEO_MOVEMENT_TOP_N);
+  return { topGainers, topLosers };
+}
+
 async function runSeoRefreshJob(): Promise<void> {
   if (jobStatus.seoRefresh.isRunning) {
     console.log("[SEO Refresh] Job already running, skipping sweep");
@@ -1712,6 +1831,7 @@ async function runSeoRefreshJob(): Promise<void> {
           marketId ?? "default",
           targetName,
           async () => {
+            const sweepStart = new Date();
             const result = await refreshSeoForContext({
               tenantDomain: tenant.domain,
               tenantId: tenant.id,
@@ -1721,6 +1841,38 @@ async function runSeoRefreshJob(): Promise<void> {
             keywordsProcessed += result.keywordsProcessed;
             rowsRecorded += result.rowsRecorded;
             marketsProcessed += 1;
+
+            // Detect significant week-over-week movement and fan out alerts
+            // through the central notifications dispatcher. Failures here must
+            // never abort the sweep — alerting is best-effort.
+            try {
+              if (result.rowsRecorded > 0) {
+                const { topGainers, topLosers } = await computeSeoMoversForMarket({
+                  tenantDomain: tenant.domain,
+                  marketId: isDefault ? null : marketId,
+                  isDefaultMarket: isDefault,
+                  sweepStart,
+                });
+                if (topGainers.length > 0 || topLosers.length > 0) {
+                  let marketName: string | undefined;
+                  if (!isDefault && effectiveMarketId) {
+                    const m = await storage.getMarket(effectiveMarketId);
+                    marketName = m?.name;
+                  } else if (defaultMarket) {
+                    marketName = defaultMarket.name;
+                  }
+                  await notifications.dispatch(tenant.domain, "seo_movement", {
+                    marketId: isDefault ? null : marketId,
+                    marketName,
+                    topGainers,
+                    topLosers,
+                  });
+                }
+              }
+            } catch (err) {
+              console.error(`[SEO Refresh] Movement alert dispatch failed for ${targetName}:`, err);
+            }
+
             return result;
           },
         ).catch((err) => {

@@ -479,6 +479,31 @@ export const SCHEDULED_BRIEFING_EMAIL = {
 // ============================================
 // COMPETITOR ALERT EMAIL
 // ============================================
+export const SEO_MOVEMENT_ALERT_EMAIL = {
+  subject: (companyName: string, marketLabel?: string) =>
+    `📈 SEO movement detected — ${companyName}${marketLabel ? ` (${marketLabel})` : ''}`,
+  heading: 'Weekly SEO movement alert',
+  greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
+  intro: (companyName: string, marketLabel?: string) =>
+    `Here are the biggest week-over-week ranking changes for <span class="highlight">${companyName}</span>${marketLabel ? ` in <span class="highlight">${marketLabel}</span>` : ''}.`,
+  gainersHeading: 'Top gainers',
+  losersHeading: 'Top losses',
+  noMoversMessage: 'No significant week-over-week movement this run.',
+  buttonText: 'Open SEO Dashboard',
+  unsubscribeText: 'Manage your alert preferences in Settings',
+  footerMessage: `You're receiving this because you enabled change alerts and your tenant has SEO tracking enabled.`,
+  plainText: (
+    name: string,
+    companyName: string,
+    marketLabel: string | undefined,
+    gainersText: string,
+    losersText: string,
+    link: string,
+    settingsLink: string,
+  ) =>
+    `Hi ${name},\n\nWeekly SEO movement alert for ${companyName}${marketLabel ? ` (${marketLabel})` : ''}\n\nTop gainers:\n${gainersText || '(none)'}\n\nTop losses:\n${losersText || '(none)'}\n\nView details: ${link}\n\nManage alert preferences: ${settingsLink}`,
+};
+
 export const COMPETITOR_ALERT_EMAIL = {
   subject: (competitorName: string, significance: string) =>
     `${significance === 'high' ? '🔴' : significance === 'medium' ? '🟡' : '🔵'} ${competitorName} — ${significance}-significance change detected`,

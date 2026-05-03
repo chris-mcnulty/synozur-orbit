@@ -22,6 +22,7 @@ import { createNotification } from "./notification-service";
 import {
   sendCompetitorAlertEmail,
   sendWeeklyDigestEmail,
+  sendSeoMovementAlertEmail,
   type BriefingDigestData,
 } from "./email-service";
 import {
@@ -31,7 +32,9 @@ import {
   buildBriefingReadyPayload,
   buildWeeklyDigestPayload,
   buildJobFailedPayload,
+  buildSeoMovementPayload,
   type WebhookPayload,
+  type SeoMover,
 } from "./webhook-formatters";
 import type {
   IntegrationConfig,
@@ -190,11 +193,19 @@ export interface JobFailedCtx {
   attempts?: number;
 }
 
+export interface SeoMovementCtx {
+  marketId?: string | null;
+  marketName?: string;
+  topGainers: SeoMover[];
+  topLosers: SeoMover[];
+}
+
 type DispatchCtxMap = {
   competitor_change: CompetitorChangeCtx;
   briefing_ready: BriefingReadyCtx;
   weekly_digest: WeeklyDigestCtx;
   job_failed: JobFailedCtx;
+  seo_movement: SeoMovementCtx;
 };
 
 // ---------------------------------------------------------------------------
@@ -340,6 +351,92 @@ async function handleWeeklyDigest(
   );
 }
 
+async function handleSeoMovement(
+  tenantDomain: string,
+  ctx: SeoMovementCtx,
+): Promise<void> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant || tenant.status !== "active") return;
+
+  // Gate behind the seoTracking feature key — same gate as the job that
+  // produced the metrics, but enforced again here so a misconfigured caller
+  // can never email customers on a plan that doesn't entitle SEO tracking.
+  if (!(await isFeatureEnabledAsync(tenant.plan, "seoTracking"))) return;
+
+  const total = ctx.topGainers.length + ctx.topLosers.length;
+  if (total === 0) return;
+
+  const baseUrl = defaultBaseUrl();
+  const seoLink = `${baseUrl}/app/seo`;
+  const marketLabel = ctx.marketName;
+
+  // Reuse the same tenant-level alert preferences as competitor_change so
+  // customers don't have a separate toggle to manage. `alertsEnabled` opts
+  // into in-app notifications; `alertEmailEnabled` adds the email channel.
+  const users = await storage.getUsersByDomain(tenantDomain);
+  const eligibleUsers = users.filter((u) => u.alertsEnabled || u.alertEmailEnabled);
+
+  const summary = `${total} significant week-over-week ranking change${total === 1 ? "" : "s"}${
+    marketLabel ? ` in ${marketLabel}` : ""
+  }`;
+
+  await Promise.allSettled(
+    eligibleUsers.map(async (user) => {
+      if (user.alertsEnabled) {
+        try {
+          await createNotification({
+            userId: user.id,
+            tenantDomain,
+            type: "seo_movement",
+            title: marketLabel
+              ? `SEO movement detected — ${marketLabel}`
+              : "SEO movement detected",
+            message: summary,
+            link: "/app/seo",
+            readAt: null,
+          });
+        } catch (err) {
+          console.error(`[Notifications] in-app seo_movement failed for user ${user.id}:`, err);
+        }
+      }
+
+      if (user.alertEmailEnabled) {
+        try {
+          await sendSeoMovementAlertEmail({
+            to: user.email,
+            userName: user.name,
+            companyName: tenant.name,
+            marketLabel,
+            topGainers: ctx.topGainers,
+            topLosers: ctx.topLosers,
+            baseUrl,
+          });
+        } catch (err) {
+          console.error(`[Notifications] seo_movement email failed for user ${user.id}:`, err);
+        }
+      }
+    }),
+  );
+
+  if (eligibleUsers.length > 0) {
+    console.log(
+      `[Notifications] seo_movement alerts dispatched to ${eligibleUsers.length} user(s) in ${tenantDomain} (${total} mover(s))`,
+    );
+  }
+
+  await fanOutWebhook(
+    tenantDomain,
+    "seo_movement",
+    buildSeoMovementPayload({
+      tenantName: tenant.name || tenantDomain,
+      marketName: marketLabel,
+      topGainers: ctx.topGainers,
+      topLosers: ctx.topLosers,
+      link: seoLink,
+    }),
+  );
+}
+
 async function handleJobFailed(
   tenantDomain: string,
   ctx: JobFailedCtx,
@@ -386,6 +483,9 @@ export const notifications = {
           break;
         case "job_failed":
           await handleJobFailed(tenantDomain, ctx as JobFailedCtx);
+          break;
+        case "seo_movement":
+          await handleSeoMovement(tenantDomain, ctx as SeoMovementCtx);
           break;
       }
     } catch (err) {

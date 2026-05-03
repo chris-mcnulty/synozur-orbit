@@ -2208,7 +2208,6 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
 
-<<<<<<< HEAD
 // ═══════════════════════════════════════════════════════════════════════════
 // Webhook integrations (Slack & Teams) — Task #71
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2221,6 +2220,7 @@ export const WEBHOOK_EVENT_CATEGORIES = [
   "briefing_ready",
   "weekly_digest",
   "job_failed",
+  "seo_movement",
 ] as const;
 export type WebhookEventCategory = (typeof WEBHOOK_EVENT_CATEGORIES)[number];
 

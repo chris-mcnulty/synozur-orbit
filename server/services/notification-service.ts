@@ -21,7 +21,8 @@ export type NotificationType =
   | "competitor_change"
   | "freshness_warning"
   | "trial"
-  | "support_reply";
+  | "support_reply"
+  | "seo_movement";
 
 export async function createNotification(data: InsertNotification): Promise<Notification> {
   const [row] = await db.insert(notifications).values(data).returning();
