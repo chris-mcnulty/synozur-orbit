@@ -1808,6 +1808,27 @@ export const socialAccounts = pgTable("social_accounts", {
   profileUrl: text("profile_url"),
   notes: text("notes"),
   status: text("status").notNull().default("active"), // active, inactive
+  // Direct publishing (Task #97) — encrypted OAuth tokens stored as ciphertext
+  // blobs from server/utils/encryption.ts. authorMode/authorUrn capture the
+  // LinkedIn (or other-platform) identity we will publish as.
+  encryptedAccessToken: text("encrypted_access_token"),
+  encryptedRefreshToken: text("encrypted_refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScope: text("token_scope"),
+  authorMode: text("author_mode"), // 'person' | 'organization'
+  authorUrn: text("author_urn"),   // e.g. urn:li:person:xxx or urn:li:organization:xxx
+  // Available author identities the user can publish as (e.g. their personal
+  // URN plus any organizations they administer on LinkedIn). Used by the
+  // author-picker UI in social-accounts.tsx.
+  availableAuthors: jsonb("available_authors").$type<Array<{
+    mode: "person" | "organization";
+    urn: string;
+    name: string;
+    vanityName?: string | null;
+  }>>(),
+  connectedAt: timestamp("connected_at"),
+  connectedBy: varchar("connected_by").references(() => users.id, { onDelete: "set null" }),
+  lastPublishError: text("last_publish_error"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1891,6 +1912,8 @@ export const campaignSocialAccounts = pgTable("campaign_social_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
   socialAccountId: varchar("social_account_id").notNull().references(() => socialAccounts.id, { onDelete: "cascade" }),
+  // Task #97: when true, approved+scheduled posts on this account auto-publish via SocialPublisher
+  autoPublish: boolean("auto_publish").notNull().default(false),
   addedAt: timestamp("added_at").notNull().defaultNow(),
 });
 
@@ -1926,9 +1949,15 @@ export const generatedPosts = pgTable("generated_posts", {
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),
   scheduledDate: timestamp("scheduled_date"),
-  status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected
+  status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected, published, publish_failed
   editedContent: text("edited_content"), // User-edited version of the post
   generationJobId: varchar("generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
+  // Task #97: direct social publishing
+  publishedAt: timestamp("published_at"),
+  publishedUrl: text("published_url"),
+  publishError: text("publish_error"),
+  publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
+  publishNextAttemptAt: timestamp("publish_next_attempt_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2321,6 +2350,187 @@ export const insertSeoMetricSchema = createInsertSchema(seoMetrics).omit({
 });
 export type SeoMetric = typeof seoMetrics.$inferSelect;
 export type InsertSeoMetric = z.infer<typeof insertSeoMetricSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Direct social publishing & email campaign delivery — Task #97
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Per-attempt log for SocialPublisher.publish() calls. We record every attempt
+// (success or failure) so the UI can show "last 5 attempts" and operators can
+// debug platform errors without grepping logs.
+export const socialPublishAttempts = pgTable("social_publish_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: varchar("post_id").notNull().references(() => generatedPosts.id, { onDelete: "cascade" }),
+  socialAccountId: varchar("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  platform: text("platform").notNull(),
+  status: text("status").notNull(), // 'success' | 'error'
+  publishedUrl: text("published_url"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  responsePayload: jsonb("response_payload"),
+  attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
+  attemptedBy: varchar("attempted_by").references(() => users.id, { onDelete: "set null" }),
+});
+
+export const insertSocialPublishAttemptSchema = createInsertSchema(socialPublishAttempts).omit({
+  id: true, attemptedAt: true,
+});
+export type SocialPublishAttempt = typeof socialPublishAttempts.$inferSelect;
+export type InsertSocialPublishAttempt = z.infer<typeof insertSocialPublishAttemptSchema>;
+
+// Email recipient lists — tenant-managed audiences for email campaigns.
+// recipientCount is denormalized for fast UI rendering; it is recomputed
+// whenever recipients are added/removed.
+export const emailRecipientLists = pgTable("email_recipient_lists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  recipientCount: integer("recipient_count").notNull().default(0),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEmailRecipientListSchema = createInsertSchema(emailRecipientLists).omit({
+  id: true, createdAt: true, updatedAt: true, recipientCount: true,
+});
+export type EmailRecipientList = typeof emailRecipientLists.$inferSelect;
+export type InsertEmailRecipientList = z.infer<typeof insertEmailRecipientListSchema>;
+
+export const emailRecipients = pgTable("email_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listId: varchar("list_id").notNull().references(() => emailRecipientLists.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  name: text("name"),
+  status: text("status").notNull().default("active"), // active | unsubscribed | bounced | manual_remove
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  listEmailUniq: index("email_recipients_list_email_uniq").on(table.listId, table.email),
+}));
+
+export const insertEmailRecipientSchema = createInsertSchema(emailRecipients).omit({
+  id: true, createdAt: true,
+});
+export type EmailRecipient = typeof emailRecipients.$inferSelect;
+export type InsertEmailRecipient = z.infer<typeof insertEmailRecipientSchema>;
+
+// Tenant-scoped suppression list — any address here is excluded from sends
+// regardless of which list it appears on. Sources: explicit unsubscribe (via
+// /u/:token), SendGrid bounce/spam events, manual operator add.
+export const emailSuppressions = pgTable("email_suppressions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  reason: text("reason").notNull(), // 'unsubscribe' | 'bounce' | 'spam' | 'manual' | 'invalid'
+  source: text("source"),           // free-form: 'public_unsub' | 'sendgrid_event' | 'admin_ui'
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantEmailUniq: index("email_suppressions_tenant_email_uniq").on(table.tenantDomain, table.email),
+}));
+
+export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions).omit({
+  id: true, createdAt: true,
+});
+export type EmailSuppression = typeof emailSuppressions.$inferSelect;
+export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;
+
+// One row per "Send" action — links a generatedEmail to the audience and
+// records aggregate counters for the UI Sends tab.
+export const emailSends = pgTable("email_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
+  listId: varchar("list_id").references(() => emailRecipientLists.id, { onDelete: "set null" }),
+  testRecipient: text("test_recipient"), // when set, this was a "send to me" test send
+  status: text("status").notNull().default("pending"), // pending | queued | sending | sent | failed | partial
+  scheduledAt: timestamp("scheduled_at"), // when set, dispatch is deferred to the email-send worker
+  // Per-send analytics toggles. The 1×1 open-tracking pixel is optional per
+  // task spec — operators may want to disable it for privacy-conscious sends.
+  // Click tracking is also togglable but defaults on so the link-redirect
+  // wrapping continues to attribute conversions.
+  trackOpens: boolean("track_opens").notNull().default(true),
+  trackClicks: boolean("track_clicks").notNull().default(true),
+  recipientCount: integer("recipient_count").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  bounceCount: integer("bounce_count").notNull().default(0),
+  unsubscribeCount: integer("unsubscribe_count").notNull().default(0),
+  spamCount: integer("spam_count").notNull().default(0),
+  openCount: integer("open_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
+  deliveredCount: integer("delivered_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEmailSendSchema = createInsertSchema(emailSends).omit({
+  id: true, createdAt: true,
+});
+export type EmailSend = typeof emailSends.$inferSelect;
+export type InsertEmailSend = z.infer<typeof insertEmailSendSchema>;
+
+// Per-recipient row for a send — used for unsubscribe-token lookup and to
+// aggregate SendGrid event webhook callbacks (delivered/bounced/etc).
+export const emailSendRecipients = pgTable("email_send_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sendId: varchar("send_id").notNull().references(() => emailSends.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  name: text("name"),
+  unsubscribeToken: text("unsubscribe_token").notNull().unique(),
+  status: text("status").notNull().default("queued"), // queued | sent | delivered | bounced | dropped | spam | unsubscribed | failed
+  sgMessageId: text("sg_message_id"),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at"),
+  deliveredAt: timestamp("delivered_at"),
+  bouncedAt: timestamp("bounced_at"),
+  unsubscribedAt: timestamp("unsubscribed_at"),
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  openCount: integer("open_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
+}, (table) => ({
+  sendEmailIdx: index("email_send_recipients_send_email_idx").on(table.sendId, table.email),
+}));
+
+export const insertEmailSendRecipientSchema = createInsertSchema(emailSendRecipients).omit({
+  id: true,
+});
+export type EmailSendRecipient = typeof emailSendRecipients.$inferSelect;
+export type InsertEmailSendRecipient = z.infer<typeof insertEmailSendRecipientSchema>;
+
+// Marketing-delivery audit log — append-only record of who did what and when.
+// Visible to admins; also useful for incident response and abuse triage.
+export const marketingAuditLog = pgTable("marketing_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  action: text("action").notNull(), // social_publish | social_oauth_connect | email_send | email_unsubscribe | email_bounce | rate_limited
+  entityType: text("entity_type"),
+  entityId: varchar("entity_id"),
+  status: text("status").notNull().default("ok"), // ok | error | warning
+  message: text("message"),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantCreatedIdx: index("marketing_audit_log_tenant_created_idx").on(table.tenantDomain, table.createdAt),
+}));
+
+export const insertMarketingAuditLogSchema = createInsertSchema(marketingAuditLog).omit({
+  id: true, createdAt: true,
+});
+export type MarketingAuditLog = typeof marketingAuditLog.$inferSelect;
+export type InsertMarketingAuditLog = z.infer<typeof insertMarketingAuditLogSchema>;
 
 export const CURRENT_APP_VERSION = "2.0.0";
 

@@ -19,6 +19,7 @@ import {
   Library,
   Image,
   AtSign,
+  Send,
   LayoutGrid,
   TrendingUp,
 } from "lucide-react";
@@ -191,6 +192,17 @@ export default function MarketingLandingPage() {
       actionLabel: "Manage Accounts",
       actionHref: "/app/marketing/social-accounts",
       testId: "card-social-accounts",
+    },
+    {
+      title: "Email Sends",
+      description: "Track campaign deliveries, recipient lists, and unsubscribe suppressions.",
+      icon: Send,
+      generated: false,
+      loading: false,
+      enterprise: true,
+      actionLabel: "View Sends",
+      actionHref: "/app/marketing/sends",
+      testId: "card-sends",
     },
   ];
 

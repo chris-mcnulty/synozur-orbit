@@ -459,6 +459,163 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_integration_configs_tenant ON integration_configs(tenant_domain)`);
 
+    // ─── Task #97: direct social publishing & email campaign delivery ───
+    // Add token storage / publish-tracking columns to existing marketing tables.
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS encrypted_access_token TEXT`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS encrypted_refresh_token TEXT`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS token_scope TEXT`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS author_mode TEXT`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS author_urn TEXT`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS connected_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS connected_by VARCHAR`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS last_publish_error TEXT`);
+
+    await pgPool.query(`ALTER TABLE campaign_social_accounts ADD COLUMN IF NOT EXISTS auto_publish BOOLEAN NOT NULL DEFAULT false`);
+
+    await pgPool.query(`ALTER TABLE generated_posts ADD COLUMN IF NOT EXISTS published_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE generated_posts ADD COLUMN IF NOT EXISTS published_url TEXT`);
+    await pgPool.query(`ALTER TABLE generated_posts ADD COLUMN IF NOT EXISTS publish_error TEXT`);
+    await pgPool.query(`ALTER TABLE generated_posts ADD COLUMN IF NOT EXISTS publish_attempt_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE generated_posts ADD COLUMN IF NOT EXISTS publish_next_attempt_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS available_authors JSONB`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS social_publish_attempts (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        post_id VARCHAR NOT NULL REFERENCES generated_posts(id) ON DELETE CASCADE,
+        social_account_id VARCHAR REFERENCES social_accounts(id) ON DELETE SET NULL,
+        tenant_domain TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        status TEXT NOT NULL,
+        published_url TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        response_payload JSONB,
+        attempted_at TIMESTAMP NOT NULL DEFAULT now(),
+        attempted_by VARCHAR REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_social_publish_attempts_post ON social_publish_attempts(post_id, attempted_at DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_social_publish_attempts_tenant ON social_publish_attempts(tenant_domain, attempted_at DESC)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS email_recipient_lists (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        recipient_count INTEGER NOT NULL DEFAULT 0,
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_email_recipient_lists_tenant ON email_recipient_lists(tenant_domain, market_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS email_recipients (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        list_id VARCHAR NOT NULL REFERENCES email_recipient_lists(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        email TEXT NOT NULL,
+        name TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS email_recipients_list_email_uniq ON email_recipients(list_id, email)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS email_suppressions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        email TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        source TEXT,
+        notes TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS email_suppressions_tenant_email_uniq ON email_suppressions(tenant_domain, lower(email))`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS email_sends (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        generated_email_id VARCHAR NOT NULL REFERENCES generated_emails(id) ON DELETE CASCADE,
+        list_id VARCHAR REFERENCES email_recipient_lists(id) ON DELETE SET NULL,
+        test_recipient TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        recipient_count INTEGER NOT NULL DEFAULT 0,
+        sent_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        bounce_count INTEGER NOT NULL DEFAULT 0,
+        unsubscribe_count INTEGER NOT NULL DEFAULT 0,
+        spam_count INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS open_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS click_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS delivered_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS track_opens BOOLEAN NOT NULL DEFAULT TRUE`);
+    await pgPool.query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS track_clicks BOOLEAN NOT NULL DEFAULT TRUE`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_email_sends_tenant ON email_sends(tenant_domain, created_at DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_email_sends_email ON email_sends(generated_email_id, created_at DESC)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS email_send_recipients (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        send_id VARCHAR NOT NULL REFERENCES email_sends(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        email TEXT NOT NULL,
+        name TEXT,
+        unsubscribe_token TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'queued',
+        sg_message_id TEXT,
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        delivered_at TIMESTAMP,
+        bounced_at TIMESTAMP,
+        unsubscribed_at TIMESTAMP
+      )
+    `);
+    // ALTER TABLE additions must run AFTER the CREATE TABLE so a fresh
+    // database (where the table does not yet exist) gets the new columns
+    // applied to the just-created table rather than failing on the very
+    // first ALTER and aborting the rest of the startup migrations.
+    await pgPool.query(`ALTER TABLE email_send_recipients ADD COLUMN IF NOT EXISTS opened_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE email_send_recipients ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE email_send_recipients ADD COLUMN IF NOT EXISTS open_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`ALTER TABLE email_send_recipients ADD COLUMN IF NOT EXISTS click_count INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS email_send_recipients_send_email_idx ON email_send_recipients(send_id, email)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS email_send_recipients_token_idx ON email_send_recipients(unsubscribe_token)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_audit_log (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR,
+        user_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id VARCHAR,
+        status TEXT NOT NULL DEFAULT 'ok',
+        message TEXT,
+        details JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_audit_log_tenant_created_idx ON marketing_audit_log(tenant_domain, created_at DESC)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

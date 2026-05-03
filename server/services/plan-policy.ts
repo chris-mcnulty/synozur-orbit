@@ -37,6 +37,8 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "autoBuild", label: "Auto Build", description: "Automatically discover competitors, crawl data, and generate full analytics for a new market", category: "platform" },
   { key: "webhookIntegrations", label: "Slack & Teams Notifications", description: "Send tenant-scoped event notifications to Slack and Microsoft Teams via incoming webhooks", category: "platform" },
   { key: "seoTracking", label: "SEO & Share of Voice", description: "Track keyword rankings and competitive share-of-voice over time", category: "monitoring" },
+  { key: "directPublishing", label: "Direct Social Publishing", description: "Publish approved scheduled posts directly to LinkedIn (and other platforms as added) instead of exporting CSV", category: "marketing" },
+  { key: "directEmailDelivery", label: "Direct Email Campaign Delivery", description: "Send AI-generated emails to managed recipient lists with bounce/unsubscribe handling", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -89,6 +91,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     autoBuild: false,
     webhookIntegrations: false,
     seoTracking: false,
+    directPublishing: false,
+    directEmailDelivery: false,
   },
   trial: {
     battlecards: true,
@@ -120,6 +124,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     autoBuild: false,
     webhookIntegrations: false,
     seoTracking: false,
+    directPublishing: false,
+    directEmailDelivery: false,
   },
   pro: {
     battlecards: true,
@@ -151,6 +157,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     autoBuild: false,
     webhookIntegrations: false,
     seoTracking: true,
+    directPublishing: false,
+    directEmailDelivery: false,
   },
   enterprise: {
     battlecards: true,
@@ -182,6 +190,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     autoBuild: true,
     webhookIntegrations: true,
     seoTracking: true,
+    directPublishing: true,
+    directEmailDelivery: true,
   },
   unlimited: {
     battlecards: true,
@@ -213,6 +223,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     autoBuild: true,
     webhookIntegrations: true,
     seoTracking: true,
+    directPublishing: true,
+    directEmailDelivery: true,
   },
 };
 

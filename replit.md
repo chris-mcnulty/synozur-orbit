@@ -98,4 +98,11 @@ Preferred communication style: Simple, everyday language.
 ### Third-Party APIs
 - **GNews API**: For news monitoring.
 - **Microsoft Graph API**: For Entra ID user provisioning and SPE file storage.
-- **SendGrid**: For email sharing of intelligence briefings.
+- **SendGrid**: For email sharing of intelligence briefings, and for direct campaign delivery (Enterprise) with bounce/unsubscribe webhook + suppression management.
+- **LinkedIn OAuth (`r_liteprofile w_member_social`)**: For direct social publishing (Enterprise). Tokens are encrypted at rest with `encryptSecret`/`decryptSecret`.
+
+### Marketing Delivery (Task #97)
+- **Direct social publishing**: `SocialPublisher` interface in `server/services/social-publishers/`; LinkedIn implemented, Twitter/Instagram/Facebook/Bluesky stubbed. Worker (`marketing-publish-worker.ts`) ticks every 2 minutes processing approved scheduled posts on accounts with `auto_publish=true`. Manual publish-now endpoint `POST /api/generated-posts/:id/publish`.
+- **Direct email delivery**: `email-campaign-sender.ts` honors per-tenant suppressions, generates HMAC unsubscribe tokens (signed with `SESSION_SECRET`) and renders a `List-Unsubscribe` header. Public routes `GET/POST /u/:token` and `POST /api/webhooks/sendgrid` registered BEFORE auth.
+- **Plan policy**: `directPublishing` and `directEmailDelivery` feature keys gate UI and routes. UI surfaces: `social-accounts.tsx` (Connect/Reconnect/Disconnect), `campaign-detail.tsx` (per-account auto-publish toggle, Publish-now button, published/error badges), `email-newsletters.tsx` (Send dialog), `sends.tsx` (Sends/Lists/Suppressions tabs at `/app/marketing/sends`).
+- **Audit + rate limits**: All sends/publishes write to `marketing_audit_log`. In-memory per-tenant rate caps in worker + sender (single-instance v1).

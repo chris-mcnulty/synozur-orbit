@@ -6,6 +6,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { registerEntraRoutes } from "./auth/entra-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { registerMarketingLinksRoutes } from "./routes/marketing-links";
+import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes } from "./routes/marketing-delivery";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
@@ -38,6 +39,10 @@ export async function registerRoutes(
   // Register marketing-links BEFORE the Vite/static catch-all so /r/:slug
   // resolves to the redirect handler instead of the SPA HTML.
   registerMarketingLinksRoutes(app);
+  // Task #97: public unsubscribe + SendGrid event webhook (no auth required)
+  registerMarketingDeliveryPublicRoutes(app);
+  // Authenticated marketing delivery routes (oauth, lists, sends, audit)
+  registerMarketingDeliveryRoutes(app);
   
   app.get("/api/content/:filename", (req, res) => {
     const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];

@@ -883,14 +883,39 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/social-accounts", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
-    const rows = await db.select().from(socialAccounts)
+    // Project only the fields the UI needs — never return encrypted token
+    // material. Connection state is exposed as a derived `isConnected`
+    // boolean. Token expiry / scope strings are also stripped.
+    const rows = await db.select({
+      id: socialAccounts.id,
+      platform: socialAccounts.platform,
+      accountName: socialAccounts.accountName,
+      accountId: socialAccounts.accountId,
+      profileUrl: socialAccounts.profileUrl,
+      notes: socialAccounts.notes,
+      status: socialAccounts.status,
+      authorMode: socialAccounts.authorMode,
+      authorUrn: socialAccounts.authorUrn,
+      availableAuthors: socialAccounts.availableAuthors,
+      connectedAt: socialAccounts.connectedAt,
+      tokenExpiresAt: socialAccounts.tokenExpiresAt,
+      lastPublishError: socialAccounts.lastPublishError,
+      hasAccessToken: sql<boolean>`(${socialAccounts.encryptedAccessToken} IS NOT NULL)`,
+    }).from(socialAccounts)
       .where(and(
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
         eq(socialAccounts.marketId, ctx.marketId),
         eq(socialAccounts.status, "active"),
       ))
       .orderBy(socialAccounts.platform, socialAccounts.accountName);
-    res.json(rows);
+    // Map hasAccessToken → encryptedAccessToken-shaped boolean field for
+    // backward-compatibility with the existing UI which just checks truthiness.
+    res.json(rows.map(r => ({
+      ...r,
+      isConnected: r.hasAccessToken === true,
+      // Legacy field name kept as boolean indicator (NEVER ciphertext).
+      encryptedAccessToken: r.hasAccessToken ? true : null,
+    })));
   });
 
   app.post("/api/social-accounts", async (req, res) => {
@@ -1313,6 +1338,28 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Campaign Social Account Add Error]", err.message);
       res.status(500).json({ error: "Failed to add social account to campaign" });
+    }
+  });
+
+  app.patch("/api/campaigns/:campaignId/social-accounts/:accountId", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const updates: any = {};
+      if (typeof req.body?.autoPublish === "boolean") updates.autoPublish = req.body.autoPublish;
+      if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No supported fields to update" });
+      await db.update(campaignSocialAccounts).set(updates)
+        .where(and(
+          eq(campaignSocialAccounts.campaignId, campaign.id),
+          eq(campaignSocialAccounts.socialAccountId, req.params.accountId),
+        ));
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Campaign Social Account Patch Error]", err.message);
+      res.status(500).json({ error: "Failed to update campaign social account" });
     }
   });
 

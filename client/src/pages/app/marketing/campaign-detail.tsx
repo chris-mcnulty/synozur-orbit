@@ -96,6 +96,7 @@ interface CampaignAsset {
 interface CampaignSocialAccount {
   id: string;
   socialAccountId: string;
+  autoPublish?: boolean;
 }
 
 interface ContentAsset {
@@ -125,6 +126,10 @@ interface GeneratedPost {
   sourceUrl?: string;
   scheduledDate?: string;
   socialAccountId?: string;
+  publishedAt?: string;
+  publishedUrl?: string;
+  publishError?: string;
+  publishAttemptCount?: number;
 }
 
 
@@ -664,6 +669,36 @@ export default function CampaignDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
   });
 
+  const setAutoPublishMutation = useMutation({
+    mutationFn: async ({ socialAccountId, autoPublish }: { socialAccountId: string; autoPublish: boolean }) => {
+      const r = await fetch(`/api/campaigns/${id}/social-accounts/${socialAccountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ autoPublish }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update auto-publish");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
+    onError: (err: Error) => toast({ title: "Auto-publish update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const publishNowMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      const r = await fetch(`/api/generated-posts/${postId}/publish`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Publish failed");
+      return r.json() as Promise<{ publishedUrl?: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: "Published!", description: data.publishedUrl ? `Live at ${data.publishedUrl}` : "Post published successfully" });
+    },
+    onError: (err: Error) => toast({ title: "Publish failed", description: err.message, variant: "destructive" }),
+  });
+
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [showExportWarning, setShowExportWarning] = useState(false);
   const [includeUndated, setIncludeUndated] = useState(false);
@@ -1132,6 +1167,19 @@ export default function CampaignDetailPage() {
                             >
                               <ImageLucide className="w-3.5 h-3.5" />
                             </Button>
+                            {post.status === "approved" && !post.publishedAt && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-blue-600"
+                                title="Publish now to the linked social account"
+                                onClick={() => publishNowMutation.mutate(post.id)}
+                                disabled={publishNowMutation.isPending}
+                                data-testid={`button-publish-now-${post.id}`}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />Publish now
+                              </Button>
+                            )}
                             {post.status !== "rejected" && (
                               <Button
                                 variant="ghost"
@@ -1162,6 +1210,20 @@ export default function CampaignDetailPage() {
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
                           </Badge>
+                        )}
+                        {post.publishedAt && (
+                          <div className="flex items-center gap-2 text-xs text-green-600" data-testid={`badge-published-${post.id}`}>
+                            <CheckCircle className="w-3 h-3" />
+                            Published {format(new Date(post.publishedAt), "MMM d, h:mm a")}
+                            {post.publishedUrl && (
+                              <a href={post.publishedUrl} target="_blank" rel="noopener noreferrer" className="underline" data-testid={`link-published-${post.id}`}>view</a>
+                            )}
+                          </div>
+                        )}
+                        {post.publishError && !post.publishedAt && (
+                          <div className="text-xs text-amber-600" data-testid={`text-publish-error-${post.id}`}>
+                            Publish error: {post.publishError}
+                          </div>
                         )}
                         {postImage && (
                           <OptimizedThumbnail
@@ -1378,6 +1440,16 @@ export default function CampaignDetailPage() {
                         <CardContent className="py-3 flex items-center gap-3">
                           <Badge>{account?.platform ?? "unknown"}</Badge>
                           <span className="text-sm flex-1">{account?.accountName ?? csa.socialAccountId}</span>
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none" title="Automatically publish approved scheduled posts to this account">
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 accent-primary"
+                              checked={!!csa.autoPublish}
+                              onChange={e => setAutoPublishMutation.mutate({ socialAccountId: csa.socialAccountId, autoPublish: e.target.checked })}
+                              data-testid={`toggle-autopublish-${csa.socialAccountId}`}
+                            />
+                            Auto-publish
+                          </label>
                           <Button
                             variant="ghost"
                             size="icon"

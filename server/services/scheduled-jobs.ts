@@ -12,6 +12,8 @@ import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { syncMarketingPlanToPlanner } from "./planner-service";
+import { tickMarketingPublishWorker } from "./marketing-publish-worker";
+import { tickEmailSendWorker } from "./email-campaign-sender";
 import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
 import { marketingPlans, seoMetrics, trackedKeywords, type SeoMetric } from "@shared/schema";
@@ -1957,6 +1959,24 @@ export function startScheduledJobs(): void {
   seoRefreshInterval = setInterval(() => {
     checkAndRunSeoRefresh();
   }, 60 * 60 * 1000);
+
+  // Task #97: Marketing publish worker — picks up approved+scheduled posts on
+  // auto-publish accounts every 2 minutes. Cheap query; safe to run frequently.
+  setInterval(() => {
+    tickMarketingPublishWorker().catch(err => {
+      console.error("[Marketing Publish Worker] Tick error:", err?.message || err);
+    });
+  }, 2 * 60 * 1000);
+
+  // Task #97: Email send worker — processes scheduled email_sends rows
+  // whose scheduledAt has elapsed. baseUrl is provided lazily so the
+  // worker uses the deployment's PUBLIC_APP_URL or a sensible default.
+  setInterval(() => {
+    const baseUrl = process.env.PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 5000}`;
+    tickEmailSendWorker({ baseUrl }).catch(err => {
+      console.error("[Email Send Worker] Tick error:", err?.message || err);
+    });
+  }, 2 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
   cleanupStuckJobs().catch(err => {

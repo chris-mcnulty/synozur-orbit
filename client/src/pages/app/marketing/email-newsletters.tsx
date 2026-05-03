@@ -23,6 +23,7 @@ import {
   Eye,
   Tag,
   Download,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -145,6 +146,56 @@ function downloadHtmlFile(html: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Live deliverability preview shown inside the send dialog. When the
+ * operator picks a recipient list we fetch the deliverable / suppressed
+ * breakdown so they know exactly how many addresses will be skipped — and
+ * why — *before* confirming the send.
+ */
+function SendDeliverabilityPreview({ listId }: { listId: string }) {
+  const { data, isLoading } = useQuery<{ deliverable: number; suppressed: Array<{ email: string; reason: string }> }>({
+    queryKey: [`/api/email-recipient-lists/${listId}/deliverability`],
+    queryFn: async () => {
+      const r = await fetch(`/api/email-recipient-lists/${listId}/deliverability`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load preview");
+      return r.json();
+    },
+    enabled: !!listId,
+  });
+  if (!listId) return null;
+  if (isLoading) {
+    return <div className="text-xs text-muted-foreground" data-testid="text-preview-loading">Checking suppressions…</div>;
+  }
+  if (!data) return null;
+  const supByReason = data.suppressed.reduce<Record<string, number>>((acc, r) => {
+    acc[r.reason] = (acc[r.reason] || 0) + 1;
+    return acc;
+  }, {});
+  return (
+    <div className="rounded border bg-muted/40 px-3 py-2 text-xs space-y-1" data-testid="preview-deliverability">
+      <div className="flex items-center justify-between">
+        <span><strong className="text-foreground" data-testid="text-deliverable-count">{data.deliverable}</strong> deliverable</span>
+        <span><strong className="text-foreground" data-testid="text-suppressed-count">{data.suppressed.length}</strong> will be skipped</span>
+      </div>
+      {data.suppressed.length > 0 && (
+        <>
+          <div className="text-muted-foreground">Skipped reasons:</div>
+          <ul className="list-disc ml-4 text-muted-foreground">
+            {Object.entries(supByReason).map(([reason, count]) => (
+              <li key={reason} data-testid={`text-suppression-reason-${reason}`}>
+                <span className="capitalize">{reason.replace(/_/g, " ")}</span>: {count}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {data.deliverable === 0 && data.suppressed.length > 0 && (
+        <div className="text-amber-700 pt-1">All recipients on this list are suppressed — the send will be refused.</div>
+      )}
+    </div>
+  );
+}
+
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -184,6 +235,13 @@ export default function EmailNewslettersPage() {
   const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
   const [labelDialogEmail, setLabelDialogEmail] = useState<SavedEmail | null>(null);
   const [labelInput, setLabelInput] = useState("");
+  const [sendDialogEmail, setSendDialogEmail] = useState<SavedEmail | null>(null);
+  const [sendListId, setSendListId] = useState<string>("");
+  const [sendTestRecipient, setSendTestRecipient] = useState<string>("");
+  const [sendMode, setSendMode] = useState<"list" | "test">("test");
+  const [sendScheduleAt, setSendScheduleAt] = useState<string>("");
+  const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
+  const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -194,6 +252,48 @@ export default function EmailNewslettersPage() {
   });
 
   const isAllowed = tenantInfo?.features?.emailNewsletters === true;
+  const directDeliveryEnabled = tenantInfo?.features?.directEmailDelivery === true;
+
+  const { data: recipientLists = [] } = useQuery<Array<{ id: string; name: string; recipientCount: number }>>({
+    queryKey: ["/api/email-recipient-lists"],
+    queryFn: async () => {
+      const r = await fetch("/api/email-recipient-lists", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && directDeliveryEnabled,
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean }) => {
+      const r = await fetch(`/api/generated-emails/${emailId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          listId: listId || undefined,
+          testRecipient: testRecipient || undefined,
+          scheduledAt: scheduledAt || undefined,
+          trackOpens,
+          trackClicks,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Send failed");
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-sends"] });
+      setSendDialogEmail(null);
+      setSendListId("");
+      setSendTestRecipient("");
+      setSendScheduleAt("");
+      toast({
+        title: "Send started",
+        description: `${data.sentCount ?? data.totalRecipients ?? 0} of ${data.totalRecipients ?? 0} delivered. View progress in the Sends tab.`,
+      });
+    },
+    onError: (err: Error) => toast({ title: "Send failed", description: err.message, variant: "destructive" }),
+  });
 
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
     queryKey: ["/api/strategic-context/summary"],
@@ -960,6 +1060,23 @@ export default function EmailNewslettersPage() {
                           <Download className="w-3.5 h-3.5" />
                         </Button>
                       )}
+                      {directDeliveryEnabled && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Send this email via SendGrid"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setSendDialogEmail(email);
+                            setSendMode("test");
+                            setSendListId("");
+                            setSendTestRecipient("");
+                          }}
+                          data-testid={`button-send-email-${email.id}`}
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1058,6 +1175,141 @@ export default function EmailNewslettersPage() {
               >
                 {deleteEmailMutation.isPending ? "Deleting..." : "Delete"}
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!sendDialogEmail} onOpenChange={v => { if (!v) setSendDialogEmail(null); }}>
+          <DialogContent className="sm:max-w-[480px]" data-testid="dialog-send-email">
+            <DialogHeader>
+              <DialogTitle>Send email</DialogTitle>
+              <DialogDescription>Deliver this email to a recipient list or send a test message. Suppressions and unsubscribes are honored automatically.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Button
+                  variant={sendMode === "test" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setSendMode("test")}
+                  data-testid="button-send-mode-test"
+                >Test send</Button>
+                <Button
+                  variant={sendMode === "list" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setSendMode("list")}
+                  data-testid="button-send-mode-list"
+                >Recipient list</Button>
+              </div>
+              {sendMode === "test" ? (
+                <div>
+                  <Label>Test recipient email</Label>
+                  <Input
+                    value={sendTestRecipient}
+                    onChange={e => setSendTestRecipient(e.target.value)}
+                    placeholder="you@example.com"
+                    data-testid="input-test-recipient"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">A single test message will be sent and recorded under Sends.</p>
+                </div>
+              ) : (
+                <div>
+                  <Label>Recipient list</Label>
+                  {recipientLists.length === 0 ? (
+                    <p className="text-xs text-muted-foreground mt-2">No recipient lists yet. Create one in Sends → Recipient Lists.</p>
+                  ) : (
+                    <Select value={sendListId} onValueChange={setSendListId}>
+                      <SelectTrigger data-testid="select-recipient-list">
+                        <SelectValue placeholder="Choose a list..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recipientLists.map(l => (
+                          <SelectItem key={l.id} value={l.id}>
+                            {l.name} ({l.recipientCount})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+              {sendMode === "list" && (
+                <>
+                  <div>
+                    <Label htmlFor="send-schedule-at">Schedule for later (optional)</Label>
+                    <Input
+                      id="send-schedule-at"
+                      type="datetime-local"
+                      value={sendScheduleAt}
+                      onChange={e => setSendScheduleAt(e.target.value)}
+                      data-testid="input-schedule-at"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Leave blank to send immediately. Scheduled sends queue up and dispatch automatically.</p>
+                  </div>
+                  <SendDeliverabilityPreview listId={sendListId} />
+                  <div className="space-y-2 pt-1 border-t">
+                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">Tracking</Label>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendTrackOpens}
+                        onChange={e => setSendTrackOpens(e.target.checked)}
+                        className="mt-0.5"
+                        data-testid="checkbox-track-opens"
+                      />
+                      <span>
+                        <strong>Track opens</strong> via 1×1 pixel
+                        <span className="block text-xs text-muted-foreground">Disable for privacy-sensitive sends. The pixel will not be embedded.</span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendTrackClicks}
+                        onChange={e => setSendTrackClicks(e.target.checked)}
+                        className="mt-0.5"
+                        data-testid="checkbox-track-clicks"
+                      />
+                      <span>
+                        <strong>Track link clicks</strong>
+                        <span className="block text-xs text-muted-foreground">Wraps outbound links so click attribution shows up in Sends analytics.</span>
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+              {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && sendMode === "list" && (
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="text-approval-warning">
+                  This email is in <strong>{sendDialogEmail.status}</strong> status. Approve it before sending to a list. Test sends are still allowed.
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setSendDialogEmail(null)} data-testid="button-cancel-send">Cancel</Button>
+                <Button
+                  disabled={
+                    sendEmailMutation.isPending ||
+                    (sendMode === "test" ? !sendTestRecipient.includes("@") : !sendListId)
+                  }
+                  onClick={() => {
+                    if (!sendDialogEmail) return;
+                    const scheduledAt = sendMode === "list" && sendScheduleAt
+                      ? new Date(sendScheduleAt).toISOString()
+                      : undefined;
+                    sendEmailMutation.mutate({
+                      emailId: sendDialogEmail.id,
+                      listId: sendMode === "list" ? sendListId : undefined,
+                      testRecipient: sendMode === "test" ? sendTestRecipient.trim() : undefined,
+                      scheduledAt,
+                      trackOpens: sendMode === "list" ? sendTrackOpens : undefined,
+                      trackClicks: sendMode === "list" ? sendTrackClicks : undefined,
+                    });
+                  }}
+                  data-testid="button-confirm-send"
+                >
+                  {sendEmailMutation.isPending ? "Sending..." : "Send"}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

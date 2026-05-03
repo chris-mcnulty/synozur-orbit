@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Plus, Trash2, Lock, Pencil } from "lucide-react";
+import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -39,7 +39,85 @@ interface SocialAccount {
   profileUrl?: string;
   notes?: string;
   status: string;
+  encryptedAccessToken?: string | null;
+  authorMode?: string | null;
+  authorUrn?: string | null;
+  availableAuthors?: Array<{ mode: "person" | "organization"; urn: string; name: string; vanityName?: string | null }> | null;
+  connectedAt?: string | null;
+  tokenExpiresAt?: string | null;
+  lastPublishError?: string | null;
 }
+
+function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+  const authors = account.availableAuthors ?? [];
+  const selectMutation = useMutation({
+    mutationFn: async (authorUrn: string) => {
+      const r = await fetch(`/api/social-accounts/${account.id}/linkedin/select-author`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ authorUrn }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to switch author");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "Publishing identity updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const r = await fetch(`/api/social-accounts/${account.id}/linkedin/authors?refresh=1`, { credentials: "include" });
+      if (!r.ok) throw new Error("Refresh failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "Refreshed company pages" });
+    } catch (err: any) {
+      toast({ title: "Could not refresh", description: err.message, variant: "destructive" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  if (authors.length <= 1) {
+    return (
+      <div className="text-xs text-muted-foreground" data-testid={`text-author-${account.id}`}>
+        Publishing as: <strong>{account.accountName}</strong> (personal)
+        <Button variant="ghost" size="sm" className="text-xs h-6 ml-2" onClick={refresh} disabled={refreshing} data-testid={`button-refresh-orgs-${account.id}`}>
+          {refreshing ? "Refreshing..." : "Refresh company pages"}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">Publish as</Label>
+      <div className="flex gap-2">
+        <Select value={account.authorUrn ?? ""} onValueChange={v => selectMutation.mutate(v)}>
+          <SelectTrigger className="h-8 text-xs" data-testid={`select-author-${account.id}`}>
+            <SelectValue placeholder="Choose identity..." />
+          </SelectTrigger>
+          <SelectContent>
+            {authors.map(a => (
+              <SelectItem key={a.urn} value={a.urn}>
+                {a.name} ({a.mode === "organization" ? "Company page" : "Personal"})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" className="text-xs h-8" onClick={refresh} disabled={refreshing} data-testid={`button-refresh-orgs-${account.id}`}>
+          {refreshing ? "..." : "Refresh"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const DIRECT_PUBLISH_PLATFORMS = new Set(["linkedin"]);
 
 export default function SocialAccountsPage() {
   const { toast } = useToast();
@@ -103,6 +181,36 @@ export default function SocialAccountsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
       setEditOpen(false);
       toast({ title: "Social account updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/social-accounts/${id}/oauth/connect`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Connect failed");
+      return r.json() as Promise<{ authorizeUrl: string }>;
+    },
+    onSuccess: (data) => {
+      window.location.href = data.authorizeUrl;
+    },
+    onError: (err: Error) => toast({ title: "Connect failed", description: err.message, variant: "destructive" }),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/social-accounts/${id}/disconnect`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Disconnect failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "Account disconnected" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -248,7 +356,7 @@ export default function SocialAccountsPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-0 space-y-1">
+                <CardContent className="pt-0 space-y-2">
                   {account.accountId && (
                     <p className="text-xs text-muted-foreground">ID: <span className="font-mono">{account.accountId}</span></p>
                   )}
@@ -258,6 +366,58 @@ export default function SocialAccountsPage() {
                     </a>
                   )}
                   {account.notes && <p className="text-xs text-muted-foreground">{account.notes}</p>}
+                  {DIRECT_PUBLISH_PLATFORMS.has(account.platform) && (
+                    <div className="pt-2 border-t mt-2 space-y-2">
+                      {account.encryptedAccessToken ? (
+                        <>
+                          <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Connected for direct publishing
+                          </div>
+                          {account.platform === "linkedin" && (
+                            <LinkedInAuthorPicker account={account} />
+                          )}
+                          {account.lastPublishError && (
+                            <div className="flex items-start gap-1.5 text-xs text-amber-600">
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              <span>Last error: {account.lastPublishError}</span>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => connectMutation.mutate(account.id)}
+                              disabled={connectMutation.isPending}
+                              data-testid={`button-reconnect-${account.id}`}
+                            >
+                              <LinkIcon className="w-3 h-3 mr-1" /> Reconnect
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => disconnectMutation.mutate(account.id)}
+                              disabled={disconnectMutation.isPending}
+                              data-testid={`button-disconnect-${account.id}`}
+                            >
+                              <Unlink className="w-3 h-3 mr-1" /> Disconnect
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="text-xs h-7 w-full"
+                          onClick={() => connectMutation.mutate(account.id)}
+                          disabled={connectMutation.isPending}
+                          data-testid={`button-connect-${account.id}`}
+                        >
+                          <LinkIcon className="w-3 h-3 mr-1" /> Connect for direct publishing
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
