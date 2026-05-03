@@ -5,7 +5,7 @@ import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess } from "./helpers";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
-import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, MANUAL_ACTION_KEYS, type ManualActionKey } from "../services/plan-policy";
+import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, MANUAL_ACTION_KEYS, resolveEffectivePlan, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus } from "../services/manual-action-quota";
 import { normalizeToCanonicalDomain } from "../utils/url-normalization";
 
@@ -508,31 +508,44 @@ export function registerTenantAdminRoutes(app: Express) {
       const tenant = await storage.getTenantByDomain(domain);
       if (tenant) {
         const tenantUsers = await storage.getUsersByDomain(domain);
-        const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
-        const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
-        const readOnlyUserLimit = (tenant as any).readOnlyUserLimit ?? 5;
-        
-        // Count existing users by role
-        const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
-        const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
-        
-        // Also count pending invites
-        const pendingInvites = existingInvites.filter(i => i.status === "pending");
-        const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
-        const pendingStandard = pendingInvites.filter(i => i.invitedRole === "Standard User").length;
-        
-        if (invitedRole === "Domain Admin") {
-          if (adminCount + pendingAdmins >= adminUserLimit) {
-            return res.status(400).json({ 
-              error: `Admin user limit (${adminUserLimit}) reached for this tenant. Upgrade your plan to add more admin users.` 
+
+        // Stripe seat-count enforcement: when the tenant has a paid subscription
+        // with a known seat quantity, that quantity is the source of truth for
+        // the total allowed users — purchased seats override the static plan
+        // role caps so customers can buy more capacity self-serve.
+        const seatCount = (tenant as any).seatCount as number | null | undefined;
+        const stripeSeatsManaged =
+          !!seatCount && !(tenant as any).billingManagedManually;
+        const pendingInvites = existingInvites.filter((i) => i.status === "pending");
+
+        if (stripeSeatsManaged) {
+          if (tenantUsers.length + pendingInvites.length >= seatCount!) {
+            return res.status(400).json({
+              error: `Seat limit reached (${seatCount} seats purchased). Increase your subscription quantity from Settings → Manage Billing to invite more users.`,
             });
           }
         } else {
-          // Standard User - check read-write limit (Standard Users are read-write by default)
-          if (standardCount + pendingStandard >= readWriteUserLimit) {
-            return res.status(400).json({ 
-              error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.` 
-            });
+          // Legacy plan-based caps (used when Stripe is not driving seats)
+          const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
+          const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+
+          const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
+          const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
+          const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
+          const pendingStandard = pendingInvites.filter(i => i.invitedRole === "Standard User").length;
+
+          if (invitedRole === "Domain Admin") {
+            if (adminCount + pendingAdmins >= adminUserLimit) {
+              return res.status(400).json({
+                error: `Admin user limit (${adminUserLimit}) reached for this tenant. Upgrade your plan to add more admin users.`,
+              });
+            }
+          } else {
+            if (standardCount + pendingStandard >= readWriteUserLimit) {
+              return res.status(400).json({
+                error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.`,
+              });
+            }
           }
         }
       }
@@ -633,25 +646,38 @@ export function registerTenantAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Tenant not found" });
       }
 
-      // Re-check user role limits at acceptance time (limits may have changed since invite)
+      // Re-check user limits at acceptance time. Stripe seats are source of
+      // truth when a paid subscription exists; otherwise fall back to the
+      // legacy per-role plan caps.
       const tenantUsers = await storage.getUsersByDomain(invite.tenantDomain);
-      const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
-      const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
-      
-      const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
-      const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
-      
-      if (invite.invitedRole === "Domain Admin") {
-        if (adminCount >= adminUserLimit) {
-          return res.status(400).json({ 
-            error: `Admin user limit (${adminUserLimit}) reached. Contact your administrator.` 
+      const seatCount = (tenant as any).seatCount as number | null | undefined;
+      const stripeSeatsManaged =
+        !!seatCount && !(tenant as any).billingManagedManually;
+
+      if (stripeSeatsManaged) {
+        if (tenantUsers.length >= seatCount!) {
+          return res.status(400).json({
+            error: `Seat limit reached (${seatCount} seats purchased). Ask your administrator to add a seat from Settings → Manage Billing.`,
           });
         }
       } else {
-        if (standardCount >= readWriteUserLimit) {
-          return res.status(400).json({ 
-            error: `User limit (${readWriteUserLimit}) reached. Contact your administrator.` 
-          });
+        const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
+        const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+        const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
+        const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
+
+        if (invite.invitedRole === "Domain Admin") {
+          if (adminCount >= adminUserLimit) {
+            return res.status(400).json({
+              error: `Admin user limit (${adminUserLimit}) reached. Contact your administrator.`,
+            });
+          }
+        } else {
+          if (standardCount >= readWriteUserLimit) {
+            return res.status(400).json({
+              error: `User limit (${readWriteUserLimit}) reached. Contact your administrator.`,
+            });
+          }
         }
       }
 
@@ -846,13 +872,14 @@ export function registerTenantAdminRoutes(app: Express) {
       }
 
       const domain = tenant.domain;
-      const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "unlimited";
-      const features = await getPlanFeaturesAsync(tenant.plan);
-      
+      const effectivePlanForFeatures = resolveEffectivePlan(tenant);
+      const isPremium = ["pro", "professional", "enterprise", "unlimited"].includes(effectivePlanForFeatures);
+      const features = await getPlanFeaturesAsync(effectivePlanForFeatures);
+
       const [competitorCount, monthlyAnalysisCount, manualActionRows] = await Promise.all([
         getTenantCompetitorCount(domain),
         getMonthlyAnalysisCount(domain),
-        getManualActionUsageSummary(domain, tenant.plan),
+        getManualActionUsageSummary(domain, effectivePlanForFeatures),
       ]);
 
       // Keyed object so clients can look up quota status by action key without scanning an array.
@@ -873,6 +900,41 @@ export function registerTenantAdminRoutes(app: Express) {
           analysisLimit: features.analysisLimit as number,
         },
         manualActionUsage,
+        // billing snapshot for client banners / billing card
+        billing: (() => {
+          const inGrace = !!(
+            tenant.paymentGraceUntil &&
+            tenant.paymentGraceUntil.getTime() > Date.now()
+          );
+          const hasPaid = !!(
+            tenant.stripeSubscriptionId &&
+            (tenant.subscriptionStatus === "active" ||
+              tenant.subscriptionStatus === "trialing")
+          );
+          // Effective plan tier: derived from Stripe subscription state when
+          // billing is not manually managed. If the tenant has no active paid
+          // subscription and is not in grace, paid persisted plan tiers are
+          // downgraded to "free" for read-time consistency, even if a sweep
+          // hasn't run yet.
+          let effectivePlan = tenant.plan;
+          const persistedPaid = ["pro", "professional", "enterprise", "unlimited"].includes(
+            (tenant.plan || "").toLowerCase(),
+          );
+          if (!tenant.billingManagedManually && persistedPaid && !hasPaid && !inGrace) {
+            effectivePlan = "free";
+          }
+          return {
+            subscriptionStatus: tenant.subscriptionStatus ?? null,
+            currentPeriodEnd: tenant.currentPeriodEnd ?? null,
+            seatCount: tenant.seatCount ?? null,
+            paymentGraceUntil: tenant.paymentGraceUntil ?? null,
+            inPaymentGrace: inGrace,
+            hasPaidSubscription: hasPaid,
+            billingManagedManually: !!tenant.billingManagedManually,
+            selfServeEnabled: !tenant.billingManagedManually,
+            effectivePlan,
+          };
+        })(),
       });
     } catch (error: any) {
       if (error instanceof ContextError) {

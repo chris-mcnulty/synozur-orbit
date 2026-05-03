@@ -361,6 +361,49 @@ export function getPlanFeatures(planName: string): PlanFeatures {
   return { ...fallbackLimits, ...fallbackFeatures };
 }
 
+/**
+ * Resolve the *effective* plan tier for a tenant.
+ *
+ * Stripe is the source of truth when billing is not manually managed:
+ *   - Manual billing → trust the persisted plan column (admin-pinned).
+ *   - Active or trialing Stripe subscription → trust the persisted plan
+ *     (kept in sync by the webhook handler).
+ *   - In payment grace window → keep the persisted paid plan.
+ *   - Otherwise, paid persisted tiers are downgraded to "free" at read time
+ *     so feature gates respect cancellation immediately, even before the
+ *     hourly grace sweep runs.
+ */
+export function resolveEffectivePlan(tenant: {
+  plan?: string | null;
+  subscriptionStatus?: string | null;
+  stripeSubscriptionId?: string | null;
+  paymentGraceUntil?: Date | string | null;
+  billingManagedManually?: boolean | null;
+}): string {
+  const persisted = (tenant.plan || "free").toLowerCase();
+  if (tenant.billingManagedManually) return persisted;
+
+  const status = (tenant.subscriptionStatus || "").toLowerCase();
+  const hasPaid =
+    !!tenant.stripeSubscriptionId &&
+    (status === "active" || status === "trialing");
+
+  let inGrace = false;
+  if (tenant.paymentGraceUntil) {
+    const until =
+      tenant.paymentGraceUntil instanceof Date
+        ? tenant.paymentGraceUntil
+        : new Date(tenant.paymentGraceUntil);
+    inGrace = !Number.isNaN(until.getTime()) && until.getTime() > Date.now();
+  }
+
+  const isPaidTier = ["pro", "professional", "enterprise", "unlimited"].includes(
+    persisted,
+  );
+  if (isPaidTier && !hasPaid && !inGrace) return "free";
+  return persisted;
+}
+
 export function isFeatureEnabled(plan: string, feature: FeatureKey): boolean {
   plan = normalizePlanName(plan);
   if (plan === "unlimited") return true;

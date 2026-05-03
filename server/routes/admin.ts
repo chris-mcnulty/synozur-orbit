@@ -1592,8 +1592,10 @@ export function registerAdminRoutes(app: Express) {
       const validStatuses = ["active", "suspended", "inactive"];
       const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
       
-      const { domain, plan, status, name, logoUrl, faviconUrl, primaryColor, secondaryColor } = req.body;
-      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; adminUserLimit?: number; readWriteUserLimit?: number; readOnlyUserLimit?: number; multiMarketEnabled?: boolean; marketLimit?: number | null; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string } = {};
+      const { domain, plan, status, name, logoUrl, faviconUrl, primaryColor, secondaryColor, billingManagedManually } = req.body;
+      const updateData: { domain?: string; plan?: string; status?: string; competitorLimit?: number; analysisLimit?: number; adminUserLimit?: number; readWriteUserLimit?: number; readOnlyUserLimit?: number; multiMarketEnabled?: boolean; marketLimit?: number | null; name?: string; logoUrl?: string | null; faviconUrl?: string | null; primaryColor?: string; secondaryColor?: string; billingManagedManually?: boolean } = {};
+      // Global Admin manual billing override — when true, Stripe webhook plan sync is skipped.
+      if (typeof billingManagedManually === "boolean") updateData.billingManagedManually = billingManagedManually;
       
       if (domain && typeof domain === "string" && domain.includes(".")) {
         // Check if domain is already taken by another tenant

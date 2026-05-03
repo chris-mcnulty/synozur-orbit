@@ -662,6 +662,7 @@ export default function AdminPage() {
     faviconUrl: "",
     primaryColor: "#810FFB",
     secondaryColor: "#E60CB3",
+    billingManagedManually: false,
   });
   const [addTenantOpen, setAddTenantOpen] = useState(false);
   const [newTenant, setNewTenant] = useState({
@@ -1199,6 +1200,7 @@ export default function AdminPage() {
       faviconUrl: tenant.faviconUrl || "",
       primaryColor: tenant.primaryColor || "#810FFB",
       secondaryColor: tenant.secondaryColor || "#E60CB3",
+      billingManagedManually: (tenant as any).billingManagedManually ?? false,
     });
     setEditDialogOpen(true);
   };
@@ -1236,6 +1238,9 @@ export default function AdminPage() {
     }
     if (editForm.marketLimit !== ((selectedTenant as any).marketLimit ?? null)) {
       (changedFields as any).marketLimit = editForm.marketLimit;
+    }
+    if (editForm.billingManagedManually !== ((selectedTenant as any).billingManagedManually ?? false)) {
+      (changedFields as any).billingManagedManually = editForm.billingManagedManually;
     }
 
     if (Object.keys(changedFields).length === 0) {
@@ -2799,6 +2804,23 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+                <div className="space-y-2 pt-4 border-t">
+                  <Label className="text-sm font-medium">Billing Override</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    When enabled, the Stripe webhook will not change this tenant's plan automatically.
+                    Use this for tenants billed outside Stripe (e.g. invoiced enterprise deals).
+                  </p>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={editForm.billingManagedManually}
+                      onChange={(e) => setEditForm({ ...editForm, billingManagedManually: e.target.checked })}
+                      data-testid="checkbox-billing-managed-manually"
+                    />
+                    <span className="text-sm">Billing managed manually (Stripe webhook will not auto-update plan)</span>
+                  </label>
                 </div>
                 <div className="space-y-2 pt-4 border-t">
                   <Label className="text-sm font-medium">Multi-Market Settings</Label>

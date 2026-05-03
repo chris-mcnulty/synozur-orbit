@@ -107,9 +107,30 @@ export const tenants = pgTable("tenants", {
   speMigrationStartedAt: timestamp("spe_migration_started_at"), // When SPE migration began
   // SEO tracking refresh cadence (in days) — null falls back to platform default of 7
   seoRefreshIntervalDays: integer("seo_refresh_interval_days").default(7),
+  // Stripe billing
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status"), // active | trialing | past_due | canceled | incomplete | unpaid | null
+  currentPeriodEnd: timestamp("current_period_end"),
+  seatCount: integer("seat_count"), // Stripe subscription quantity (paid seats)
+  paymentGraceUntil: timestamp("payment_grace_until"), // 7-day grace after payment_failed
+  billingManagedManually: boolean("billing_managed_manually").notNull().default(false), // Global Admin override
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Billing event audit log — provides idempotency for Stripe webhooks
+export const billingEvents = pgTable("billing_events", {
+  id: text("id").primaryKey(), // Stripe event id (evt_*)
+  type: text("type").notNull(),
+  tenantId: varchar("tenant_id"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  payload: jsonb("payload"),
+  processedAt: timestamp("processed_at").notNull().defaultNow(),
+});
+
+export type BillingEvent = typeof billingEvents.$inferSelect;
 
 export const domainBlocklist = pgTable("domain_blocklist", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

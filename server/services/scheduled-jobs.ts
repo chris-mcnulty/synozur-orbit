@@ -2134,6 +2134,17 @@ export function startScheduledJobs(): void {
     checkAndRunSeoRefresh();
   }, 35 * 1000);
 
+  // hourly sweep — downgrade tenants whose payment grace window has expired
+  setInterval(async () => {
+    try {
+      const { sweepExpiredGraceWindows } = await import("./billing-service");
+      const n = await sweepExpiredGraceWindows();
+      if (n > 0) console.log(`[Scheduled Jobs] Billing grace sweep: downgraded ${n} tenant(s)`);
+    } catch (err) {
+      console.error("[Scheduled Jobs] Billing grace sweep failed:", err);
+    }
+  }, 60 * 60 * 1000);
+
   console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes), SEO refresh (weekly)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }

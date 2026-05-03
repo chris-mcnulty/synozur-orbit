@@ -36,13 +36,18 @@ declare module "express-session" {
   }
 }
 
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
+// Stripe webhook needs raw body for signature verification.
+// Skip JSON parsing for those paths; the routes use express.raw().
+app.use((req, res, next) => {
+  if (req.path === "/api/stripe/webhook" || req.path === "/api/webhooks/stripe") {
+    return next();
+  }
+  return express.json({
+    verify: (req2, _res, buf) => {
+      (req2 as any).rawBody = buf;
     },
-  }),
-);
+  })(req, res, next);
+});
 
 app.use(express.urlencoded({ extended: false }));
 
@@ -163,6 +168,26 @@ app.use((req, res, next) => {
   // Run startup migrations for tables/columns that may not exist in production yet
   try {
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_dismissed_changelog_version VARCHAR(50)`);
+    // Stripe billing columns + audit table
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seat_count INTEGER`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS payment_grace_until TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_managed_manually BOOLEAN NOT NULL DEFAULT false`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS tenants_stripe_customer_idx ON tenants(stripe_customer_id)`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS billing_events (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        tenant_id VARCHAR,
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        payload JSONB,
+        processed_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS support_tickets (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,

@@ -265,7 +265,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
 
   const isEnterprise = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
 
-  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any }>({
+  const { data: tenantInfo } = useQuery<{ plan: string; isPremium: boolean; features?: any; billing?: any }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const response = await fetch("/api/tenant/info", { credentials: "include" });
@@ -274,6 +274,26 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     },
     enabled: !!user,
   });
+
+  const isAdminUser = user?.role === "Domain Admin" || user?.role === "Global Admin";
+  const showGraceBanner =
+    isAdminUser && !!tenantInfo?.billing?.inPaymentGrace;
+  const graceUntil = tenantInfo?.billing?.paymentGraceUntil
+    ? new Date(tenantInfo.billing.paymentGraceUntil).toLocaleDateString()
+    : null;
+
+  async function openBillingPortalFromBanner() {
+    try {
+      const r = await fetch("/api/billing/portal-session", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await r.json();
+      if (r.ok && data.url) window.location.href = data.url;
+    } catch {
+      /* ignore */
+    }
+  }
 
   const lockedNavItems = useMemo((): Set<string> => {
     const locked = new Set<string>();
@@ -687,6 +707,24 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}
         <ContextBar />
 
+        {showGraceBanner && (
+          <div
+            className="bg-destructive/10 border-b border-destructive/30 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3"
+            data-testid="banner-payment-grace"
+          >
+            <div className="text-destructive">
+              <strong>Payment failed.</strong> Update your payment method
+              {graceUntil ? <> before <strong>{graceUntil}</strong></> : null} to keep your subscription active.
+            </div>
+            <button
+              onClick={openBillingPortalFromBanner}
+              className="px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground text-xs font-medium hover:opacity-90"
+              data-testid="banner-payment-grace-action"
+            >
+              Manage Billing
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto pb-16 lg:pb-0">
           <div className="container max-w-7xl mx-auto p-4 md:p-8 lg:p-10 space-y-8">
             {breadcrumbs === undefined ? (

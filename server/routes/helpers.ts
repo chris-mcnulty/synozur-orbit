@@ -9,6 +9,7 @@ import {
   getTenantCompetitorCount,
   getMonthlyAnalysisCount,
   type ManualActionKey,
+  resolveEffectivePlan,
 } from "../services/plan-policy";
 import { reserveManualAction } from "../services/manual-action-quota";
 import { calculateEstimatedCost } from "../services/ai-pricing";
@@ -235,7 +236,7 @@ export async function guardFeature(
   try {
     const ctx = await getRequestContext(req);
     const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-    const plan = tenant?.plan ?? "free";
+    const plan = tenant ? resolveEffectivePlan(tenant) : "free";
     const gate = await checkFeatureAccessAsync(plan, feature);
     if (!gate.allowed) {
       res.status(403).json({
@@ -273,7 +274,7 @@ export async function guardCompetitorLimit(
     if (options.skipForProject) return true;
 
     const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-    const plan = tenant?.plan ?? "free";
+    const plan = tenant ? resolveEffectivePlan(tenant) : "free";
 
     const currentCount = await getTenantCompetitorCount(ctx.tenantDomain);
     const gate = await checkCompetitorLimitAsync(plan, currentCount);
@@ -370,7 +371,7 @@ export async function guardAnalysisLimit(req: Request, res: Response): Promise<b
   try {
     const ctx = await getRequestContext(req);
     const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-    const plan = tenant?.plan ?? "free";
+    const plan = tenant ? resolveEffectivePlan(tenant) : "free";
 
     const monthlyCount = await getMonthlyAnalysisCount(ctx.tenantDomain);
     const gate = await checkAnalysisLimitAsync(plan, monthlyCount);

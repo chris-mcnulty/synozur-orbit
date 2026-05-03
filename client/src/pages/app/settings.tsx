@@ -64,6 +64,238 @@ interface ConsultantGrant {
   grantedByName?: string;
 }
 
+// Billing actions inside the Plan & Usage card.
+// Domain Admin can launch Stripe Checkout (Pro upgrade) or Customer Portal.
+function BillingActions() {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
+
+  const { data: tenantInfo } = useQuery<any>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch tenant info");
+      return r.json();
+    },
+  });
+
+  const { data: status } = useQuery<any>({
+    queryKey: ["/api/billing/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/billing/status", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  const { data: plansData } = useQuery<{ plans: any[] }>({
+    queryKey: ["/api/billing/plans"],
+    queryFn: async () => {
+      const r = await fetch("/api/billing/plans", { credentials: "include" });
+      if (!r.ok) return { plans: [] };
+      return r.json();
+    },
+  });
+
+  const { data: invoiceData } = useQuery<{ invoices: any[]; paymentMethod: any | null }>({
+    queryKey: ["/api/billing/invoices"],
+    queryFn: async () => {
+      const r = await fetch("/api/billing/invoices", { credentials: "include" });
+      if (!r.ok) return { invoices: [], paymentMethod: null };
+      return r.json();
+    },
+  });
+
+  const billing = tenantInfo?.billing;
+  const plan = (tenantInfo?.plan || "trial").toLowerCase();
+  const hasPaidSub = !!billing?.hasPaidSubscription;
+  const isManual = !!billing?.billingManagedManually;
+  const isProOrAbove = plan === "pro" || plan === "enterprise" || plan === "unlimited";
+  const seatCount = status?.seatCount ?? null;
+  const seatsUsed = status?.seatsUsed ?? null;
+
+  const monthlyPlan = plansData?.plans?.find((p) => p.interval === "month");
+  const annualPlan = plansData?.plans?.find((p) => p.interval === "year");
+  const hasIntervalChoice = !!(monthlyPlan && annualPlan);
+
+  async function startCheckout() {
+    setBusy("checkout");
+    try {
+      const chosen = billingInterval === "year" ? annualPlan : monthlyPlan;
+      const body: any = { seats: 1 };
+      if (chosen?.priceId) body.priceId = chosen.priceId;
+      const r = await fetch("/api/billing/checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.url) {
+        toast.error(data.error || "Failed to start checkout");
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err: any) {
+      toast.error(err.message || "Checkout failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function openPortal() {
+    setBusy("portal");
+    try {
+      const r = await fetch("/api/billing/portal-session", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await r.json();
+      if (!r.ok || !data.url) {
+        toast.error(data.error || "Failed to open billing portal");
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err: any) {
+      toast.error(err.message || "Portal failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (isManual) {
+    return (
+      <div className="text-sm text-muted-foreground" data-testid="billing-managed-manually">
+        Billing for this organization is managed manually. Contact{" "}
+        <a className="text-primary hover:underline" href="mailto:contactus@synozur.com">
+          contactus@synozur.com
+        </a>{" "}
+        for changes.
+      </div>
+    );
+  }
+
+  const pm = invoiceData?.paymentMethod;
+  const invoices = invoiceData?.invoices ?? [];
+
+  return (
+    <div className="flex flex-col gap-4 w-full">
+      <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-start sm:justify-between">
+      <div className="text-sm text-muted-foreground space-y-1">
+        {billing?.inPaymentGrace && (
+          <div className="text-destructive font-medium" data-testid="billing-grace-warning">
+            Payment failed — please update your payment method before{" "}
+            {billing.paymentGraceUntil
+              ? new Date(billing.paymentGraceUntil).toLocaleDateString()
+              : "the grace period ends"}
+            .
+          </div>
+        )}
+        {hasPaidSub && billing?.currentPeriodEnd && (
+          <div data-testid="billing-period-end">
+            Renews on {new Date(billing.currentPeriodEnd).toLocaleDateString()}
+          </div>
+        )}
+        {seatCount !== null && (
+          <div data-testid="billing-seats-usage">
+            Seats: <strong>{seatsUsed ?? "?"}</strong> used of <strong>{seatCount}</strong> purchased
+          </div>
+        )}
+        {pm && pm.type === "card" && (
+          <div data-testid="billing-payment-method">
+            Payment method: {pm.brand?.toUpperCase()} •••• {pm.last4} (exp {pm.expMonth}/{pm.expYear})
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {!isProOrAbove && hasIntervalChoice && (
+          <div className="inline-flex rounded-md border border-border overflow-hidden text-xs" data-testid="billing-interval-toggle">
+            <button
+              type="button"
+              className={`px-3 py-1.5 ${billingInterval === "month" ? "bg-primary text-primary-foreground" : "bg-background"}`}
+              onClick={() => setBillingInterval("month")}
+              data-testid="button-interval-monthly"
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 ${billingInterval === "year" ? "bg-primary text-primary-foreground" : "bg-background"}`}
+              onClick={() => setBillingInterval("year")}
+              data-testid="button-interval-annual"
+            >
+              Annual
+            </button>
+          </div>
+        )}
+        {hasPaidSub && (
+          <Button
+            variant="outline"
+            onClick={openPortal}
+            disabled={busy !== null}
+            data-testid="button-manage-billing"
+          >
+            {busy === "portal" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Manage Billing
+          </Button>
+        )}
+        {!isProOrAbove && (
+          <Button
+            onClick={startCheckout}
+            disabled={busy !== null}
+            data-testid="button-upgrade-pro"
+          >
+            {busy === "checkout" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Upgrade to Pro
+          </Button>
+        )}
+        {plan === "pro" && (
+          <a href="mailto:contactus@synozur.com">
+            <Button variant="default" data-testid="button-contact-enterprise">
+              Talk to Sales (Enterprise)
+            </Button>
+          </a>
+        )}
+      </div>
+      </div>
+      {invoices.length > 0 && (
+        <div className="border-t border-border pt-3" data-testid="billing-invoices">
+          <div className="text-xs font-medium text-muted-foreground mb-2">Recent invoices</div>
+          <div className="space-y-1">
+            {invoices.slice(0, 6).map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between text-xs" data-testid={`invoice-row-${inv.id}`}>
+                <span>
+                  {inv.created ? new Date(inv.created).toLocaleDateString() : "—"}
+                  {inv.number ? ` · ${inv.number}` : ""}
+                </span>
+                <span className="flex items-center gap-3">
+                  <span>
+                    {((inv.amountPaid ?? inv.amountDue) / 100).toLocaleString(undefined, {
+                      style: "currency",
+                      currency: (inv.currency || "usd").toUpperCase(),
+                    })}
+                  </span>
+                  <span className="capitalize text-muted-foreground">{inv.status}</span>
+                  {inv.hostedInvoiceUrl && (
+                    <a
+                      href={inv.hostedInvoiceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      View
+                    </a>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { user } = useUser();
   const queryClient = useQueryClient();
@@ -156,22 +388,67 @@ export default function Settings() {
     }
   }, [user]);
 
+  async function sendInviteRequest() {
+    const res = await fetch("/api/team/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      const err: any = new Error(data.error || "Failed to send invite");
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
+
   const sendInviteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/team/invites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to send invite");
+      try {
+        return await sendInviteRequest();
+      } catch (err: any) {
+        // If we hit the Stripe seat limit, ask the admin to buy an additional
+        // seat and re-try the invite automatically.
+        if (
+          typeof err?.message === "string" &&
+          err.message.toLowerCase().includes("seat limit reached")
+        ) {
+          if (
+            window.confirm(
+              `${err.message}\n\nWould you like to add 1 seat to your subscription now and re-send this invite?`,
+            )
+          ) {
+            const statusRes = await fetch("/api/billing/status", {
+              credentials: "include",
+            });
+            const status = statusRes.ok ? await statusRes.json() : null;
+            const newSeats = (status?.seatCount ?? 1) + 1;
+            const seatRes = await fetch("/api/billing/update-seats", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ seats: newSeats }),
+            });
+            if (!seatRes.ok) {
+              const seatErr = await seatRes.json();
+              throw new Error(
+                seatErr.error || "Failed to add seat to your subscription",
+              );
+            }
+            // Stripe webhook will refresh seat_count; small delay so the
+            // server-side check sees the new quantity.
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            return await sendInviteRequest();
+          }
+        }
+        throw err;
       }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/team/invites"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/status"] });
       setInviteEmail("");
       setInviteRole("Standard User");
       setInviteOpen(false);
@@ -859,9 +1136,11 @@ export default function Settings() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="border-t border-border px-6 py-4 bg-muted/20">
-            <Button variant="default" className="w-full sm:w-auto">Upgrade Plan</Button>
-          </CardFooter>
+          {isAdmin && (
+            <CardFooter className="border-t border-border px-6 py-4 bg-muted/20">
+              <BillingActions />
+            </CardFooter>
+          )}
         </Card>
 
         {isAdmin && (

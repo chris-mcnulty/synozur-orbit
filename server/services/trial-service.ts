@@ -1,6 +1,7 @@
 import { storage } from '../storage';
 import { sendTrialReminderEmail, TrialReminderType } from './email-service';
 import { Tenant, User } from '@shared/schema';
+import { hasActivePaidSubscription } from './billing-service';
 
 const TRIAL_DURATION_DAYS = 60;
 
@@ -158,8 +159,26 @@ export async function processTrialReminders(baseUrl: string): Promise<{ processe
 }
 
 async function expireTrialAndSendFinalEmail(tenant: Tenant, baseUrl: string): Promise<void> {
+  // if tenant has an active paid Stripe subscription, do NOT
+  // hard-downgrade to free; the webhook is the source of truth for plan.
+  if (hasActivePaidSubscription(tenant)) {
+    await storage.updateTenant(tenant.id, { lastTrialReminderSent: 'day60' });
+    console.log(
+      `Trial period ended for tenant ${tenant.domain} but paid subscription is active (${tenant.subscriptionStatus}); plan retained`,
+    );
+    return;
+  }
+  // respect manual billing override — Global Admin pinned plan
+  if (tenant.billingManagedManually) {
+    await storage.updateTenant(tenant.id, { lastTrialReminderSent: 'day60' });
+    console.log(
+      `Trial period ended for tenant ${tenant.domain} but billing_managed_manually=true; plan retained`,
+    );
+    return;
+  }
+
   const admins = await getTenantAdmins(tenant.domain);
-  
+
   for (const admin of admins) {
     await sendTrialReminderEmail(
       {
@@ -172,14 +191,14 @@ async function expireTrialAndSendFinalEmail(tenant: Tenant, baseUrl: string): Pr
       'day60'
     );
   }
-  
+
   await storage.updateTenant(tenant.id, {
     plan: 'free',
     lastTrialReminderSent: 'day60',
     competitorLimit: 1,
     analysisLimit: 1,
   });
-  
+
   console.log(`Trial expired for tenant ${tenant.domain} - reverted to free plan`);
 }
 

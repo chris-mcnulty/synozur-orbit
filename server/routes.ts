@@ -33,6 +33,7 @@ import { registerInsightsOutcomesRoutes } from "./routes/insights-outcomes";
 import { registerOAuthProviderRoutes } from "./routes/oauth-provider";
 import { registerPartnerApiRoutes } from "./routes/partner-api";
 import { registerAdminOAuthClientRoutes } from "./routes/admin-oauth-clients";
+import { registerBillingRoutes } from "./routes/billing";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -100,6 +101,7 @@ export async function registerRoutes(
   registerOAuthProviderRoutes(app);
   registerPartnerApiRoutes(app);
   registerAdminOAuthClientRoutes(app);
+  registerBillingRoutes(app);
 
   return httpServer;
 }
