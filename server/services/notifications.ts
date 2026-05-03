@@ -16,6 +16,9 @@
  */
 
 import { storage } from "../storage";
+import { db } from "../db";
+import { emailSuppressions } from "@shared/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { decryptSecret } from "../utils/encryption";
 import { isFeatureEnabledAsync } from "./plan-policy";
 import { createNotification } from "./notification-service";
@@ -558,6 +561,26 @@ async function handleCompetitorToneShift(
   );
 }
 
+async function isAddressSuppressed(tenantDomain: string, email: string): Promise<boolean> {
+  if (!email) return false;
+  try {
+    const [row] = await db
+      .select({ id: emailSuppressions.id })
+      .from(emailSuppressions)
+      .where(
+        and(
+          eq(emailSuppressions.tenantDomain, tenantDomain),
+          sql`lower(${emailSuppressions.email}) = lower(${email})`,
+        ),
+      )
+      .limit(1);
+    return !!row;
+  } catch (err) {
+    console.error(`[Notifications] suppression lookup failed for ${email}:`, err);
+    return false;
+  }
+}
+
 async function handleCommentMention(
   tenantDomain: string,
   ctx: CommentMentionCtx,
@@ -587,18 +610,22 @@ async function handleCommentMention(
     console.error(`[Notifications] in-app comment_mention failed for user ${recipient.id}:`, err);
   }
 
-  // Email — always on for comment_mention (no per-user opt-out yet)
-  try {
-    await sendCommentMentionEmail({
-      to: recipient.email,
-      recipientName: recipient.name || recipient.email,
-      authorName: ctx.authorName,
-      targetLabel: ctx.targetLabel,
-      excerpt: ctx.excerpt,
-      link: fullLink,
-    });
-  } catch (err) {
-    console.error(`[Notifications] comment_mention email failed for user ${recipient.id}:`, err);
+  // Email — gated on per-user pref + tenant suppression list. Degrades silently
+  // when SendGrid is not configured (sendCommentMentionEmail catches and logs).
+  const emailEnabled = recipient.mentionEmailEnabled !== false;
+  if (emailEnabled && !(await isAddressSuppressed(tenantDomain, recipient.email))) {
+    try {
+      await sendCommentMentionEmail({
+        to: recipient.email,
+        recipientName: recipient.name || recipient.email,
+        authorName: ctx.authorName,
+        targetLabel: ctx.targetLabel,
+        excerpt: ctx.excerpt,
+        link: fullLink,
+      });
+    } catch (err) {
+      console.error(`[Notifications] comment_mention email failed for user ${recipient.id}:`, err);
+    }
   }
 
   // Webhook fan-out (Slack/Teams)
@@ -643,16 +670,21 @@ async function handleActionItemAssigned(
     console.error(`[Notifications] in-app action_item_assigned failed for user ${recipient.id}:`, err);
   }
 
-  try {
-    await sendActionItemAssignedEmail({
-      to: recipient.email,
-      recipientName: recipient.name || recipient.email,
-      assignerName: ctx.assignerName,
-      itemTitle: ctx.itemTitle,
-      link: fullLink,
-    });
-  } catch (err) {
-    console.error(`[Notifications] action_item_assigned email failed for user ${recipient.id}:`, err);
+  // Email — gated on per-user pref + tenant suppression list. Degrades silently
+  // when SendGrid is not configured (sendActionItemAssignedEmail catches and logs).
+  const emailEnabled = recipient.assignmentEmailEnabled !== false;
+  if (emailEnabled && !(await isAddressSuppressed(tenantDomain, recipient.email))) {
+    try {
+      await sendActionItemAssignedEmail({
+        to: recipient.email,
+        recipientName: recipient.name || recipient.email,
+        assignerName: ctx.assignerName,
+        itemTitle: ctx.itemTitle,
+        link: fullLink,
+      });
+    } catch (err) {
+      console.error(`[Notifications] action_item_assigned email failed for user ${recipient.id}:`, err);
+    }
   }
 
   await fanOutWebhook(

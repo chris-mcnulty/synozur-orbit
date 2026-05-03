@@ -17,6 +17,11 @@ import {
   recommendations,
   featureRecommendations,
   users,
+  competitors,
+  battlecards,
+  productBattlecards,
+  intelligenceBriefings,
+  longFormRecommendations,
   COLLAB_TARGET_KINDS,
   type CollabTargetKind,
   notifications as notificationsTable,
@@ -75,26 +80,124 @@ function targetLink(kind: string, id: string): string {
   switch (kind) {
     case "battlecard":
     case "product_battlecard":
-      return `/app/battlecards`;
+      return `/app/battlecards?id=${encodeURIComponent(id)}`;
     case "briefing":
-      return `/app/intelligence`;
+      return `/app/intelligence?id=${encodeURIComponent(id)}`;
     case "gtm_plan":
-      return `/app/gtm-plan`;
+      return `/app/marketing/gtm-plan`;
     case "messaging_framework":
-      return `/app/messaging-framework`;
+      return `/app/marketing/messaging-framework`;
     case "competitor":
       return `/app/competitors/${id}`;
     case "recommendation":
     case "feature_recommendation":
     case "gap":
-      return `/app/action-items`;
+      return `/app/action-items?id=${encodeURIComponent(id)}`;
+    case "annotation":
+      return `/app/activity?annotation=${encodeURIComponent(id)}`;
     default:
       return `/app/activity`;
   }
 }
 
-function targetLabel(kind: string): string {
-  return kind.replace(/_/g, " ");
+function kindFallbackLabel(kind: string): string {
+  switch (kind) {
+    case "battlecard": return "battlecard";
+    case "product_battlecard": return "product battlecard";
+    case "briefing": return "intelligence briefing";
+    case "gtm_plan": return "GTM plan";
+    case "messaging_framework": return "messaging framework";
+    case "competitor": return "competitor";
+    case "recommendation": return "recommendation";
+    case "feature_recommendation": return "feature recommendation";
+    case "gap": return "gap";
+    case "annotation": return "annotation";
+    default: return kind.replace(/_/g, " ");
+  }
+}
+
+/**
+ * Resolves the human-readable artifact name for a collaboration target so
+ * mention notifications can include the actual artifact (e.g. "Acme Corp
+ * battlecard") instead of the generic kind label.
+ */
+async function resolveArtifactName(
+  tenantDomain: string,
+  kind: string,
+  id: string,
+): Promise<string> {
+  const fallback = kindFallbackLabel(kind);
+  try {
+    switch (kind) {
+      case "competitor": {
+        const [row] = await db
+          .select({ name: competitors.name })
+          .from(competitors)
+          .where(and(eq(competitors.id, id), eq(competitors.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row?.name || fallback;
+      }
+      case "battlecard": {
+        const [row] = await db
+          .select({ name: competitors.name })
+          .from(battlecards)
+          .leftJoin(competitors, eq(competitors.id, battlecards.competitorId))
+          .where(and(eq(battlecards.id, id), eq(battlecards.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row?.name ? `${row.name} battlecard` : fallback;
+      }
+      case "product_battlecard": {
+        const [row] = await db
+          .select({ id: productBattlecards.id })
+          .from(productBattlecards)
+          .where(and(eq(productBattlecards.id, id), eq(productBattlecards.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row ? "product battlecard" : fallback;
+      }
+      case "briefing": {
+        const [row] = await db
+          .select({ start: intelligenceBriefings.periodStart, end: intelligenceBriefings.periodEnd })
+          .from(intelligenceBriefings)
+          .where(and(eq(intelligenceBriefings.id, id), eq(intelligenceBriefings.tenantDomain, tenantDomain)))
+          .limit(1);
+        if (row?.start && row?.end) {
+          const fmt = (d: Date) => new Date(d).toISOString().slice(0, 10);
+          return `intelligence briefing (${fmt(row.start)} – ${fmt(row.end)})`;
+        }
+        return fallback;
+      }
+      case "gtm_plan":
+      case "messaging_framework": {
+        const [row] = await db
+          .select({ type: longFormRecommendations.type })
+          .from(longFormRecommendations)
+          .where(and(eq(longFormRecommendations.id, id), eq(longFormRecommendations.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row?.type === "gtm_plan" ? "GTM plan" : row?.type === "messaging_framework" ? "messaging framework" : fallback;
+      }
+      case "recommendation": {
+        const [row] = await db
+          .select({ title: recommendations.title })
+          .from(recommendations)
+          .where(and(eq(recommendations.id, id), eq(recommendations.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row?.title || fallback;
+      }
+      case "feature_recommendation": {
+        const [row] = await db
+          .select({ title: featureRecommendations.title })
+          .from(featureRecommendations)
+          .where(and(eq(featureRecommendations.id, id), eq(featureRecommendations.tenantDomain, tenantDomain)))
+          .limit(1);
+        return row?.title || fallback;
+      }
+      default:
+        return fallback;
+    }
+  } catch (err) {
+    console.error(`[Collaboration] resolveArtifactName failed for ${kind}/${id}:`, err);
+    return fallback;
+  }
 }
 
 async function dispatchMentions(
@@ -108,8 +211,30 @@ async function dispatchMentions(
   if (!mentions.length) return;
   const author = await storage.getUser(authorId);
   const authorName = author?.name || author?.email || "A teammate";
-  const link = targetLink(kind, id);
-  const label = targetLabel(kind);
+
+  // For mentions inside annotation threads, the email should deep-link to
+  // the underlying artifact (battlecard, briefing, competitor, etc.) and
+  // reference that artifact by name — not the generic word "annotation".
+  let resolvedKind = kind;
+  let resolvedId = id;
+  if (kind === "annotation") {
+    try {
+      const [row] = await db
+        .select({ targetKind: annotations.targetKind, targetId: annotations.targetId })
+        .from(annotations)
+        .where(and(eq(annotations.id, id), eq(annotations.tenantDomain, ctx.tenantDomain)))
+        .limit(1);
+      if (row?.targetKind && row?.targetId) {
+        resolvedKind = row.targetKind;
+        resolvedId = row.targetId;
+      }
+    } catch (err) {
+      console.error(`[Collaboration] failed to resolve annotation ${id}:`, err);
+    }
+  }
+
+  const link = targetLink(resolvedKind, resolvedId);
+  const label = await resolveArtifactName(ctx.tenantDomain, resolvedKind, resolvedId);
   // Validate mentioned users belong to same tenant.
   const tenantUsers = await storage.getUsersByDomain(ctx.tenantDomain);
   const validIds = new Set(tenantUsers.map((u) => u.id));

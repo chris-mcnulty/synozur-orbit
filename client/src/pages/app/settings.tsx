@@ -321,6 +321,8 @@ export default function Settings() {
   const [alertsEnabled, setAlertsEnabled] = useState(user?.alertsEnabled ?? false);
   const [alertThreshold, setAlertThreshold] = useState(user?.alertThreshold ?? "high");
   const [alertEmailEnabled, setAlertEmailEnabled] = useState(user?.alertEmailEnabled ?? false);
+  const [mentionEmailEnabled, setMentionEmailEnabled] = useState(user?.mentionEmailEnabled ?? true);
+  const [assignmentEmailEnabled, setAssignmentEmailEnabled] = useState(user?.assignmentEmailEnabled ?? true);
   
   // Entra ID configuration state (simplified - only enable toggle, tenant ID is auto-populated)
   const [entraEnabled, setEntraEnabled] = useState(false);
@@ -398,6 +400,8 @@ export default function Settings() {
       setAlertsEnabled(user.alertsEnabled ?? false);
       setAlertThreshold(user.alertThreshold ?? "high");
       setAlertEmailEnabled(user.alertEmailEnabled ?? false);
+      setMentionEmailEnabled(user.mentionEmailEnabled ?? true);
+      setAssignmentEmailEnabled(user.assignmentEmailEnabled ?? true);
     }
   }, [user]);
 
@@ -612,9 +616,21 @@ export default function Settings() {
         setAlertsEnabled(user.alertsEnabled ?? false);
         setAlertThreshold(user.alertThreshold ?? "high");
         setAlertEmailEnabled(user.alertEmailEnabled ?? false);
+        setMentionEmailEnabled(user.mentionEmailEnabled ?? true);
+        setAssignmentEmailEnabled(user.assignmentEmailEnabled ?? true);
       }
     },
   });
+
+  const handleMentionEmailToggle = (checked: boolean) => {
+    setMentionEmailEnabled(checked);
+    updateNotificationsMutation.mutate({ mentionEmailEnabled: checked });
+  };
+
+  const handleAssignmentEmailToggle = (checked: boolean) => {
+    setAssignmentEmailEnabled(checked);
+    updateNotificationsMutation.mutate({ assignmentEmailEnabled: checked });
+  };
 
   const handleDigestToggle = (checked: boolean) => {
     setWeeklyDigestEnabled(checked);
@@ -1140,6 +1156,38 @@ export default function Settings() {
                 </div>
               </>
             )}
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="mention-email" data-testid="label-mention-email">@Mention emails</Label>
+                <p className="text-sm text-muted-foreground">
+                  Email me when a teammate @mentions me in a comment.
+                </p>
+              </div>
+              <Switch
+                id="mention-email"
+                checked={mentionEmailEnabled}
+                onCheckedChange={handleMentionEmailToggle}
+                disabled={updateNotificationsMutation.isPending}
+                data-testid="switch-mention-email"
+              />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="assignment-email" data-testid="label-assignment-email">Action item assignment emails</Label>
+                <p className="text-sm text-muted-foreground">
+                  Email me when a teammate assigns me an action item.
+                </p>
+              </div>
+              <Switch
+                id="assignment-email"
+                checked={assignmentEmailEnabled}
+                onCheckedChange={handleAssignmentEmailToggle}
+                disabled={updateNotificationsMutation.isPending}
+                data-testid="switch-assignment-email"
+              />
+            </div>
           </CardContent>
         </Card>
 

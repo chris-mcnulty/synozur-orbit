@@ -287,6 +287,8 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT false`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_threshold TEXT DEFAULT 'high'`);
     await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_email_enabled BOOLEAN DEFAULT false`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mention_email_enabled BOOLEAN DEFAULT true`);
+    await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS assignment_email_enabled BOOLEAN DEFAULT true`);
     // Personas & ICP Builder
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS personas (

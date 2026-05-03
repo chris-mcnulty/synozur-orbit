@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
@@ -119,7 +119,7 @@ export default function BattleCardsPage() {
     },
   });
 
-  const { data: battleCards = [], isLoading: loadingCards } = useQuery({
+  const { data: battleCards = [], isLoading: loadingCards } = useQuery<BattleCardData[]>({
     queryKey: ["/api/battlecards"],
     queryFn: async () => {
       const response = await fetch("/api/battlecards", { credentials: "include" });
@@ -127,6 +127,16 @@ export default function BattleCardsPage() {
       return response.json();
     },
   });
+
+  // Deep link support: open the specific battlecard when arriving via ?id=...
+  // (e.g. from a comment-mention email).
+  const search = useSearch();
+  const idFromUrl = new URLSearchParams(search).get("id");
+  useEffect(() => {
+    if (!idFromUrl || !battleCards.length || selectedCard?.id === idFromUrl) return;
+    const match = battleCards.find((c) => c.id === idFromUrl);
+    if (match) setSelectedCard(match);
+  }, [idFromUrl, battleCards, selectedCard?.id]);
 
   const { data: companyProfile } = useQuery({
     queryKey: ["/api/company-profile"],

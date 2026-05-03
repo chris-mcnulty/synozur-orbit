@@ -25,6 +25,8 @@ export const users = pgTable("users", {
   alertsEnabled: boolean("alerts_enabled").default(false), // Opt-in for real-time competitor change alerts (in-app)
   alertThreshold: text("alert_threshold").default("high"), // "high" | "medium" | "all" — minimum significance to trigger alert
   alertEmailEnabled: boolean("alert_email_enabled").default(false), // Opt-in for competitor change alert emails
+  mentionEmailEnabled: boolean("mention_email_enabled").default(true), // Email when @mentioned in a comment
+  assignmentEmailEnabled: boolean("assignment_email_enabled").default(true), // Email when assigned an action item
   lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version"),
   // Microsoft Graph delegated tokens for user-context Graph operations
   // (Planner sync, mailbox actions). Captured via incremental consent.

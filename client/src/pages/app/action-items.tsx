@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useToast } from "@/hooks/use-toast";
 import { AssigneePicker, CommentPopoverButton, OwnerAvatar, useCollabUsers } from "@/components/collaboration/CollabComponents";
 import { useUser } from "@/lib/userContext";
+import { useSearch } from "wouter";
 
 interface ActionItem {
   id: string;
@@ -109,6 +110,8 @@ export default function ActionItems() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useUser();
+  const search = useSearch();
+  const idFromUrl = new URLSearchParams(search).get("id");
   const isReadOnlyRole = user?.role === "Consultant";
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSource, setFilterSource] = useState("all");
@@ -298,6 +301,36 @@ export default function ActionItems() {
       setSelectedItems(new Set(filteredItems.map(item => item.id)));
     }
   };
+
+  // Deep-link handling: when arriving from an email with ?id=..., expand
+  // and scroll to the matching action item. Also clear filters that would
+  // otherwise hide it so the user lands directly on it.
+  useEffect(() => {
+    if (!idFromUrl || !actionItems.length) return;
+    const target = actionItems.find((i) => i.id === idFromUrl);
+    if (!target) return;
+    setExpandedItems((prev) => {
+      if (prev.has(idFromUrl)) return prev;
+      const next = new Set(prev);
+      next.add(idFromUrl);
+      return next;
+    });
+    if (target.status === "dismissed" || target.status === "hidden") {
+      setFilterStatus("dismissed");
+    } else if (target.status === "accepted") {
+      setFilterStatus("accepted");
+    }
+    setFilterSource("all");
+    setFilterImpact("all");
+    setFilterAssignee("all");
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-testid="card-action-item-${idFromUrl}"]`);
+      if (el && "scrollIntoView" in el) {
+        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [idFromUrl, actionItems]);
 
   const stats = useMemo(() => {
     const active = actionItems.filter(i => i.status !== "dismissed" && i.status !== "hidden");

@@ -400,7 +400,7 @@ export function registerAuthRoutes(app: Express) {
     }
 
     try {
-      const { weeklyDigestEnabled, alertsEnabled, alertThreshold, alertEmailEnabled } = req.body;
+      const { weeklyDigestEnabled, alertsEnabled, alertThreshold, alertEmailEnabled, mentionEmailEnabled, assignmentEmailEnabled } = req.body;
 
       const updates: Record<string, any> = {};
 
@@ -429,6 +429,12 @@ export function registerAuthRoutes(app: Express) {
       }
       if (typeof alertEmailEnabled === "boolean") {
         updates.alertEmailEnabled = alertEmailEnabled;
+      }
+      if (typeof mentionEmailEnabled === "boolean") {
+        updates.mentionEmailEnabled = mentionEmailEnabled;
+      }
+      if (typeof assignmentEmailEnabled === "boolean") {
+        updates.assignmentEmailEnabled = assignmentEmailEnabled;
       }
 
       if (Object.keys(updates).length === 0) {

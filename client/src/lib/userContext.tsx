@@ -18,6 +18,8 @@ interface User {
   alertsEnabled?: boolean;
   alertThreshold?: string;
   alertEmailEnabled?: boolean;
+  mentionEmailEnabled?: boolean;
+  assignmentEmailEnabled?: boolean;
 }
 
 interface UserContextType {
