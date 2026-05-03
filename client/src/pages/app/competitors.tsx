@@ -73,7 +73,9 @@ export default function Competitors() {
     },
     retry: false,
   });
-  const suggestionsFromHubspot = hubspotSuggestions?.items ?? [];
+  const suggestionsFromHubspot = (hubspotSuggestions?.items ?? []).filter(
+    (s) => !!s.domain && s.domain.trim().length > 0,
+  );
 
   const { data: hubspotStatus } = useQuery<{ connected: boolean; connection: { hubspotPortalId: string | null } | null }>({
     queryKey: ["/api/integrations/hubspot/status"],
@@ -85,6 +87,53 @@ export default function Competitors() {
     retry: false,
   });
   const hubspotPortalId = hubspotStatus?.connection?.hubspotPortalId ?? null;
+  const isHubspotConnected = !!hubspotStatus?.connected;
+  const [addingHubspotId, setAddingHubspotId] = useState<string | null>(null);
+
+  const addHubspotSuggestion = useMutation({
+    mutationFn: async (suggestion: { hubspotCompanyId: string; name: string; domain: string | null }) => {
+      if (!suggestion.domain) {
+        throw new Error("This HubSpot company has no domain set, so it can't be tracked automatically.");
+      }
+      const url = `https://${suggestion.domain.replace(/^https?:\/\//i, "").replace(/\/+$/, "")}`;
+      const response = await fetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: suggestion.name,
+          url,
+          hubspotCompanyId: suggestion.hubspotCompanyId,
+        }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to add competitor");
+      }
+      return response.json();
+    },
+    onMutate: (suggestion) => {
+      setAddingHubspotId(suggestion.hubspotCompanyId);
+    },
+    onSettled: () => {
+      setAddingHubspotId(null);
+    },
+    onSuccess: (_data, suggestion) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/suggested-competitors"] });
+      toast({
+        title: "Competitor Added",
+        description: `${suggestion.name} is now being tracked.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could Not Add Competitor",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
   
   // Social/Blog links editing state
   const [linksEditOpen, setLinksEditOpen] = useState(false);
@@ -1001,6 +1050,78 @@ export default function Competitors() {
                     View Baseline
                   </Button>
                 </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isHubspotConnected && suggestionsFromHubspot.length > 0 && (
+          <Card data-testid="card-hubspot-suggestions">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Sparkles className="w-4 h-4 text-orange-500" />
+                    Suggested from HubSpot
+                  </CardTitle>
+                  <CardDescription>
+                    Top companies from your CRM (by deal count) that you're not yet tracking.
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-orange-600 border-orange-300 dark:text-orange-400 dark:border-orange-700">
+                  {suggestionsFromHubspot.length} suggestion{suggestionsFromHubspot.length === 1 ? "" : "s"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2">
+                {suggestionsFromHubspot.map((s) => {
+                  const isAdding = addingHubspotId === s.hubspotCompanyId;
+                  const dealLabel = `${s.numberOfDeals} deal${s.numberOfDeals === 1 ? "" : "s"}`;
+                  return (
+                    <div
+                      key={s.hubspotCompanyId}
+                      className="flex items-center justify-between gap-3 rounded-md border p-3 hover:bg-accent/40 transition-colors"
+                      data-testid={`hubspot-suggestion-${s.hubspotCompanyId}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium truncate" data-testid={`text-hubspot-suggestion-name-${s.hubspotCompanyId}`}>
+                            {s.name}
+                          </p>
+                          {s.domain && (
+                            <a
+                              href={`https://${s.domain.replace(/^https?:\/\//i, "")}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
+                              data-testid={`link-hubspot-suggestion-domain-${s.hubspotCompanyId}`}
+                            >
+                              {s.domain} <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                          <Badge variant="secondary" className="text-xs" data-testid={`badge-hubspot-deals-${s.hubspotCompanyId}`}>
+                            {dealLabel}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => addHubspotSuggestion.mutate(s)}
+                        disabled={isAdding || !s.domain}
+                        data-testid={`button-add-hubspot-suggestion-${s.hubspotCompanyId}`}
+                      >
+                        {isAdding ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4 mr-1" /> Add as competitor
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
