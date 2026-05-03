@@ -3,8 +3,9 @@ import { randomUUID } from "crypto";
 import { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema } from "./helpers";
-import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES } from "../services/plan-policy";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction } from "./helpers";
+import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
+import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
 import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import Anthropic from "@anthropic-ai/sdk";
@@ -205,6 +206,79 @@ export function registerAdminRoutes(app: Express) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== MANUAL ACTION QUOTAS (Global Admin Only) ====================
+
+  // List manual action usage and bonuses for a tenant
+  app.get("/api/admin/tenants/:tenantId/manual-action-usage", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const me = await storage.getUser(req.session.userId);
+      if (!me || me.role !== "Global Admin") {
+        return res.status(403).json({ error: "Only Global Admins can view manual action usage" });
+      }
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const summary = await getManualActionUsageSummary(tenant.domain, tenant.plan);
+      const actions: Record<string, typeof summary[number]> = {};
+      for (const row of summary) actions[row.action] = row;
+      res.json({
+        tenantId: tenant.id,
+        tenantDomain: tenant.domain,
+        plan: tenant.plan,
+        actions,
+        catalog: MANUAL_ACTION_KEYS.map(k => ({ key: k, label: MANUAL_ACTION_LABELS[k] })),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Grant a bonus quota to a tenant for the current month
+  app.post("/api/admin/tenants/:tenantId/manual-action-bonuses", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const me = await storage.getUser(req.session.userId);
+      if (!me || me.role !== "Global Admin") {
+        return res.status(403).json({ error: "Only Global Admins can grant manual action bonuses" });
+      }
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const { action, delta, reason } = req.body || {};
+      if (!action || !MANUAL_ACTION_KEYS.includes(action as ManualActionKey)) {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+      const deltaNum = Number(delta);
+      if (!Number.isFinite(deltaNum) || deltaNum === 0) {
+        return res.status(400).json({ error: "Delta must be a non-zero number" });
+      }
+      await grantManualActionBonus(tenant.domain, action as ManualActionKey, Math.trunc(deltaNum), me.id, reason);
+      const summary = await getManualActionUsageSummary(tenant.domain, tenant.plan);
+      const actions: Record<string, typeof summary[number]> = {};
+      for (const row of summary) actions[row.action] = row;
+      const history = await listManualActionBonuses(tenant.domain, 50);
+      res.json({ ok: true, actions, history });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Audit log of bonus grants for a tenant
+  app.get("/api/admin/tenants/:tenantId/manual-action-bonuses", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const me = await storage.getUser(req.session.userId);
+      if (!me || me.role !== "Global Admin") {
+        return res.status(403).json({ error: "Only Global Admins can view manual action bonuses" });
+      }
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const history = await listManualActionBonuses(tenant.domain, 100);
+      res.json({ history });
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
@@ -790,6 +864,8 @@ export function registerAdminRoutes(app: Express) {
         return res.status(404).json({ error: "Company profile not found. Please set up your company profile first." });
       }
 
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
+
       // Plan-gating: Re-validate domain restriction at analysis time for Trial/Free plans
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
       if (tenant && (tenant.plan === "trial" || tenant.plan === "free")) {
@@ -1085,6 +1161,10 @@ export function registerAdminRoutes(app: Express) {
       }
 
       const { preview } = req.query;
+      // Preview-only flow doesn't persist anything; don't charge quota for it.
+      if (preview !== "true") {
+        if (!await guardManualAction(req, res, "aiResearch")) return;
+      }
       const research = await aiCompanyResearch(profile.companyName, profile.websiteUrl);
 
       const fieldsToPopulate: Record<string, string | null> = {};

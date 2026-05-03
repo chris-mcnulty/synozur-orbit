@@ -829,6 +829,8 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        <ManualActionUsageCard />
+
         <Card id="plan-usage" data-testid="card-plan">
           <CardHeader>
             <div className="flex justify-between items-start">
@@ -1476,6 +1478,132 @@ function WebhookIntegrationsCard({ tenantPlan }: { tenantPlan?: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </Card>
+  );
+}
+
+interface ManualActionUsageRow {
+  action: string;
+  used: number;
+  bonus: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string;
+  label: string;
+  costTier: "low" | "medium" | "high";
+}
+
+interface TenantInfoResponse {
+  plan: string;
+  manualActionUsage?: Record<string, ManualActionUsageRow>;
+}
+
+function ManualActionUsageCard() {
+  const { data, isLoading } = useQuery<TenantInfoResponse>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const res = await fetch("/api/tenant/info", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load tenant info");
+      return res.json();
+    },
+  });
+
+  const rows: ManualActionUsageRow[] = data?.manualActionUsage
+    ? Object.values(data.manualActionUsage)
+    : [];
+  const resetsAt = rows[0]?.resetsAt ? new Date(rows[0].resetsAt).toLocaleDateString() : "next month";
+  const anyLow = rows.some((r) => r.limit !== -1 && r.remaining <= Math.max(1, Math.floor(r.limit * 0.2)));
+
+  return (
+    <Card id="manual-action-usage" data-testid="card-manual-action-usage">
+      <CardHeader>
+        <CardTitle>Monthly Action Usage</CardTitle>
+        <CardDescription>
+          Cost-driving manual actions count against your plan's monthly cap. Resets on {resetsAt}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading usage...
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No usage data yet.</p>
+        ) : (
+          <div className="space-y-3" data-testid="list-manual-action-usage">
+            {rows.map((row) => {
+              const unlimited = row.limit === -1;
+              const overCap = !unlimited && row.remaining === 0;
+              const pct = unlimited
+                ? 0
+                : row.limit === 0
+                ? 100
+                : Math.min(100, Math.round((row.used / row.limit) * 100));
+              const lowRemaining = !unlimited && !overCap && row.remaining <= Math.max(1, Math.floor(row.limit * 0.2));
+              const barColor = overCap
+                ? "bg-destructive"
+                : lowRemaining
+                ? "bg-amber-500"
+                : "bg-primary";
+              return (
+                <div
+                  key={row.action}
+                  className="border border-border rounded-md p-3"
+                  data-testid={`row-usage-${row.action}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{row.label}</span>
+                      <Badge variant="outline" className="text-xs capitalize">{row.costTier}</Badge>
+                      {row.bonus > 0 && (
+                        <Badge variant="secondary" className="text-xs">+{row.bonus} bonus</Badge>
+                      )}
+                    </div>
+                    <div className="text-sm tabular-nums" data-testid={`text-used-${row.action}`}>
+                      {unlimited ? (
+                        <Badge variant="secondary">Unlimited</Badge>
+                      ) : overCap ? (
+                        <Badge variant="destructive">At cap • {row.used}/{row.limit}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {row.used}/{row.limit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {!unlimited && (
+                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${barColor} transition-all`}
+                        style={{ width: `${pct}%` }}
+                        data-testid={`progress-${row.action}`}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+      {anyLow && (
+        <CardFooter className="border-t border-border px-6 py-4 bg-muted/20 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            You're approaching your plan's monthly cap on one or more actions.
+          </span>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              const el = document.getElementById("plan-usage");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+            data-testid="button-upgrade-from-usage"
+          >
+            Upgrade Plan
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }

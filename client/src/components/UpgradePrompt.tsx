@@ -324,6 +324,33 @@ export function UpgradeModalProvider({ children }: { children: React.ReactNode }
   }, []);
 
   useEffect(() => {
+    // Global fetch interceptor: any 403 response with `upgradeRequired: true`
+    // triggers the upgrade modal, regardless of whether the caller uses
+    // `apiRequest`, `useQuery`, or raw `fetch`. This prevents bypass paths
+    // (e.g. plain `Error` thrown after raw fetch) from silently surfacing as
+    // generic toasts when the cause is a plan/quota gate.
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const response = await originalFetch(...args);
+      if (response.status === 403) {
+        try {
+          const cloned = response.clone();
+          const data = await cloned.json();
+          if (data?.upgradeRequired) {
+            setState({
+              open: true,
+              feature: data.error || "Premium Feature",
+              requiredPlan: data.requiredPlan || "Pro",
+              message: data.error || "This feature requires a plan upgrade.",
+            });
+          }
+        } catch {
+          // non-JSON 403 — ignore
+        }
+      }
+      return response;
+    };
+
     const defaults = queryClient.getDefaultOptions();
     queryClient.setDefaultOptions({
       ...defaults,
@@ -359,6 +386,7 @@ export function UpgradeModalProvider({ children }: { children: React.ReactNode }
     return () => {
       unsubscribe();
       mutationUnsubscribe();
+      window.fetch = originalFetch;
     };
   }, [handleMutationError]);
 

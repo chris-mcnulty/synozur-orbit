@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { ContextError, getRequestContext, type RequestContext } from "../context";
-import { guardFeature, hasAdminAccess, toContextFilter, validateResourceContext } from "./helpers";
+import { guardFeature, hasAdminAccess, toContextFilter, validateResourceContext, guardManualAction } from "./helpers";
 import { runSerpQuery, normalizeDomain, type SerpQueryEntity } from "../services/seo-provider";
 import type { InsertSeoMetric } from "@shared/schema";
 
@@ -117,6 +117,7 @@ export function registerSeoRoutes(app: Express) {
 
   app.post("/api/seo/refresh", async (req, res) => {
     if (!await guardFeature(req, res, "seoTracking")) return;
+    if (!await guardManualAction(req, res, "seoSweep")) return;
     try {
       const ctx = await getRequestContext(req);
       const result = await refreshSeoForContext(ctx);

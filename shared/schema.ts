@@ -2708,3 +2708,53 @@ export const CONTENT_TOPIC_OPTIONS = [
   "AI & Machine Learning", "Collaboration", "Productivity", "Remote Work",
   "Sustainability", "Innovation", "Leadership", "Customer Success",
 ];
+
+// ===== Manual Action Quotas (Task #99) =====
+// Tracks each cost-driving manual action invocation for per-tenant monthly quota enforcement.
+export const manualActionUsage = pgTable("manual_action_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  userId: varchar("user_id"),
+  action: text("action").notNull(),
+  costTier: text("cost_tier").notNull().default("medium"),
+  succeeded: boolean("succeeded"),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantActionMonthIdx: index("manual_action_usage_tenant_action_idx").on(
+    table.tenantDomain,
+    table.action,
+    table.occurredAt,
+  ),
+}));
+
+export const insertManualActionUsageSchema = createInsertSchema(manualActionUsage).omit({
+  id: true,
+  occurredAt: true,
+});
+export type InsertManualActionUsage = z.infer<typeof insertManualActionUsageSchema>;
+export type ManualActionUsage = typeof manualActionUsage.$inferSelect;
+
+// Admin-granted bonus quota for current-month rollover. Reset at month boundary.
+export const manualActionBonuses = pgTable("manual_action_bonuses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  action: text("action").notNull(),
+  delta: integer("delta").notNull().default(0),
+  periodStart: timestamp("period_start").notNull(),
+  reason: text("reason"),
+  grantedBy: varchar("granted_by"),
+  grantedAt: timestamp("granted_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantActionPeriodIdx: index("manual_action_bonuses_tenant_action_period_idx").on(
+    table.tenantDomain,
+    table.action,
+    table.periodStart,
+  ),
+}));
+
+export const insertManualActionBonusSchema = createInsertSchema(manualActionBonuses).omit({
+  id: true,
+  grantedAt: true,
+});
+export type InsertManualActionBonus = z.infer<typeof insertManualActionBonusSchema>;
+export type ManualActionBonus = typeof manualActionBonuses.$inferSelect;

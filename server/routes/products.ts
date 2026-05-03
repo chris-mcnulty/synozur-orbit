@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, guardFeature } from "./helpers";
+import { toContextFilter, validateResourceContext, logAiUsage, guardFeature, guardManualAction } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
 import { z } from "zod";
@@ -276,6 +276,7 @@ export function registerProductRoutes(app: Express) {
   // Generate competitive position summary for a product
   app.post("/api/products/:id/generate-summary", async (req, res) => {
     if (!await guardFeature(req, res, "productManagement")) return;
+    if (!await guardManualAction(req, res, "aiResearch")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.id);
@@ -396,6 +397,7 @@ Be specific and analytical. Do not use generic marketing language. Return ONLY t
   // Generate competitive position summaries for all products in context
   app.post("/api/products/generate-all-summaries", async (req, res) => {
     if (!await guardFeature(req, res, "productManagement")) return;
+    if (!await guardManualAction(req, res, "aiResearch")) return;
     try {
       const ctx = await getRequestContext(req);
       const products = await storage.getProductsByContext(toContextFilter(ctx));
@@ -470,6 +472,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
   // Scan/Analyze a product (crawl website and generate analysis)
   app.post("/api/products/:id/scan", async (req, res) => {
     if (!await guardFeature(req, res, "productManagement")) return;
+    if (!await guardManualAction(req, res, "manualCrawl")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -667,6 +670,7 @@ Provide analysis in this JSON format:
   // Import features from URL
   app.post("/api/products/:productId/features/import-url", async (req, res) => {
     if (!await guardFeature(req, res, "productManagement")) return;
+    if (!await guardManualAction(req, res, "aiFeatureExtract")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -755,6 +759,7 @@ Provide analysis in this JSON format:
   // Import features from pasted text
   app.post("/api/products/:productId/features/import-text", async (req, res) => {
     if (!await guardFeature(req, res, "productManagement")) return;
+    if (!await guardManualAction(req, res, "aiFeatureExtract")) return;
     try {
       const ctx = await getRequestContext(req);
       const product = await storage.getProduct(req.params.productId);
@@ -1394,6 +1399,7 @@ Provide analysis in this JSON format:
   // Generate a product battlecard for a competitor product
   app.post("/api/projects/:projectId/battlecards/generate", async (req, res) => {
     if (!await guardFeature(req, res, "battlecards")) return;
+    if (!await guardManualAction(req, res, "manualBattlecardRegen")) return;
     try {
       const ctx = await getRequestContext(req);
 

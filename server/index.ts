@@ -748,6 +748,39 @@ app.use((req, res, next) => {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS activity_competitor_analyzed_idx ON activity (competitor_id, analyzed_at)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS activity_analyzed_at_idx ON activity (analyzed_at)`);
 
+    // Manual-action quotas (Task #99)
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS manual_action_usage (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        action TEXT NOT NULL,
+        cost_tier TEXT NOT NULL DEFAULT 'medium',
+        period_start TIMESTAMP NOT NULL,
+        occurred_at TIMESTAMP NOT NULL DEFAULT now(),
+        succeeded BOOLEAN,
+        actor_user_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        resource_id VARCHAR,
+        metadata JSONB
+      )
+    `);
+    await pgPool.query(`ALTER TABLE manual_action_usage ADD COLUMN IF NOT EXISTS cost_tier TEXT NOT NULL DEFAULT 'medium'`);
+    await pgPool.query(`ALTER TABLE manual_action_usage ALTER COLUMN succeeded DROP NOT NULL`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS manual_action_usage_tenant_action_period_idx ON manual_action_usage(tenant_domain, action, period_start)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS manual_action_usage_tenant_period_idx ON manual_action_usage(tenant_domain, period_start)`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS manual_action_bonuses (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        action TEXT NOT NULL,
+        delta INTEGER NOT NULL,
+        period_start TIMESTAMP NOT NULL,
+        reason TEXT,
+        granted_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS manual_action_bonuses_tenant_action_period_idx ON manual_action_bonuses(tenant_domain, action, period_start)`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);

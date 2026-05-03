@@ -61,6 +61,7 @@ import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
+import { guardManualAction } from "./helpers";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -393,6 +394,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.post("/api/content-assets/extract", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
+    if (!await guardManualAction(req, res, "manualCrawl")) return;
     const ctx = await getRequestContext(req);
     const { url } = req.body;
     if (!url?.trim()) return res.status(400).json({ error: "url is required" });
@@ -415,6 +417,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
   app.post("/api/content-assets/generate-summaries", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
+    if (!await guardManualAction(req, res, "aiResearch")) return;
     const ctx = await getRequestContext(req);
 
     const { assetIds } = req.body;
@@ -1659,6 +1662,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
   app.post("/api/campaigns/:id/generate-posts", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
+    if (!await guardManualAction(req, res, "aiPostGen")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -2094,6 +2098,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
+    if (!await guardManualAction(req, res, "aiEmailGen")) return;
     const ctx = await getRequestContext(req);
     const { campaignId, assetIds, instructions, platform, tone, callToAction, recipientContext, personaIds, wrapLinks } = req.body;
 
@@ -2852,6 +2857,7 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with:
 
   app.post("/api/personas/generate", async (req, res) => {
     if (!await guardFeature(req, res, "personaBuilder")) return;
+    if (!await guardManualAction(req, res, "aiPersonaGen")) return;
     const ctx = await getRequestContext(req);
 
     const [strategicCtx, companyProfile, marketRow] = await Promise.all([

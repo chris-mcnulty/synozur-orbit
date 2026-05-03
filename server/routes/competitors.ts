@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature, guardCompetitorLimit, guardAnalysisLimit } from "./helpers";
+import { toContextFilter, validateResourceContext, parseManualResearch, computeLatestSourceDataTimestamp, guardFeature, guardCompetitorLimit, guardAnalysisLimit, guardManualAction } from "./helpers";
 import { parsePaginationParams, buildPaginatedEnvelope } from "../utils/pagination";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
@@ -457,6 +457,8 @@ export function registerCompetitorRoutes(app: Express) {
         if (!await guardFeature(req, res, "websiteMonitoring")) return;
       }
 
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
+
       // Use the robust web crawler service
       const crawlResult = await crawlCompetitorWebsite(competitor.url);
       
@@ -894,6 +896,9 @@ Return ONLY the JSON object, no other text.`;
       }
 
       const { preview } = req.query;
+      if (!preview) {
+        if (!await guardManualAction(req, res, "aiResearch")) return;
+      }
       const research = await aiCompanyResearch(competitor.name, competitor.url);
 
       const fieldsToPopulate: Record<string, string | null> = {};
@@ -956,6 +961,7 @@ Return ONLY the JSON object, no other text.`;
   // Monitor social media for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-social", async (req, res) => {
     if (!await guardFeature(req, res, "socialMonitoring")) return;
+    if (!await guardManualAction(req, res, "linkedinRefresh")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1089,6 +1095,7 @@ Return ONLY the JSON object, no other text.`;
   // Monitor website for a single competitor (on-demand)
   app.post("/api/competitors/:id/monitor-website", async (req, res) => {
     if (!await guardFeature(req, res, "websiteMonitoring")) return;
+    if (!await guardManualAction(req, res, "manualWebsiteMonitor")) return;
     try {
       const ctx = await getRequestContext(req);
 
@@ -1155,6 +1162,8 @@ Return ONLY the JSON object, no other text.`;
         return res.status(403).json({ error: "Access denied" });
       }
 
+      if (!await guardManualAction(req, res, "manualWebsiteMonitor")) return;
+
       const results: { type: string; name: string; success: boolean; error?: string }[] = [];
 
       // Monitor baseline company profile
@@ -1218,6 +1227,12 @@ Return ONLY the JSON object, no other text.`;
       if (!profile) {
         return res.status(404).json({ error: "Company profile not found" });
       }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
       
       const results: any = { website: null, linkedin: null, blog: null, errors: [] };
       
@@ -1352,6 +1367,12 @@ Return ONLY the JSON object, no other text.`;
       if (!profile) {
         return res.status(404).json({ error: "Company profile not found" });
       }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!await guardManualAction(req, res, "linkedinRefresh")) return;
       
       const results: any = { linkedin: null, errors: [] };
       

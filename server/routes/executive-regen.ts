@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardAnalysisLimit } from "./helpers";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardAnalysisLimit, guardManualAction } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
@@ -109,6 +109,8 @@ export function registerExecutiveRegenRoutes(app: Express) {
       if (!companyProfile) {
         return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
       }
+
+      if (!await guardManualAction(req, res, "aiResearch")) return;
 
       const { customGuidance } = req.body;
       const savedPrompts = { customGuidance };
@@ -282,6 +284,8 @@ Make this practical and actionable for the team.`;
       if (!companyProfile) {
         return res.status(400).json({ error: "Company profile not found. Please set up your company profile first." });
       }
+
+      if (!await guardManualAction(req, res, "aiResearch")) return;
 
       const { customGuidance } = req.body;
       const savedPrompts = { customGuidance };
@@ -483,6 +487,12 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
       const { generateExecutiveSummary } = await import("../services/executive-summary-service");
       
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+
+      if (!companyProfile) {
+        return res.status(400).json({ error: "Please set up your company profile first" });
+      }
+
+      if (!await guardManualAction(req, res, "aiResearch")) return;
       
       const existingSummary = await storage.getExecutiveSummaryByContext(toContextFilter(ctx));
       const lockedSections = (existingSummary?.lockedSections as string[]) || [];
@@ -552,6 +562,8 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
       if (!companyProfile) {
         return res.status(400).json({ error: "Please set up your company profile first" });
       }
+
+      if (!await guardManualAction(req, res, "regenerateAll")) return;
 
       const competitors = await storage.getCompetitorsByContext(toContextFilter(ctx));
       if (competitors.length === 0) {

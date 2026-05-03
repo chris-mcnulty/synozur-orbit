@@ -492,6 +492,153 @@ export function checkFeatureAccess(plan: string, feature: FeatureKey): PlanGateR
   };
 }
 
+// ===== Manual Action Quotas (Task #99) =====
+// Per-tenant monthly caps for cost-driving manual actions. -1 = unlimited.
+export type ManualActionKey =
+  | "linkedinRefresh"
+  | "manualCrawl"
+  | "manualWebsiteMonitor"
+  | "seoSweep"
+  | "regenerateAll"
+  | "aiResearch"
+  | "aiFeatureExtract"
+  | "aiPostGen"
+  | "aiEmailGen"
+  | "aiPersonaGen"
+  | "manualBriefingRebuild"
+  | "manualBattlecardRegen";
+
+export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
+  linkedinRefresh: "LinkedIn Refresh",
+  manualCrawl: "Manual Competitor Crawl",
+  manualWebsiteMonitor: "Manual Website Monitor",
+  seoSweep: "SEO Refresh Sweep",
+  regenerateAll: "Regenerate All Analytics",
+  aiResearch: "AI Research",
+  aiFeatureExtract: "AI Feature Extraction",
+  aiPostGen: "AI Social Post Generation",
+  aiEmailGen: "AI Email Generation",
+  aiPersonaGen: "AI Persona Generation",
+  manualBriefingRebuild: "Manual Briefing Rebuild",
+  manualBattlecardRegen: "Manual Battlecard Regeneration",
+};
+
+export const MANUAL_ACTION_KEYS: ManualActionKey[] = Object.keys(MANUAL_ACTION_LABELS) as ManualActionKey[];
+
+// Cost tier per action — recorded in audit log so finance/ops can group spend by intensity.
+export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" | "high"> = {
+  linkedinRefresh: "low",
+  manualCrawl: "medium",
+  manualWebsiteMonitor: "low",
+  seoSweep: "high",
+  regenerateAll: "high",
+  aiResearch: "high",
+  aiFeatureExtract: "medium",
+  aiPostGen: "medium",
+  aiEmailGen: "medium",
+  aiPersonaGen: "medium",
+  manualBriefingRebuild: "high",
+  manualBattlecardRegen: "medium",
+};
+
+const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
+  free: {
+    linkedinRefresh: 0,
+    manualCrawl: 1,
+    manualWebsiteMonitor: 0,
+    seoSweep: 0,
+    regenerateAll: 0,
+    aiResearch: 1,
+    aiFeatureExtract: 1,
+    aiPostGen: 0,
+    aiEmailGen: 0,
+    aiPersonaGen: 0,
+    manualBriefingRebuild: 0,
+    manualBattlecardRegen: 0,
+  },
+  trial: {
+    linkedinRefresh: 5,
+    manualCrawl: 10,
+    manualWebsiteMonitor: 5,
+    seoSweep: 3,
+    regenerateAll: 2,
+    aiResearch: 10,
+    aiFeatureExtract: 10,
+    aiPostGen: 10,
+    aiEmailGen: 10,
+    aiPersonaGen: 5,
+    manualBriefingRebuild: 3,
+    manualBattlecardRegen: 5,
+  },
+  pro: {
+    linkedinRefresh: 25,
+    manualCrawl: 50,
+    manualWebsiteMonitor: 25,
+    seoSweep: 15,
+    regenerateAll: 10,
+    aiResearch: 50,
+    aiFeatureExtract: 50,
+    aiPostGen: 50,
+    aiEmailGen: 50,
+    aiPersonaGen: 25,
+    manualBriefingRebuild: 15,
+    manualBattlecardRegen: 25,
+  },
+  enterprise: {
+    linkedinRefresh: 100,
+    manualCrawl: 200,
+    manualWebsiteMonitor: 100,
+    seoSweep: 50,
+    regenerateAll: 30,
+    aiResearch: 200,
+    aiFeatureExtract: 200,
+    aiPostGen: 200,
+    aiEmailGen: 200,
+    aiPersonaGen: 100,
+    manualBriefingRebuild: 50,
+    manualBattlecardRegen: 100,
+  },
+  unlimited: {
+    linkedinRefresh: -1,
+    manualCrawl: -1,
+    manualWebsiteMonitor: -1,
+    seoSweep: -1,
+    regenerateAll: -1,
+    aiResearch: -1,
+    aiFeatureExtract: -1,
+    aiPostGen: -1,
+    aiEmailGen: -1,
+    aiPersonaGen: -1,
+    manualBriefingRebuild: -1,
+    manualBattlecardRegen: -1,
+  },
+};
+
+export function getManualActionQuota(plan: string, action: ManualActionKey): number {
+  const normalized = normalizePlanName(plan);
+  const quotas = MANUAL_ACTION_QUOTAS[normalized] || MANUAL_ACTION_QUOTAS.free;
+  const limit = quotas[action];
+  return typeof limit === "number" ? limit : 0;
+}
+
+export function getAllManualActionQuotas(plan: string): Record<ManualActionKey, number> {
+  const normalized = normalizePlanName(plan);
+  return MANUAL_ACTION_QUOTAS[normalized] || MANUAL_ACTION_QUOTAS.free;
+}
+
+export function nextPlanForManualAction(currentPlan: string, action: ManualActionKey): string {
+  const normalized = normalizePlanName(currentPlan);
+  const idx = PLAN_TIER_ORDER.indexOf(normalized);
+  for (let i = Math.max(idx, 0) + 1; i < PLAN_TIER_ORDER.length; i++) {
+    const candidate = PLAN_TIER_ORDER[i];
+    const limit = getManualActionQuota(candidate, action);
+    if (limit === -1 || limit > getManualActionQuota(currentPlan, action)) {
+      return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+    }
+  }
+  return "Enterprise";
+}
+
 export async function getMonthlyAnalysisCount(tenantDomain: string): Promise<number> {
   const { db } = await import("../db");
   const { aiUsage } = await import("../../shared/schema");

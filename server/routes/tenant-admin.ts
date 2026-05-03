@@ -5,7 +5,8 @@ import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess } from "./helpers";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
-import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount } from "../services/plan-policy";
+import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, MANUAL_ACTION_KEYS, type ManualActionKey } from "../services/plan-policy";
+import { getManualActionUsageSummary, grantManualActionBonus } from "../services/manual-action-quota";
 import { normalizeToCanonicalDomain } from "../utils/url-normalization";
 
 export function registerTenantAdminRoutes(app: Express) {
@@ -848,11 +849,16 @@ export function registerTenantAdminRoutes(app: Express) {
       const isPremium = tenant.plan === "pro" || tenant.plan === "professional" || tenant.plan === "enterprise" || tenant.plan === "unlimited";
       const features = await getPlanFeaturesAsync(tenant.plan);
       
-      const [competitorCount, monthlyAnalysisCount] = await Promise.all([
+      const [competitorCount, monthlyAnalysisCount, manualActionRows] = await Promise.all([
         getTenantCompetitorCount(domain),
         getMonthlyAnalysisCount(domain),
+        getManualActionUsageSummary(domain, tenant.plan),
       ]);
-      
+
+      // Keyed object so clients can look up quota status by action key without scanning an array.
+      const manualActionUsage: Record<string, typeof manualActionRows[number]> = {};
+      for (const row of manualActionRows) manualActionUsage[row.action] = row;
+
       res.json({
         plan: tenant.plan,
         isPremium,
@@ -866,6 +872,7 @@ export function registerTenantAdminRoutes(app: Express) {
           competitorLimit: features.competitorLimit as number,
           analysisLimit: features.analysisLimit as number,
         },
+        manualActionUsage,
       });
     } catch (error: any) {
       if (error instanceof ContextError) {

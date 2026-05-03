@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature } from "./helpers";
+import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardManualAction } from "./helpers";
 import { buildCompetitorToneContextBlock } from "../services/sentiment-context";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -307,6 +307,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
       if (!validateResourceContext(competitor, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
+
+      // Charge quota only after resource validation succeeds.
+      if (!await guardManualAction(req, res, "manualBattlecardRegen")) return;
 
       // Get company profile for comparison
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));

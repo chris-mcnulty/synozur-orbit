@@ -8,7 +8,9 @@ import {
   checkAnalysisLimitAsync,
   getTenantCompetitorCount,
   getMonthlyAnalysisCount,
+  type ManualActionKey,
 } from "../services/plan-policy";
+import { reserveManualAction } from "../services/manual-action-quota";
 import { calculateEstimatedCost } from "../services/ai-pricing";
 import { z } from "zod";
 
@@ -285,6 +287,70 @@ export async function guardCompetitorLimit(
       });
       return false;
     }
+    return true;
+  } catch (err: any) {
+    if (err instanceof ContextError) {
+      res.status(err.status).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+    return false;
+  }
+}
+
+/**
+ * Guard a cost-driving manual action against the tenant's monthly quota.
+ *
+ * Atomically reserves a slot (advisory-locked, transactional) before any work
+ * runs and registers a `res` finish/close listener that commits the reservation
+ * as succeeded only if the response status is 2xx/3xx. Failed/4xx/5xx
+ * responses are recorded as `succeeded=false` so they neither count toward the
+ * quota nor pollute audit data.
+ *
+ * Callers should still validate resource ownership before invoking this guard
+ * where practical (it is cheap enough that ordering is not strictly required
+ * for correctness, but earlier validation gives cleaner audit logs).
+ */
+export async function guardManualAction(
+  req: Request,
+  res: Response,
+  action: ManualActionKey,
+): Promise<boolean> {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  try {
+    const ctx = await getRequestContext(req);
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    const plan = tenant?.plan ?? "free";
+    const result = await reserveManualAction(ctx.tenantDomain, plan, action, ctx.userId);
+    if (!result.ok) {
+      res.status(403).json({
+        error: result.reason,
+        upgradeRequired: result.upgradeRequired,
+        requiredPlan: result.requiredPlan,
+        currentUsage: result.used,
+        limit: result.limit,
+        manualAction: action,
+      });
+      return false;
+    }
+
+    // Auto-finalize when the response completes. We use both `finish` and
+    // `close` to handle aborted connections, and a one-shot guard to avoid
+    // double-commits.
+    let finalized = false;
+    const finalize = (ev: "finish" | "close") => {
+      if (finalized) return;
+      finalized = true;
+      const status = res.statusCode || 0;
+      // close fires before finish on aborted requests; treat aborts as failure
+      const succeeded = ev === "finish" && status >= 200 && status < 400;
+      void result.commit(succeeded);
+    };
+    res.once("finish", () => finalize("finish"));
+    res.once("close", () => finalize("close"));
     return true;
   } catch (err: any) {
     if (err instanceof ContextError) {

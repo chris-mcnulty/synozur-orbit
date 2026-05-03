@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw, AlertTriangle, ExternalLink, TicketIcon, Send, MessageSquare } from "lucide-react";
+import { Building2, Users, Crown, Edit, AlertCircle, Palette, Ban, Plus, Trash2, FileText, Upload, ToggleLeft, ToggleRight, Brain, CreditCard, Check, Clock, Play, Square, CheckCircle2, XCircle, Loader2, RefreshCw, AlertTriangle, ExternalLink, TicketIcon, Send, MessageSquare, Zap } from "lucide-react";
 import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -2679,11 +2679,15 @@ export default function AdminPage() {
               </DialogDescription>
             </DialogHeader>
             <Tabs defaultValue="settings" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
                 <TabsTrigger value="branding" data-testid="tab-branding">
                   <Palette className="h-4 w-4 mr-2" />
                   Branding
+                </TabsTrigger>
+                <TabsTrigger value="quotas" data-testid="tab-quotas">
+                  <Zap className="h-4 w-4 mr-2" />
+                  Action Quotas
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="settings" className="space-y-4 py-4">
@@ -2916,6 +2920,9 @@ export default function AdminPage() {
                   </div>
                 </div>
               </TabsContent>
+              <TabsContent value="quotas" className="space-y-4 py-4">
+                {selectedTenant && <ManualActionQuotaPanel tenantId={selectedTenant.id} />}
+              </TabsContent>
             </Tabs>
             <DialogFooter className="flex justify-between sm:justify-between">
               <Button
@@ -2953,5 +2960,206 @@ export default function AdminPage() {
         </Dialog>
       </div>
     </AppLayout>
+  );
+}
+
+interface ManualActionUsageSummaryRow {
+  action: string;
+  used: number;
+  bonus: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string;
+  label: string;
+  costTier: "low" | "medium" | "high";
+}
+
+interface ManualActionUsageResponse {
+  tenantId: string;
+  tenantDomain: string;
+  plan: string;
+  actions: Record<string, ManualActionUsageSummaryRow>;
+  catalog: { key: string; label: string }[];
+}
+
+function ManualActionQuotaPanel({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [selectedAction, setSelectedAction] = useState<string>("");
+  const [delta, setDelta] = useState<string>("10");
+  const [reason, setReason] = useState<string>("");
+
+  const queryKey = [`/api/admin/tenants/${tenantId}/manual-action-usage`];
+  const { data, isLoading } = useQuery<ManualActionUsageResponse>({
+    queryKey,
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/tenants/${tenantId}/manual-action-usage`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load usage");
+      return res.json();
+    },
+  });
+
+  const grantMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/admin/tenants/${tenantId}/manual-action-bonuses`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: selectedAction, delta: Number(delta), reason: reason || undefined }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to grant bonus");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/tenants/${tenantId}/manual-action-bonuses`] });
+      setReason("");
+      setDelta("10");
+    },
+  });
+
+  const rows: ManualActionUsageSummaryRow[] = data?.actions ? Object.values(data.actions) : [];
+  const catalog = data?.catalog || [];
+
+  const historyKey = [`/api/admin/tenants/${tenantId}/manual-action-bonuses`];
+  const { data: historyData } = useQuery<{ history: Array<{ id: string; action: string; delta: number; reason: string | null; grantedByEmail: string | null; createdAt: string; periodStart: string }> }>({
+    queryKey: historyKey,
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/tenants/${tenantId}/manual-action-bonuses`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load bonus history");
+      return res.json();
+    },
+  });
+  const history = historyData?.history || [];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-medium mb-1">Current Period Usage</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Plan: <span className="font-medium">{data?.plan || "—"}</span>. Resets on first of next month (UTC).
+        </p>
+        {isLoading ? (
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading...
+          </div>
+        ) : (
+          <Table data-testid="table-admin-manual-action-usage">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Action</TableHead>
+                <TableHead className="text-right">Used</TableHead>
+                <TableHead className="text-right">Limit</TableHead>
+                <TableHead className="text-right">Bonus</TableHead>
+                <TableHead className="text-right">Remaining</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.action} data-testid={`row-admin-usage-${row.action}`}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <span>{row.label}</span>
+                      <Badge variant="outline" className="text-xs capitalize">{row.costTier}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">{row.used}</TableCell>
+                  <TableCell className="text-right">{row.limit === -1 ? "∞" : row.limit}</TableCell>
+                  <TableCell className="text-right">{row.bonus > 0 ? `+${row.bonus}` : "—"}</TableCell>
+                  <TableCell className="text-right">
+                    {row.limit === -1 ? "Unlimited" : row.remaining}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+
+      <div className="border-t pt-4">
+        <h3 className="font-medium mb-3">Grant Bonus Quota</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Action</Label>
+            <Select value={selectedAction} onValueChange={setSelectedAction}>
+              <SelectTrigger data-testid="select-bonus-action">
+                <SelectValue placeholder="Select an action" />
+              </SelectTrigger>
+              <SelectContent>
+                {catalog.map((c) => (
+                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Delta (units)</Label>
+            <Input
+              type="number"
+              value={delta}
+              onChange={(e) => setDelta(e.target.value)}
+              data-testid="input-bonus-delta"
+            />
+          </div>
+        </div>
+        <div className="space-y-2 mt-3">
+          <Label>Reason (optional)</Label>
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Customer support adjustment"
+            data-testid="input-bonus-reason"
+          />
+        </div>
+        <Button
+          className="mt-3"
+          disabled={!selectedAction || !delta || grantMutation.isPending}
+          onClick={() => grantMutation.mutate()}
+          data-testid="button-grant-bonus"
+        >
+          {grantMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          Grant Bonus
+        </Button>
+        {grantMutation.error && (
+          <p className="text-sm text-destructive mt-2">{(grantMutation.error as Error).message}</p>
+        )}
+      </div>
+
+      <div className="border-t pt-4">
+        <h3 className="font-medium mb-3">Bonus Grant History</h3>
+        {history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No bonuses have been granted for this tenant.</p>
+        ) : (
+          <Table data-testid="table-bonus-history">
+            <TableHeader>
+              <TableRow>
+                <TableHead>When</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead className="text-right">Delta</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Granted By</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.map((h) => (
+                <TableRow key={h.id} data-testid={`row-bonus-history-${h.id}`}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(h.createdAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{h.action}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {h.delta > 0 ? `+${h.delta}` : h.delta}
+                  </TableCell>
+                  <TableCell className="text-sm">{h.reason || "—"}</TableCell>
+                  <TableCell className="text-xs">{h.grantedByEmail || "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </div>
   );
 }

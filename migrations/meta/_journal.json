@@ -50,6 +50,20 @@
       "when": 1777757398641,
       "tag": "0006_seo_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0007_seo_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777900000000,
+      "tag": "0008_manual_action_quotas",
+      "breakpoints": true
     }
   ]
 }

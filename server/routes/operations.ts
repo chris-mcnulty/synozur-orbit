@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql, and, count } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, hasAdminAccess } from "./helpers";
+import { toContextFilter, hasAdminAccess, guardManualAction } from "./helpers";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
@@ -530,6 +530,8 @@ export function registerOperationsRoutes(app: Express) {
       if (!hasAdminAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - Admin only" });
       }
+
+      if (!await guardManualAction(req, res, "regenerateAll")) return;
 
       // Use market context filter to get only competitors in active market
       const contextFilter = toContextFilter(ctx);
