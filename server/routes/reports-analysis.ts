@@ -59,9 +59,16 @@ export function registerReportsAnalysisRoutes(app: Express) {
         ctx.tenantDomain,
         ctx.marketId || null
       );
-      const hasGtmPlan = tenantRecs.some(r => r.type === "gtm_plan" && r.status === "generated" && !!r.content);
-      const hasMessagingFramework = tenantRecs.some(r => r.type === "messaging_framework" && r.status === "generated" && !!r.content);
-      res.json({ hasGtmPlan, hasMessagingFramework });
+      const { pickLatestLongFormRecommendation, getLongFormRecommendationGeneratedAt } =
+        await import("../services/long-form-recommendation-selector");
+      const gtmRec = pickLatestLongFormRecommendation(tenantRecs, "gtm_plan");
+      const msgRec = pickLatestLongFormRecommendation(tenantRecs, "messaging_framework");
+      res.json({
+        hasGtmPlan: !!gtmRec,
+        hasMessagingFramework: !!msgRec,
+        gtmPlanGeneratedAt: gtmRec ? getLongFormRecommendationGeneratedAt(gtmRec) : null,
+        messagingFrameworkGeneratedAt: msgRec ? getLongFormRecommendationGeneratedAt(msgRec) : null,
+      });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

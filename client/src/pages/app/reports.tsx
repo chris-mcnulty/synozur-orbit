@@ -132,7 +132,12 @@ export default function Reports() {
     },
   });
 
-  const { data: availableContent } = useQuery<{ hasGtmPlan: boolean; hasMessagingFramework: boolean }>({
+  const { data: availableContent } = useQuery<{
+    hasGtmPlan: boolean;
+    hasMessagingFramework: boolean;
+    gtmPlanGeneratedAt?: string | null;
+    messagingFrameworkGeneratedAt?: string | null;
+  }>({
     queryKey: ["/api/reports/available-content"],
     queryFn: async () => {
       const response = await fetch("/api/reports/available-content", { credentials: "include" });
@@ -142,6 +147,15 @@ export default function Reports() {
   });
   const hasGtmPlan = !!availableContent?.hasGtmPlan;
   const hasMessagingFramework = !!availableContent?.hasMessagingFramework;
+  const gtmPlanGeneratedAt = availableContent?.gtmPlanGeneratedAt || null;
+  const messagingFrameworkGeneratedAt = availableContent?.messagingFrameworkGeneratedAt || null;
+  const isStale = (date: string | null | undefined) => {
+    if (!date) return false;
+    const days = (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24);
+    return days > 30;
+  };
+  const gtmPlanStale = isStale(gtmPlanGeneratedAt);
+  const messagingFrameworkStale = isStale(messagingFrameworkGeneratedAt);
 
   useEffect(() => {
     if (!availableContent) return;
@@ -450,15 +464,24 @@ export default function Reports() {
                   { key: "gapAnalysis", label: "Gap Analysis", icon: BarChart2 },
                   { key: "recommendations", label: "Recommendations", icon: Lightbulb },
                   { key: "battleCards", label: "Battle Cards", icon: Swords },
-                  { key: "gtmPlan", label: "GTM Plan", icon: Megaphone, disabled: !hasGtmPlan, disabledReason: "Generate a GTM Plan first to include it in the report." },
-                  { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText, disabled: !hasMessagingFramework, disabledReason: "Generate a Messaging Framework first to include it in the report." },
+                  { key: "gtmPlan", label: "GTM Plan", icon: Megaphone, disabled: !hasGtmPlan, disabledReason: "Generate a GTM Plan first to include it in the report.", generatedAt: gtmPlanGeneratedAt, stale: gtmPlanStale },
+                  { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText, disabled: !hasMessagingFramework, disabledReason: "Generate a Messaging Framework first to include it in the report.", generatedAt: messagingFrameworkGeneratedAt, stale: messagingFrameworkStale },
                   { key: "activityLog", label: "Activity Log", icon: Activity },
-                ].map(({ key, label, icon: Icon, disabled, disabledReason }) => {
-                  const checked = sections[key as keyof ReportSections];
+                ].map((item: {
+                  key: keyof ReportSections;
+                  label: string;
+                  icon: React.ComponentType<{ className?: string }>;
+                  disabled?: boolean;
+                  disabledReason?: string;
+                  generatedAt?: string | null;
+                  stale?: boolean;
+                }) => {
+                  const { key, label, icon: Icon, disabled, disabledReason, generatedAt, stale } = item;
+                  const checked = sections[key];
                   const tile = (
                     <div
                       className={cn(
-                        "flex items-center gap-2 p-2 rounded-md transition-all text-sm",
+                        "flex flex-col gap-1 p-2 rounded-md transition-all text-sm",
                         disabled
                           ? "bg-muted/40 text-muted-foreground cursor-not-allowed opacity-60"
                           : checked
@@ -467,21 +490,34 @@ export default function Reports() {
                       )}
                       onClick={() => {
                         if (disabled) return;
-                        setSections(s => ({ ...s, [key]: !s[key as keyof ReportSections] }));
+                        setSections(s => ({ ...s, [key]: !s[key] }));
                       }}
                       data-testid={`toggle-section-${key}`}
                     >
-                      <Checkbox
-                        checked={checked}
-                        disabled={disabled}
-                        onCheckedChange={(c) => {
-                          if (disabled) return;
-                          setSections(s => ({ ...s, [key]: !!c }));
-                        }}
-                        className="h-4 w-4"
-                      />
-                      <Icon className="w-3.5 h-3.5" />
-                      <span className="truncate">{label}</span>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={checked}
+                          disabled={disabled}
+                          onCheckedChange={(c) => {
+                            if (disabled) return;
+                            setSections(s => ({ ...s, [key]: !!c }));
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="truncate">{label}</span>
+                      </div>
+                      {generatedAt && !disabled && (
+                        <div
+                          className={cn(
+                            "text-[10px] pl-6 leading-tight",
+                            stale ? "text-amber-600 font-medium" : "text-muted-foreground"
+                          )}
+                          data-testid={`text-generated-${key}`}
+                        >
+                          {stale ? "Outdated · " : ""}Generated {formatShortDate(generatedAt)}
+                        </div>
+                      )}
                     </div>
                   );
                   if (disabled && disabledReason) {
@@ -581,13 +617,26 @@ export default function Reports() {
               <Label className="text-sm font-medium mb-2 block">Included Sections</Label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { label: "Executive Summary", icon: Sparkles },
-                  { label: "GTM Plan", icon: Megaphone },
-                  { label: "Messaging Framework", icon: MessageSquareText },
-                ].map(({ label, icon: Icon }) => (
-                  <div key={label} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-primary/10 text-primary text-sm">
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{label}</span>
+                  { label: "Executive Summary", icon: Sparkles, generatedAt: null as string | null, stale: false },
+                  { label: "GTM Plan", icon: Megaphone, generatedAt: gtmPlanGeneratedAt, stale: gtmPlanStale },
+                  { label: "Messaging Framework", icon: MessageSquareText, generatedAt: messagingFrameworkGeneratedAt, stale: messagingFrameworkStale },
+                ].map(({ label, icon: Icon, generatedAt, stale }) => (
+                  <div key={label} className="flex flex-col gap-0.5 px-2.5 py-1.5 rounded-md bg-primary/10 text-primary text-sm">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="w-3.5 h-3.5" />
+                      <span>{label}</span>
+                    </div>
+                    {generatedAt && (
+                      <span
+                        className={cn(
+                          "text-[10px] pl-5 leading-tight",
+                          stale ? "text-amber-600 font-medium" : "text-primary/70"
+                        )}
+                        data-testid={`text-marketing-generated-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
+                        {stale ? "Outdated · " : ""}Generated {formatShortDate(generatedAt)}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -623,9 +672,35 @@ export default function Reports() {
                   }}
                   className="h-4 w-4"
                 />
-                <div>
+                <div className="flex-1">
                   <span className="text-sm font-medium">Include GTM Plan & Messaging Framework</span>
                   <p className="text-xs text-muted-foreground">Add your Go-to-Market plan and messaging framework to the report</p>
+                  {(gtmPlanGeneratedAt || messagingFrameworkGeneratedAt) && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5">
+                      {gtmPlanGeneratedAt && (
+                        <span
+                          className={cn(
+                            "text-[11px]",
+                            gtmPlanStale ? "text-amber-600 font-medium" : "text-muted-foreground"
+                          )}
+                          data-testid="text-strategic-gtm-generated"
+                        >
+                          GTM Plan: {gtmPlanStale ? "Outdated · " : ""}Generated {formatShortDate(gtmPlanGeneratedAt)}
+                        </span>
+                      )}
+                      {messagingFrameworkGeneratedAt && (
+                        <span
+                          className={cn(
+                            "text-[11px]",
+                            messagingFrameworkStale ? "text-amber-600 font-medium" : "text-muted-foreground"
+                          )}
+                          data-testid="text-strategic-messaging-generated"
+                        >
+                          Messaging: {messagingFrameworkStale ? "Outdated · " : ""}Generated {formatShortDate(messagingFrameworkGeneratedAt)}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

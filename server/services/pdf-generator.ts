@@ -133,6 +133,8 @@ interface ReportData {
   projectName?: string;
   gtmPlan?: string | null;
   messagingFramework?: string | null;
+  gtmPlanGeneratedAt?: Date | null;
+  messagingFrameworkGeneratedAt?: Date | null;
   baselineProductName?: string;
   productFeatures?: ProductFeatureData[];
   roadmapItems?: RoadmapItemData[];
@@ -1322,6 +1324,21 @@ function generateReportHtml(data: ReportData): string {
   </div>
   ` : ""}
 
+  ${(() => {
+    const renderGeneratedBadge = (generatedAt: Date | null | undefined) => {
+      if (!generatedAt) return "";
+      const d = new Date(generatedAt);
+      const dateLabel = format(d, "MMM d, yyyy");
+      const ageDays = Math.floor((data.generatedAt.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+      const isStale = ageDays > 30;
+      const bg = isStale ? "#FEF3C7" : "#F1F5F9";
+      const color = isStale ? "#92400E" : "#475569";
+      const border = isStale ? "#FCD34D" : "#CBD5E1";
+      const staleSuffix = isStale ? ` · ${ageDays} days old` : "";
+      const prefix = isStale ? "Outdated · " : "";
+      return `<div style="display: inline-block; margin: 4px 0 14px 0; padding: 4px 10px; background: ${bg}; color: ${color}; border: 1px solid ${border}; border-radius: 4px; font-size: 12px; font-weight: 500;">${prefix}Generated on ${escapeHtml(dateLabel)}${staleSuffix}</div>`;
+    };
+    return `
   ${data.gtmPlan ? `
   <div class="page-break"></div>
   <div class="content-wrapper">
@@ -1334,6 +1351,7 @@ function generateReportHtml(data: ReportData): string {
     </div>
     <div class="section">
       <div class="section-title">Go-To-Market Plan</div>
+      ${renderGeneratedBadge(data.gtmPlanGeneratedAt)}
       <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 24px; color: #475569; font-size: 14px;">
         ${markdownToHtml(data.gtmPlan)}
       </div>
@@ -1354,13 +1372,15 @@ function generateReportHtml(data: ReportData): string {
     </div>
     <div class="section">
       <div class="section-title">Messaging & Positioning Framework</div>
+      ${renderGeneratedBadge(data.messagingFrameworkGeneratedAt)}
       <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 24px; color: #475569; font-size: 14px;">
         ${renderFrameworkContent(data.messagingFramework)}
       </div>
     </div>
     ${ORBIT_FOOTER}
   </div>
-  ` : ''}
+  ` : ''}`;
+  })()}
 
 </body>
 </html>
@@ -1649,41 +1669,27 @@ export async function generatePdfReport(
 
   let gtmPlan: string | null = null;
   let messagingFramework: string | null = null;
+  let gtmPlanGeneratedAt: Date | null = null;
+  let messagingFrameworkGeneratedAt: Date | null = null;
 
   if (includeStrategicPlans) {
-    // Check project-level long-form recommendations first (for project-scoped reports)
-    if (scope === "project" && projectId) {
-      const projectRecs = await storage.getLongFormRecommendationsByProject(projectId);
-      const gtmRec = projectRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
-      const msgRec = projectRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
-      gtmPlan = gtmRec?.content || null;
-      messagingFramework = msgRec?.content || null;
+    const { pickLatestLongFormRecommendation, getLongFormRecommendationGeneratedAt } =
+      await import("./long-form-recommendation-selector");
+
+    // Pull the latest generated GTM Plan and Messaging Framework for this tenant+market.
+    // This matches /api/reports/available-content exactly, so the timestamps shown in
+    // the Generate Report dialog and rendered in the PDF always refer to the same record.
+    const tenantRecs = await storage.getLongFormRecommendationsByTenantMarket(tenantDomain, marketId || null);
+    const gtmRec = pickLatestLongFormRecommendation(tenantRecs, "gtm_plan");
+    const msgRec = pickLatestLongFormRecommendation(tenantRecs, "messaging_framework");
+
+    if (gtmRec) {
+      gtmPlan = gtmRec.content || null;
+      gtmPlanGeneratedAt = getLongFormRecommendationGeneratedAt(gtmRec);
     }
-    // Fall back to company profile-level recommendations for any missing artifacts
-    if ((!gtmPlan || !messagingFramework) && companyProfile) {
-      const longFormRecs = await storage.getLongFormRecommendationsByCompanyProfile(companyProfile.id);
-      if (!gtmPlan) {
-        const gtmRec = longFormRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
-        gtmPlan = gtmRec?.content || null;
-      }
-      if (!messagingFramework) {
-        const msgRec = longFormRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
-        messagingFramework = msgRec?.content || null;
-      }
-    }
-    // Final fallback: any long-form recommendation matching this tenant+market scope.
-    // This catches GTM Plans and Messaging Frameworks generated against an unrelated
-    // project/companyProfile but still belonging to the same tenant + market.
-    if (!gtmPlan || !messagingFramework) {
-      const tenantRecs = await storage.getLongFormRecommendationsByTenantMarket(tenantDomain, marketId || null);
-      if (!gtmPlan) {
-        const gtmRec = tenantRecs.find(r => r.type === "gtm_plan" && r.status === "generated");
-        gtmPlan = gtmRec?.content || null;
-      }
-      if (!messagingFramework) {
-        const msgRec = tenantRecs.find(r => r.type === "messaging_framework" && r.status === "generated");
-        messagingFramework = msgRec?.content || null;
-      }
+    if (msgRec) {
+      messagingFramework = msgRec.content || null;
+      messagingFrameworkGeneratedAt = getLongFormRecommendationGeneratedAt(msgRec);
     }
   }
 
@@ -1821,6 +1827,8 @@ export async function generatePdfReport(
     projectName,
     gtmPlan,
     messagingFramework,
+    gtmPlanGeneratedAt,
+    messagingFrameworkGeneratedAt,
     baselineProductName,
     productFeatures: productFeatures.length > 0 ? productFeatures : undefined,
     roadmapItems: roadmapItems.length > 0 ? roadmapItems : undefined,
