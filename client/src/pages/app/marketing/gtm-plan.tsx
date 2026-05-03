@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import FieldHelp from "@/components/FieldHelp";
+import { LongFormContentSkeleton } from "@/components/ui/skeletons";
 
 type LongFormRecommendation = {
   id: string;
@@ -239,9 +240,7 @@ export default function GtmPlanPage() {
                 </Collapsible>
 
                 {isLoading ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
+                  <LongFormContentSkeleton />
                 ) : gtmPlan?.status === "generated" && gtmPlan.content ? (
                   <div className="space-y-4">
                     <div className="flex gap-2 justify-end flex-wrap">

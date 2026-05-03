@@ -26,6 +26,7 @@ import {
   Send,
 } from "lucide-react";
 import { format } from "date-fns";
+import { EmailListSkeleton } from "@/components/ui/skeletons";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -331,7 +332,7 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed,
   });
 
-  const { data: savedEmails = [] } = useQuery<SavedEmail[]>({
+  const { data: savedEmails = [], isLoading: emailsLoading } = useQuery<SavedEmail[]>({
     queryKey: ["/api/email/saved"],
     queryFn: async () => {
       const r = await fetch("/api/email/saved", { credentials: "include" });
@@ -1109,7 +1110,11 @@ export default function EmailNewslettersPage() {
           </div>
         )}
 
-        {savedEmails.length === 0 && !previewEmail && (
+        {emailsLoading && savedEmails.length === 0 && !previewEmail && (
+          <EmailListSkeleton count={4} />
+        )}
+
+        {!emailsLoading && savedEmails.length === 0 && !previewEmail && (
           <Card>
             <CardContent className="py-12 text-center space-y-4">
               <Mail className="w-10 h-10 mx-auto text-muted-foreground" />

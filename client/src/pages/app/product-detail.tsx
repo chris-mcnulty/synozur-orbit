@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Loader2, Package, Building, Sparkles, Trash2, Star, ExternalLink, Pencil, Wand2, Swords, RefreshCw, Check, X, MessageSquare, FileText, Download, Rocket, MessageCircle, Clock, Copy, List, Map, FileBarChart, Linkedin, Instagram, Twitter, Users, AlertTriangle, Ban } from "lucide-react";
+import {
+  LongFormContentSkeleton,
+  ProductCardGridSkeleton,
+  BattlecardListSkeleton,
+} from "@/components/ui/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import FeaturesTab from "@/components/product/FeaturesTab";
 import RoadmapTab from "@/components/product/RoadmapTab";
 import FeedbackTab from "@/components/product/FeedbackTab";
@@ -1145,8 +1151,25 @@ export default function ProductDetail() {
   if (projectLoading) {
     return (
       <AppLayout breadcrumbs={productBreadcrumbs}>
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex-1 p-4 md:p-8 overflow-y-auto" data-testid="skeleton-product-detail">
+          <div className="max-w-6xl mx-auto space-y-6">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-9 w-9 rounded-md" />
+              <div className="space-y-2">
+                <Skeleton className="h-7 w-64" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-32 rounded-full" />
+                  <Skeleton className="h-4 w-40" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-28 rounded-md" />
+              ))}
+            </div>
+            <ProductCardGridSkeleton count={6} />
+          </div>
         </div>
       </AppLayout>
     );
@@ -1763,9 +1786,7 @@ export default function ProductDetail() {
                 </CardHeader>
                 <CardContent>
                   {productsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
+                    <ProductCardGridSkeleton count={6} />
                   ) : competitorProducts.length > 0 ? (
                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                       {competitorProducts.map((pp) => (
@@ -1935,9 +1956,7 @@ export default function ProductDetail() {
                 </CardHeader>
                 <CardContent>
                   {battlecardsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
+                    <BattlecardListSkeleton count={3} />
                   ) : !baselineProduct ? (
                     <div className="text-center py-8 border-2 border-dashed rounded-lg">
                       <Swords className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
@@ -2250,9 +2269,7 @@ export default function ProductDetail() {
                       </div>
                       
                       {gapLoading ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
+                        <LongFormContentSkeleton />
                       ) : gapAnalysis?.status === "generated" && gapAnalysis.content ? (
                         <div className="border rounded-lg p-6 bg-muted/30">
                           <MarkdownContent content={gapAnalysis.content} />
@@ -2322,9 +2339,7 @@ export default function ProductDetail() {
                       </div>
                       
                       {recsLoading ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
+                        <LongFormContentSkeleton />
                       ) : strategicRecs?.status === "generated" && strategicRecs.content ? (
                         <div className="border rounded-lg p-6 bg-muted/30">
                           <MarkdownContent content={strategicRecs.content} />
@@ -2394,9 +2409,7 @@ export default function ProductDetail() {
                       </div>
                       
                       {summaryLoading ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
+                        <LongFormContentSkeleton />
                       ) : competitiveSummary?.status === "generated" && competitiveSummary.content ? (
                         <div className="border rounded-lg p-6 bg-muted/30">
                           <MarkdownContent content={competitiveSummary.content} />
@@ -2524,9 +2537,7 @@ export default function ProductDetail() {
 
                   {/* GTM Content Display */}
                   {gtmLoading ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
+                    <LongFormContentSkeleton />
                   ) : gtmPlan?.status === "generated" && gtmPlan.content ? (
                     <div className="space-y-4">
                       <div className="flex gap-2 justify-end">
@@ -2670,9 +2681,7 @@ export default function ProductDetail() {
 
                   {/* Messaging Content Display */}
                   {messagingLoading ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
+                    <LongFormContentSkeleton />
                   ) : messagingFramework?.status === "generated" && messagingFramework.content ? (
                     <div className="space-y-4">
                       <div className="flex gap-2 justify-end">
@@ -2732,9 +2741,7 @@ export default function ProductDetail() {
                 </CardHeader>
                 <CardContent>
                   {comparisonLoading ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
+                    <LongFormContentSkeleton />
                   ) : !messagingComparison?.baseline ? (
                     <div className="text-center py-12 border-2 border-dashed rounded-lg">
                       <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -2965,9 +2972,7 @@ export default function ProductDetail() {
 
                   {/* One Sheet Content Display */}
                   {oneSheetLoading ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
+                    <LongFormContentSkeleton />
                   ) : productOneSheet?.status === "generated" && productOneSheet.content ? (
                     <div className="space-y-4">
                       <div className="flex gap-2 justify-end">

@@ -11,6 +11,7 @@ import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
+import { CampaignGridSkeleton } from "@/components/ui/skeletons";
 import { Link, useSearch } from "wouter";
 import {
   Dialog,
@@ -749,7 +750,7 @@ export default function CampaignsPage() {
         </div>
 
         {isLoading && !campaignsPage ? (
-          <div className="text-center text-muted-foreground py-12">Loading...</div>
+          <CampaignGridSkeleton count={6} />
         ) : campaignsTotal === 0 && !debouncedCampaignSearch ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-empty-campaigns">

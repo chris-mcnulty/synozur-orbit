@@ -203,6 +203,152 @@ export function BrandGridSkeleton({ count = 8 }: { count?: number }) {
   );
 }
 
+export function CampaignCardSkeleton() {
+  return (
+    <div className="rounded-lg border bg-card p-6 space-y-3" data-testid="skeleton-campaign-card">
+      <div className="flex items-start justify-between gap-2">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-5 w-16 rounded-full shrink-0" />
+      </div>
+      <Skeleton className="h-3 w-full" />
+      <Skeleton className="h-3 w-4/5" />
+      <div className="flex flex-wrap gap-1 pt-1">
+        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </div>
+      <div className="flex items-center justify-between pt-1">
+        <Skeleton className="h-3 w-32" />
+        <div className="flex gap-1">
+          <Skeleton className="h-7 w-7 rounded" />
+          <Skeleton className="h-7 w-16 rounded" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CampaignGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div
+      className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+      data-testid="skeleton-campaign-grid"
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <CampaignCardSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+export function EmailRowSkeleton() {
+  return (
+    <div className="rounded-lg border bg-card py-4 px-6" data-testid="skeleton-email-row">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-4 w-72 max-w-full" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-20 rounded-full" />
+            <Skeleton className="h-4 w-16 rounded-full" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Skeleton className="h-5 w-14 rounded-full" />
+          <Skeleton className="h-7 w-7 rounded" />
+          <Skeleton className="h-7 w-7 rounded" />
+          <Skeleton className="h-7 w-7 rounded" />
+          <Skeleton className="h-7 w-7 rounded" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function EmailListSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="space-y-3" data-testid="skeleton-email-list">
+      {Array.from({ length: count }).map((_, i) => (
+        <EmailRowSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
+export function LongFormContentSkeleton() {
+  return (
+    <div className="border rounded-lg p-6 bg-muted/30 space-y-4" data-testid="skeleton-longform">
+      <Skeleton className="h-7 w-1/2" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-4 w-4/5" />
+      </div>
+      <Skeleton className="h-6 w-1/3 mt-2" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-11/12" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+      <Skeleton className="h-6 w-2/5 mt-2" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+      </div>
+    </div>
+  );
+}
+
+export function ProductCardGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div
+      className="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
+      data-testid="skeleton-product-card-grid"
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="flex items-start justify-between p-4 rounded-lg border bg-card">
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-10 rounded-full" />
+            </div>
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+          <div className="flex flex-col gap-1 ml-2">
+            <Skeleton className="h-7 w-7 rounded" />
+            <Skeleton className="h-7 w-7 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function BattlecardListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div className="space-y-4" data-testid="skeleton-battlecard-list">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="border rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between p-4 bg-muted/30">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3 w-28" />
+            </div>
+            <Skeleton className="h-8 w-32 rounded" />
+          </div>
+          <div className="p-4 space-y-2">
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-11/12" />
+            <Skeleton className="h-3 w-3/4" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function BriefingPanelSkeleton() {
   return (
     <div className="space-y-6" data-testid="skeleton-briefing-panel">
