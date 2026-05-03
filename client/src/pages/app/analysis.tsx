@@ -104,6 +104,7 @@ export default function Analysis() {
   };
   const [regenerationStarted, setRegenerationStarted] = useState(false);
   const [regenerationDialogOpen, setRegenerationDialogOpen] = useState(false);
+  const [regenJobId, setRegenJobId] = useState<string | null>(null);
   const [regenerateAllWarningOpen, setRegenerateAllWarningOpen] = useState(false);
   const [selectiveRegenOpen, setSelectiveRegenOpen] = useState(false);
   const [regenSelections, setRegenSelections] = useState<Record<string, boolean>>({
@@ -297,6 +298,30 @@ export default function Analysis() {
     openFreshnessDialog(mode);
   };
 
+  const { data: regenStatus } = useQuery<{
+    status: "pending" | "running" | "completed" | "failed";
+    currentStep: string;
+    stepsCompleted: number;
+    totalSteps: number;
+    error?: string;
+    deliverables?: Record<string, { key: string; label: string; status: "pending" | "running" | "done" | "skipped" | "failed"; detail?: string }>;
+  } | null>({
+    queryKey: ["/api/baseline/regeneration-status", regenJobId],
+    queryFn: async () => {
+      if (!regenJobId) return null;
+      const res = await fetch(`/api/baseline/regeneration-status/${regenJobId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!regenJobId && regenerationDialogOpen,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 2000;
+      if (data.status === "completed" || data.status === "failed") return false;
+      return 2000;
+    },
+  });
+
   const fullRegenerationMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/baseline/full-regenerate", {
@@ -312,6 +337,7 @@ export default function Analysis() {
     onSuccess: (data) => {
       setRegenerationStarted(true);
       setRegenerationDialogOpen(true);
+      setRegenJobId(data.jobId || null);
       toast.success(`Full regeneration started! Estimated time: ${data.estimatedMinutes} minutes`);
     },
     onError: (error: Error) => {
@@ -339,28 +365,137 @@ export default function Analysis() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary" />
-              Full Regeneration Started
+              {(() => {
+                const lanes = regenStatus?.deliverables ? Object.values(regenStatus.deliverables) : [];
+                const hasFailedLane = lanes.some((l) => l.status === "failed");
+                if (regenStatus?.status === "completed" && hasFailedLane) {
+                  return <AlertTriangle className="h-5 w-5 text-amber-500" />;
+                }
+                if (regenStatus?.status === "completed") {
+                  return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+                }
+                if (regenStatus?.status === "failed") {
+                  return <AlertTriangle className="h-5 w-5 text-destructive" />;
+                }
+                return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
+              })()}
+              {(() => {
+                const lanes = regenStatus?.deliverables ? Object.values(regenStatus.deliverables) : [];
+                const hasFailedLane = lanes.some((l) => l.status === "failed");
+                if (regenStatus?.status === "completed" && hasFailedLane) {
+                  return "Completed with Issues";
+                }
+                if (regenStatus?.status === "completed") return "Regeneration Complete";
+                if (regenStatus?.status === "failed") return "Regeneration Failed";
+                return "Full Regeneration In Progress";
+              })()}
             </DialogTitle>
-            <DialogDescription className="space-y-3 pt-4">
-              <p>
-                Your comprehensive analysis is now being generated in the background. This includes:
-              </p>
-              <ul className="text-sm space-y-1 pl-4 text-muted-foreground">
-                <li>• Competitor website analysis</li>
-                <li>• Gap analysis and recommendations</li>
-                <li>• Battlecards for each competitor</li>
-                <li>• GTM Plan (using GPT-5.2)</li>
-                <li>• Messaging Framework</li>
-              </ul>
-              <p className="text-sm pt-2">
-                <strong>You'll receive an email</strong> when everything is ready. Feel free to continue working or close this page.
-              </p>
+            <DialogDescription className="pt-2">
+              {(() => {
+                const lanes = regenStatus?.deliverables ? Object.values(regenStatus.deliverables) : [];
+                const failed = lanes.filter((l) => l.status === "failed").map((l) => l.label);
+                if (regenStatus?.status === "completed" && failed.length > 0) {
+                  return `Most deliverables are ready, but the following lane${failed.length > 1 ? "s" : ""} did not finish successfully: ${failed.join(", ")}.`;
+                }
+                if (regenStatus?.status === "completed") {
+                  return "Your comprehensive analysis is ready. You'll also receive an email summary.";
+                }
+                if (regenStatus?.status === "failed") {
+                  return regenStatus.error || "Something went wrong while running the regeneration.";
+                }
+                return "Your comprehensive analysis is being generated. You can close this dialog and you'll receive an email when it's done.";
+              })()}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end pt-4">
-            <Button onClick={() => setRegenerationDialogOpen(false)}>
-              Got it
+
+          <div className="space-y-4 py-2">
+            <div data-testid="regen-step-summary" className="text-sm">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-medium text-foreground">
+                  {regenStatus?.currentStep || "Starting..."}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {regenStatus?.stepsCompleted ?? 0} / {regenStatus?.totalSteps ?? 9}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(100, ((regenStatus?.stepsCompleted ?? 0) / (regenStatus?.totalSteps ?? 9)) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Parallel Deliverables
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {(["battlecards", "gtm", "messaging", "marketingTasks"] as const).map((laneKey) => {
+                  const lane = regenStatus?.deliverables?.[laneKey];
+                  const status = lane?.status ?? "pending";
+                  const label = lane?.label ?? (
+                    laneKey === "battlecards" ? "Battlecards"
+                    : laneKey === "gtm" ? "GTM Plan"
+                    : laneKey === "messaging" ? "Messaging Framework"
+                    : "Marketing Tasks"
+                  );
+                  return (
+                    <div
+                      key={laneKey}
+                      className="flex items-center gap-2.5 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
+                      data-testid={`regen-lane-${laneKey}`}
+                    >
+                      <div className="shrink-0">
+                        {status === "done" ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" data-testid={`regen-lane-${laneKey}-done`} />
+                        ) : status === "running" ? (
+                          <Loader2 className="h-4 w-4 text-primary animate-spin" data-testid={`regen-lane-${laneKey}-running`} />
+                        ) : status === "failed" ? (
+                          <X className="h-4 w-4 text-destructive" data-testid={`regen-lane-${laneKey}-failed`} />
+                        ) : status === "skipped" ? (
+                          <X className="h-4 w-4 text-muted-foreground" data-testid={`regen-lane-${laneKey}-skipped`} />
+                        ) : (
+                          <Clock className="h-4 w-4 text-muted-foreground/60" data-testid={`regen-lane-${laneKey}-pending`} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground">{label}</div>
+                        {lane?.detail && (
+                          <div className="text-xs text-muted-foreground truncate">{lane.detail}</div>
+                        )}
+                      </div>
+                      <div
+                        className={
+                          "text-xs font-medium capitalize " +
+                          (status === "done"
+                            ? "text-green-600 dark:text-green-400"
+                            : status === "running"
+                            ? "text-primary"
+                            : status === "failed"
+                            ? "text-destructive"
+                            : "text-muted-foreground")
+                        }
+                        data-testid={`regen-lane-${laneKey}-status`}
+                      >
+                        {status}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5" />
+              Email sent when complete
+            </p>
+            <Button onClick={() => setRegenerationDialogOpen(false)} data-testid="button-regen-dialog-close">
+              {regenStatus?.status === "completed" || regenStatus?.status === "failed" ? "Close" : "Run in Background"}
             </Button>
           </div>
         </DialogContent>

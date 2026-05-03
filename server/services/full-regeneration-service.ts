@@ -10,6 +10,16 @@ import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } fro
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
+export type DeliverableLaneKey = "battlecards" | "gtm" | "messaging" | "marketingTasks";
+export type DeliverableLaneStatus = "pending" | "running" | "done" | "skipped" | "failed";
+
+export interface DeliverableLaneState {
+  key: DeliverableLaneKey;
+  label: string;
+  status: DeliverableLaneStatus;
+  detail?: string;
+}
+
 interface RegenerationProgress {
   status: "pending" | "running" | "completed" | "failed";
   currentStep: string;
@@ -18,6 +28,16 @@ interface RegenerationProgress {
   startedAt: Date;
   completedAt?: Date;
   error?: string;
+  deliverables: Record<DeliverableLaneKey, DeliverableLaneState>;
+}
+
+function createInitialDeliverables(): Record<DeliverableLaneKey, DeliverableLaneState> {
+  return {
+    battlecards: { key: "battlecards", label: "Battlecards", status: "pending" },
+    gtm: { key: "gtm", label: "GTM Plan", status: "pending" },
+    messaging: { key: "messaging", label: "Messaging Framework", status: "pending" },
+    marketingTasks: { key: "marketingTasks", label: "Marketing Tasks", status: "pending" },
+  };
 }
 
 const activeJobs = new Map<string, RegenerationProgress>();
@@ -41,6 +61,7 @@ export async function startFullRegeneration(
     stepsCompleted: 0,
     totalSteps: 9,
     startedAt: new Date(),
+    deliverables: createInitialDeliverables(),
   };
   
   activeJobs.set(jobId, progress);
@@ -395,14 +416,32 @@ async function runRegenerationInBackground(
     progress.stepsCompleted = 3;
 
     const isB2C = businessType === "b2c";
-    // No-op: each lane is wrapped via `runLanesInParallel` below, which owns
-    // step-counter advancement. Kept as a label-friendly helper so the
-    // existing per-lane logging stays readable.
-    const onDeliverableDone = (label: string) => {
-      console.log(`Full regen: ${label} lane finished its work`);
+    // Per-lane state helpers. Step-counter advancement (3 -> 6) is owned by
+    // `runLanesInParallel` below; these helpers only update the per-deliverable
+    // status surfaced through the regeneration status endpoint.
+    const setLaneRunning = (key: DeliverableLaneKey) => {
+      progress.deliverables[key].status = "running";
+    };
+    const setLaneStatus = (
+      key: DeliverableLaneKey,
+      status: Exclude<DeliverableLaneStatus, "pending" | "running">,
+      detail?: string,
+    ) => {
+      progress.deliverables[key].status = status;
+      if (detail !== undefined) progress.deliverables[key].detail = detail;
+    };
+    const onDeliverableDone = (
+      key: DeliverableLaneKey,
+      status: Exclude<DeliverableLaneStatus, "pending" | "running"> = "done",
+      detail?: string,
+    ) => {
+      setLaneStatus(key, status, detail);
+      console.log(`Full regen: ${progress.deliverables[key].label} lane ${status}${detail ? ` — ${detail}` : ""}`);
     };
 
     const battlecardsTask = (async () => {
+      setLaneRunning("battlecards");
+      let battlecardLaneFailed = false;
       const anthropic = new Anthropic({
         apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
         baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
@@ -481,18 +520,26 @@ Return ONLY valid JSON.`;
           results.battlecardsGenerated++;
         }
         } catch (e) {
+          battlecardLaneFailed = true;
           console.error(`Full regen: Failed to generate battlecard for ${competitor.name}:`, e);
         }
       });
-      onDeliverableDone("Battlecards");
+      if (competitors.length === 0) {
+        onDeliverableDone("battlecards", "skipped", "No competitors");
+      } else if (results.battlecardsGenerated === 0 && battlecardLaneFailed) {
+        onDeliverableDone("battlecards", "failed");
+      } else {
+        onDeliverableDone("battlecards", "done", `${results.battlecardsGenerated}/${competitors.length}`);
+      }
     })();
 
     const gtmTask = (async () => {
       if (!companyProfile) {
-        onDeliverableDone("GTM plan (skipped: no company profile)");
+        onDeliverableDone("gtm", "skipped", "No company profile");
         return;
       }
 
+      setLaneRunning("gtm");
       try {
         const openai = new OpenAI({
           apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -678,14 +725,15 @@ Make this practical and actionable for the team.`;
       } catch (e) {
         console.error("Full regen: Failed to generate GTM plan:", e);
       }
-      onDeliverableDone("GTM plan");
+      onDeliverableDone("gtm", results.gtmPlanGenerated ? "done" : "failed");
     })();
 
     const messagingTask = (async () => {
       if (!companyProfile) {
-        onDeliverableDone("Messaging framework (skipped: no company profile)");
+        onDeliverableDone("messaging", "skipped", "No company profile");
         return;
       }
+      setLaneRunning("messaging");
       try {
         const messagingPrompt = isB2C
           ? `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
@@ -812,7 +860,7 @@ Make this practical and ready to use in marketing materials.`;
       } catch (e) {
         console.error("Full regen: Failed to generate messaging framework:", e);
       }
-      onDeliverableDone("Messaging framework");
+      onDeliverableDone("messaging", results.messagingFrameworkGenerated ? "done" : "failed");
     })();
 
     // Marketing tasks consume the GTM plan that gtmTask writes to storage,
@@ -820,10 +868,16 @@ Make this practical and ready to use in marketing materials.`;
     // with battlecards and messaging.
     const marketingTasksTask = (async () => {
       await gtmTask;
+      let marketingTasksFailed = false;
+      let marketingPlansCount = 0;
+      let marketingTasksAttempted = false;
       try {
         const marketingCtx = { tenantDomain, marketId: marketId || null };
         const marketingPlans = await storage.getMarketingPlans(marketingCtx);
+        marketingPlansCount = marketingPlans.length;
         if (marketingPlans.length > 0 && companyProfile) {
+          setLaneRunning("marketingTasks");
+          marketingTasksAttempted = true;
           const anthropicForTasks = new Anthropic({
           apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
           baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
@@ -1012,14 +1066,30 @@ Only use these timeframe values: ${periods.join(", ")}`;
 
             console.log(`Full regen: Generated ${generatedTasks.length} marketing tasks for plan "${mPlan.name}"`);
           } catch (planError) {
+            marketingTasksFailed = true;
             console.error(`Full regen: Failed to generate tasks for marketing plan "${mPlan.name}":`, planError);
           }
         });
         }
       } catch (marketingError) {
+        marketingTasksFailed = true;
         console.error("Full regen: Failed to generate marketing tasks:", marketingError);
       }
-      onDeliverableDone("Marketing tasks");
+      if (!marketingTasksAttempted) {
+        onDeliverableDone(
+          "marketingTasks",
+          "skipped",
+          marketingPlansCount === 0 ? "No marketing plans" : "No company profile",
+        );
+      } else if (results.marketingTasksGenerated === 0 && marketingTasksFailed) {
+        onDeliverableDone("marketingTasks", "failed");
+      } else {
+        onDeliverableDone(
+          "marketingTasks",
+          "done",
+          `${results.marketingTasksGenerated} task${results.marketingTasksGenerated === 1 ? "" : "s"}`,
+        );
+      }
     })();
 
     // Run the four lanes in parallel via `runLanesInParallel`, which:
