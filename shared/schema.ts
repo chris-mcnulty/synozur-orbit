@@ -938,6 +938,54 @@ export const insertGroundingDocumentSchema = createInsertSchema(groundingDocumen
 export type GroundingDocument = typeof groundingDocuments.$inferSelect;
 export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSchema>;
 
+// Per-competitor uploaded documents (datasheets, case studies, annual reports, etc.)
+// Competitor-scoped uploaded documents — separate from groundingDocuments to allow distinct UX, scope tags, and
+// soft-delete archive workflow without polluting the company grounding library.
+export const competitorDocuments = pgTable("competitor_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  displayTitle: text("display_title").notNull(),
+  scopeTag: text("scope_tag"),
+  objectStoragePath: text("object_storage_path"),
+  speFileId: text("spe_file_id"),
+  speContainerId: text("spe_container_id"),
+  byteSize: integer("byte_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileType: text("file_type").notNull(),
+  extractedText: text("extracted_text"),
+  status: text("status").notNull().default("active"),
+  uploadedByUserId: varchar("uploaded_by_user_id").notNull().references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  archivedAt: timestamp("archived_at"),
+}, (table) => ({
+  tenantCompetitorIdx: index("competitor_documents_tenant_competitor_status_idx")
+    .on(table.tenantDomain, table.competitorId, table.status),
+  competitorIdx: index("competitor_documents_competitor_idx").on(table.competitorId),
+}));
+
+export const competitorDocumentsRelations = relations(competitorDocuments, ({ one }) => ({
+  competitor: one(competitors, {
+    fields: [competitorDocuments.competitorId],
+    references: [competitors.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [competitorDocuments.uploadedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const insertCompetitorDocumentSchema = createInsertSchema(competitorDocuments).omit({
+  id: true,
+  uploadedAt: true,
+  archivedAt: true,
+});
+
+export type CompetitorDocument = typeof competitorDocuments.$inferSelect;
+export type InsertCompetitorDocument = z.infer<typeof insertCompetitorDocumentSchema>;
+
 // Global grounding documents - application-wide AI context (Global Admin only)
 export const globalGroundingDocuments = pgTable("global_grounding_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

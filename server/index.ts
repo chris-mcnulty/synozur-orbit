@@ -48,7 +48,7 @@ app.use(express.urlencoded({ extended: false }));
 
 // File upload middleware for logo uploads
 app.use(fileUpload({
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit (matches validateDocumentUpload)
   abortOnLimit: true,
   useTempFiles: false,
 }));

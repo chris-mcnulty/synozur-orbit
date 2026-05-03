@@ -43,6 +43,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "sentimentAnalysis", label: "Sentiment & Tone Analysis", description: "Show competitor content sentiment and tone analysis, plus tone-shift alerts. Analysis always runs server-side; this gate controls UI visibility and alerts only.", category: "intelligence" },
   { key: "outcomeMetrics", label: "Outcome Metrics & Orbit Score", description: "ROI dashboard with Orbit Score, GA4 analytics integration, and outcome trend charts", category: "intelligence" },
   { key: "industryBenchmarks", label: "Industry Benchmarks", description: "Compare your Orbit Score against anonymized SIC-code peer cohorts (≥5 tenants)", category: "intelligence" },
+  { key: "competitorDocuments", label: "Competitor Documents", description: "Upload per-competitor PDF/DOCX/TXT documents (datasheets, case studies, annual reports) to ground analyses, gap analysis, battlecards, and briefings", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -101,6 +102,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     sentimentAnalysis: false,
     outcomeMetrics: false,
     industryBenchmarks: false,
+    competitorDocuments: false,
   },
   trial: {
     battlecards: true,
@@ -138,6 +140,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     sentimentAnalysis: false,
     outcomeMetrics: false,
     industryBenchmarks: false,
+    competitorDocuments: false,
   },
   pro: {
     battlecards: true,
@@ -175,6 +178,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     sentimentAnalysis: true,
     outcomeMetrics: true,
     industryBenchmarks: false,
+    competitorDocuments: true,
   },
   enterprise: {
     battlecards: true,
@@ -212,6 +216,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     sentimentAnalysis: true,
     outcomeMetrics: true,
     industryBenchmarks: true,
+    competitorDocuments: true,
   },
   unlimited: {
     battlecards: true,
@@ -249,6 +254,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     sentimentAnalysis: true,
     outcomeMetrics: true,
     industryBenchmarks: true,
+    competitorDocuments: true,
   },
 };
 

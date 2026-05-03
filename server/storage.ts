@@ -9,6 +9,7 @@ import {
   reports, 
   analysis,
   groundingDocuments,
+  competitorDocuments,
   globalGroundingDocuments,
   companyProfiles,
   assessments,
@@ -45,6 +46,8 @@ import {
   type InsertAnalysis,
   type GroundingDocument,
   type InsertGroundingDocument,
+  type CompetitorDocument,
+  type InsertCompetitorDocument,
   type GlobalGroundingDocument,
   type InsertGlobalGroundingDocument,
   type CompanyProfile,
@@ -274,6 +277,18 @@ export interface IStorage {
   updateGroundingDocumentText(id: string, extractedText: string): Promise<void>;
   updateGroundingDocumentSpeFileId(id: string, speFileId: string, speContainerId: string): Promise<void>;
   deleteGroundingDocument(id: string): Promise<void>;
+
+  // Competitor Documents (per-competitor uploads)
+  getCompetitorDocument(id: string): Promise<CompetitorDocument | undefined>;
+  getCompetitorDocumentsByCompetitor(competitorId: string, includeArchived?: boolean): Promise<CompetitorDocument[]>;
+  getActiveCompetitorDocumentsByCompetitor(competitorId: string): Promise<CompetitorDocument[]>;
+  getCompetitorDocumentsByTenant(tenantDomain: string): Promise<CompetitorDocument[]>;
+  createCompetitorDocument(doc: InsertCompetitorDocument): Promise<CompetitorDocument>;
+  updateCompetitorDocument(id: string, data: Partial<InsertCompetitorDocument>): Promise<CompetitorDocument | undefined>;
+  updateCompetitorDocumentText(id: string, extractedText: string): Promise<void>;
+  archiveCompetitorDocument(id: string): Promise<void>;
+  unarchiveCompetitorDocument(id: string): Promise<void>;
+  deleteCompetitorDocument(id: string): Promise<void>;
   
   // Global Grounding Document methods (application-wide AI context)
   getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
@@ -1160,6 +1175,69 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGroundingDocument(id: string): Promise<void> {
     await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
+  }
+
+  // Competitor Document methods
+  async getCompetitorDocument(id: string): Promise<CompetitorDocument | undefined> {
+    const [doc] = await db.select().from(competitorDocuments).where(eq(competitorDocuments.id, id));
+    return doc || undefined;
+  }
+
+  async getCompetitorDocumentsByCompetitor(competitorId: string, includeArchived = false): Promise<CompetitorDocument[]> {
+    const where = includeArchived
+      ? eq(competitorDocuments.competitorId, competitorId)
+      : and(
+          eq(competitorDocuments.competitorId, competitorId),
+          eq(competitorDocuments.status, "active"),
+        );
+    return await db.select().from(competitorDocuments)
+      .where(where)
+      .orderBy(desc(competitorDocuments.uploadedAt));
+  }
+
+  async getActiveCompetitorDocumentsByCompetitor(competitorId: string): Promise<CompetitorDocument[]> {
+    return this.getCompetitorDocumentsByCompetitor(competitorId, false);
+  }
+
+  async getCompetitorDocumentsByTenant(tenantDomain: string): Promise<CompetitorDocument[]> {
+    return await db.select().from(competitorDocuments)
+      .where(eq(competitorDocuments.tenantDomain, tenantDomain))
+      .orderBy(desc(competitorDocuments.uploadedAt));
+  }
+
+  async createCompetitorDocument(doc: InsertCompetitorDocument): Promise<CompetitorDocument> {
+    const [created] = await db.insert(competitorDocuments).values(doc).returning();
+    return created;
+  }
+
+  async updateCompetitorDocument(id: string, data: Partial<InsertCompetitorDocument>): Promise<CompetitorDocument | undefined> {
+    const [updated] = await db.update(competitorDocuments)
+      .set(data)
+      .where(eq(competitorDocuments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async updateCompetitorDocumentText(id: string, extractedText: string): Promise<void> {
+    await db.update(competitorDocuments)
+      .set({ extractedText })
+      .where(eq(competitorDocuments.id, id));
+  }
+
+  async archiveCompetitorDocument(id: string): Promise<void> {
+    await db.update(competitorDocuments)
+      .set({ status: "archived", archivedAt: new Date() })
+      .where(eq(competitorDocuments.id, id));
+  }
+
+  async unarchiveCompetitorDocument(id: string): Promise<void> {
+    await db.update(competitorDocuments)
+      .set({ status: "active", archivedAt: null })
+      .where(eq(competitorDocuments.id, id));
+  }
+
+  async deleteCompetitorDocument(id: string): Promise<void> {
+    await db.delete(competitorDocuments).where(eq(competitorDocuments.id, id));
   }
 
   // Global Grounding Document methods (application-wide AI context)

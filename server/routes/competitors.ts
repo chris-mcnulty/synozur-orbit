@@ -7,6 +7,7 @@ import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { insertCompetitorSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
+import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "../services/competitor-document-context";
 import Anthropic from "@anthropic-ai/sdk";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "../services/social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "../services/website-monitoring";
@@ -15,6 +16,7 @@ import { captureVisualAssets } from "../services/visual-capture";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "../services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { logAiUsage } from "./helpers";
+import { buildCompetitorDocumentContext } from "../services/competitor-document-context";
 
 export function registerCompetitorRoutes(app: Express) {
   // ==================== COMPETITOR ROUTES ====================
@@ -1605,14 +1607,27 @@ Return ONLY the JSON object, no other text.`;
               recentPosts: linkedInEngagement.recentPosts,
             } : undefined;
             
-            const analysis = await analyzeCompetitorWebsite(
+            // Per-competitor uploaded documents context
+            const competitorDocCtx = await buildCompetitorDocumentContext(
+              ctx.tenantDomain,
+              competitor.id,
+            );
+            const combinedGrounding = [groundingContext, competitorDocCtx.context]
+              .filter((s) => s && s.trim())
+              .join("\n\n") || undefined;
+
+            const baseAnalysis = await analyzeCompetitorWebsite(
               competitor.name,
               competitor.url,
               content,
-              undefined, // grounding context
+              combinedGrounding,
               linkedInData
             );
-            // Store analysis on competitor
+            // Store analysis on competitor (annotate sources used)
+            const analysis = {
+              ...baseAnalysis,
+              competitorDocSources: competitorDocCtx.sources,
+            };
             await storage.updateCompetitorAnalysis(competitor.id, analysis);
             await storage.updateCompetitorLastCrawl(competitor.id, new Date().toISOString());
             analyses.push({ competitor: competitor.name, ...analysis });
@@ -1635,12 +1650,27 @@ Return ONLY the JSON object, no other text.`;
         .filter(d => d.status === "dismissed")
         .map(d => ({ title: d.gapIdentifier, reason: d.reason }));
 
+      // Aggregate competitor-uploaded documents across all analyzed
+      // competitors so the gap analysis is grounded in first-party intel.
+      // Scope competitor-doc grounding to ONLY those competitors that were
+      // actually analyzed in this request — never pull in private docs from
+      // unrelated competitors.
+      const analyzedNames = new Set(analyses.map((a: any) => a.competitor));
+      const analyzedCompetitorIds = competitors
+        .filter((c) => analyzedNames.has(c.name))
+        .map((c) => c.id);
+      const aggregatedCompetitorDocs = await buildCompetitorDocumentContextForCompetitors(
+        ctx.tenantDomain,
+        analyzedCompetitorIds,
+      );
+      const gapGrounding = mergeGroundingContext(groundingContext, aggregatedCompetitorDocs.context);
+
       // Generate gap analysis with baseline and grounding context
       const gaps = await generateGapAnalysis(
-        ourPositioning, 
+        ourPositioning,
         analyses,
         baselineAnalysis,
-        groundingContext || undefined,
+        gapGrounding,
         dismissedGapsForAI.length > 0 ? dismissedGapsForAI : undefined
       );
 

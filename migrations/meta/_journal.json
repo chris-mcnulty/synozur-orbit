@@ -64,6 +64,13 @@
       "when": 1777900000000,
       "tag": "0008_manual_action_quotas",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778025600000,
+      "tag": "0009_competitor_documents",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import CompetitorDocuments from "@/components/CompetitorDocuments";
+import { useFeatureAccess } from "@/components/UpgradePrompt";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +60,7 @@ export default function CompetitorDetail() {
     },
   });
   const isB2C = contextData?.activeMarket?.businessType === "b2c";
+  const { isAllowed: competitorDocsAllowed } = useFeatureAccess("competitorDocuments");
 
   const { data: competitor, isLoading, error } = useQuery({
     queryKey: ["/api/competitors", id],
@@ -934,6 +937,9 @@ export default function CompetitorDetail() {
             <TabsTrigger value="seo" data-testid="tab-seo">
               <Search className="h-4 w-4 mr-1" /> SEO &amp; Visibility
             </TabsTrigger>
+            <TabsTrigger value="documents" data-testid="tab-documents">
+              <FileText className="h-4 w-4 mr-1" /> Documents
+            </TabsTrigger>
             <TabsTrigger value="history">Crawl History</TabsTrigger>
           </TabsList>
 
@@ -1623,6 +1629,22 @@ export default function CompetitorDetail() {
           
           <TabsContent value="seo" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <CompetitorSeoPanel competitorId={id!} competitorName={competitor.name} />
+          </TabsContent>
+
+          <TabsContent value="documents" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <CompetitorDocuments
+              competitorId={id!}
+              competitorName={competitor.name}
+              featureEnabled={competitorDocsAllowed}
+              latestSources={
+                (analysisData as { competitorDocSources?: Array<{
+                  id: string;
+                  competitorId: string;
+                  displayTitle: string;
+                  scopeTag: string | null;
+                }> } | null)?.competitorDocSources || []
+              }
+            />
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">

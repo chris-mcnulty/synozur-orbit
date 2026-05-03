@@ -10,6 +10,7 @@ import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes 
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
+import { registerCompetitorDocumentRoutes } from "./routes/competitor-documents";
 import { registerNotificationsActivityRoutes } from "./routes/notifications-activity";
 import { registerReportsAnalysisRoutes } from "./routes/reports-analysis";
 import { registerAdminRoutes } from "./routes/admin";
@@ -75,6 +76,7 @@ export async function registerRoutes(
   registerAuthRoutes(app);
   registerCompetitorRoutes(app);
   registerBattlecardRoutes(app);
+  registerCompetitorDocumentRoutes(app);
   registerNotificationsActivityRoutes(app);
   registerReportsAnalysisRoutes(app);
   registerAdminRoutes(app);

@@ -2,6 +2,7 @@ import { storage, type ContextFilter } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Activity, Competitor, CompanyProfile, IntelligenceBriefing } from "@shared/schema";
 import { fetchCompetitorNews, buildNewsSummary, type NewsArticle } from "./news-service";
+import { buildCompetitorDocumentContextForCompetitors } from "./competitor-document-context";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -195,6 +196,15 @@ export async function generateBriefing(
   const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
   const noCompetitorsTracked = competitors.length === 0;
 
+  // Competitor uploaded documents grounding
+  const competitorDocCtx = await buildCompetitorDocumentContextForCompetitors(
+    tenantDomain,
+    competitors.map((c) => c.id),
+  );
+  const competitorDocsSection = competitorDocCtx.context
+    ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
+    : "";
+
   const periodLabel = periodDays === 7 
     ? "Weekly" 
     : periodDays === 14 
@@ -204,6 +214,7 @@ export async function generateBriefing(
   const prompt = `You are a senior competitive intelligence analyst producing a ${periodLabel} Market Intelligence Briefing for ${baseline?.companyName || tenantDomain}.
 
 ${competitorContext}
+${competitorDocsSection}
 
 ## SIGNALS DETECTED (${activities.length} total over the past ${periodDays} days):
 ${signalSummary}
@@ -516,6 +527,15 @@ export async function generateBriefingData(
   const competitorContext = buildCompetitorContext(competitors, baseline || undefined);
   const noCompetitorsTracked = competitors.length === 0;
 
+  // Competitor uploaded documents grounding
+  const competitorDocCtx = await buildCompetitorDocumentContextForCompetitors(
+    tenantDomain,
+    competitors.map((c) => c.id),
+  );
+  const competitorDocsSection = competitorDocCtx.context
+    ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
+    : "";
+
   const periodLabel = periodDays === 7 
     ? "Weekly" 
     : periodDays === 14 
@@ -525,6 +545,7 @@ export async function generateBriefingData(
   const prompt = `You are a senior competitive intelligence analyst producing a ${periodLabel} Market Intelligence Briefing for ${baseline?.companyName || tenantDomain}.
 
 ${competitorContext}
+${competitorDocsSection}
 
 ## SIGNALS DETECTED (${activities.length} total over the past ${periodDays} days):
 ${signalSummary}

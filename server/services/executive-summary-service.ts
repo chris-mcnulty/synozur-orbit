@@ -40,6 +40,14 @@ export async function generateExecutiveSummary(
   const analysis = await storage.getLatestAnalysisByContext(contextFilter);
   const recommendations = await storage.getRecommendationsByContext(contextFilter);
   const groundingDocs = await storage.getGroundingDocumentsByContext(contextFilter, "executive_summary");
+
+  // Pull per-competitor uploaded documents to ground the executive
+  // summary with first-party intel.
+  const { buildCompetitorDocumentContextForCompetitors } = await import("./competitor-document-context");
+  const competitorDocCtx = await buildCompetitorDocumentContextForCompetitors(
+    tenantDomain,
+    competitors.map((c) => c.id),
+  );
   
   console.log("[ExecutiveSummary] Data loaded - Competitors:", competitors.length, "Docs:", groundingDocs.length, "Recs:", recommendations.length);
   
@@ -211,6 +219,9 @@ ${recsContext}
 
 ## Grounding Documents (${groundingDocs.length} uploaded)
 ${docsContext}
+
+${competitorDocCtx.context ? `## Competitor-Uploaded Documents (${competitorDocCtx.sources.length} sources)
+${competitorDocCtx.context.slice(0, 12000)}` : ""}
 
 ${noCompetitorsTracked ? `
 CRITICAL INSTRUCTION — ZERO COMPETITORS TRACKED:

@@ -4,6 +4,7 @@ import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardManualAction } from "./helpers";
 import { buildCompetitorToneContextBlock } from "../services/sentiment-context";
 import Anthropic from "@anthropic-ai/sdk";
+import { buildCompetitorDocumentContext } from "../services/competitor-document-context";
 
 export function registerBattlecardRoutes(app: Express) {
   // ==================== BATTLECARD ROUTES ====================
@@ -71,8 +72,17 @@ export function registerBattlecardRoutes(app: Express) {
         apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
         baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
       });
-      // Task #102: include captured tone snapshot from recent activities
+      // Include captured tone snapshot from recent activities
       const toneBlock = await buildCompetitorToneContextBlock(competitor.id);
+      // Pull per-competitor uploaded docs so the battlecard
+      // is grounded by first-party intel (datasheets, case studies, etc.)
+      const competitorDocCtx = await buildCompetitorDocumentContext(
+        ctx.tenantDomain,
+        competitor.id,
+      );
+      const competitorDocsSection = competitorDocCtx.context
+        ? `\n\n${competitorDocCtx.context}`
+        : "";
 
       const prompt = `You are a competitive intelligence analyst. Generate a comprehensive sales battlecard for competing against "${competitor.name}".
 
@@ -82,7 +92,7 @@ Our Analysis: ${JSON.stringify(ourContext.analysis, null, 2)}` : ""}
 Competitor: ${competitor.name} (${competitor.url})
 Competitor Analysis: ${JSON.stringify(competitorContext.analysis, null, 2)}
 Competitor Website Content: ${JSON.stringify(competitorContext.crawlData?.pages?.slice(0, 3), null, 2) || "Not crawled yet"}
-${toneBlock}
+${toneBlock}${competitorDocsSection}
 
 Generate a battlecard with the following sections in valid JSON format:
 {
@@ -170,7 +180,9 @@ Return ONLY valid JSON, no markdown or explanation.`;
         });
       }
 
-      res.json(battlecard);
+      // Surface "sources used" so the UI can show which competitor docs
+      // contributed to this battlecard generation.
+      res.json({ ...battlecard, competitorDocSources: competitorDocCtx.sources });
     } catch (error: any) {
       console.error("Battlecard generation error:", error);
       res.status(500).json({ error: error.message });

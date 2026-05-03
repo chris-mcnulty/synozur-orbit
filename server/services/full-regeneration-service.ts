@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
+import { buildCompetitorDocumentContext, buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "./competitor-document-context";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
@@ -211,15 +212,26 @@ async function runRegenerationInBackground(
             recentPosts: linkedInEngagement.recentPosts,
           } : undefined;
 
-          const analysis = await aiLimiter.anthropic.run(() =>
+          // Per-competitor uploaded documents feed analysis grounding
+          const competitorDocCtx = await buildCompetitorDocumentContext(
+            tenantDomain,
+            competitor.id,
+          );
+          const merged = mergeGroundingContext(groundingContext, competitorDocCtx.context);
+
+          const baseAnalysis = await aiLimiter.anthropic.run(() =>
             analyzeCompetitorWebsite(
               competitor.name,
               competitor.url,
               content,
-              undefined, // grounding context
+              merged,
               linkedInData
             )
           );
+          const analysis = {
+            ...baseAnalysis,
+            competitorDocSources: competitorDocCtx.sources,
+          };
           await storage.updateCompetitorAnalysis(competitor.id, analysis);
           await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
           analyses.push({ competitor: competitor.name, ...analysis });
@@ -271,11 +283,25 @@ async function runRegenerationInBackground(
     progress.stepsCompleted = 2;
 
     const baselineAnalysis = companyProfile?.analysisData as CompetitorAnalysis | undefined;
+
+    // Aggregate per-competitor documents across all competitors as
+    // additional grounding for gap analysis.
+    // Scope to only the competitors actually analyzed in this run
+    const analyzedNames = new Set(analyses.map((a: any) => a.competitor));
+    const analyzedCompetitorIds = competitors
+      .filter((c) => analyzedNames.has(c.name))
+      .map((c) => c.id);
+    const aggregatedDocs = await buildCompetitorDocumentContextForCompetitors(
+      tenantDomain,
+      analyzedCompetitorIds,
+    );
+    const gapGrounding = mergeGroundingContext(groundingContext, aggregatedDocs.context);
+
     const gaps = await generateGapAnalysis(
       ourPositioning,
       analyses,
       baselineAnalysis,
-      groundingContext || undefined
+      gapGrounding,
     );
     results.gapsIdentified = gaps.length;
 
