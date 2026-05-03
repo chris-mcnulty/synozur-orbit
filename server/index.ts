@@ -30,6 +30,9 @@ declare module "express-session" {
     userId: string;
     activeTenantId?: string;
     activeMarketId?: string;
+    // Optional same-origin path the user should land on after sign-in
+    // (used to resume `/oauth/authorize` flows after Entra/local login).
+    postLoginRedirect?: string;
   }
 }
 
@@ -615,6 +618,125 @@ app.use((req, res, next) => {
       )
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_audit_log_tenant_created_idx ON marketing_audit_log(tenant_domain, created_at DESC)`);
+
+    // OAuth 2.0 partner API tables (Task #96)
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS oauth_clients (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        name TEXT NOT NULL,
+        description TEXT,
+        logo_url TEXT,
+        contact_email TEXT,
+        redirect_uris TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        allowed_scopes TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        client_secret_hash TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        code_hash TEXT NOT NULL UNIQUE,
+        client_id VARCHAR NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        redirect_uri TEXT NOT NULL,
+        scopes TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        code_challenge TEXT NOT NULL,
+        code_challenge_method TEXT NOT NULL DEFAULT 'S256',
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        token_hash TEXT NOT NULL UNIQUE,
+        client_id VARCHAR NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        scopes TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        expires_at TIMESTAMP NOT NULL,
+        revoked_at TIMESTAMP,
+        last_used_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        token_hash TEXT NOT NULL UNIQUE,
+        access_token_id VARCHAR,
+        client_id VARCHAR NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        scopes TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+        expires_at TIMESTAMP NOT NULL,
+        revoked_at TIMESTAMP,
+        rotated_to_id VARCHAR,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS oauth_api_audit (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        token_id VARCHAR,
+        client_id VARCHAR,
+        user_id VARCHAR,
+        tenant_domain TEXT,
+        route TEXT NOT NULL,
+        method TEXT NOT NULL,
+        status INTEGER NOT NULL,
+        scope TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS oauth_api_audit_tenant_idx ON oauth_api_audit(tenant_domain, created_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS oauth_api_audit_client_idx ON oauth_api_audit(client_id, created_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS oauth_access_tokens_user_idx ON oauth_access_tokens(user_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS oauth_refresh_tokens_user_idx ON oauth_refresh_tokens(user_id)`);
+    // Add market_id columns (idempotent) so bearer-token requests can resolve
+    // to the same RequestContext (tenant + market) the user consented under.
+    await pgPool.query(`ALTER TABLE oauth_authorization_codes ADD COLUMN IF NOT EXISTS market_id VARCHAR`);
+    await pgPool.query(`ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS market_id VARCHAR`);
+    await pgPool.query(`ALTER TABLE oauth_refresh_tokens ADD COLUMN IF NOT EXISTS market_id VARCHAR`);
+
+    // Seed Galaxy as the first registered OAuth client (idempotent)
+    {
+      const existing = await pgPool.query(`SELECT id FROM oauth_clients WHERE name = 'Galaxy' LIMIT 1`);
+      if (existing.rows.length === 0) {
+        const allScopes = [
+          "read:battlecards",
+          "read:briefings",
+          "read:personas",
+          "read:roadmap",
+          "read:content-library",
+          "read:brand-library",
+          "read:campaigns",
+          "read:reports",
+          "read:posts",
+        ];
+        const galaxyRedirects = (process.env.GALAXY_OAUTH_REDIRECT_URIS || "https://galaxy.example.com/oauth/callback")
+          .split(/[,\s]+/)
+          .filter(Boolean);
+        await pgPool.query(
+          `INSERT INTO oauth_clients (name, description, contact_email, redirect_uris, allowed_scopes, status)
+           VALUES ($1, $2, $3, $4, $5, 'active')`,
+          [
+            "Galaxy",
+            "Official Galaxy partner portal — discovery and read-only sync of competitive intelligence.",
+            "partners@galaxy.example.com",
+            galaxyRedirects,
+            allScopes,
+          ]
+        );
+        log("Seeded Galaxy as the first OAuth client");
+      }
+    }
 
     log("Startup migrations completed");
   } catch (err) {

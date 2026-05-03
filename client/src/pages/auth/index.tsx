@@ -55,11 +55,40 @@ export default function AuthPage() {
     }
   }, [location]);
 
-  // UX1: Redirect to last-visited page (or /app by default)
+  // Resolve where to send the user after a successful sign-in. If the URL
+  // carries `?next=/...` (e.g. the OAuth `/oauth/authorize` flow that bounced
+  // an unauthenticated user here), honor that — but only if it is a safe
+  // same-origin path. Otherwise fall back to the last-visited app page,
+  // and finally to `/app`.
+  const resolvePostLoginTarget = (): string => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      return next;
+    }
+    const lastPage = localStorage.getItem("orbit_last_page");
+    return lastPage && lastPage.startsWith("/app") ? lastPage : "/app";
+  };
+
+  /**
+   * Navigate to a post-login target. SPA routes (`/app/...`) use Wouter so
+   * we keep the React tree mounted; non-SPA targets like
+   * `/oauth/authorize?...` are server-rendered routes, so we MUST do a full
+   * document navigation, otherwise Wouter would render the SPA 404 instead
+   * of bouncing the user back to the consent screen.
+   */
+  const navigateAfterLogin = (target: string) => {
+    if (target.startsWith("/app")) {
+      setLocation(target);
+    } else {
+      window.location.assign(target);
+    }
+  };
+
+  // UX1: Redirect to next (if pending OAuth) or last-visited page
   useEffect(() => {
     if (user) {
-      const lastPage = localStorage.getItem("orbit_last_page");
-      setLocation(lastPage && lastPage.startsWith("/app") ? lastPage : "/app");
+      navigateAfterLogin(resolvePostLoginTarget());
     }
   }, [user, setLocation]);
 
@@ -70,8 +99,7 @@ export default function AuthPage() {
 
     try {
       await login(signinData.email, signinData.password);
-      const lastPage = localStorage.getItem("orbit_last_page");
-      setLocation(lastPage && lastPage.startsWith("/app") ? lastPage : "/app");
+      navigateAfterLogin(resolvePostLoginTarget());
     } catch (err: any) {
       setError(err.message || "Login failed");
     } finally {
@@ -231,7 +259,14 @@ export default function AuthPage() {
                   <Button 
                     variant="outline" 
                     className="w-full h-12" 
-                    onClick={() => window.location.href = "/api/auth/entra"}
+                    onClick={() => {
+                      const params = new URLSearchParams(window.location.search);
+                      const next = params.get("next");
+                      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "";
+                      window.location.href = safeNext
+                        ? `/api/auth/entra?next=${encodeURIComponent(safeNext)}`
+                        : "/api/auth/entra";
+                    }}
                     data-testid="button-signin-microsoft"
                   >
                     <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -408,7 +443,14 @@ export default function AuthPage() {
                   <Button 
                     variant="outline" 
                     className="w-full h-12" 
-                    onClick={() => window.location.href = "/api/auth/entra"}
+                    onClick={() => {
+                      const params = new URLSearchParams(window.location.search);
+                      const next = params.get("next");
+                      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "";
+                      window.location.href = safeNext
+                        ? `/api/auth/entra?next=${encodeURIComponent(safeNext)}`
+                        : "/api/auth/entra";
+                    }}
                     data-testid="button-signup-microsoft"
                   >
                     <svg className="w-5 h-5 mr-2" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">

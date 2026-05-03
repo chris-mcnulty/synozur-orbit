@@ -2532,6 +2532,121 @@ export const insertMarketingAuditLogSchema = createInsertSchema(marketingAuditLo
 export type MarketingAuditLog = typeof marketingAuditLog.$inferSelect;
 export type InsertMarketingAuditLog = z.infer<typeof insertMarketingAuditLogSchema>;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// OAuth 2.0 provider — Task #96 (Galaxy partner API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const PARTNER_API_SCOPES = [
+  "read:battlecards",
+  "read:briefings",
+  "read:personas",
+  "read:roadmap",
+  "read:content-library",
+  "read:brand-library",
+  "read:campaigns",
+  "read:reports",
+  "read:posts",
+] as const;
+export type PartnerApiScope = (typeof PARTNER_API_SCOPES)[number];
+
+export const PARTNER_API_SCOPE_LABELS: Record<PartnerApiScope, string> = {
+  "read:battlecards": "View your sales battlecards",
+  "read:briefings": "View your intelligence briefings",
+  "read:personas": "View your buyer personas",
+  "read:roadmap": "View your product roadmap items",
+  "read:content-library": "View your content library entries",
+  "read:brand-library": "View your brand library assets",
+  "read:campaigns": "View your marketing campaigns",
+  "read:reports": "View your generated reports",
+  "read:posts": "View your AI-generated social posts",
+};
+
+export const oauthClients = pgTable("oauth_clients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  logoUrl: text("logo_url"),
+  contactEmail: text("contact_email"),
+  redirectUris: text("redirect_uris").array().notNull(),
+  allowedScopes: text("allowed_scopes").array().notNull(),
+  clientSecretHash: text("client_secret_hash"),
+  status: text("status").notNull().default("active"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const oauthAuthorizationCodes = pgTable("oauth_authorization_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  codeHash: text("code_hash").notNull().unique(),
+  clientId: varchar("client_id").notNull().references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id"),
+  redirectUri: text("redirect_uri").notNull(),
+  scopes: text("scopes").array().notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const oauthAccessTokens = pgTable("oauth_access_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tokenHash: text("token_hash").notNull().unique(),
+  clientId: varchar("client_id").notNull().references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id"),
+  scopes: text("scopes").array().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const oauthRefreshTokens = pgTable("oauth_refresh_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tokenHash: text("token_hash").notNull().unique(),
+  accessTokenId: varchar("access_token_id"),
+  clientId: varchar("client_id").notNull().references(() => oauthClients.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id"),
+  scopes: text("scopes").array().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  rotatedToId: varchar("rotated_to_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const oauthApiAudit = pgTable("oauth_api_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tokenId: varchar("token_id"),
+  clientId: varchar("client_id"),
+  userId: varchar("user_id"),
+  tenantDomain: text("tenant_domain"),
+  route: text("route").notNull(),
+  method: text("method").notNull(),
+  status: integer("status").notNull(),
+  scope: text("scope"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index("oauth_api_audit_tenant_idx").on(table.tenantDomain, table.createdAt),
+  clientIdx: index("oauth_api_audit_client_idx").on(table.clientId, table.createdAt),
+}));
+
+export const insertOauthClientSchema = createInsertSchema(oauthClients).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type OauthClient = typeof oauthClients.$inferSelect;
+export type InsertOauthClient = z.infer<typeof insertOauthClientSchema>;
+export type OauthAccessToken = typeof oauthAccessTokens.$inferSelect;
+export type OauthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
+export type OauthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
+export type OauthApiAudit = typeof oauthApiAudit.$inferSelect;
+
 export const CURRENT_APP_VERSION = "2.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [

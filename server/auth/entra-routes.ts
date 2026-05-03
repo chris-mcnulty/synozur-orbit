@@ -32,6 +32,16 @@ export function registerEntraRoutes(app: Express) {
       req.session.userId = undefined;
     }
 
+    // Preserve a safe same-origin `next` (e.g. /oauth/authorize?...) across
+    // the Entra round trip so the user lands on the originally-requested URL
+    // (typically the OAuth consent screen) after sign-in completes.
+    const nextParam = typeof req.query.next === "string" ? req.query.next : "";
+    if (nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")) {
+      req.session.postLoginRedirect = nextParam;
+    } else {
+      req.session.postLoginRedirect = undefined;
+    }
+
     const authCodeUrlParameters: msal.AuthorizationUrlRequest = {
       scopes: SCOPES,
       redirectUri: REDIRECT_URI,
@@ -104,12 +114,19 @@ export function registerEntraRoutes(app: Express) {
 
       let user = await storage.getUserByEntraId(entraId);
 
+      const consumePostLoginRedirect = (): string => {
+        const target = req.session.postLoginRedirect;
+        req.session.postLoginRedirect = undefined;
+        if (target && target.startsWith("/") && !target.startsWith("//")) return target;
+        return "/app";
+      };
+
       if (user) {
         if (user.status === "pending_verification") {
           return res.redirect(`/auth/verify-pending?email=${encodeURIComponent(email)}`);
         }
         req.session.userId = user.id;
-        return res.redirect("/app");
+        return res.redirect(consumePostLoginRedirect());
       }
 
       user = await storage.getUserByEmail(email);
@@ -127,7 +144,7 @@ export function registerEntraRoutes(app: Express) {
           authProvider: "entra",
         });
         req.session.userId = user.id;
-        return res.redirect("/app");
+        return res.redirect(consumePostLoginRedirect());
       }
 
       const existingTenant = await storage.getTenantByDomain(domain);
@@ -153,7 +170,7 @@ export function registerEntraRoutes(app: Express) {
         });
 
         req.session.userId = user.id;
-        return res.redirect("/app");
+        return res.redirect(consumePostLoginRedirect());
       }
 
       // Check if domain is blocked from auto-provisioning before creating pending user

@@ -1033,6 +1033,25 @@ export default function Settings() {
               </div>
               <Button variant="outline" size="sm">Connect</Button>
             </div>
+            <Separator />
+            <div className="flex items-center justify-between" data-testid="row-developer-portal">
+              <div className="space-y-0.5">
+                <Label className="text-base">Developer / Partner API</Label>
+                <p className="text-sm text-muted-foreground">
+                  Build third-party integrations using our OAuth 2.0 + PKCE Partner API. Available on Enterprise and Unlimited plans.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a href="/app/developer">
+                  <Button variant="outline" size="sm" data-testid="link-developer-portal">Developer portal</Button>
+                </a>
+                {user?.role === "Global Admin" && (
+                  <a href="/app/admin/oauth-clients">
+                    <Button size="sm" data-testid="link-oauth-clients-admin">Manage OAuth apps</Button>
+                  </a>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

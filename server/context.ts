@@ -1,7 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
+import { db } from "./db";
+import { oauthAccessTokens } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import crypto from "crypto";
 
-// Helper: ensure a default market exists for a tenant, creating one if needed
 async function ensureDefaultMarket(tenantId: string, userId: string) {
   let defaultMarket = await storage.getDefaultMarket(tenantId);
   if (!defaultMarket) {
@@ -25,6 +28,11 @@ export interface RequestContext {
   userRole: string;
   tenantDomain: string;
   isDefaultMarket: boolean;
+  // Set when the request is authenticated via an OAuth bearer token (partner API)
+  tokenScopes?: string[];
+  tokenId?: string;
+  oauthClientId?: string;
+  isPartnerApi?: boolean;
 }
 
 export class ContextError extends Error {
@@ -36,7 +44,90 @@ export class ContextError extends Error {
   }
 }
 
+export function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function extractBearerToken(req: Request): string | null {
+  const auth = req.headers.authorization || "";
+  if (!auth.toLowerCase().startsWith("bearer ")) return null;
+  const token = auth.slice(7).trim();
+  return token || null;
+}
+
+async function buildContextFromBearer(req: Request): Promise<RequestContext | null> {
+  const token = extractBearerToken(req);
+  if (!token) return null;
+  const tokenHash = hashToken(token);
+  const [row] = await db
+    .select()
+    .from(oauthAccessTokens)
+    .where(eq(oauthAccessTokens.tokenHash, tokenHash));
+  if (!row) {
+    throw new ContextError("Invalid bearer token", 401);
+  }
+  if (row.revokedAt) {
+    throw new ContextError("Token revoked", 401);
+  }
+  if (row.expiresAt && new Date(row.expiresAt).getTime() <= Date.now()) {
+    throw new ContextError("Token expired", 401);
+  }
+
+  const user = await storage.getUser(row.userId);
+  if (!user) throw new ContextError("Token user not found", 401);
+
+  const tenant = await storage.getTenantByDomain(row.tenantDomain);
+  if (!tenant) throw new ContextError("Tenant not found", 403);
+
+  // Resolve the market the consent was granted against. Fall back to the
+  // tenant's default market only when the token has no stored market_id
+  // (legacy tokens issued before the column existed).
+  let marketId = row.marketId || "";
+  let isDefaultMarket = false;
+  const defaultMarket = await storage.getDefaultMarket(tenant.id);
+
+  if (marketId) {
+    const valid = await storage.validateMarketBelongsToTenant(marketId, tenant.id);
+    if (!valid) {
+      // Market was deleted or no longer belongs to the tenant → fail closed.
+      throw new ContextError("Token market no longer accessible", 403);
+    }
+    isDefaultMarket = defaultMarket?.id === marketId;
+  } else {
+    const fallback = defaultMarket || (await ensureDefaultMarket(tenant.id, row.userId));
+    marketId = fallback.id;
+    isDefaultMarket = true;
+  }
+
+  // Update last_used_at non-blocking
+  db.update(oauthAccessTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(oauthAccessTokens.id, row.id))
+    .catch(() => {});
+
+  return {
+    userId: row.userId,
+    tenantId: tenant.id,
+    marketId,
+    userRole: user.role,
+    tenantDomain: tenant.domain || row.tenantDomain,
+    isDefaultMarket,
+    tokenScopes: row.scopes || [],
+    tokenId: row.id,
+    oauthClientId: row.clientId,
+    isPartnerApi: true,
+  };
+}
+
 export async function getRequestContext(req: Request): Promise<RequestContext> {
+  // Bearer token authentication (partner API). When an Authorization: Bearer
+  // header is present we honor it regardless of any session cookie that may
+  // also be attached, so partner clients always get a partner-API context.
+  if ((req.headers.authorization || "").toLowerCase().startsWith("bearer ")) {
+    const ctx = await buildContextFromBearer(req);
+    if (ctx) return ctx;
+  }
+
   const userId = req.session?.userId;
   if (!userId) {
     throw new ContextError("Not authenticated", 401);
@@ -49,7 +140,7 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
 
   const userDomain = user.email.split("@")[1];
   const userTenant = await storage.getTenantByDomain(userDomain);
-  
+
   if (!userTenant) {
     throw new ContextError("User tenant not found", 403);
   }
@@ -76,14 +167,12 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
   }
 
   if (!activeMarketId) {
-    // Defensive: ensure default market exists (handles legacy tenants or creation failures)
     const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
     activeMarketId = defaultMarket.id;
     req.session.activeMarketId = activeMarketId;
   } else {
     const marketValid = await storage.validateMarketBelongsToTenant(activeMarketId, activeTenantId);
     if (!marketValid) {
-      // Fall back to default market (create if needed)
       const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
       activeMarketId = defaultMarket.id;
       req.session.activeMarketId = activeMarketId;
@@ -91,11 +180,10 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
   }
 
   const finalTenant = await storage.getTenant(activeTenantId);
-  
-  // Determine if current market is the default market
+
   const defaultMarket = await storage.getDefaultMarket(activeTenantId);
   const isDefaultMarket = defaultMarket?.id === activeMarketId;
-  
+
   return {
     userId,
     tenantId: activeTenantId,
@@ -162,14 +250,14 @@ export async function validateResourceAccess(
   if (!resourceTenantId) {
     return true;
   }
-  
+
   if (resourceTenantId !== context.tenantId) {
     return false;
   }
-  
+
   if (resourceMarketId && resourceMarketId !== context.marketId) {
     return false;
   }
-  
+
   return true;
 }

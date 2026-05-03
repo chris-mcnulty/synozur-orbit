@@ -3,7 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { UserProvider } from "@/lib/userContext";
+import { UserProvider, useUser } from "@/lib/userContext";
 import { UpgradeModalProvider, PageFeatureGate } from "@/components/UpgradePrompt";
 import { ThemeProvider } from "next-themes";
 import { HelmetProvider } from "react-helmet-async";
@@ -68,6 +68,15 @@ import CompanyRosterPage from "@/pages/app/company-roster";
 import PositioningMapPage from "@/pages/app/positioning-map";
 import PublicFeedbackPage from "@/pages/feedback-public";
 import SeoDashboard from "@/pages/app/seo-dashboard";
+import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
+import DeveloperPortalPage from "@/pages/app/developer";
+
+function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useUser();
+  if (loading) return null;
+  if (!user || user.role !== "Global Admin") return <NotFound />;
+  return <>{children}</>;
+}
 
 function ProductFeaturesRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -113,6 +122,8 @@ function Router() {
       <Route path="/app/admin/organizations" component={AdminOrganizationsPage} />
       <Route path="/app/admin/ai-settings" component={AISettingsPage} />
       <Route path="/app/admin/spe-storage" component={SpeStoragePage} />
+      <Route path="/app/admin/oauth-clients">{() => <GlobalAdminOnly><PageFeatureGate featureKey="partnerApi" label="Partner API" description="Manage OAuth client apps and access tokens. Available on Enterprise and Unlimited plans."><OAuthClientsAdminPage /></PageFeatureGate></GlobalAdminOnly>}</Route>
+      <Route path="/app/developer">{() => <PageFeatureGate featureKey="partnerApi" label="Developer Portal" description="Build third-party integrations using Orbit's OAuth 2.0 Partner API. Available on Enterprise and Unlimited plans."><DeveloperPortalPage /></PageFeatureGate>}</Route>
       <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductsPage /></PageFeatureGate>}</Route>

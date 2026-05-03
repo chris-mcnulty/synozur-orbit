@@ -27,6 +27,9 @@ import { registerPlatformRoutes } from "./routes/platform";
 import { registerPositioningMapRoutes } from "./routes/positioning-map";
 import { registerPlannerRoutes } from "./routes/planner";
 import { registerSeoRoutes } from "./routes/seo";
+import { registerOAuthProviderRoutes } from "./routes/oauth-provider";
+import { registerPartnerApiRoutes } from "./routes/partner-api";
+import { registerAdminOAuthClientRoutes } from "./routes/admin-oauth-clients";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -88,6 +91,9 @@ export async function registerRoutes(
   registerPositioningMapRoutes(app);
   registerPlannerRoutes(app);
   registerSeoRoutes(app);
+  registerOAuthProviderRoutes(app);
+  registerPartnerApiRoutes(app);
+  registerAdminOAuthClientRoutes(app);
 
   return httpServer;
 }
