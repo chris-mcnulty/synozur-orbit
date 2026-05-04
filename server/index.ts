@@ -920,6 +920,9 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS rate_limit_buckets_reset_at_idx ON rate_limit_buckets(reset_at)`);
 
+    // Synozur is the app creator — always pin to unlimited with manual billing
+    await pgPool.query(`UPDATE tenants SET billing_managed_manually = true, plan = 'unlimited' WHERE domain = 'synozur.com' AND (billing_managed_manually = false OR plan != 'unlimited')`);
+
     log("Startup migrations completed");
   } catch (err) {
     console.error("[Startup] Migration error:", err);
