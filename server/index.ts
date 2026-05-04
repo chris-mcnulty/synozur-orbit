@@ -804,6 +804,8 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`ALTER TABLE manual_action_usage ADD COLUMN IF NOT EXISTS cost_tier TEXT NOT NULL DEFAULT 'medium'`);
     await pgPool.query(`ALTER TABLE manual_action_usage ADD COLUMN IF NOT EXISTS user_id VARCHAR`);
+    await pgPool.query(`ALTER TABLE manual_action_usage ALTER COLUMN period_start SET DEFAULT now()`);
+    await pgPool.query(`ALTER TABLE manual_action_usage ALTER COLUMN period_start DROP NOT NULL`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS manual_action_usage_tenant_action_idx ON manual_action_usage(tenant_domain, action, occurred_at)`);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS manual_action_bonuses (
