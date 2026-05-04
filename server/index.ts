@@ -895,6 +895,27 @@ app.use((req, res, next) => {
 
     // Task #84: per-product toggle for feedback status-update emails
     await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS feedback_email_notifications_enabled BOOLEAN NOT NULL DEFAULT true`);
+    await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS public_feedback_enabled BOOLEAN NOT NULL DEFAULT false`);
+    await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS public_feedback_token TEXT`);
+
+    // Mark briefings with empty/null core fields as failed so the UI shows
+    // the failed-state recovery card instead of a blank/crashing detail page.
+    await pgPool.query(`
+      UPDATE intelligence_briefings
+      SET status = 'failed',
+          briefing_data = jsonb_set(
+            COALESCE(briefing_data, '{}'::jsonb),
+            '{error}',
+            '"Briefing was generated with empty content. Please regenerate."'::jsonb,
+            true
+          )
+      WHERE status = 'published'
+        AND (
+          briefing_data IS NULL
+          OR briefing_data->'executiveSummary' IS NULL
+          OR jsonb_typeof(briefing_data->'executiveSummary') = 'null'
+        )
+    `);
 
     // ── Missing tenant columns that production DB lacks ──────────────────
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seo_refresh_interval_days INTEGER DEFAULT 7`);

@@ -703,7 +703,24 @@ export default function IntelligenceBriefingPage() {
     setShareEmails(newEmails);
   };
 
-  const bd = briefing?.briefingData;
+  const rawBd = briefing?.briefingData;
+  const bd = rawBd
+    ? {
+        ...rawBd,
+        executiveSummary: rawBd.executiveSummary ?? "",
+        keyThemes: rawBd.keyThemes ?? [],
+        riskAlerts: rawBd.riskAlerts ?? [],
+        competitorMovements: rawBd.competitorMovements ?? [],
+        actionItems: rawBd.actionItems ?? [],
+        newsArticles: rawBd.newsArticles ?? [],
+        signalDigest: {
+          ...(rawBd.signalDigest ?? {}),
+          totalSignals: rawBd.signalDigest?.totalSignals ?? 0,
+          highlights: rawBd.signalDigest?.highlights ?? [],
+          byType: rawBd.signalDigest?.byType ?? {},
+        },
+      }
+    : undefined;
   const isLoading = loadingList || loadingBriefing;
 
   if (!isAllowed) {
