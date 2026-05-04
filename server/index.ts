@@ -920,7 +920,10 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS rate_limit_buckets_reset_at_idx ON rate_limit_buckets(reset_at)`);
 
-    // Synozur is the app creator — always pin to unlimited with manual billing
+    // Any tenant with a directly-assigned paid plan but no Stripe subscription
+    // should be treated as manually managed so resolveEffectivePlan trusts it.
+    await pgPool.query(`UPDATE tenants SET billing_managed_manually = true WHERE plan IN ('pro','enterprise','unlimited') AND billing_managed_manually = false AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')`);
+    // Synozur is the app creator — always pin to unlimited
     await pgPool.query(`UPDATE tenants SET billing_managed_manually = true, plan = 'unlimited' WHERE domain = 'synozur.com' AND (billing_managed_manually = false OR plan != 'unlimited')`);
 
     log("Startup migrations completed");

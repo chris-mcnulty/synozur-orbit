@@ -739,34 +739,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}
         <ContextBar />
 
-        {showGraceBanner && (
-          <div
-            className="bg-destructive/10 border-b border-destructive/30 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3"
-            data-testid="banner-payment-grace"
-          >
-            <div className="text-destructive flex-1 min-w-0">
-              <strong>Payment failed.</strong> Update your payment method
-              {graceUntil ? <> before <strong>{graceUntil}</strong></> : null} to keep your subscription active.
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={openBillingPortalFromBanner}
-                className="px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground text-xs font-medium hover:opacity-90"
-                data-testid="banner-payment-grace-action"
-              >
-                Manage Billing
-              </button>
-              <button
-                onClick={dismissGraceBanner}
-                aria-label="Dismiss"
-                className="p-1.5 rounded-md text-destructive hover:bg-destructive/20 transition-colors"
-                data-testid="button-dismiss-payment-grace"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Payment grace banner hidden — Stripe billing not yet active */}
         <div className="flex-1 overflow-y-auto pb-16 lg:pb-0">
           <div className="container max-w-7xl mx-auto p-4 md:p-8 lg:p-10 space-y-8">
             {breadcrumbs === undefined ? (

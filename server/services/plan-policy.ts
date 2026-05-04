@@ -395,10 +395,15 @@ export function resolveEffectivePlan(tenant: {
   const persisted = (tenant.plan || "free").toLowerCase();
   if (tenant.billingManagedManually) return persisted;
 
+  // If there's no Stripe subscription at all, trust the persisted plan.
+  // Only apply Stripe-based downgrade logic when a subscription was
+  // actually set up (i.e. the tenant went through Stripe checkout at
+  // some point). This ensures directly-assigned plans (e.g. evaluation
+  // tenants, internal orgs) are never downgraded.
+  if (!tenant.stripeSubscriptionId) return persisted;
+
   const status = (tenant.subscriptionStatus || "").toLowerCase();
-  const hasPaid =
-    !!tenant.stripeSubscriptionId &&
-    (status === "active" || status === "trialing");
+  const hasPaid = status === "active" || status === "trialing";
 
   let inGrace = false;
   if (tenant.paymentGraceUntil) {

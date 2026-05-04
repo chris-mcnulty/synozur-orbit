@@ -1,33 +1,12 @@
-import React, { useState, useCallback, useEffect, createContext, useContext } from "react";
+import React, { useCallback, useEffect, createContext, useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Gem, Lock, ArrowRight, ShieldAlert, AlertTriangle, Loader2 } from "lucide-react";
+import { Gem, Lock, ArrowRight, ShieldAlert, AlertTriangle } from "lucide-react";
 import { ApiError, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/layout/AppLayout";
-
-// Self-serve Pro upgrade via Stripe Checkout. Enterprise/Unlimited
-// remain "talk to sales".
-async function startProCheckout(): Promise<void> {
-  try {
-    const r = await fetch("/api/billing/checkout-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ seats: 1 }),
-    });
-    const data = await r.json();
-    if (!r.ok || !data.url) {
-      window.location.href = "/app/settings#plan-usage";
-      return;
-    }
-    window.location.href = data.url;
-  } catch {
-    window.location.href = "/app/settings#plan-usage";
-  }
-}
 
 function UpgradeCta({
   requiredPlan,
@@ -42,33 +21,12 @@ function UpgradeCta({
   children: React.ReactNode;
   testId?: string;
 }) {
-  const [busy, setBusy] = useState(false);
-  const isPro = requiredPlan.toLowerCase() === "pro";
-  if (!isPro) {
-    return (
-      <a href="mailto:contactus@synozur.com">
-        <Button size={size} variant={variant} data-testid={testId}>
-          {children}
-        </Button>
-      </a>
-    );
-  }
   return (
-    <Button
-      size={size}
-      variant={variant}
-      onClick={async () => {
-        if (busy) return;
-        setBusy(true);
-        await startProCheckout();
-        setBusy(false);
-      }}
-      disabled={busy}
-      data-testid={testId}
-    >
-      {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-      {children}
-    </Button>
+    <a href="mailto:contactus@synozur.com">
+      <Button size={size} variant={variant} data-testid={testId}>
+        {children}
+      </Button>
+    </a>
   );
 }
 
@@ -86,19 +44,9 @@ export function UpgradePrompt({ feature, requiredPlan, description, inline, clas
       <div className={`flex items-center gap-2 text-sm text-muted-foreground ${className || ""}`} data-testid="upgrade-prompt-inline">
         <Lock className="h-3.5 w-3.5" />
         <span>{feature} requires {requiredPlan}+</span>
-        {requiredPlan.toLowerCase() === "pro" ? (
-          <button
-            onClick={() => startProCheckout()}
-            className="text-primary hover:underline text-xs"
-            data-testid="link-upgrade-inline"
-          >
-            Upgrade
-          </button>
-        ) : (
-          <a href="mailto:contactus@synozur.com" className="text-primary hover:underline text-xs">
-            Talk to Sales
-          </a>
-        )}
+        <a href="mailto:contactus@synozur.com" className="text-primary hover:underline text-xs">
+          Contact Us
+        </a>
       </div>
     );
   }
@@ -117,7 +65,7 @@ export function UpgradePrompt({ feature, requiredPlan, description, inline, clas
           Requires {requiredPlan} Plan
         </Badge>
         <UpgradeCta requiredPlan={requiredPlan} testId="button-upgrade">
-          {requiredPlan.toLowerCase() === "pro" ? "Upgrade to Pro" : "Contact Us to Upgrade"}
+          Contact Us to Upgrade
           <ArrowRight className="ml-2 h-4 w-4" />
         </UpgradeCta>
       </CardContent>
@@ -489,7 +437,7 @@ export function UpgradeModalProvider({ children }: { children: React.ReactNode }
               Maybe Later
             </Button>
             <UpgradeCta requiredPlan={state.requiredPlan} testId="button-upgrade-modal">
-              {state.requiredPlan.toLowerCase() === "pro" ? "Upgrade to Pro" : "Contact Us to Upgrade"}
+              Contact Us to Upgrade
               <ArrowRight className="ml-2 h-4 w-4" />
             </UpgradeCta>
           </DialogFooter>

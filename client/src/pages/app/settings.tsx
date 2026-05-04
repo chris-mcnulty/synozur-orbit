@@ -69,6 +69,18 @@ interface ConsultantGrant {
 // Billing actions inside the Plan & Usage card.
 // Domain Admin can launch Stripe Checkout (Pro upgrade) or Customer Portal.
 function BillingActions() {
+  return (
+    <div className="text-sm text-muted-foreground" data-testid="billing-managed-manually">
+      Plan management is handled directly by the Synozur team. Contact{" "}
+      <a className="text-primary hover:underline" href="mailto:contactus@synozur.com">
+        contactus@synozur.com
+      </a>{" "}
+      for plan changes or questions.
+    </div>
+  );
+}
+
+function BillingActions_STRIPE_DISABLED() {
   const [busy, setBusy] = useState<string | null>(null);
   const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
 
