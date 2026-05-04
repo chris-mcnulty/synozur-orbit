@@ -898,6 +898,13 @@ app.use((req, res, next) => {
     // Task #84: per-product toggle for feedback status-update emails
     await pgPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS feedback_email_notifications_enabled BOOLEAN NOT NULL DEFAULT true`);
 
+    // ── Missing tenant columns that production DB lacks ──────────────────
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seo_refresh_interval_days INTEGER DEFAULT 7`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_url TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_api_key TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_workspace_id TEXT`);
+    await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_connected_at TIMESTAMP`);
+
     // ── Task #86: Persistent tenant-aware rate limiter ──────────────────
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS public_rate_limit_per_minute INTEGER`);
     await pgPool.query(`
