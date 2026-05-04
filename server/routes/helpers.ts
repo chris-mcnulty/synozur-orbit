@@ -357,6 +357,7 @@ export async function guardManualAction(
     if (err instanceof ContextError) {
       res.status(err.status).json({ error: err.message });
     } else {
+      console.error(`[guardManualAction] Unexpected error for action=${action}:`, err);
       res.status(500).json({ error: "Internal server error" });
     }
     return false;

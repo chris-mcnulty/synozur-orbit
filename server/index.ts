@@ -920,6 +920,181 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS rate_limit_buckets_reset_at_idx ON rate_limit_buckets(reset_at)`);
 
+    // === Tables from recent task merges (Task #103 Collaboration, #104 Sentiment/GA4, #105 Competitor Docs, etc.) ===
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS competitor_documents (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        competitor_id VARCHAR NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        display_title TEXT NOT NULL,
+        scope_tag TEXT,
+        object_storage_path TEXT,
+        spe_file_id TEXT,
+        spe_container_id TEXT,
+        byte_size INTEGER NOT NULL,
+        mime_type TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        extracted_text TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        uploaded_by_user_id VARCHAR NOT NULL REFERENCES users(id),
+        uploaded_at TIMESTAMP NOT NULL DEFAULT now(),
+        archived_at TIMESTAMP
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS competitor_documents_tenant_competitor_status_idx ON competitor_documents(tenant_domain, competitor_id, status)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS competitor_documents_competitor_idx ON competitor_documents(competitor_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS analytics_connections (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        provider TEXT NOT NULL DEFAULT 'ga4',
+        property_id TEXT,
+        property_name TEXT,
+        access_token_enc TEXT,
+        refresh_token_enc TEXT,
+        token_expires_at TIMESTAMP,
+        scope TEXT,
+        status TEXT NOT NULL DEFAULT 'connected',
+        last_error TEXT,
+        last_sync_at TIMESTAMP,
+        connected_by VARCHAR REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS analytics_daily (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        date TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT '(direct)',
+        medium TEXT NOT NULL DEFAULT '(none)',
+        campaign TEXT,
+        sessions INTEGER NOT NULL DEFAULT 0,
+        users INTEGER NOT NULL DEFAULT 0,
+        conversions INTEGER NOT NULL DEFAULT 0,
+        revenue INTEGER NOT NULL DEFAULT 0,
+        orbit_clicks INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_scores (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        week_start TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        components JSONB NOT NULL,
+        business_type TEXT NOT NULL DEFAULT 'b2b',
+        sic_code TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS orbit_score_benchmarks (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        sic_code TEXT NOT NULL,
+        week_start TEXT NOT NULL,
+        p50 INTEGER NOT NULL,
+        p75 INTEGER NOT NULL,
+        sample_size INTEGER NOT NULL,
+        component_p50 JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS collaboration_threads (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        target_kind TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS collab_threads_target_idx ON collaboration_threads(tenant_domain, target_kind, target_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS collaboration_comments (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        thread_id VARCHAR NOT NULL REFERENCES collaboration_threads(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        author_user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        mentions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        edited_at TIMESTAMP,
+        deleted_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS collab_comments_thread_idx ON collaboration_comments(thread_id, created_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS collab_comments_tenant_idx ON collaboration_comments(tenant_domain, created_at)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS annotations (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        target_kind TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        field_path TEXT,
+        range_start INTEGER,
+        range_end INTEGER,
+        selected_text TEXT,
+        thread_id VARCHAR NOT NULL REFERENCES collaboration_threads(id) ON DELETE CASCADE,
+        created_by_user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        resolved_at TIMESTAMP,
+        resolved_by_user_id VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS annotations_target_idx ON annotations(tenant_domain, target_kind, target_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS tracked_keywords (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        keyword TEXT NOT NULL,
+        country TEXT NOT NULL DEFAULT 'us',
+        locale TEXT NOT NULL DEFAULT 'en',
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS tracked_keywords_tenant_market_idx ON tracked_keywords(tenant_domain, market_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS seo_metrics (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        keyword_id VARCHAR NOT NULL REFERENCES tracked_keywords(id) ON DELETE CASCADE,
+        entity_type TEXT NOT NULL,
+        entity_id VARCHAR,
+        entity_name TEXT NOT NULL,
+        entity_domain TEXT,
+        rank INTEGER,
+        estimated_traffic INTEGER NOT NULL DEFAULT 0,
+        share_of_voice INTEGER NOT NULL DEFAULT 0,
+        captured_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS seo_metrics_tenant_market_idx ON seo_metrics(tenant_domain, market_id, captured_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS seo_metrics_keyword_idx ON seo_metrics(keyword_id, captured_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS seo_metrics_entity_idx ON seo_metrics(entity_id, captured_at)`);
+
     // Any tenant with a directly-assigned paid plan but no Stripe subscription
     // should be treated as manually managed so resolveEffectivePlan trusts it.
     await pgPool.query(`UPDATE tenants SET billing_managed_manually = true WHERE plan IN ('pro','enterprise','unlimited') AND billing_managed_manually = false AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')`);
