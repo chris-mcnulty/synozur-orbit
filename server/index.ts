@@ -661,6 +661,48 @@ app.use((req, res, next) => {
     `);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_audit_log_tenant_created_idx ON marketing_audit_log(tenant_domain, created_at DESC)`);
 
+    // ── UTM Builder & Link Tracking (marketing_links + marketing_link_clicks) ──
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_links (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        campaign_id VARCHAR REFERENCES campaigns(id) ON DELETE SET NULL,
+        slug TEXT NOT NULL UNIQUE,
+        destination_url TEXT NOT NULL,
+        label TEXT,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT,
+        utm_content TEXT,
+        utm_term TEXT,
+        click_count INTEGER NOT NULL DEFAULT 0,
+        last_clicked_at TIMESTAMP,
+        status TEXT NOT NULL DEFAULT 'active',
+        source TEXT NOT NULL DEFAULT 'manual',
+        created_by VARCHAR NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_links_tenant_idx ON marketing_links(tenant_domain)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_links_campaign_idx ON marketing_links(campaign_id)`);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_link_clicks (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::varchar,
+        link_id VARCHAR NOT NULL REFERENCES marketing_links(id) ON DELETE CASCADE,
+        tenant_domain TEXT NOT NULL,
+        clicked_at TIMESTAMP NOT NULL DEFAULT now(),
+        referrer TEXT,
+        user_agent TEXT,
+        ip_hash TEXT,
+        is_bot BOOLEAN NOT NULL DEFAULT false
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_link_clicks_link_idx ON marketing_link_clicks(link_id, clicked_at DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS marketing_link_clicks_tenant_idx ON marketing_link_clicks(tenant_domain, clicked_at DESC)`);
+
     // OAuth 2.0 partner API tables (Task #96)
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -923,6 +965,23 @@ app.use((req, res, next) => {
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_api_key TEXT`);
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_workspace_id TEXT`);
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS vega_launchpad_connected_at TIMESTAMP`);
+
+    // ── Task #117: Vega Launchpad direct-push history on marketing_plans ─
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS vega_last_push_at TIMESTAMP`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS vega_last_push_status TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS vega_last_push_error TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS vega_last_push_bundle_id TEXT`);
+    await pgPool.query(`ALTER TABLE marketing_plans ADD COLUMN IF NOT EXISTS vega_last_pushed_by VARCHAR`);
+    await pgPool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketing_plans_vega_last_pushed_by_users_id_fk') THEN
+          ALTER TABLE marketing_plans
+            ADD CONSTRAINT marketing_plans_vega_last_pushed_by_users_id_fk
+            FOREIGN KEY (vega_last_pushed_by) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
 
     // ── Task #86: Persistent tenant-aware rate limiter ──────────────────
     await pgPool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS public_rate_limit_per_minute INTEGER`);
