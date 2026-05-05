@@ -89,6 +89,7 @@ export default function BattleCardsPage() {
   const [selectedCompetitor, setSelectedCompetitor] = useState<string>("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const { user } = useUser();
   const isReadOnlyRole = user?.role === "Consultant";
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -162,6 +163,8 @@ export default function BattleCardsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
       setGeneratingFor(null);
+      setGenerateDialogOpen(false);
+      setSelectedCompetitor("");
       // Update the selected card if it was regenerated - merge with existing to preserve fields
       if (selectedCard && data?.competitorId === selectedCard.competitorId) {
         setSelectedCard({ ...selectedCard, ...data });
@@ -306,7 +309,7 @@ export default function BattleCardsPage() {
           </div>
           
           {competitors.length > 0 && (
-            <Dialog>
+            <Dialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-generate-battlecard">
                   <Plus className="w-4 h-4 mr-2" />
@@ -527,11 +530,27 @@ export default function BattleCardsPage() {
             ))}
             
             {competitorsWithoutCards.length > 0 && (
-              <Card className="border-dashed hover:border-primary/50 transition-colors cursor-pointer group">
-                <CardContent className="flex flex-col items-center justify-center h-full py-8">
+              <Card
+                className="border-dashed hover:border-primary/50 transition-colors cursor-pointer group"
+                onClick={() => setGenerateDialogOpen(true)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGenerateDialogOpen(true);
+                  }
+                }}
+                data-testid="card-generate-more-battlecards"
+              >
+                <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
                   <Plus className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
-                  <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+                  <p className="text-sm font-medium group-hover:text-primary transition-colors mb-2">
                     Generate for {competitorsWithoutCards.length} more competitor{competitorsWithoutCards.length > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground line-clamp-3 px-2">
+                    {competitorsWithoutCards.slice(0, 5).map((c: any) => c.name).join(", ")}
+                    {competitorsWithoutCards.length > 5 && ` +${competitorsWithoutCards.length - 5} more`}
                   </p>
                 </CardContent>
               </Card>
