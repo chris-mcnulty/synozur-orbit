@@ -393,6 +393,21 @@ Return ONLY valid JSON, no markdown or explanation.`;
 
       reportProgress?.({ phase: "Drafting battlecard", percent: 30 });
 
+      // Nudge progress upward every few seconds while the AI call is in
+      // flight so the bar never sits frozen at 30% for the entire 30-90s
+      // Anthropic call. Caps at 70% so the existing 80% / 95% phases below
+      // still feel meaningful when the response actually arrives.
+      let nudgePercent = 30;
+      const nudgeTimer: ReturnType<typeof setInterval> = setInterval(() => {
+        if (nudgePercent < 70) {
+          nudgePercent = Math.min(70, nudgePercent + 4);
+          reportProgress?.({
+            phase: "Drafting battlecard (still working…)",
+            percent: nudgePercent,
+          });
+        }
+      }, 3000);
+
       const prompt = `Generate a sales battle card comparing our company against a competitor. 
 
 OUR COMPANY:
@@ -438,11 +453,16 @@ For the "comparison" array, include 4-6 key feature categories and rate each usi
 
 Return ONLY valid JSON, no markdown or explanations.`;
 
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }],
-      });
+      let response;
+      try {
+        response = await anthropic.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 4096,
+          messages: [{ role: "user", content: prompt }],
+        });
+      } finally {
+        clearInterval(nudgeTimer);
+      }
 
       reportProgress?.({ phase: "Parsing response", percent: 80 });
 

@@ -39,6 +39,17 @@ import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 type HarveyBall = "full" | "three-quarter" | "half" | "quarter" | "empty";
 
+interface CompetitorListItem {
+  id: string;
+  name: string;
+  lastCrawledAt?: string | null;
+  socialLastFetchedAt?: string | null;
+  headquarters?: string | null;
+  founded?: string | null;
+  revenue?: string | null;
+  fundingRaised?: string | null;
+}
+
 interface BattleCardData {
   id: string;
   competitorId: string;
@@ -109,9 +120,28 @@ export default function BattleCardsPage() {
     generatingFor ? `battlecard-gen:${generatingFor}` : null,
     !!generatingFor,
   );
-  const genLabel = jobStatusLabel(genJobStatus, "Generating…");
+  // We need to know about the local mutation here to gate the
+  // "Finishing up…" label and the resume/cleanup effects below. The
+  // mutation itself is declared further down — wire it via a ref so
+  // we can read its pending state without forward-referencing.
+  const localMutationPendingRef = React.useRef(false);
+  // While the LOCAL mutation is mid-flight but the queue says not_found
+  // (job finished between polls, or we're waiting on the query refetch),
+  // show a "Finishing up…" hint instead of reverting to the static label.
+  // We do NOT show this for jobs we only know about via polling, because
+  // there is no local mutation pending to resolve them.
+  const genLabel = (() => {
+    if (
+      genJobStatus?.status === "not_found" &&
+      generatingFor &&
+      localMutationPendingRef.current
+    ) {
+      return "Finishing up…";
+    }
+    return jobStatusLabel(genJobStatus, "Generating…");
+  })();
 
-  const { data: competitors = [] } = useQuery({
+  const { data: competitors = [] } = useQuery<CompetitorListItem[]>({
     queryKey: ["/api/competitors"],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
@@ -119,6 +149,62 @@ export default function BattleCardsPage() {
       return response.json();
     },
   });
+
+  // Poll for any in-flight battlecard generation jobs in this tenant so
+  // the UI can resume the running state if the user closes and reopens
+  // the dialog (or revisits the page) while a job keeps running.
+  const { data: activeBattlecardJobs = [] } = useQuery<
+    Array<{ label: string; status: string; progress?: { percent?: number; phase?: string } }>
+  >({
+    queryKey: ["/api/queue/active-jobs", "battlecard-gen:"],
+    queryFn: async () => {
+      const r = await fetch(
+        "/api/queue/active-jobs?prefix=" + encodeURIComponent("battlecard-gen:"),
+        { credentials: "include" },
+      );
+      return r.ok ? r.json() : [];
+    },
+    refetchInterval: 3000,
+  });
+  // The competitors query is already scoped to the active tenant + market
+  // server-side, so filtering active job labels by "competitor exists in
+  // the current competitors list" gives us market isolation without
+  // needing to thread marketId through the queue. A job belonging to
+  // another market simply won't match any visible competitor and will be
+  // ignored by this page.
+  const inFlightCompetitorIds = React.useMemo(() => {
+    const set = new Set<string>();
+    const knownIds = new Set<string>(competitors.map((c) => c.id));
+    for (const j of activeBattlecardJobs) {
+      const id = j.label.slice("battlecard-gen:".length);
+      if (id && knownIds.has(id)) set.add(id);
+    }
+    return set;
+  }, [activeBattlecardJobs, competitors]);
+
+  // Resume running state on mount / refresh: if an in-flight job exists
+  // for a competitor and we don't already know about it, pin generatingFor
+  // so the dialog and buttons reflect progress.
+  // Conversely, if the job we're tracking no longer appears in the active
+  // jobs list AND there's no LOCAL mutation pending (i.e. we picked it up
+  // via polling, not via our own mutate call), clear generatingFor so the
+  // UI doesn't get stuck in a "generating" state forever after the job
+  // finished elsewhere. We also refresh the battlecards query so the new
+  // card shows up.
+  useEffect(() => {
+    if (!generatingFor) {
+      const first = inFlightCompetitorIds.values().next().value as string | undefined;
+      if (first) setGeneratingFor(first);
+      return;
+    }
+    if (
+      !inFlightCompetitorIds.has(generatingFor) &&
+      !localMutationPendingRef.current
+    ) {
+      setGeneratingFor(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+    }
+  }, [inFlightCompetitorIds, generatingFor, queryClient]);
 
   const { data: battleCards = [], isLoading: loadingCards } = useQuery<BattleCardData[]>({
     queryKey: ["/api/battlecards"],
@@ -150,6 +236,7 @@ export default function BattleCardsPage() {
 
   const generateMutation = useMutation({
     mutationFn: async (competitorId: string) => {
+      localMutationPendingRef.current = true;
       const response = await fetch(`/api/battlecards/generate/${competitorId}`, {
         method: "POST",
         credentials: "include",
@@ -160,8 +247,17 @@ export default function BattleCardsPage() {
       }
       return response.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/battlecards"] });
+    onSettled: () => {
+      localMutationPendingRef.current = false;
+    },
+    onSuccess: async (data) => {
+      // Wait for the battlecards query to refetch BEFORE we drop the
+      // spinner — otherwise the dialog can briefly flash "Generating 30%"
+      // even though the new card is already saved server-side.
+      await queryClient.refetchQueries({ queryKey: ["/api/battlecards"] });
+      // Also refresh the in-flight jobs poll so the running state clears
+      // immediately rather than on the next 3s tick.
+      queryClient.invalidateQueries({ queryKey: ["/api/queue/active-jobs", "battlecard-gen:"] });
       setGeneratingFor(null);
       setGenerateDialogOpen(false);
       setSelectedCompetitor("");
@@ -308,7 +404,23 @@ export default function BattleCardsPage() {
             </div>
           </div>
           
-          {competitors.length > 0 && (
+          <div className="flex items-center gap-3">
+            {generatingFor && (() => {
+              const comp = competitors.find((c: any) => c.id === generatingFor);
+              const name = comp?.name || "competitor";
+              return (
+                <div
+                  className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-1.5"
+                  data-testid="indicator-battlecard-generating"
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                  <span>
+                    Generating battlecard for <strong>{name}</strong>… {genLabel}
+                  </span>
+                </div>
+              );
+            })()}
+            {competitors.length > 0 && (
             <Dialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-generate-battlecard">
@@ -341,10 +453,11 @@ export default function BattleCardsPage() {
                   </Select>
                   <Button 
                     className="w-full" 
-                    disabled={!selectedCompetitor || generatingFor === selectedCompetitor}
+                    disabled={!selectedCompetitor || !!generatingFor}
                     onClick={() => handleGenerate(selectedCompetitor)}
+                    data-testid="button-generate-battlecard-confirm"
                   >
-                    {generatingFor === selectedCompetitor ? (
+                    {generatingFor && (generatingFor === selectedCompetitor || !selectedCompetitor) ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         {genLabel}
@@ -356,10 +469,20 @@ export default function BattleCardsPage() {
                       </>
                     )}
                   </Button>
+                  {generatingFor && (
+                    <p
+                      className="text-xs text-muted-foreground text-center"
+                      data-testid="text-battlecard-safe-to-close"
+                    >
+                      This usually takes about a minute. You can safely close this window —
+                      generation will keep running and the new battle card will appear when it's ready.
+                    </p>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
-          )}
+            )}
+          </div>
         </div>
 
         {battleCards.length > 0 && (() => {
@@ -452,10 +575,11 @@ export default function BattleCardsPage() {
                     </Select>
                     <Button 
                       className="w-full" 
-                      disabled={!selectedCompetitor || generatingFor === selectedCompetitor}
+                      disabled={!selectedCompetitor || !!generatingFor}
                       onClick={() => handleGenerate(selectedCompetitor)}
+                      data-testid="button-generate-first-battlecard-confirm"
                     >
-                      {generatingFor === selectedCompetitor ? (
+                      {generatingFor && (generatingFor === selectedCompetitor || !selectedCompetitor) ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                           {genLabel}
@@ -467,6 +591,15 @@ export default function BattleCardsPage() {
                         </>
                       )}
                     </Button>
+                    {generatingFor && (
+                      <p
+                        className="text-xs text-muted-foreground text-center"
+                        data-testid="text-battlecard-safe-to-close-empty"
+                      >
+                        This usually takes about a minute. You can safely close this window —
+                        generation will keep running and the new battle card will appear when it's ready.
+                      </p>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
@@ -850,15 +983,20 @@ export default function BattleCardsPage() {
                   handleGenerate(selectedCard.competitorId);
                 }
               }}
-              disabled={generatingFor === selectedCard?.competitorId}
+              disabled={!!generatingFor}
               data-testid="btn-regenerate-battlecard"
             >
               {generatingFor === selectedCard?.competitorId ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {genLabel}
+                </>
               ) : (
-                <RefreshCw className="w-4 h-4 mr-2" />
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Regenerate
+                </>
               )}
-              Regenerate
             </Button>
             <div className="flex items-center gap-2">
             <Button

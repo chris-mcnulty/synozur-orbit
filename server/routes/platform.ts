@@ -211,6 +211,26 @@ export function registerPlatformRoutes(app: Express) {
     }
   });
 
+  // List all in-flight jobs whose label starts with `prefix`, scoped to the
+  // caller's tenant. Used by UIs that need to discover background jobs across
+  // multiple targets (e.g. battlecard generation per competitor).
+  app.get("/api/queue/active-jobs", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const prefixRaw = req.query.prefix;
+      if (typeof prefixRaw !== "string" || prefixRaw.length === 0 || prefixRaw.length > 200) {
+        return res.status(400).json({ error: "prefix query parameter is required" });
+      }
+      const { getActiveJobsByLabelPrefix } = await import("../services/job-queue");
+      res.json(getActiveJobsByLabelPrefix(prefixRaw, ctx.tenantDomain));
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== ADMIN: JOB QUEUE STATUS ====================
 
   app.get("/api/admin/queue-status", async (req, res) => {

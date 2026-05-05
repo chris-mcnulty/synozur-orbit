@@ -437,6 +437,50 @@ export function getJobStatusByLabel(labelPrefix: string, tenantDomain?: string):
   return { status: "not_found" };
 }
 
+export interface ActiveJobInfo {
+  label: string;
+  status: "active" | "pending";
+  progress?: JobProgress;
+  type: JobType;
+  runningSec: number;
+}
+
+/**
+ * List all active and pending jobs whose label starts with `labelPrefix`,
+ * scoped to the caller's tenant. Used by UIs that need to discover any
+ * in-flight job (e.g. battlecard generation) for multiple targets at once.
+ */
+export function getActiveJobsByLabelPrefix(
+  labelPrefix: string,
+  tenantDomain?: string,
+): ActiveJobInfo[] {
+  const now = Date.now();
+  const out: ActiveJobInfo[] = [];
+  const matches = (job: QueuedJob) =>
+    job.label.startsWith(labelPrefix) &&
+    (!tenantDomain || job.ctx?.tenantDomain === tenantDomain);
+  for (const job of activeJobs.values()) {
+    if (!matches(job)) continue;
+    out.push({
+      label: job.label,
+      status: "active",
+      progress: job.progress,
+      type: job.type,
+      runningSec: Math.round((now - (job.startedAt || now)) / 1000),
+    });
+  }
+  for (const job of pendingQueue) {
+    if (!matches(job)) continue;
+    out.push({
+      label: job.label,
+      status: "pending",
+      type: job.type,
+      runningSec: 0,
+    });
+  }
+  return out;
+}
+
 export function getQueueStatus(): QueueStats {
   const now = Date.now();
   const activeByType: Record<string, number> = {};
