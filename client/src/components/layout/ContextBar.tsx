@@ -787,7 +787,7 @@ export default function ContextBar() {
                     {canAutoBuildCtx && (
                       <Button
                         variant="outline"
-                        className="h-auto p-4 justify-start text-left flex-col items-start gap-2 border-primary/40 bg-primary/5 hover:bg-primary/10 relative"
+                        className="h-auto w-full p-4 justify-start text-left flex-col items-start gap-2 border-primary/40 bg-primary/5 hover:bg-primary/10 relative whitespace-normal"
                         onClick={() => {
                           setAutoBuildEnabled(true);
                           setMarketCreationStep("url");
@@ -799,14 +799,14 @@ export default function ContextBar() {
                           <Zap className="w-4 h-4 text-primary" />
                           Auto Build from website
                         </div>
-                        <span className="text-xs text-muted-foreground font-normal">
+                        <span className="block w-full whitespace-normal break-words text-xs text-muted-foreground font-normal">
                           Enter a URL and we'll automatically discover competitors, run AI analysis, and build your intelligence briefing
                         </span>
                       </Button>
                     )}
                     <Button
                       variant="outline"
-                      className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                      className="h-auto w-full p-4 justify-start text-left flex-col items-start gap-2 whitespace-normal"
                       onClick={() => {
                         setAutoBuildEnabled(false);
                         setMarketCreationStep("url");
@@ -817,13 +817,13 @@ export default function ContextBar() {
                         <Link2 className="w-4 h-4" />
                         Start from a website URL
                       </div>
-                      <span className="text-xs text-muted-foreground font-normal">
+                      <span className="block w-full whitespace-normal break-words text-xs text-muted-foreground font-normal">
                         We'll analyze the website and auto-fill market details — you'll add competitors yourself
                       </span>
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto p-4 justify-start text-left flex-col items-start gap-2"
+                      className="h-auto w-full p-4 justify-start text-left flex-col items-start gap-2 whitespace-normal"
                       onClick={() => {
                         setAutoBuildEnabled(false);
                         setMarketCreationStep("manual");
@@ -834,7 +834,7 @@ export default function ContextBar() {
                         <FileText className="w-4 h-4" />
                         Enter details manually
                       </div>
-                      <span className="text-xs text-muted-foreground font-normal">
+                      <span className="block w-full whitespace-normal break-words text-xs text-muted-foreground font-normal">
                         Provide a name and description yourself
                       </span>
                     </Button>
