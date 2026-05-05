@@ -2097,7 +2097,37 @@ export function registerAdminRoutes(app: Express) {
       
       // Check if crawl was successful (has at least one page with content)
       if (!crawlResult.pages || crawlResult.pages.length === 0 || crawlResult.totalWordCount === 0) {
-        return res.status(400).json({ error: "Could not analyze website. Please check the URL and try again." });
+        // Probe to distinguish "blocked" from "not found / network error"
+        let probedStatus: number | null = null;
+        try {
+          const probe = await fetch(url, {
+            method: "GET",
+            redirect: "follow",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.9",
+            },
+            signal: AbortSignal.timeout(8000),
+          });
+          probedStatus = probe.status;
+        } catch {
+          // network error / DNS / timeout — leave probedStatus null
+        }
+        if (probedStatus === 403 || probedStatus === 429 || probedStatus === 503 || probedStatus === 401) {
+          return res.status(400).json({
+            error: "This website blocks automated visits, so we can't crawl it for analysis. As a workaround, you can create the entry manually and upload a PDF or paste content as a grounding document.",
+            blocked: true,
+            probedStatus,
+          });
+        }
+        if (probedStatus && probedStatus >= 400) {
+          return res.status(400).json({
+            error: `The website returned HTTP ${probedStatus}. Please verify the URL is correct and publicly accessible.`,
+            probedStatus,
+          });
+        }
+        return res.status(400).json({ error: "Could not analyze website. The site may be blocking automated requests, offline, or returning empty content. You can create the entry manually and upload a grounding document instead." });
       }
 
       // Combine page content for AI analysis
