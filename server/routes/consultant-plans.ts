@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql, eq, and, count } from "drizzle-orm";
-import { getRequestContext, ContextError } from "../context";
+import { getRequestContext, ContextError, getActiveTenantId } from "../context";
 import { hasAdminAccess, grantConsultantAccessSchema } from "./helpers";
 import { invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES } from "../services/plan-policy";
 import { fromError } from "zod-validation-error";
@@ -30,10 +30,18 @@ export function registerConsultantPlansRoutes(app: Express) {
 
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
-      
-      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+
+      const targetTenantId = getActiveTenantId(req) || userTenant?.id;
       if (!targetTenantId) {
         return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      // Header-spoof guard: a header-supplied tenant id must be one this user
+      // can actually access. Without this, any admin could read another
+      // tenant's consultant grants by forging X-Active-Tenant-Id.
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === targetTenantId)) {
+        return res.status(403).json({ error: "Access denied - you don't have access to this tenant" });
       }
 
       const grants = await storage.getConsultantAccessByTenant(targetTenantId);
@@ -89,11 +97,11 @@ export function registerConsultantPlansRoutes(app: Express) {
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
       
-      if (user.role === "Domain Admin" && req.session.activeTenantId && req.session.activeTenantId !== userTenant?.id) {
+      if (user.role === "Domain Admin" && getActiveTenantId(req) && getActiveTenantId(req) !== userTenant?.id) {
         return res.status(403).json({ error: "Domain Admins can only grant access to their own tenant" });
       }
 
-      const targetTenantId = (user.role === "Domain Admin") ? userTenant?.id : (req.session.activeTenantId || userTenant?.id);
+      const targetTenantId = (user.role === "Domain Admin") ? userTenant?.id : (getActiveTenantId(req) || userTenant?.id);
       if (!targetTenantId) {
         return res.status(400).json({ error: "No tenant context available" });
       }

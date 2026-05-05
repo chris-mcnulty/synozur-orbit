@@ -128,6 +128,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       method: "POST",
       credentials: "include",
     });
+    try {
+      const { clearTabContext } = await import("@/lib/tabContext");
+      clearTabContext();
+    } catch {}
     setUser(null);
   };
 

@@ -48,6 +48,32 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * Read the active tenant id from the per-tab header (X-Active-Tenant-Id) if
+ * present, falling back to the session-stored value. Use this in any context
+ * helper / bootstrap endpoint that previously read req.session.activeTenantId
+ * directly so all routes agree on this tab's active tenant. The full
+ * authorization check still happens in getRequestContext — this helper is for
+ * places that need the id before going through that flow (e.g. /api/markets
+ * returning the activeMarketId, /api/context, etc).
+ */
+export function getActiveTenantId(req: Request): string | undefined {
+  const h = req.headers["x-active-tenant-id"];
+  const headerVal = Array.isArray(h) ? h[0] : h;
+  return headerVal || req.session?.activeTenantId;
+}
+
+export function getActiveMarketId(req: Request): string | undefined {
+  const h = req.headers["x-active-market-id"];
+  const headerVal = Array.isArray(h) ? h[0] : h;
+  return headerVal || req.session?.activeMarketId;
+}
+
+/** True when the request explicitly carries per-tab context headers. */
+export function hasTabContextHeaders(req: Request): boolean {
+  return !!(req.headers["x-active-tenant-id"] || req.headers["x-active-market-id"]);
+}
+
 function extractBearerToken(req: Request): string | null {
   const auth = req.headers.authorization || "";
   if (!auth.toLowerCase().startsWith("bearer ")) return null;
@@ -145,34 +171,57 @@ export async function getRequestContext(req: Request): Promise<RequestContext> {
     throw new ContextError("User tenant not found", 403);
   }
 
-  let activeTenantId = req.session.activeTenantId;
-  let activeMarketId = req.session.activeMarketId;
+  // Per-tab context: prefer headers sent by the client (sessionStorage-backed,
+  // so each browser tab carries its own active tenant/market). Fall back to the
+  // session-stored values only when no headers are sent. CRITICAL: when headers
+  // ARE provided, never write back to req.session — that would let one tab's
+  // active context leak into other tabs of the same browser.
+  const headerTenantRaw = req.headers["x-active-tenant-id"];
+  const headerMarketRaw = req.headers["x-active-market-id"];
+  const headerTenantId = Array.isArray(headerTenantRaw) ? headerTenantRaw[0] : headerTenantRaw;
+  const headerMarketId = Array.isArray(headerMarketRaw) ? headerMarketRaw[0] : headerMarketRaw;
+  const usingHeaderContext = !!(headerTenantId || headerMarketId);
+
+  let activeTenantId = headerTenantId || req.session.activeTenantId;
+  let activeMarketId = headerMarketId || req.session.activeMarketId;
 
   if (!activeTenantId) {
     activeTenantId = userTenant.id;
-    req.session.activeTenantId = activeTenantId;
+    if (!usingHeaderContext) req.session.activeTenantId = activeTenantId;
   }
 
   const activeTenant = await storage.getTenant(activeTenantId);
   if (!activeTenant) {
+    if (usingHeaderContext) {
+      throw new ContextError("Requested tenant not found", 403);
+    }
     activeTenantId = userTenant.id;
     req.session.activeTenantId = activeTenantId;
   }
 
   const hasAccess = await validateTenantAccess(userId, user.role, userTenant.id, activeTenantId);
   if (!hasAccess) {
+    if (usingHeaderContext) {
+      // Fail closed — do not silently fall back to a different tenant when the
+      // client explicitly asked for one it can't access.
+      throw new ContextError("Access denied for requested tenant", 403);
+    }
     activeTenantId = userTenant.id;
     req.session.activeTenantId = activeTenantId;
     req.session.activeMarketId = undefined;
+    activeMarketId = undefined;
   }
 
   if (!activeMarketId) {
     const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
     activeMarketId = defaultMarket.id;
-    req.session.activeMarketId = activeMarketId;
+    if (!usingHeaderContext) req.session.activeMarketId = activeMarketId;
   } else {
     const marketValid = await storage.validateMarketBelongsToTenant(activeMarketId, activeTenantId);
     if (!marketValid) {
+      if (usingHeaderContext) {
+        throw new ContextError("Requested market does not belong to tenant", 403);
+      }
       const defaultMarket = await ensureDefaultMarket(activeTenantId, userId);
       activeMarketId = defaultMarket.id;
       req.session.activeMarketId = activeMarketId;

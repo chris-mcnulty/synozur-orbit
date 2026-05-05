@@ -1,4 +1,27 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getTabContextHeaders, clearTabContext } from "./tabContext";
+
+/**
+ * If a request returns 403 because the per-tab tenant/market headers reference
+ * something the user can't access (e.g. the market was deleted in another tab,
+ * or sessionStorage was tampered with), clear the per-tab context so the next
+ * request falls back to the session default and the app re-bootstraps. Without
+ * this, a stale tab context can strand a user in a 403 loop.
+ */
+function maybeRecoverFromStaleTabContext(status: number, message: string) {
+  if (status !== 403) return;
+  const m = (message || "").toLowerCase();
+  const isStaleContext =
+    m.includes("requested tenant not found") ||
+    m.includes("requested market does not belong") ||
+    m.includes("access denied for requested tenant");
+  if (!isStaleContext) return;
+  clearTabContext();
+  // Force the next render cycle to re-fetch fresh /api/context and /api/markets.
+  setTimeout(() => {
+    queryClient.invalidateQueries();
+  }, 0);
+}
 
 export class ApiError extends Error {
   status: number;
@@ -47,6 +70,7 @@ async function throwIfResNotOk(res: Response) {
         }
       }
     } catch {}
+    maybeRecoverFromStaleTabContext(res.status, errorMessage);
     throw new ApiError(res.status, errorMessage, upgradeRequired, requiredPlan);
   }
 }
@@ -56,9 +80,11 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = { ...getTabContextHeaders() };
+  if (data) headers["Content-Type"] = "application/json";
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -75,6 +101,7 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
+      headers: getTabContextHeaders(),
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

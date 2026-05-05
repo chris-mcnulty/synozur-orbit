@@ -173,6 +173,16 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const activeMarketId = marketsData?.activeMarketId;
+
+  // Pin this tab's per-tab context (sessionStorage) on first load if not yet
+  // set. Without this, this tab would keep silently following session changes
+  // made by other tabs in the same browser.
+  useEffect(() => {
+    if (!activeMarketId) return;
+    import("@/lib/tabContext").then(({ getTabMarketId, setTabMarketId }) => {
+      if (!getTabMarketId()) setTabMarketId(activeMarketId);
+    });
+  }, [activeMarketId]);
   const activeMarket = marketsData?.markets?.find(m => m.id === activeMarketId);
   const isNonDefaultMarket = marketsData?.multiMarketEnabled && activeMarket && !activeMarket.isDefault;
 

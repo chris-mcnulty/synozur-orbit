@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/userContext";
 import { apiRequest } from "@/lib/queryClient";
+import { setTabTenantId, setTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 
 interface Tenant {
@@ -165,6 +166,17 @@ export default function ContextBar() {
     enabled: !!user,
   });
 
+  // Pin this tab's tenant in sessionStorage on first load if not yet set,
+  // so subsequent requests carry it as a header and won't be silently
+  // overridden by another tab's tenant switch.
+  useEffect(() => {
+    const tid = context?.activeTenantId;
+    if (!tid) return;
+    import("@/lib/tabContext").then(({ getTabTenantId, setTabTenantId }) => {
+      if (!getTabTenantId()) setTabTenantId(tid);
+    });
+  }, [context?.activeTenantId]);
+
   const { data: accessibleTenants } = useQuery<AccessibleTenantsData>({
     queryKey: ["/api/tenants/accessible"],
     queryFn: async () => {
@@ -190,9 +202,11 @@ export default function ContextBar() {
       const response = await apiRequest("POST", "/api/context/tenant", { tenantId });
       return response.json();
     },
-    onSuccess: () => {
-      // Invalidate ALL cached queries when switching tenants to ensure complete data refresh
-      // This prevents stale data from a different tenant being displayed
+    onSuccess: (data: { activeTenantId?: string | null; activeMarketId?: string | null }) => {
+      // Pin this tab to the new tenant/market via sessionStorage so other tabs
+      // are unaffected by this switch (per-tab context — see tabContext.ts).
+      if (data?.activeTenantId) setTabTenantId(data.activeTenantId);
+      setTabMarketId(data?.activeMarketId || null);
       queryClient.invalidateQueries();
     },
   });
@@ -202,9 +216,10 @@ export default function ContextBar() {
       const response = await apiRequest("POST", "/api/context/market", { marketId });
       return response.json();
     },
-    onSuccess: () => {
-      // Invalidate ALL cached queries when switching markets to ensure complete data refresh
-      // This prevents stale data from a different market being displayed
+    onSuccess: (data: { activeTenantId?: string | null; activeMarketId?: string | null }) => {
+      // Pin this tab to the selected market (and its tenant) via sessionStorage.
+      if (data?.activeTenantId) setTabTenantId(data.activeTenantId);
+      if (data?.activeMarketId) setTabMarketId(data.activeMarketId);
       queryClient.invalidateQueries();
     },
   });

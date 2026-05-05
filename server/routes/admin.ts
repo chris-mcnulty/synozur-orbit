@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { randomUUID } from "crypto";
 import { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "../storage";
-import { getRequestContext, ContextError } from "../context";
+import { getRequestContext, ContextError, getActiveTenantId, getActiveMarketId } from "../context";
 import { toContextFilter, validateResourceContext, hasAdminAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction } from "./helpers";
 import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
@@ -1544,11 +1544,23 @@ export function registerAdminRoutes(app: Express) {
       }
       
       const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
-      
+
+      // Only echo header-supplied tenant id if the user actually has access to
+      // it; otherwise fall back to their own tenant so a forged header can't
+      // confuse the client into showing an unauthorized active context.
+      const headerTenantId = getActiveTenantId(req);
+      const echoedTenantId = headerTenantId && accessibleTenants.find(t => t.id === headerTenantId)
+        ? headerTenantId
+        : userTenant.id;
+      const headerMarketId = getActiveMarketId(req);
+      const marketBelongs = headerMarketId
+        ? await storage.validateMarketBelongsToTenant(headerMarketId, echoedTenantId)
+        : false;
+
       res.json({
         tenants: accessibleTenants,
-        activeTenantId: req.session.activeTenantId || userTenant.id,
-        activeMarketId: req.session.activeMarketId || null,
+        activeTenantId: echoedTenantId,
+        activeMarketId: marketBelongs ? headerMarketId : null,
         canSwitchTenants: user.role === "Global Admin" || user.role === "Consultant"
       });
     } catch (error: any) {
@@ -1829,7 +1841,7 @@ export function registerAdminRoutes(app: Express) {
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
       
-      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      const targetTenantId = getActiveTenantId(req) || userTenant?.id;
       if (!targetTenantId) {
         return res.status(400).json({ error: "No tenant context available" });
       }
@@ -1867,10 +1879,18 @@ export function registerAdminRoutes(app: Express) {
       
       // Get limits from service plan (single source of truth)
       const servicePlan = tenant?.plan ? await storage.getServicePlanByName(tenant.plan) : null;
-      
+
+      // Only echo a market id that actually belongs to the targetTenantId we
+      // just authorized — never pass through a header-supplied id from a
+      // different tenant.
+      const headerMarketId = getActiveMarketId(req);
+      const marketOk = headerMarketId
+        ? await storage.validateMarketBelongsToTenant(headerMarketId, targetTenantId)
+        : false;
+
       res.json({
         markets: marketsWithBaseline,
-        activeMarketId: req.session.activeMarketId || null,
+        activeMarketId: marketOk ? headerMarketId : null,
         multiMarketEnabled: servicePlan?.multiMarketEnabled || false,
         marketLimit: servicePlan?.marketLimit ?? null
       });
@@ -1897,10 +1917,17 @@ export function registerAdminRoutes(app: Express) {
 
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
-      
-      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+
+      const targetTenantId = getActiveTenantId(req) || userTenant?.id;
       if (!targetTenantId) {
         return res.status(400).json({ error: "No tenant context available" });
+      }
+
+      // Header-spoof guard: forged X-Active-Tenant-Id must not let a Domain
+      // Admin create markets in another tenant.
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === targetTenantId)) {
+        return res.status(403).json({ error: "Access denied - you don't have access to this tenant" });
       }
 
       const tenant = await storage.getTenant(targetTenantId);
@@ -1975,8 +2002,15 @@ export function registerAdminRoutes(app: Express) {
 
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
-      const targetTenantId = req.session.activeTenantId || userTenant?.id;
+      const targetTenantId = getActiveTenantId(req) || userTenant?.id;
       if (!targetTenantId) return res.status(400).json({ error: "No tenant context available" });
+
+      // Header-spoof guard: forged X-Active-Tenant-Id must not let a Domain
+      // Admin trigger auto-build in another tenant.
+      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+      if (!accessibleTenants.find(t => t.id === targetTenantId)) {
+        return res.status(403).json({ error: "Access denied - you don't have access to this tenant" });
+      }
 
       const tenant = await storage.getTenant(targetTenantId);
       if (!tenant) return res.status(404).json({ error: "Tenant not found" });
@@ -2016,46 +2050,39 @@ export function registerAdminRoutes(app: Express) {
 
   app.get("/api/auto-build/status/:jobId", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      const user = await storage.getUser(req.session.userId);
-      if (!user) return res.status(401).json({ error: "User not found" });
-      const userDomain = user.email.split("@")[1];
-      const userTenant = await storage.getTenantByDomain(userDomain);
-      const tenantDomain = (req.session.activeTenantId ? (await storage.getTenant(req.session.activeTenantId))?.domain : userTenant?.domain) || userDomain;
-
+      // Use getRequestContext so per-tab tenant headers are validated against
+      // the user's accessible tenants — prevents header-spoof probing across
+      // tenant auto-build job ids.
+      const ctx = await getRequestContext(req);
       const { getAutoBuildStatus } = await import("../services/auto-build-service");
-      const status = getAutoBuildStatus(req.params.jobId, tenantDomain);
+      const status = getAutoBuildStatus(req.params.jobId, ctx.tenantDomain);
       if (!status) {
         return res.status(404).json({ error: "Job not found" });
       }
       const { tenantDomain: _td, userId: _uid, ...safeStatus } = status;
       res.json(safeStatus);
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
 
   app.get("/api/markets/:id/auto-build/active", async (req, res) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      const user = await storage.getUser(req.session.userId);
-      if (!user) return res.status(401).json({ error: "User not found" });
-      const userDomain = user.email.split("@")[1];
-      const userTenant = await storage.getTenantByDomain(userDomain);
-      const tenantDomain = (req.session.activeTenantId ? (await storage.getTenant(req.session.activeTenantId))?.domain : userTenant?.domain) || userDomain;
-
+      const ctx = await getRequestContext(req);
       const { getActiveJobForMarket } = await import("../services/auto-build-service");
-      const activeJob = getActiveJobForMarket(tenantDomain, req.params.id);
+      const activeJob = getActiveJobForMarket(ctx.tenantDomain, req.params.id);
       if (!activeJob) {
         return res.json({ active: false });
       }
       const { tenantDomain: _td, userId: _uid, ...safeProgress } = activeJob.progress;
       res.json({ active: true, jobId: activeJob.jobId, progress: safeProgress });
     } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -2971,22 +2998,43 @@ Respond in JSON format:
       const userDomain = user.email.split("@")[1];
       const userTenant = await storage.getTenantByDomain(userDomain);
       
-      let activeTenantId = req.session.activeTenantId;
-      let activeMarketId = req.session.activeMarketId;
-      
+      // Prefer per-tab headers (X-Active-Tenant-Id / X-Active-Market-Id) so this
+      // endpoint reflects THIS tab's context, not whichever value another tab
+      // last wrote into the session.
+      let activeTenantId = getActiveTenantId(req);
+      let activeMarketId = getActiveMarketId(req);
+      const fromHeader = !!(req.headers["x-active-tenant-id"] || req.headers["x-active-market-id"]);
+
+      // Header-spoof guard: a header-supplied tenant id must be in the user's
+      // accessible tenants. If not, drop the spoofed value (do NOT expose
+      // tenant/market metadata for tenants the user can't access).
+      if (activeTenantId) {
+        const accessible = await storage.getAccessibleTenants(user.id, user.role, userDomain);
+        if (!accessible.find(t => t.id === activeTenantId)) {
+          activeTenantId = undefined;
+          activeMarketId = undefined;
+        }
+      }
+
       if (!activeTenantId && userTenant) {
         activeTenantId = userTenant.id;
-        req.session.activeTenantId = activeTenantId;
+        if (!fromHeader) req.session.activeTenantId = activeTenantId;
       }
-      
+
+      // If a market id came in but doesn't belong to the resolved tenant, drop it.
+      if (activeMarketId && activeTenantId) {
+        const valid = await storage.validateMarketBelongsToTenant(activeMarketId, activeTenantId);
+        if (!valid) activeMarketId = undefined;
+      }
+
       if (activeTenantId && !activeMarketId) {
         const defaultMarket = await storage.getDefaultMarket(activeTenantId);
         if (defaultMarket) {
           activeMarketId = defaultMarket.id;
-          req.session.activeMarketId = activeMarketId;
+          if (!fromHeader) req.session.activeMarketId = activeMarketId;
         }
       }
-      
+
       const activeTenant = activeTenantId ? await storage.getTenant(activeTenantId) : null;
       const activeMarket = activeMarketId ? await storage.getMarket(activeMarketId) : null;
       
