@@ -3001,9 +3001,15 @@ export async function generateRelationshipReportPdf(
   reportProgress?.({ phase: "Gathering source data", percent: 25 });
   const tenant = await storage.getTenantByDomain(tenantDomain);
   let marketName: string | undefined;
+  // Default-market detection: a market is "default" when its `isDefault`
+  // flag is set, OR when the report has no marketId at all (legacy compat).
+  // We must NOT derive this from `!report.marketId` alone, because the
+  // default market normally still has its id set on rows.
+  let isDefaultMarket = !report.marketId;
   if (report.marketId) {
     const market = await storage.getMarket(report.marketId);
     marketName = market?.name;
+    if (market?.isDefault) isDefaultMarket = true;
   }
 
   let baselineName = tenant?.name || tenantDomain;
@@ -3012,9 +3018,10 @@ export async function generateRelationshipReportPdf(
     if (profile?.companyName) baselineName = profile.companyName;
   } else {
     const profile = await storage.getCompanyProfileByContext({
+      tenantId: tenant?.id || "",
       tenantDomain,
-      marketId: report.marketId || undefined,
-      isDefaultMarket: !report.marketId,
+      marketId: report.marketId || "",
+      isDefaultMarket,
     });
     if (profile?.companyName) baselineName = profile.companyName;
   }

@@ -249,7 +249,7 @@ export function registerRelationshipReportRoutes(app: Express) {
         (_signal, reportProgress) =>
           generateRelationshipReportPdf(report.id, ctx.tenantDomain, ctx.userId, reportProgress),
         undefined,
-        { tenantDomain: ctx.tenantDomain, targetName: report.name },
+        { tenantDomain: ctx.tenantDomain, targetName: report.targetName },
       );
 
       const safeName = (report.name || "Relationship_Report").replace(/[^a-zA-Z0-9]/g, "_");

@@ -1949,29 +1949,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRelationshipReportsByContext(ctx: ContextFilter): Promise<RelationshipReport[]> {
-    const conditions = [eq(relationshipReports.tenantDomain, ctx.tenantDomain)];
-    if (ctx.marketId) {
-      conditions.push(eq(relationshipReports.marketId, ctx.marketId));
-    } else {
-      conditions.push(isNull(relationshipReports.marketId));
-    }
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(relationshipReports.marketId, ctx.marketId), isNull(relationshipReports.marketId))
+      : eq(relationshipReports.marketId, ctx.marketId);
     return await db.select().from(relationshipReports)
-      .where(and(...conditions))
+      .where(and(
+        eq(relationshipReports.tenantDomain, ctx.tenantDomain),
+        marketCondition,
+      ))
       .orderBy(desc(relationshipReports.updatedAt));
   }
 
   async getRelationshipReportByCompetitor(competitorId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined> {
-    const conditions = [
-      eq(relationshipReports.tenantDomain, ctx.tenantDomain),
-      eq(relationshipReports.competitorId, competitorId),
-    ];
-    if (ctx.marketId) {
-      conditions.push(eq(relationshipReports.marketId, ctx.marketId));
-    } else {
-      conditions.push(isNull(relationshipReports.marketId));
-    }
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(relationshipReports.marketId, ctx.marketId), isNull(relationshipReports.marketId))
+      : eq(relationshipReports.marketId, ctx.marketId);
     const [report] = await db.select().from(relationshipReports)
-      .where(and(...conditions))
+      .where(and(
+        eq(relationshipReports.tenantDomain, ctx.tenantDomain),
+        eq(relationshipReports.competitorId, competitorId),
+        marketCondition,
+      ))
       .orderBy(desc(relationshipReports.updatedAt))
       .limit(1);
     return report || undefined;
