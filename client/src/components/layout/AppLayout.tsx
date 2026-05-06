@@ -100,6 +100,12 @@ export interface AppLayoutProps {
 export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Reset the main scroll container to the top whenever the route changes.
+  // Without this, navigating between pages keeps the previous page's scroll
+  // offset, and any focus/scrollIntoView call inside the new page (e.g. an
+  // active sidebar link) drags the viewport to the bottom — leaving users
+  // staring at a blank area until they manually scroll back up.
+  const mainScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -381,6 +387,18 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (path.startsWith("/app")) {
       localStorage.setItem("orbit_last_page", path);
     }
+  }, [location]);
+
+  // Force the main content area back to the top on every route change. Use
+  // both the scoped ref and window as a fallback (some browsers/embeds let
+  // the document itself accumulate scroll). Done after a microtask so it
+  // wins against any layout-time scrollIntoView inside the new page.
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => {
+      if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+      window.scrollTo(0, 0);
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [location]);
 
   const navIndicators = useMemo((): Record<string, NavIndicator> => {
@@ -753,7 +771,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         <ContextBar />
 
         {/* Payment grace banner hidden — Stripe billing not yet active */}
-        <div className="flex-1 overflow-y-auto pb-16 lg:pb-0">
+        <div ref={mainScrollRef} className="flex-1 overflow-y-auto pb-16 lg:pb-0">
           <div className="container max-w-7xl mx-auto p-4 md:p-8 lg:p-10 space-y-8">
             {breadcrumbs === undefined ? (
               <PageBreadcrumbs />
