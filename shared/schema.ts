@@ -640,6 +640,56 @@ export const productBattlecards = pgTable("product_battlecards", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Relationship reports — on-demand 12-month plans describing how to engage,
+// cooperate with, sell to, compete with, speak to, or steer clear of another
+// company. Default target is a tracked competitor; the perspective ("us") is
+// always the active baseline company profile. Stored as markdown.
+export const relationshipReports = pgTable("relationship_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "set null" }),
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+  // Denormalized target identity so reports survive competitor deletion and
+  // can later support arbitrary external companies without a competitors row.
+  targetName: text("target_name").notNull(),
+  targetUrl: text("target_url"),
+  name: text("name").notNull(),
+  content: text("content"),
+  // { posture?: 'cooperate'|'compete'|'sell_to'|'steer_clear'|'observe',
+  //   customGuidance?: string, focus?: string[], lastManualEdit?: string,
+  //   versionHistory?: [{ content, savedAt, savedBy }] }
+  savedPrompts: jsonb("saved_prompts"),
+  status: text("status").notNull().default("not_generated"), // not_generated | generating | generated
+  lastGeneratedAt: timestamp("last_generated_at"),
+  generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
+  generatedBy: varchar("generated_by").references(() => users.id, { onDelete: "set null" }),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantMarketIdx: index("relationship_reports_tenant_market_idx").on(table.tenantDomain, table.marketId),
+  competitorIdx: index("relationship_reports_competitor_idx").on(table.competitorId),
+}));
+
+export const insertRelationshipReportSchema = createInsertSchema(relationshipReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertRelationshipReport = z.infer<typeof insertRelationshipReportSchema>;
+export type RelationshipReport = typeof relationshipReports.$inferSelect;
+
+export const RELATIONSHIP_POSTURES = [
+  "cooperate",
+  "compete",
+  "sell_to",
+  "steer_clear",
+  "observe",
+] as const;
+export type RelationshipPosture = (typeof RELATIONSHIP_POSTURES)[number];
+
 // Long-form AI-generated recommendations (GTM plan, messaging framework)
 export const longFormRecommendations = pgTable("long_form_recommendations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

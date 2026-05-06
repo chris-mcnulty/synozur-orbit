@@ -23,6 +23,7 @@ import { registerProductRoutes } from "./routes/products";
 import { registerProductFeedbackRoutes } from "./routes/product-feedback";
 import { registerIntelligenceRoutes } from "./routes/intelligence";
 import { registerExecutiveRegenRoutes } from "./routes/executive-regen";
+import { registerRelationshipReportRoutes } from "./routes/relationship-reports";
 import { registerTenantAdminRoutes } from "./routes/tenant-admin";
 import { registerIntegrationRoutes } from "./routes/integrations";
 import { registerOperationsRoutes } from "./routes/operations";
@@ -93,6 +94,7 @@ export async function registerRoutes(
   registerProductFeedbackRoutes(app);
   registerIntelligenceRoutes(app);
   registerExecutiveRegenRoutes(app);
+  registerRelationshipReportRoutes(app);
   registerTenantAdminRoutes(app);
   registerIntegrationRoutes(app);
   registerOperationsRoutes(app);
