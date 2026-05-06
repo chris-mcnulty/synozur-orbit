@@ -44,6 +44,7 @@ import {
   Map,
   FileText as FileTextIcon,
   UserCircle,
+  Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -344,6 +345,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.battlecards === false) locked.add("/app/battlecards");
     if (f.recommendations === false) locked.add("/app/action-items");
     if (f.pdfReports === false) locked.add("/app/reports");
+    if (f.relationshipReports === false) locked.add("/app/relationship-reports");
     if (f.marketingPlanner === false) locked.add("/app/marketing-planner");
     if (f.socialMonitoring === false) locked.add("/app/activity");
     if (f.emailNewsletters === false) locked.add("/app/marketing/email-newsletters");
@@ -518,6 +520,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
       group: "Outputs",
       items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
+        { label: "Relationship Plans", icon: Handshake, href: "/app/relationship-reports" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
       ]
     },

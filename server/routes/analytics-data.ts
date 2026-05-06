@@ -914,7 +914,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
         if (profile) contextName = profile.companyName;
       }
       const safeName = contextName ? `_${contextName.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}` : "";
-      const filename = `Intelligence_Briefing${safeName}_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
+      const filename = `Market_Intelligence${safeName}_${new Date(briefing.periodEnd).toISOString().split('T')[0]}.pdf`;
       
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

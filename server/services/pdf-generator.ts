@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import type { Competitor, CompanyProfile, Report, Battlecard, IntelligenceBriefing } from "@shared/schema";
+import type { Competitor, CompanyProfile, Report, Battlecard, IntelligenceBriefing, RelationshipReport } from "@shared/schema";
 import { format } from "date-fns";
 import { calculateScores } from "./scoring-service";
 import * as fs from "fs";
@@ -953,7 +953,7 @@ function generateReportHtml(data: ReportData): string {
   <div class="cover-page">
     ${coverLogo}
     ${headerLogo}
-    <div class="cover-title">Competitive Intelligence Report</div>
+    <div class="cover-title">Company Analysis Report</div>
     <div class="cover-subtitle">${escapeHtml(data.reportName)}</div>
     <div class="cover-scope">${scopeLabel}</div>
     <div style="background: #F1F5F9; padding: 16px 32px; border-radius: 8px; margin-bottom: 24px;">
@@ -1864,7 +1864,7 @@ export async function generatePdfReport(
     const report = await storage.createReport({
       name: reportName,
       date: format(new Date(), "yyyy-MM-dd"),
-      type: "Competitive Analysis",
+      type: "Company Analysis",
       size: sizeLabel,
       author: user.name || user.email,
       status: "Generated",
@@ -2071,7 +2071,7 @@ function generateIntelligenceBriefingHtml(data: IntelligenceBriefingPdfData): st
 <body>
   <div class="cover-page">
     ${coverLogo}
-    <div class="cover-title">Market Intelligence Briefing</div>
+    <div class="cover-title">Market Intelligence</div>
     <div class="cover-subtitle">${escapeHtml(data.companyName)}</div>
     <div class="cover-meta">
       <div>Period: ${format(data.periodStart, "MMM d")} - ${format(data.periodEnd, "MMM d, yyyy")}</div>
@@ -2797,5 +2797,264 @@ export async function generateCompetitorPdfReport(
     marketId: marketId || null,
   });
 
+  return { pdfBuffer: Buffer.from(pdfBuffer), report };
+}
+
+// =====================================================
+// Relationship Report PDF
+// =====================================================
+
+interface RelationshipReportPdfData {
+  reportName: string;
+  targetName: string;
+  targetUrl?: string | null;
+  posture?: string | null;
+  baselineCompanyName: string;
+  marketName?: string;
+  tenantDomain: string;
+  contentMarkdown: string;
+  generatedAt: Date;
+  author: string;
+}
+
+const POSTURE_LABELS_PDF: Record<string, string> = {
+  cooperate: "Cooperate / Partner",
+  compete: "Compete / Differentiate",
+  sell_to: "Sell To / Pursue as Customer",
+  steer_clear: "Steer Clear / Avoid",
+  observe: "Observe / Hold Steady",
+};
+
+function generateRelationshipReportHtml(data: RelationshipReportPdfData): string {
+  const synozurLogo = getSynozurLogoBase64();
+  const orbitLogo = getOrbitLogoBase64();
+  const fontFaces = getFontFacesCss();
+  const formattedDate = format(data.generatedAt, "MMMM d, yyyy");
+
+  const headerLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 12px;"><img src="${synozurLogo}" alt="Synozur" style="height: 24px; width: auto;"><span style="color: #94A3B8; font-size: 20px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${orbitLogo}" alt="Orbit" style="height: 32px; width: auto;"></div>`
+      : synozurLogo
+        ? `<div style="display: flex; align-items: center; gap: 8px;"><img src="${synozurLogo}" alt="Synozur" style="height: 28px; width: auto;"><span style="font-size: 24px; font-weight: 700; color: #1E293B;">Orbit</span></div>`
+        : `<div class="logo"><span>Orbit</span></div>`;
+
+  const coverLogo = orbitLogo && synozurLogo
+    ? `<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;"><img src="${synozurLogo}" alt="Synozur" style="height: 48px; width: auto;"><span style="color: #94A3B8; font-size: 28px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+    : orbitLogo
+      ? `<div style="margin-bottom: 24px;"><img src="${orbitLogo}" alt="Orbit" style="height: 56px; width: auto;"></div>`
+      : synozurLogo
+        ? `<img src="${synozurLogo}" alt="Synozur" style="height: 40px; width: auto; margin-bottom: 24px;">`
+        : "";
+
+  const ORBIT_FOOTER = `
+    <div style="text-align: center; padding: 12px 0; border-top: 1px solid #E2E8F0; margin-top: 40px; font-size: 10px; color: #64748B;">
+      <div style="margin-bottom: 4px;">Orbit • orbit.synozur.com</div>
+      <div>Published by The Synozur Alliance LLC • www.synozur.com • © 2026 All Rights Reserved</div>
+      <div style="margin-top: 4px;">Confidential - ${escapeHtml(data.tenantDomain)} | Generated ${formattedDate}</div>
+    </div>
+  `;
+
+  const postureBadge = data.posture
+    ? `<div style="display: inline-block; padding: 6px 14px; border-radius: 999px; background: rgba(124,58,237,0.15); color: #C4B5FD; font-size: 13px; font-weight: 600; margin-top: 16px;">Posture: ${escapeHtml(POSTURE_LABELS_PDF[data.posture] || data.posture)}</div>`
+    : "";
+
+  const renderedBody = markdownToHtml(data.contentMarkdown || "");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    ${fontFaces}
+    @page { size: A4; margin: 20mm 15mm 30mm 15mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Avenir Next LT Pro', 'Avenir Next', 'Avenir', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #FFFFFF;
+      color: #1E293B;
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #334155 100%);
+      color: white;
+    }
+    .cover-title { font-size: 36px; font-weight: 700; margin-bottom: 12px; }
+    .cover-subtitle { font-size: 22px; color: #C7D2FE; margin-bottom: 8px; }
+    .cover-target { font-size: 16px; color: #CBD5E1; }
+    .cover-meta { font-size: 13px; color: #CBD5E1; margin-top: 28px; }
+    .content-page { padding: 20px 0; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      border-bottom: 2px solid #F1F5F9;
+      padding-bottom: 16px;
+    }
+    .summary-card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 24px;
+    }
+    .summary-card .label { font-size: 11px; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary-card .value { font-size: 14px; color: #1E293B; font-weight: 600; }
+    .body-content h1, .body-content h2, .body-content h3 { color: #1E293B; }
+    .body-content h1 { font-size: 22px; margin-top: 28px; }
+    .body-content h2 {
+      font-size: 18px;
+      margin-top: 24px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    .body-content h3 { font-size: 16px; margin-top: 18px; color: #475569; }
+    .body-content ul, .body-content ol { margin: 10px 0; padding-left: 24px; }
+    .body-content p { margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    ${coverLogo}
+    <div class="cover-title">Relationship Report</div>
+    <div class="cover-subtitle">${escapeHtml(data.targetName)}</div>
+    <div class="cover-target">12-month plan from the perspective of ${escapeHtml(data.baselineCompanyName)}</div>
+    ${postureBadge}
+    <div class="cover-meta">
+      <div>Generated on ${formattedDate}</div>
+      ${data.marketName ? `<div>Market: ${escapeHtml(data.marketName)}</div>` : ""}
+      <div>Prepared by ${escapeHtml(data.author)}</div>
+    </div>
+  </div>
+
+  <div class="content-page" style="page-break-before: always;">
+    <div class="header">
+      ${headerLogo}
+      <div style="text-align: right;">
+        <div style="font-weight: 700; font-size: 12px; color: #64748B;">RELATIONSHIP REPORT</div>
+        <div style="font-size: 11px; color: #94A3B8;">${formattedDate}</div>
+      </div>
+    </div>
+
+    <div class="summary-card">
+      <div>
+        <div class="label">Target Company</div>
+        <div class="value">${escapeHtml(data.targetName)}</div>
+        ${data.targetUrl ? `<div style="font-size: 12px; color: #64748B; margin-top: 2px;">${escapeHtml(data.targetUrl)}</div>` : ""}
+      </div>
+      <div>
+        <div class="label">Perspective</div>
+        <div class="value">${escapeHtml(data.baselineCompanyName)}</div>
+      </div>
+      ${data.posture ? `<div>
+        <div class="label">Recommended Posture</div>
+        <div class="value">${escapeHtml(POSTURE_LABELS_PDF[data.posture] || data.posture)}</div>
+      </div>` : ""}
+      ${data.marketName ? `<div>
+        <div class="label">Market</div>
+        <div class="value">${escapeHtml(data.marketName)}</div>
+      </div>` : ""}
+    </div>
+
+    <div class="body-content">
+      ${renderedBody}
+    </div>
+
+    ${ORBIT_FOOTER}
+  </div>
+</body>
+</html>
+  `;
+}
+
+export async function generateRelationshipReportPdf(
+  reportId: string,
+  tenantDomain: string,
+  userId: string,
+  reportProgress?: (patch: { phase?: string; percent?: number }) => void,
+): Promise<{ pdfBuffer: Buffer; report: RelationshipReport }> {
+  reportProgress?.({ phase: "Loading report", percent: 5 });
+  const user = await storage.getUser(userId);
+  if (!user) throw new Error("User not found");
+
+  const report = await storage.getRelationshipReport(reportId);
+  if (!report) throw new Error("Relationship report not found");
+  if (report.tenantDomain !== tenantDomain && user.role !== "Global Admin") {
+    throw new Error("Access denied");
+  }
+
+  reportProgress?.({ phase: "Gathering source data", percent: 25 });
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  let marketName: string | undefined;
+  // Default-market detection: a market is "default" when its `isDefault`
+  // flag is set, OR when the report has no marketId at all (legacy compat).
+  // We must NOT derive this from `!report.marketId` alone, because the
+  // default market normally still has its id set on rows.
+  let isDefaultMarket = !report.marketId;
+  if (report.marketId) {
+    const market = await storage.getMarket(report.marketId);
+    marketName = market?.name;
+    if (market?.isDefault) isDefaultMarket = true;
+  }
+
+  let baselineName = tenant?.name || tenantDomain;
+  if (report.companyProfileId) {
+    const profile = await storage.getCompanyProfile(report.companyProfileId);
+    if (profile?.companyName) baselineName = profile.companyName;
+  } else {
+    const profile = await storage.getCompanyProfileByContext({
+      tenantId: tenant?.id || "",
+      tenantDomain,
+      marketId: report.marketId || "",
+      isDefaultMarket,
+    });
+    if (profile?.companyName) baselineName = profile.companyName;
+  }
+
+  const posture = (report.savedPrompts as any)?.posture as string | undefined;
+
+  reportProgress?.({ phase: "Rendering pages", percent: 50 });
+  const html = generateRelationshipReportHtml({
+    reportName: report.name,
+    targetName: report.targetName,
+    targetUrl: report.targetUrl,
+    posture: posture || null,
+    baselineCompanyName: baselineName,
+    marketName,
+    tenantDomain,
+    contentMarkdown: report.content || "",
+    generatedAt: report.lastGeneratedAt || report.updatedAt || report.createdAt || new Date(),
+    author: user.name || user.email,
+  });
+
+  const startTime = Date.now();
+  const pdfBuffer = await withPdfPage(async (page) => {
+    await page.setViewport({ width: 800, height: 600 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    reportProgress?.({ phase: "Printing PDF", percent: 85 });
+    return await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
+    });
+  });
+
+  reportProgress?.({ phase: "Finalising", percent: 98 });
+  console.log(`[Relationship PDF] Generated in ${Date.now() - startTime}ms`);
   return { pdfBuffer: Buffer.from(pdfBuffer), report };
 }

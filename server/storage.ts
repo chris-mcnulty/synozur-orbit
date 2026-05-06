@@ -20,6 +20,7 @@ import {
   battlecards,
   productBattlecards,
   longFormRecommendations,
+  relationshipReports,
   pageViews,
   markets,
   consultantAccess,
@@ -80,6 +81,8 @@ import {
   type InsertProductBattlecard,
   type LongFormRecommendation,
   type InsertLongFormRecommendation,
+  type RelationshipReport,
+  type InsertRelationshipReport,
   type PageView,
   type InsertPageView,
   type CompetitorScore,
@@ -409,6 +412,14 @@ export interface IStorage {
   createLongFormRecommendation(recommendation: InsertLongFormRecommendation): Promise<LongFormRecommendation>;
   updateLongFormRecommendation(id: string, data: Partial<LongFormRecommendation>): Promise<LongFormRecommendation>;
   deleteLongFormRecommendation(id: string): Promise<void>;
+
+  // Relationship report methods
+  getRelationshipReport(id: string): Promise<RelationshipReport | undefined>;
+  getRelationshipReportsByContext(ctx: ContextFilter): Promise<RelationshipReport[]>;
+  getRelationshipReportByCompetitor(competitorId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined>;
+  createRelationshipReport(report: InsertRelationshipReport): Promise<RelationshipReport>;
+  updateRelationshipReport(id: string, data: Partial<RelationshipReport>): Promise<RelationshipReport>;
+  deleteRelationshipReport(id: string): Promise<void>;
   
   // Competitor score methods (also supports product scores)
   getCompetitorScore(competitorId: string, projectId?: string): Promise<CompetitorScore | undefined>;
@@ -1929,6 +1940,57 @@ export class DatabaseStorage implements IStorage {
 
   async deleteLongFormRecommendation(id: string): Promise<void> {
     await db.delete(longFormRecommendations).where(eq(longFormRecommendations.id, id));
+  }
+
+  // Relationship report methods
+  async getRelationshipReport(id: string): Promise<RelationshipReport | undefined> {
+    const [report] = await db.select().from(relationshipReports).where(eq(relationshipReports.id, id));
+    return report || undefined;
+  }
+
+  async getRelationshipReportsByContext(ctx: ContextFilter): Promise<RelationshipReport[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(relationshipReports.marketId, ctx.marketId), isNull(relationshipReports.marketId))
+      : eq(relationshipReports.marketId, ctx.marketId);
+    return await db.select().from(relationshipReports)
+      .where(and(
+        eq(relationshipReports.tenantDomain, ctx.tenantDomain),
+        marketCondition,
+      ))
+      .orderBy(desc(relationshipReports.updatedAt));
+  }
+
+  async getRelationshipReportByCompetitor(competitorId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(relationshipReports.marketId, ctx.marketId), isNull(relationshipReports.marketId))
+      : eq(relationshipReports.marketId, ctx.marketId);
+    const [report] = await db.select().from(relationshipReports)
+      .where(and(
+        eq(relationshipReports.tenantDomain, ctx.tenantDomain),
+        eq(relationshipReports.competitorId, competitorId),
+        marketCondition,
+      ))
+      .orderBy(desc(relationshipReports.updatedAt))
+      .limit(1);
+    return report || undefined;
+  }
+
+  async createRelationshipReport(report: InsertRelationshipReport): Promise<RelationshipReport> {
+    const [result] = await db.insert(relationshipReports).values(report).returning();
+    return result;
+  }
+
+  async updateRelationshipReport(id: string, data: Partial<RelationshipReport>): Promise<RelationshipReport> {
+    const [result] = await db
+      .update(relationshipReports)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(relationshipReports.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteRelationshipReport(id: string): Promise<void> {
+    await db.delete(relationshipReports).where(eq(relationshipReports.id, id));
   }
 
   // Page view analytics methods

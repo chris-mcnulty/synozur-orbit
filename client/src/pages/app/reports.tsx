@@ -244,7 +244,7 @@ export default function Reports() {
       const blob = await response.blob();
       const defaultName = reportType === "marketing" 
         ? `Marketing_Report_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`
-        : `Competitive_Analysis_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`;
+        : `Company_Analysis_Report_${new Date().toLocaleDateString().replace(/\//g, "-")}.pdf`;
       const fileName = reportName 
         ? `${reportName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`
         : defaultName;
@@ -605,7 +605,7 @@ export default function Reports() {
             <Label htmlFor="report-name">Report Name (Optional)</Label>
             <Input
               id="report-name"
-              placeholder="e.g., Q1 2025 Competitive Analysis"
+              placeholder="e.g., Q1 2025 Company Analysis Report"
               value={reportName}
               onChange={(e) => setReportName(e.target.value)}
               data-testid="input-report-name"
