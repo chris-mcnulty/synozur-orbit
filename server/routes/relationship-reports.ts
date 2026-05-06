@@ -35,8 +35,16 @@ export function registerRelationshipReportRoutes(app: Express) {
     if (!await guardFeature(req, res, "relationshipReports")) return;
     try {
       const ctx = await getRequestContext(req);
-      const profiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
-      res.json(profiles);
+      // Fetch all profiles for this tenant, then exclude the active market's
+      // own baseline so users can't generate a self-targeted report.
+      const [allProfiles, activeProfile] = await Promise.all([
+        storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain),
+        storage.getCompanyProfileByContext(toContextFilter(ctx)),
+      ]);
+      const crossMarket = activeProfile
+        ? allProfiles.filter(p => p.id !== activeProfile.id)
+        : allProfiles;
+      res.json(crossMarket);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });

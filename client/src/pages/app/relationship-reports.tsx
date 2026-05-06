@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,8 +97,9 @@ export default function RelationshipReportsPage() {
     },
   });
 
-  // All company profiles across all markets for this tenant (cross-market targets)
-  const { data: allProfiles = [] as any[] } = useQuery({
+  // Cross-market baseline companies for this tenant — server already excludes
+  // the active market's own profile, so this list is safe to render directly.
+  const { data: crossMarketProfiles = [] as any[] } = useQuery({
     queryKey: ["/api/relationship-reports/company-profiles"],
     queryFn: async () => {
       const response = await fetch("/api/relationship-reports/company-profiles", { credentials: "include" });
@@ -107,12 +108,6 @@ export default function RelationshipReportsPage() {
     },
     enabled: allowed,
   });
-
-  // Cross-market profiles: exclude the active market's own baseline profile
-  const crossMarketProfiles = useMemo(() => {
-    if (!companyProfile?.id) return allProfiles;
-    return allProfiles.filter((p: any) => p.id !== companyProfile.id);
-  }, [allProfiles, companyProfile]);
 
   const { data: reports = [] as RelationshipReport[] } = useQuery<RelationshipReport[]>({
     queryKey: ["/api/relationship-reports"],
