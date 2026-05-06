@@ -1173,6 +1173,32 @@ app.use((req, res, next) => {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS seo_metrics_keyword_idx ON seo_metrics(keyword_id, captured_at)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS seo_metrics_entity_idx ON seo_metrics(entity_id, captured_at)`);
 
+    // Relationship reports — on-demand 12-month engagement plans (PR #41).
+    // Migration file: migrations/0014_relationship_reports.sql
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS relationship_reports (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_domain TEXT NOT NULL,
+        market_id VARCHAR REFERENCES markets(id) ON DELETE SET NULL,
+        company_profile_id VARCHAR REFERENCES company_profiles(id) ON DELETE SET NULL,
+        competitor_id VARCHAR REFERENCES competitors(id) ON DELETE SET NULL,
+        target_name TEXT NOT NULL,
+        target_url TEXT,
+        name TEXT NOT NULL,
+        content TEXT,
+        saved_prompts JSONB,
+        status TEXT NOT NULL DEFAULT 'not_generated',
+        last_generated_at TIMESTAMP,
+        generated_from_data_as_of TIMESTAMP,
+        generated_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS relationship_reports_tenant_market_idx ON relationship_reports(tenant_domain, market_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS relationship_reports_competitor_idx ON relationship_reports(competitor_id)`);
+
     // Any tenant with a directly-assigned paid plan but no Stripe subscription
     // should be treated as manually managed so resolveEffectivePlan trusts it.
     await pgPool.query(`UPDATE tenants SET billing_managed_manually = true WHERE plan IN ('pro','enterprise','unlimited') AND billing_managed_manually = false AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')`);
