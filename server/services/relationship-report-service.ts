@@ -12,7 +12,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, type ContextFilter } from "../storage";
-import type { CompanyProfile, Competitor, Battlecard, Activity } from "@shared/schema";
+import type { CompanyProfile, Competitor, Battlecard, Activity, GroundingDocument } from "@shared/schema";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -81,6 +81,27 @@ function summarizeActivity(activities: Activity[]): string {
     .join("\n");
 }
 
+// Trim verbose markdown to fit a budget without truncating mid-sentence too
+// awkwardly; we keep section headers and lists intact at the edges.
+function truncateText(text: string, maxChars: number): string {
+  if (!text) return "";
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars).replace(/\s+\S*$/, "") + "\n…(truncated)";
+}
+
+function summarizeBaselineGroundingDocs(docs: GroundingDocument[]): string {
+  // Baseline-only docs: docs without a competitorId, since competitor-tagged
+  // docs describe the target / other companies, not the perspective.
+  const baselineDocs = docs.filter(d => !d.competitorId);
+  if (baselineDocs.length === 0) return "";
+  const blocks = baselineDocs.slice(0, 8).map(d => {
+    const body = (d.extractedText || "").trim();
+    if (!body) return null;
+    return `### ${d.name}${d.useCase ? ` (${d.useCase})` : ""}\n${truncateText(body, 2500)}`;
+  }).filter(Boolean) as string[];
+  return blocks.join("\n\n");
+}
+
 export async function generateRelationshipReport(
   input: RelationshipReportInput,
 ): Promise<RelationshipReportResult> {
@@ -97,6 +118,29 @@ export async function generateRelationshipReport(
   } catch {
     // Activity is best-effort; absence shouldn't block report generation.
   }
+
+  // Anchor the perspective: load the baseline company's own messaging
+  // framework + GTM plan, plus any grounding documents that describe the
+  // baseline company itself. These let the AI speak in the company's voice
+  // and stay grounded in the company's own positioning rather than inventing
+  // a generic point of view.
+  const [messagingRec, gtmRec, allGroundingDocs] = await Promise.all([
+    baseline
+      ? storage.getLongFormRecommendationByType("messaging_framework", undefined, baseline.id).catch(() => undefined)
+      : Promise.resolve(undefined),
+    baseline
+      ? storage.getLongFormRecommendationByType("gtm_plan", undefined, baseline.id).catch(() => undefined)
+      : Promise.resolve(undefined),
+    storage.getGroundingDocumentsByContext(ctx, "executive_summary").catch(() => [] as GroundingDocument[]),
+  ]);
+
+  const messagingFrameworkText = messagingRec?.status === "generated" && messagingRec.content
+    ? truncateText(messagingRec.content, 6000)
+    : "";
+  const gtmPlanText = gtmRec?.status === "generated" && gtmRec.content
+    ? truncateText(gtmRec.content, 4500)
+    : "";
+  const baselineGroundingText = summarizeBaselineGroundingDocs(allGroundingDocs);
 
   const baselineAnalysis = (baseline?.analysisData as any) || {};
   const baselineBlock = baseline
@@ -137,12 +181,60 @@ Summary: ${(competitor.analysisData as any)?.summary || "No AI summary available
     ? `\nThis is a B2C market — frame messaging around brand, lifestyle and emotional connection rather than enterprise procurement.`
     : "";
 
+  // Source-of-truth ordering for our own positioning:
+  //   1. Official grounding documents uploaded by the team about the
+  //      baseline company (highest authority — these are the real MPF and
+  //      brand docs the customer trusts).
+  //   2. The system-generated messaging framework recommendation (a useful
+  //      suggestion, but yields to anything in the official docs above).
+  //   3. The system-generated GTM plan recommendation (same rule).
+  // The prompt makes that precedence explicit so the model never substitutes
+  // its own suggestion for an official statement that contradicts it.
+
+  const baselineGroundingBlock = baselineGroundingText
+    ? `## Official Baseline Grounding Documents (about ${baseline?.companyName || "our company"}) — HIGHEST AUTHORITY
+These documents were uploaded by the team as the official source of truth about our own company — including any official messaging & positioning framework (MPF), brand guidelines, voice docs, board decks, or one-pagers. Treat them as PRIMARY source material. Quote facts, positioning language, value proposition phrasing, taglines, and proof points from them verbatim where helpful.
+
+PRECEDENCE RULE: When anything in these official documents conflicts with the system-generated Messaging Framework or GTM Plan that follow, the official documents win. The AI-generated frameworks are working drafts; the official documents are the company's actual position. Do not paper over conflicts — if you spot one, follow the official document and call out the conflict in "Risks & Open Questions" so the team can reconcile their internal artifacts.
+
+${baselineGroundingText}`
+    : "";
+
+  const messagingFrameworkBlock = messagingFrameworkText
+    ? `## System-Generated Messaging & Positioning Framework (suggestion — yields to official docs above)
+This is an AI-generated messaging framework draft saved in Orbit. Use it to fill in any gaps left by the official grounding documents above (positioning, value proposition, messaging pillars, tone of voice, do's-and-don'ts). However, if the official baseline grounding documents above describe positioning or voice differently, follow the official documents and ignore the conflicting parts of this draft.
+
+${messagingFrameworkText}`
+    : baselineGroundingText
+      ? ""
+      : `## Messaging & Positioning Framework
+No official grounding documents and no system-generated messaging framework are available. Derive a sensible voice from the baseline profile above and flag in "Risks & Open Questions" that the team should produce one.`;
+
+  const gtmPlanBlock = gtmPlanText
+    ? `## System-Generated Go-To-Market Plan (suggestion — yields to official docs above)
+This is an AI-generated GTM plan draft saved in Orbit. Use it to align target-segment language, channel choices, and launch milestones for the 12-month roadmap, except where the official grounding documents above contradict it — in that case follow the official docs.
+
+${gtmPlanText}`
+    : "";
+
   const prompt = `You are a senior partnerships and competitive strategy advisor. Produce a comprehensive, decision-ready 12-month Relationship Plan in markdown describing how ${baseline?.companyName || "our company"} should engage with ${competitor.name}.
 
-The plan must be opinionated, specific, and quarter-by-quarter. It should advise on multiple coexisting postures: when to engage, when to cooperate, when to sell to them, when to compete, how to speak to them, and when to steer clear. Use the data below; never invent factual claims you cannot ground.
+The plan must be opinionated, specific, and quarter-by-quarter. It should advise on multiple coexisting postures: when to engage, when to cooperate, when to sell to them, when to compete, how to speak to them, and when to steer clear. Use the data below; never invent factual claims you cannot ground. The plan must be written from ${baseline?.companyName || "our company"}'s point of view, anchored to its official voice.
+
+SOURCE-OF-TRUTH PRECEDENCE for our own positioning (apply in order, top wins):
+1. Official baseline grounding documents (uploaded MPF, brand docs, voice guides, etc.).
+2. System-generated Messaging & Positioning Framework draft.
+3. System-generated Go-To-Market Plan draft.
+4. Inferred voice from the baseline profile.
+
+If a lower-tier source contradicts a higher one, follow the higher one and note the conflict in "Risks & Open Questions".
 
 ## Our Company (perspective)
 ${baselineBlock}
+
+${baselineGroundingBlock ? `${baselineGroundingBlock}\n` : ""}
+${messagingFrameworkBlock ? `${messagingFrameworkBlock}\n` : ""}
+${gtmPlanBlock ? `${gtmPlanBlock}\n` : ""}
 
 ## Target Company (subject of the plan)
 ${targetBlock}
