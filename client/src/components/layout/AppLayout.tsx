@@ -527,7 +527,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     {
       group: "System",
       items: [
-        { label: "User Management", icon: Users, href: "/app/users" },
+        ...(isAdminUser ? [{ label: "User Management", icon: Users, href: "/app/users" }] : []),
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
         { label: "Settings", icon: Settings, href: "/app/settings" },
         ...((user?.role === "Global Admin" || user?.role === "Domain Admin") ? [

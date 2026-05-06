@@ -78,6 +78,7 @@ export default function UsersPage() {
   const [tenantFilter, setTenantFilter] = useState<string>("all");
 
   const isGlobalAdmin = currentUser?.role === "Global Admin";
+  const isAdminUser = currentUser?.role === "Domain Admin" || currentUser?.role === "Global Admin";
 
   const { data: accessibleTenants = [] } = useQuery<Tenant[]>({
     queryKey: ["/api/admin/tenants"],
@@ -103,6 +104,7 @@ export default function UsersPage() {
       }
       return response.json();
     },
+    enabled: isAdminUser,
   });
 
   const filteredUsers = React.useMemo(() => {
@@ -316,6 +318,20 @@ export default function UsersPage() {
         return "outline";
     }
   };
+
+  if (currentUser && !isAdminUser) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center gap-4" data-testid="access-denied-users">
+          <Shield className="w-12 h-12 text-muted-foreground" />
+          <h1 className="text-2xl font-bold tracking-tight">Access Restricted</h1>
+          <p className="text-muted-foreground max-w-sm">
+            User management is only available to administrators. Contact your Domain Admin if you need to manage team members.
+          </p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (isLoading) {
     return (
