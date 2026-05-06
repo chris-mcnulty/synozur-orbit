@@ -619,6 +619,8 @@ export function registerConsultantPlansRoutes(app: Express) {
       if (!user) return res.status(401).json({ error: "Not authenticated" });
       if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
 
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
+
       const [flaggedCompetitors, flaggedProducts] = await Promise.all([
         storage.getFlaggedCompetitors(),
         storage.getFlaggedProducts(),
@@ -627,7 +629,7 @@ export function registerConsultantPlansRoutes(app: Express) {
       const isGlobalAdmin = user.role === "Global Admin";
       res.json({
         competitors: flaggedCompetitors
-          .filter(c => isGlobalAdmin || c.tenantDomain === user.tenantDomain)
+          .filter(c => isGlobalAdmin || c.tenantDomain === userDomain)
           .map(c => ({
             id: c.id,
             name: c.name,
@@ -639,7 +641,7 @@ export function registerConsultantPlansRoutes(app: Express) {
             marketId: c.marketId,
           })),
         products: flaggedProducts
-          .filter(p => isGlobalAdmin || p.tenantDomain === user.tenantDomain)
+          .filter(p => isGlobalAdmin || p.tenantDomain === userDomain)
           .map(p => ({
             id: p.id,
             name: p.name,
@@ -665,16 +667,17 @@ export function registerConsultantPlansRoutes(app: Express) {
 
       const { type, id } = req.params;
       const isGlobalAdmin = user.role === "Global Admin";
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
       if (type === "competitor") {
         const competitor = await storage.getCompetitor(id);
         if (!competitor) return res.status(404).json({ error: "Competitor not found" });
-        if (!isGlobalAdmin && competitor.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        if (!isGlobalAdmin && competitor.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
         const updated = await storage.updateCompetitor(id, { excludeFromCrawl: true });
         res.json(updated);
       } else if (type === "product") {
         const product = await storage.getProduct(id);
         if (!product) return res.status(404).json({ error: "Product not found" });
-        if (!isGlobalAdmin && product.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        if (!isGlobalAdmin && product.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
         const updated = await storage.updateProduct(id, { excludeFromCrawl: true });
         res.json(updated);
       } else {
@@ -694,16 +697,17 @@ export function registerConsultantPlansRoutes(app: Express) {
 
       const { type, id } = req.params;
       const isGlobalAdmin = user.role === "Global Admin";
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
       if (type === "competitor") {
         const competitor = await storage.getCompetitor(id);
         if (!competitor) return res.status(404).json({ error: "Competitor not found" });
-        if (!isGlobalAdmin && competitor.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        if (!isGlobalAdmin && competitor.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
         const updated = await storage.updateCompetitor(id, { crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
         res.json(updated);
       } else if (type === "product") {
         const product = await storage.getProduct(id);
         if (!product) return res.status(404).json({ error: "Product not found" });
-        if (!isGlobalAdmin && product.tenantDomain !== user.tenantDomain) return res.status(403).json({ error: "Access denied" });
+        if (!isGlobalAdmin && product.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
         const updated = await storage.updateProduct(id, { crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
         res.json(updated);
       } else {
