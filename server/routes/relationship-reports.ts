@@ -175,6 +175,15 @@ export function registerRelationshipReportRoutes(app: Express) {
         generatedBy: ctx.userId,
         savedPrompts: { ...input.savedPromptsBase, versionHistory: previousVersions },
       });
+
+      // Fire-and-forget: render the PDF and archive it to SharePoint
+      // Embedded so a copy lands in the tenant's container on every
+      // generation, without requiring the user to click "Download PDF".
+      // Reuses the same enqueuePdf path as the download route so a
+      // concurrent download is deduped against this generation job.
+      void archiveRelationshipReportPdfToSpe(reportId, ctx).catch((err) => {
+        console.error(`[SPE] Failed to archive relationship report PDF for ${reportId}:`, err);
+      });
     } catch (error: any) {
       console.error(`[relationship-report] Background generation failed for ${reportId}:`, error);
       await storage.updateRelationshipReport(reportId, {
@@ -188,6 +197,54 @@ export function registerRelationshipReportRoutes(app: Express) {
         console.error(`[relationship-report] Failed to mark ${reportId} as failed:`, updateErr);
       });
     }
+  }
+
+  // Render the just-generated relationship report as a PDF and push it to
+  // the tenant's SharePoint Embedded container. Silently no-ops when SPE is
+  // disabled for the tenant or the global container env var is missing.
+  async function archiveRelationshipReportPdfToSpe(
+    reportId: string,
+    ctx: { tenantDomain: string; marketId: string | null; userId: string },
+  ) {
+    const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+    if (!tenant?.speStorageEnabled) return;
+
+    const report = await storage.getRelationshipReport(reportId);
+    if (!report || report.status !== "generated" || !report.content) return;
+
+    const { generateRelationshipReportPdf } = await import("../services/pdf-generator");
+    const { enqueuePdf } = await import("../services/job-queue");
+    const { pdfBuffer } = await enqueuePdf(
+      `relationship-report-pdf:${report.id}`,
+      (_signal, reportProgress) =>
+        generateRelationshipReportPdf(report.id, ctx.tenantDomain, ctx.userId, reportProgress),
+      undefined,
+      { tenantDomain: ctx.tenantDomain, targetName: report.targetName },
+    );
+
+    const safeName = (report.name || "Relationship_Report").replace(/[^a-zA-Z0-9]/g, "_");
+    const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.pdf`;
+
+    const { sharepointFileStorage } = await import("../services/sharepoint-file-storage.js");
+    await sharepointFileStorage.storeFile(
+      pdfBuffer,
+      filename,
+      "application/pdf",
+      {
+        documentType: "report",
+        scope: "tenant",
+        tenantDomain: ctx.tenantDomain,
+        marketId: report.marketId || undefined,
+        createdByUserId: ctx.userId,
+        fileType: "pdf",
+        originalFileName: filename,
+        reportType: "relationship_report",
+      },
+      ctx.userId,
+      report.id,
+      tenant.id,
+    );
+    console.log(`[SPE] Archived relationship report PDF for ${report.id} (${filename})`);
   }
 
   // Generate or regenerate a relationship report for a competitor.
