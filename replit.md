@@ -108,6 +108,12 @@ Preferred communication style: Simple, everyday language.
 - Test login uses the seeded local-auth user `e2e-test@synozur.com` (Domain Admin on `synozur.com`). Password is reset deterministically when running tests; tenant `synozur.com` has `billing_managed_manually = true` so enterprise feature flags (campaigns, personaBuilder) resolve correctly without an active Stripe subscription.
 - Inline-validation coverage: competitor social-link editor (eager onChange errors), campaign wizard step 0 (badge-click reveals `error-campaign-name`) and step 3 (Create button stays clickable while invalid; clicking it sets `stepAttempted[3]=true` so `error-start-date` / `error-number-of-days` render — both are asserted by the spec), persona TagInput empty/duplicate animated errors.
 
+### Gotchas
+- **Adding a new table or column**: edit `shared/schema.ts`, run `npm run db:generate`, commit the generated file from `migrations/`. That's it — the runner applies it at next boot. Do NOT add inline SQL to `server/index.ts`; that block has been removed (Task #128).
+- **Never edit a migration file after it has been applied**: the runner tracks a SHA-256 checksum and will refuse to start if a file changes post-application.
+- **Migration runner** (`server/db-migrate.ts`): reads `migrations/*.sql` in lexicographic order, splits on `--> statement-breakpoint`, applies each file in a transaction, and records results in the `_migrations` ledger table. Fails loudly (crashes startup) on any SQL error or checksum drift.
+- **Existing databases**: on first boot with an empty `_migrations` ledger the runner detects the `users` table and backfills all migration entries rather than re-running already-applied SQL.
+
 ### Marketing Delivery (Task #97)
 - **Direct social publishing**: `SocialPublisher` interface in `server/services/social-publishers/`; LinkedIn implemented, Twitter/Instagram/Facebook/Bluesky stubbed. Worker (`marketing-publish-worker.ts`) ticks every 2 minutes processing approved scheduled posts on accounts with `auto_publish=true`. Manual publish-now endpoint `POST /api/generated-posts/:id/publish`.
 - **Direct email delivery**: `email-campaign-sender.ts` honors per-tenant suppressions, generates HMAC unsubscribe tokens (signed with `SESSION_SECRET`) and renders a `List-Unsubscribe` header. Public routes `GET/POST /u/:token` and `POST /api/webhooks/sendgrid` registered BEFORE auth.
