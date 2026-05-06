@@ -14,7 +14,10 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Handshake, Sparkles, Loader2, Download, FileText, RefreshCw, Trash2, Clock, Building2 } from "lucide-react";
+import { Handshake, Sparkles, Loader2, Download, FileText, RefreshCw, Trash2, Clock, Building2, Eye } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { MarkdownContent } from "@/components/MarkdownViewer";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatShortDate } from "@/lib/staleness";
@@ -58,6 +61,7 @@ export default function RelationshipReportsPage() {
   const [targetValue, setTargetValue] = useState<string>("");
   const [posture, setPosture] = useState<string>("");
   const [guidance, setGuidance] = useState<string>("");
+  const [viewing, setViewing] = useState<RelationshipReport | null>(null);
 
   const { data: user } = useQuery({
     queryKey: ["/api/me"],
@@ -126,6 +130,25 @@ export default function RelationshipReportsPage() {
   });
 
   const isAnyGenerating = reports.some(r => r.status === "generating");
+
+  // Sort each picker bucket alphabetically by display name so users can
+  // find a target by scanning rather than scrolling an unsorted list.
+  const sortedCompetitors = [...(competitors as any[])].sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+  );
+  const sortedCrossMarketProfiles = [...(crossMarketProfiles as any[])].sort((a, b) =>
+    (a.companyName || "").localeCompare(b.companyName || "", undefined, { sensitivity: "base" }),
+  );
+
+  // Show the market name beside a cross-market baseline company unless that
+  // market is the tenant's default (which would just read "· Default Market"
+  // for every entry — pure noise).
+  function marketSuffix(p: any): string | null {
+    if (!p?.marketName) return null;
+    if (p.marketIsDefault) return null;
+    if (p.marketName.trim().toLowerCase() === "default") return null;
+    return p.marketName;
+  }
 
   const generateMutation = useMutation({
     mutationFn: async (params: { targetValue: string; posture: string; customGuidance: string }) => {
@@ -242,10 +265,10 @@ export default function RelationshipReportsPage() {
                     <SelectValue placeholder="Choose a target company" />
                   </SelectTrigger>
                   <SelectContent>
-                    {competitors.length > 0 && (
+                    {sortedCompetitors.length > 0 && (
                       <SelectGroup>
                         <SelectLabel>Tracked Competitors</SelectLabel>
-                        {competitors.map((c: any) => (
+                        {sortedCompetitors.map((c: any) => (
                           <SelectItem
                             key={c.id}
                             value={encodeTarget("competitor", c.id)}
@@ -256,24 +279,30 @@ export default function RelationshipReportsPage() {
                         ))}
                       </SelectGroup>
                     )}
-                    {crossMarketProfiles.length > 0 && (
+                    {sortedCrossMarketProfiles.length > 0 && (
                       <SelectGroup>
                         <SelectLabel>Baseline Companies (other markets)</SelectLabel>
-                        {crossMarketProfiles.map((p: any) => (
-                          <SelectItem
-                            key={p.id}
-                            value={encodeTarget("profile", p.id)}
-                            data-testid={`option-relationship-target-profile-${p.id}`}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              {p.companyName}
-                            </span>
-                          </SelectItem>
-                        ))}
+                        {sortedCrossMarketProfiles.map((p: any) => {
+                          const suffix = marketSuffix(p);
+                          return (
+                            <SelectItem
+                              key={p.id}
+                              value={encodeTarget("profile", p.id)}
+                              data-testid={`option-relationship-target-profile-${p.id}`}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                <span>{p.companyName}</span>
+                                {suffix && (
+                                  <span className="text-xs text-muted-foreground">· {suffix}</span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectGroup>
                     )}
-                    {competitors.length === 0 && crossMarketProfiles.length === 0 && (
+                    {sortedCompetitors.length === 0 && sortedCrossMarketProfiles.length === 0 && (
                       <SelectItem value="none" disabled>
                         No targets available yet
                       </SelectItem>
@@ -433,14 +462,24 @@ export default function RelationshipReportsPage() {
                 ) : (
                   <>
                     <Button
-                      variant="outline"
+                      variant="default"
                       size="sm"
                       className="flex-1"
+                      onClick={() => setViewing(rr)}
+                      data-testid={`button-view-relationship-${rr.id}`}
+                      title="Read the plan in your browser"
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/pdf`, "_blank")}
                       data-testid={`button-download-relationship-pdf-${rr.id}`}
+                      title="Download as PDF"
                     >
-                      <Download className="w-4 h-4 mr-2" />
-                      PDF
+                      <Download className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="outline"
@@ -493,6 +532,63 @@ export default function RelationshipReportsPage() {
           })}
         </div>
       )}
+
+      <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col" data-testid="dialog-view-relationship">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Handshake className="w-5 h-5 text-primary" />
+              {viewing?.name || "Relationship Plan"}
+            </DialogTitle>
+            {viewing?.targetName && (
+              <DialogDescription>
+                12-month plan for {viewing.targetName}
+                {viewing.lastGeneratedAt && (
+                  <> · last generated {formatShortDate(viewing.lastGeneratedAt)}</>
+                )}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            {viewing?.content ? (
+              <MarkdownContent content={viewing.content} className="pb-4" />
+            ) : (
+              <p className="text-sm text-muted-foreground italic">No content available.</p>
+            )}
+          </ScrollArea>
+          {viewing && (
+            <div className="flex flex-wrap gap-2 pt-2 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(`/api/relationship-reports/${viewing.id}/download/pdf`, "_blank")}
+                data-testid="button-dialog-download-pdf"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                PDF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(`/api/relationship-reports/${viewing.id}/download/markdown`, "_blank")}
+                data-testid="button-dialog-download-md"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Markdown
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(`/api/relationship-reports/${viewing.id}/download/docx`, "_blank")}
+                data-testid="button-dialog-download-docx"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Word
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

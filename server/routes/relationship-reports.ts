@@ -44,7 +44,22 @@ export function registerRelationshipReportRoutes(app: Express) {
       const crossMarket = activeProfile
         ? allProfiles.filter(p => p.id !== activeProfile.id)
         : allProfiles;
-      res.json(crossMarket);
+
+      // Enrich each profile with its market name + isDefault flag so the
+      // picker can render "Acme · EMEA Market" while suppressing the label
+      // for the tenant's default market (which would just be noise).
+      const marketIds = Array.from(new Set(crossMarket.map(p => p.marketId).filter(Boolean))) as string[];
+      const markets = await Promise.all(marketIds.map(id => storage.getMarket(id).catch(() => null)));
+      const marketById = new Map(markets.filter(Boolean).map(m => [m!.id, m!]));
+      const enriched = crossMarket.map(p => {
+        const market = p.marketId ? marketById.get(p.marketId) : null;
+        return {
+          ...p,
+          marketName: market?.name ?? null,
+          marketIsDefault: market?.isDefault ?? false,
+        };
+      });
+      res.json(enriched);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
