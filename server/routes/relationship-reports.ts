@@ -28,6 +28,21 @@ export function registerRelationshipReportRoutes(app: Express) {
     }
   });
 
+  // List all company profiles across all markets for the active tenant
+  // (used by the frontend to populate the cross-market target picker).
+  // MUST be registered before /:id to prevent "company-profiles" matching as an id.
+  app.get("/api/relationship-reports/company-profiles", async (req, res) => {
+    if (!await guardFeature(req, res, "relationshipReports")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const profiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
+      res.json(profiles);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Fetch a single relationship report by id
   app.get("/api/relationship-reports/:id", async (req, res) => {
     if (!await guardFeature(req, res, "relationshipReports")) return;
@@ -170,20 +185,6 @@ export function registerRelationshipReportRoutes(app: Express) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       console.error("Relationship report generation error:", error);
       res.status(500).json({ error: error.message || "Failed to generate relationship report" });
-    }
-  });
-
-  // List all company profiles across all markets for the active tenant
-  // (used by the frontend to populate the cross-market target picker)
-  app.get("/api/relationship-reports/company-profiles", async (req, res) => {
-    if (!await guardFeature(req, res, "relationshipReports")) return;
-    try {
-      const ctx = await getRequestContext(req);
-      const profiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
-      res.json(profiles);
-    } catch (error: any) {
-      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
-      res.status(500).json({ error: error.message });
     }
   });
 
