@@ -21,7 +21,10 @@ const anthropic = new Anthropic({
 
 export interface RelationshipReportInput {
   ctx: ContextFilter;
-  competitor: Competitor;
+  /** Tracked competitor as the target (mutually exclusive with targetProfile). */
+  competitor?: Competitor;
+  /** Cross-market baseline company as the target (mutually exclusive with competitor). */
+  targetProfile?: CompanyProfile;
   baseline: CompanyProfile | null;
   customGuidance?: string;
   posture?: string; // 'cooperate'|'compete'|'sell_to'|'steer_clear'|'observe' or undefined for AI-recommended
@@ -105,18 +108,24 @@ function summarizeBaselineGroundingDocs(docs: GroundingDocument[]): string {
 export async function generateRelationshipReport(
   input: RelationshipReportInput,
 ): Promise<RelationshipReportResult> {
-  const { ctx, competitor, baseline, customGuidance, posture, focus, isB2C } = input;
+  const { ctx, competitor, targetProfile, baseline, customGuidance, posture, focus, isB2C } = input;
 
-  // Pull supporting intelligence: battlecard, recent signals, news.
-  const battlecards = await storage.getBattlecardsByContext(ctx);
-  const battlecard = battlecards.find(b => b.competitorId === competitor.id);
+  if (!competitor && !targetProfile) {
+    throw new Error("Either competitor or targetProfile must be supplied.");
+  }
 
+  // Pull supporting intelligence only when the target is a tracked competitor.
+  let battlecard: Battlecard | undefined;
   let recentActivity: Activity[] = [];
-  try {
-    recentActivity = (await storage.getActivityByTenantForPeriod(ctx.tenantDomain, 90, ctx.marketId || undefined))
-      .filter(a => a.competitorId === competitor.id);
-  } catch {
-    // Activity is best-effort; absence shouldn't block report generation.
+  if (competitor) {
+    const battlecards = await storage.getBattlecardsByContext(ctx);
+    battlecard = battlecards.find(b => b.competitorId === competitor.id);
+    try {
+      recentActivity = (await storage.getActivityByTenantForPeriod(ctx.tenantDomain, 90, ctx.marketId || undefined))
+        .filter(a => a.competitorId === competitor.id);
+    } catch {
+      // Activity is best-effort; absence shouldn't block report generation.
+    }
   }
 
   // Anchor the perspective: load the baseline company's own messaging
@@ -153,7 +162,13 @@ Industry: ${baseline.industry || "N/A"}
 Headquarters: ${baseline.headquarters || "N/A"}`
     : "No baseline company profile is configured. Treat the perspective as a generic player in this market.";
 
-  const targetBlock = `Name: ${competitor.name}
+  // Build the target block from whichever target type was supplied.
+  const resolvedTarget = competitor ?? targetProfile!;
+  const targetName = competitor ? competitor.name : targetProfile!.companyName;
+  const targetAnalysis = (resolvedTarget.analysisData as any) || {};
+
+  const targetBlock = competitor
+    ? `Name: ${competitor.name}
 Website: ${competitor.url || "N/A"}
 Industry: ${competitor.industry || "N/A"}
 Headquarters: ${competitor.headquarters || "N/A"}
@@ -161,15 +176,31 @@ Founded: ${competitor.founded || "N/A"}
 Size: ${competitor.employeeCount || "N/A"}
 Funding: ${competitor.fundingRaised || "N/A"}
 Revenue band: ${competitor.revenue || "N/A"}
-Summary: ${(competitor.analysisData as any)?.summary || "No AI summary available"}`;
+Summary: ${targetAnalysis.summary || "No AI summary available"}`
+    : `Name: ${targetProfile!.companyName}
+Website: ${targetProfile!.websiteUrl || "N/A"}
+Industry: ${targetProfile!.industry || "N/A"}
+Headquarters: ${targetProfile!.headquarters || "N/A"}
+Founded: ${targetProfile!.founded || "N/A"}
+Size: ${targetProfile!.employeeCount || "N/A"}
+Funding: ${targetProfile!.fundingRaised || "N/A"}
+Revenue band: ${targetProfile!.revenue || "N/A"}
+Description: ${targetProfile!.description || "N/A"}
+Value Proposition: ${targetAnalysis.valueProposition || "N/A"}
+Target Audience: ${targetAnalysis.targetAudience || "N/A"}
+Note: This is another market's baseline company within the same organisation — not a tracked competitor. No battlecard or signal history is available; rely on the profile data above and any grounding documents.`;
 
   const battlecardBlock = battlecard
     ? `Existing battlecard insights:\n${summarizeBattlecard(battlecard)}`
-    : "No existing battlecard for this competitor.";
+    : competitor
+      ? "No existing battlecard for this competitor."
+      : "No battlecard available — this target is a cross-market baseline company, not a tracked competitor.";
 
   const activityBlock = recentActivity.length > 0
     ? `Recent signals (last 90 days):\n${summarizeActivity(recentActivity)}`
-    : "No recent monitored signals from this competitor.";
+    : competitor
+      ? "No recent monitored signals from this competitor."
+      : "No signal history available for this target.";
 
   const postureLine = posture
     ? `The user has indicated a preferred posture: **${POSTURE_LABELS[posture] || posture}**. Frame the plan around that posture, but still cover when each of the other postures becomes appropriate.`
@@ -217,7 +248,7 @@ This is an AI-generated GTM plan draft saved in Orbit. Use it to align target-se
 ${gtmPlanText}`
     : "";
 
-  const prompt = `You are a senior partnerships and competitive strategy advisor. Produce a comprehensive, decision-ready 12-month Relationship Plan in markdown describing how ${baseline?.companyName || "our company"} should engage with ${competitor.name}.
+  const prompt = `You are a senior partnerships and competitive strategy advisor. Produce a comprehensive, decision-ready 12-month Relationship Plan in markdown describing how ${baseline?.companyName || "our company"} should engage with ${targetName}.
 
 The plan must be opinionated, specific, and quarter-by-quarter. It should advise on multiple coexisting postures: when to engage, when to cooperate, when to sell to them, when to compete, how to speak to them, and when to steer clear. Use the data below; never invent factual claims you cannot ground. The plan must be written from ${baseline?.companyName || "our company"}'s point of view, anchored to its official voice.
 
@@ -251,7 +282,7 @@ ${activityBlock}
 
 Produce the plan in markdown with EXACTLY the following structure and section headings:
 
-# 12-Month Relationship Plan: ${competitor.name}
+# 12-Month Relationship Plan: ${targetName}
 
 ## Executive Summary
 3-5 sentences summarizing the recommended posture, why it fits, and the single most important action this quarter.
@@ -259,7 +290,7 @@ Produce the plan in markdown with EXACTLY the following structure and section he
 ## Relationship Posture Assessment
 Recommend the dominant posture (Cooperate / Compete / Sell To / Steer Clear / Observe) with a one-paragraph rationale. Then briefly describe the secondary postures that may apply in parallel and the conditions under which the dominant posture should change.
 
-## Strategic Read on ${competitor.name}
+## Strategic Read on ${targetName}
 What they want, where they are headed, what they are afraid of, and what their tells are. Tie each point back to evidence (battlecard, signals, public posture).
 
 ## How to Engage

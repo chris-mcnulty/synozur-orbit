@@ -173,6 +173,153 @@ export function registerRelationshipReportRoutes(app: Express) {
     }
   });
 
+  // List all company profiles across all markets for the active tenant
+  // (used by the frontend to populate the cross-market target picker)
+  app.get("/api/relationship-reports/company-profiles", async (req, res) => {
+    if (!await guardFeature(req, res, "relationshipReports")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const profiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
+      res.json(profiles);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Fetch the latest relationship report for a company-profile target (cross-market)
+  app.get("/api/company-profiles/:profileId/relationship-report", async (req, res) => {
+    if (!await guardFeature(req, res, "relationshipReports")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfile(req.params.profileId);
+      if (!profile) return res.status(404).json({ error: "Company profile not found" });
+      if (profile.tenantDomain !== ctx.tenantDomain) return res.status(403).json({ error: "Access denied" });
+
+      const report = await storage.getRelationshipReportByTargetProfile(req.params.profileId, toContextFilter(ctx));
+      if (!report) {
+        return res.json({
+          status: "not_generated",
+          targetCompanyProfileId: req.params.profileId,
+          targetName: profile.companyName,
+          targetUrl: profile.websiteUrl,
+          content: null,
+          savedPrompts: null,
+          lastGeneratedAt: null,
+        });
+      }
+      res.json(report);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Generate or regenerate a relationship report for a cross-market company profile target
+  app.post("/api/company-profiles/:profileId/relationship-report/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "relationshipReports")) return;
+    if (!await guardManualAction(req, res, "aiResearch")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const targetProfile = await storage.getCompanyProfile(req.params.profileId);
+      if (!targetProfile) return res.status(404).json({ error: "Company profile not found" });
+      if (targetProfile.tenantDomain !== ctx.tenantDomain) return res.status(403).json({ error: "Access denied" });
+
+      const { customGuidance, posture, focus } = req.body || {};
+      if (posture && !RELATIONSHIP_POSTURES.includes(posture)) {
+        return res.status(400).json({ error: `Invalid posture. Must be one of: ${RELATIONSHIP_POSTURES.join(", ")}` });
+      }
+      if (focus && !Array.isArray(focus)) {
+        return res.status(400).json({ error: "focus must be an array of strings" });
+      }
+
+      const baseline = (await storage.getCompanyProfileByContext(toContextFilter(ctx))) || null;
+
+      // Guard against generating a self-report (source and target are the same profile)
+      if (baseline && baseline.id === targetProfile.id) {
+        return res.status(400).json({ error: "Cannot generate a relationship report with yourself as the target. Choose a different market's baseline company." });
+      }
+
+      let isB2C = false;
+      if (ctx.marketId) {
+        const market = await storage.getMarket(ctx.marketId);
+        if (market?.businessType === "b2c") isB2C = true;
+      }
+
+      const started = Date.now();
+      const result = await generateRelationshipReport({
+        ctx: toContextFilter(ctx),
+        targetProfile,
+        baseline,
+        customGuidance,
+        posture,
+        focus,
+        isB2C,
+      });
+      const durationMs = Date.now() - started;
+
+      await logAiUsage(
+        ctx,
+        "generate_relationship_report",
+        "anthropic",
+        "claude-sonnet-4-5",
+        result.usage,
+        durationMs,
+      );
+
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
+      const savedPrompts = { customGuidance: customGuidance || "", posture: posture || null, focus: focus || [] };
+
+      const existing = await storage.getRelationshipReportByTargetProfile(targetProfile.id, toContextFilter(ctx));
+
+      if (existing) {
+        const previousVersions = ((existing.savedPrompts as any)?.versionHistory || []) as any[];
+        if (existing.content && existing.content !== result.content) {
+          previousVersions.push({
+            content: existing.content,
+            savedAt: existing.updatedAt || existing.lastGeneratedAt || new Date(),
+            savedBy: existing.generatedBy || ctx.userId,
+          });
+          if (previousVersions.length > 10) previousVersions.splice(0, previousVersions.length - 10);
+        }
+        const updated = await storage.updateRelationshipReport(existing.id, {
+          content: result.content,
+          status: "generated",
+          targetName: targetProfile.companyName,
+          targetUrl: targetProfile.websiteUrl || existing.targetUrl,
+          lastGeneratedAt: new Date(),
+          generatedFromDataAsOf: sourceDataAsOf,
+          generatedBy: ctx.userId,
+          savedPrompts: { ...savedPrompts, versionHistory: previousVersions },
+        });
+        return res.json(updated);
+      }
+
+      const created = await storage.createRelationshipReport({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        companyProfileId: baseline?.id || null,
+        targetCompanyProfileId: targetProfile.id,
+        targetName: targetProfile.companyName,
+        targetUrl: targetProfile.websiteUrl,
+        name: `Relationship Plan: ${targetProfile.companyName}`,
+        content: result.content,
+        savedPrompts,
+        status: "generated",
+        lastGeneratedAt: new Date(),
+        generatedFromDataAsOf: sourceDataAsOf,
+        generatedBy: ctx.userId,
+        createdBy: ctx.userId,
+      });
+      res.json(created);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      console.error("Relationship report generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate relationship report" });
+    }
+  });
+
   // Manual edit of a relationship report's content
   app.patch("/api/relationship-reports/:id/content", async (req, res) => {
     if (!await guardFeature(req, res, "relationshipReports")) return;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,13 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Handshake, Sparkles, Loader2, Download, FileText, RefreshCw, Trash2, Clock } from "lucide-react";
+import { Handshake, Sparkles, Loader2, Download, FileText, RefreshCw, Trash2, Clock, Building2 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatShortDate } from "@/lib/staleness";
@@ -23,6 +25,7 @@ type RelationshipReport = {
   id: string;
   name: string;
   competitorId: string | null;
+  targetCompanyProfileId: string | null;
   targetName: string;
   targetUrl: string | null;
   content: string | null;
@@ -34,10 +37,25 @@ type RelationshipReport = {
   createdAt?: string | null;
 };
 
+// A target is either a tracked competitor ("competitor:<id>") or a cross-market
+// baseline company profile ("profile:<id>"). We encode both as a single string
+// so one <Select> can hold both groups.
+function encodeTarget(type: "competitor" | "profile", id: string) {
+  return `${type}:${id}`;
+}
+function decodeTarget(value: string): { type: "competitor" | "profile"; id: string } | null {
+  const idx = value.indexOf(":");
+  if (idx === -1) return null;
+  const type = value.slice(0, idx) as "competitor" | "profile";
+  const id = value.slice(idx + 1);
+  if ((type !== "competitor" && type !== "profile") || !id) return null;
+  return { type, id };
+}
+
 export default function RelationshipReportsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [competitorId, setCompetitorId] = useState<string>("");
+  const [targetValue, setTargetValue] = useState<string>("");
   const [posture, setPosture] = useState<string>("");
   const [guidance, setGuidance] = useState<string>("");
 
@@ -79,6 +97,23 @@ export default function RelationshipReportsPage() {
     },
   });
 
+  // All company profiles across all markets for this tenant (cross-market targets)
+  const { data: allProfiles = [] as any[] } = useQuery({
+    queryKey: ["/api/relationship-reports/company-profiles"],
+    queryFn: async () => {
+      const response = await fetch("/api/relationship-reports/company-profiles", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: allowed,
+  });
+
+  // Cross-market profiles: exclude the active market's own baseline profile
+  const crossMarketProfiles = useMemo(() => {
+    if (!companyProfile?.id) return allProfiles;
+    return allProfiles.filter((p: any) => p.id !== companyProfile.id);
+  }, [allProfiles, companyProfile]);
+
   const { data: reports = [] as RelationshipReport[] } = useQuery<RelationshipReport[]>({
     queryKey: ["/api/relationship-reports"],
     queryFn: async () => {
@@ -90,10 +125,18 @@ export default function RelationshipReportsPage() {
   });
 
   const generateMutation = useMutation({
-    mutationFn: async (params: { competitorId: string; posture: string; customGuidance: string }) => {
+    mutationFn: async (params: { targetValue: string; posture: string; customGuidance: string }) => {
+      const decoded = decodeTarget(params.targetValue);
+      if (!decoded) throw new Error("No target selected");
+
       const body: any = { customGuidance: params.customGuidance };
       if (params.posture && params.posture !== "auto") body.posture = params.posture;
-      const response = await fetch(`/api/competitors/${params.competitorId}/relationship-report/generate`, {
+
+      const url = decoded.type === "competitor"
+        ? `/api/competitors/${decoded.id}/relationship-report/generate`
+        : `/api/company-profiles/${decoded.id}/relationship-report/generate`;
+
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -139,6 +182,21 @@ export default function RelationshipReportsPage() {
     },
   });
 
+  function handleRegenerate(rr: RelationshipReport) {
+    let tv = "";
+    if (rr.competitorId) tv = encodeTarget("competitor", rr.competitorId);
+    else if (rr.targetCompanyProfileId) tv = encodeTarget("profile", rr.targetCompanyProfileId);
+    if (!tv) return;
+    generateMutation.mutate({
+      targetValue: tv,
+      posture: rr.savedPrompts?.posture || "",
+      customGuidance: rr.savedPrompts?.customGuidance || "",
+    });
+  }
+
+  const canRegenerate = (rr: RelationshipReport) =>
+    !!(rr.competitorId || rr.targetCompanyProfileId);
+
   return (
     <AppLayout>
       <div className="mb-8">
@@ -167,27 +225,55 @@ export default function RelationshipReportsPage() {
               Generate a Relationship Plan
             </CardTitle>
             <CardDescription>
-              The plan is written from the perspective of {companyProfile?.companyName || "your baseline company"}.
-              Default targets are tracked competitors; future versions will support any external company.
+              The plan is written from the perspective of{" "}
+              {companyProfile?.companyName || "your baseline company"}. Choose any
+              tracked competitor or another market's baseline company as the target.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Target Company</Label>
-                <Select value={competitorId} onValueChange={setCompetitorId}>
+                <Select value={targetValue} onValueChange={setTargetValue}>
                   <SelectTrigger data-testid="select-relationship-target">
-                    <SelectValue placeholder="Choose a tracked competitor" />
+                    <SelectValue placeholder="Choose a target company" />
                   </SelectTrigger>
                   <SelectContent>
-                    {competitors.length === 0 ? (
-                      <SelectItem value="none" disabled>No competitors tracked yet</SelectItem>
-                    ) : (
-                      competitors.map((c: any) => (
-                        <SelectItem key={c.id} value={c.id} data-testid={`option-relationship-target-${c.id}`}>
-                          {c.name}
-                        </SelectItem>
-                      ))
+                    {competitors.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Tracked Competitors</SelectLabel>
+                        {competitors.map((c: any) => (
+                          <SelectItem
+                            key={c.id}
+                            value={encodeTarget("competitor", c.id)}
+                            data-testid={`option-relationship-target-competitor-${c.id}`}
+                          >
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {crossMarketProfiles.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Baseline Companies (other markets)</SelectLabel>
+                        {crossMarketProfiles.map((p: any) => (
+                          <SelectItem
+                            key={p.id}
+                            value={encodeTarget("profile", p.id)}
+                            data-testid={`option-relationship-target-profile-${p.id}`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              {p.companyName}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {competitors.length === 0 && crossMarketProfiles.length === 0 && (
+                      <SelectItem value="none" disabled>
+                        No targets available yet
+                      </SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -227,11 +313,11 @@ export default function RelationshipReportsPage() {
           <CardFooter className="border-t pt-4">
             <Button
               onClick={() => generateMutation.mutate({
-                competitorId,
+                targetValue,
                 posture,
                 customGuidance: guidance,
               })}
-              disabled={!competitorId || generateMutation.isPending}
+              disabled={!targetValue || generateMutation.isPending}
               size="lg"
               className="w-full sm:w-auto"
               data-testid="button-generate-relationship"
@@ -261,7 +347,7 @@ export default function RelationshipReportsPage() {
         <EmptyPageState
           icon={<Handshake className="h-5 w-5" />}
           title="No relationship plans yet"
-          description="Generate a plan above to capture how to engage with a specific competitor over the next 12 months."
+          description="Generate a plan above to capture how to engage with a specific company over the next 12 months."
           learnMoreHref="/app/guide"
         />
       ) : (
@@ -271,13 +357,22 @@ export default function RelationshipReportsPage() {
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start mb-2">
                   <div className="w-9 h-9 rounded bg-primary/10 text-primary flex items-center justify-center">
-                    <Handshake size={18} />
+                    {rr.targetCompanyProfileId && !rr.competitorId
+                      ? <Building2 size={18} />
+                      : <Handshake size={18} />}
                   </div>
-                  {rr.savedPrompts?.posture && (
-                    <Badge variant="outline" className="text-xs capitalize">
-                      {rr.savedPrompts.posture.replace(/_/g, " ")}
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {rr.targetCompanyProfileId && !rr.competitorId && (
+                      <Badge variant="secondary" className="text-xs">
+                        Cross-market
+                      </Badge>
+                    )}
+                    {rr.savedPrompts?.posture && (
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {rr.savedPrompts.posture.replace(/_/g, " ")}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <CardTitle className="text-base line-clamp-1">{rr.name}</CardTitle>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
@@ -326,16 +421,12 @@ export default function RelationshipReportsPage() {
                 >
                   <FileText className="w-4 h-4" />
                 </Button>
-                {rr.competitorId && (
+                {canRegenerate(rr) && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-muted-foreground hover:text-primary"
-                    onClick={() => generateMutation.mutate({
-                      competitorId: rr.competitorId!,
-                      posture: rr.savedPrompts?.posture || "",
-                      customGuidance: rr.savedPrompts?.customGuidance || "",
-                    })}
+                    onClick={() => handleRegenerate(rr)}
                     disabled={generateMutation.isPending}
                     data-testid={`button-regenerate-relationship-${rr.id}`}
                     title="Regenerate with latest data"

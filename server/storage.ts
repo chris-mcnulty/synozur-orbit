@@ -417,6 +417,7 @@ export interface IStorage {
   getRelationshipReport(id: string): Promise<RelationshipReport | undefined>;
   getRelationshipReportsByContext(ctx: ContextFilter): Promise<RelationshipReport[]>;
   getRelationshipReportByCompetitor(competitorId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined>;
+  getRelationshipReportByTargetProfile(targetProfileId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined>;
   createRelationshipReport(report: InsertRelationshipReport): Promise<RelationshipReport>;
   updateRelationshipReport(id: string, data: Partial<RelationshipReport>): Promise<RelationshipReport>;
   deleteRelationshipReport(id: string): Promise<void>;
@@ -1969,6 +1970,17 @@ export class DatabaseStorage implements IStorage {
         eq(relationshipReports.tenantDomain, ctx.tenantDomain),
         eq(relationshipReports.competitorId, competitorId),
         marketCondition,
+      ))
+      .orderBy(desc(relationshipReports.updatedAt))
+      .limit(1);
+    return report || undefined;
+  }
+
+  async getRelationshipReportByTargetProfile(targetProfileId: string, ctx: ContextFilter): Promise<RelationshipReport | undefined> {
+    const [report] = await db.select().from(relationshipReports)
+      .where(and(
+        eq(relationshipReports.tenantDomain, ctx.tenantDomain),
+        eq(relationshipReports.targetCompanyProfileId, targetProfileId),
       ))
       .orderBy(desc(relationshipReports.updatedAt))
       .limit(1);

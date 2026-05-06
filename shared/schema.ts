@@ -651,10 +651,15 @@ export const relationshipReports = pgTable("relationship_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  // SOURCE: the baseline company ("us") whose perspective the plan is written from.
   companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "set null" }),
+  // TARGET option A: a tracked competitor within the source market.
   competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
-  // Denormalized target identity so reports survive competitor deletion and
-  // can later support arbitrary external companies without a competitors row.
+  // TARGET option B: another market's baseline company (cross-market relationship).
+  // Only one of competitorId / targetCompanyProfileId should be set per row.
+  targetCompanyProfileId: varchar("target_company_profile_id").references(() => companyProfiles.id, { onDelete: "set null" }),
+  // Denormalized target identity so reports survive deletion of the FK target and
+  // can later support arbitrary external companies without any FK row.
   targetName: text("target_name").notNull(),
   targetUrl: text("target_url"),
   name: text("name").notNull(),
@@ -673,6 +678,7 @@ export const relationshipReports = pgTable("relationship_reports", {
 }, (table) => ({
   tenantMarketIdx: index("relationship_reports_tenant_market_idx").on(table.tenantDomain, table.marketId),
   competitorIdx: index("relationship_reports_competitor_idx").on(table.competitorId),
+  targetProfileIdx: index("relationship_reports_target_profile_idx").on(table.targetCompanyProfileId),
 }));
 
 export const insertRelationshipReportSchema = createInsertSchema(relationshipReports).omit({
