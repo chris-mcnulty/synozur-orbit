@@ -543,7 +543,7 @@ export function registerTenantAdminRoutes(app: Express) {
           } else {
             if (readWriteCount + pendingReadWrite >= readWriteUserLimit) {
               return res.status(400).json({
-                error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.`,
+                error: `Read-write user limit reached (${readWriteCount + pendingReadWrite}/${readWriteUserLimit} used by Standard Users and Analysts). Upgrade your plan to add more.`,
               });
             }
           }
