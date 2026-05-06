@@ -94,7 +94,91 @@ export function registerRelationshipReportRoutes(app: Express) {
     }
   });
 
-  // Generate or regenerate a relationship report for a competitor
+  // Background processor — runs AI generation off the request thread so
+  // long-running calls (~3 minutes) don't block the HTTP response. Updates
+  // the existing report row when done. Errors are caught and surfaced via
+  // the row's status field so the frontend can show a useful message.
+  async function runRelationshipReportGeneration(
+    reportId: string,
+    ctx: { tenantDomain: string; marketId: string | null; userId: string },
+    input: {
+      competitor?: any;
+      targetProfile?: any;
+      baseline: any;
+      customGuidance?: string;
+      posture?: string;
+      focus?: string[];
+      isB2C: boolean;
+      previousContent: string | null;
+      previousVersions: any[];
+      previousGeneratedBy: string | null;
+      previousUpdatedAt: Date | null;
+      savedPromptsBase: any;
+    },
+  ) {
+    const filter = { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId };
+    const started = Date.now();
+    try {
+      const result = await generateRelationshipReport({
+        ctx: filter,
+        competitor: input.competitor,
+        targetProfile: input.targetProfile,
+        baseline: input.baseline,
+        customGuidance: input.customGuidance,
+        posture: input.posture,
+        focus: input.focus,
+        isB2C: input.isB2C,
+      });
+      const durationMs = Date.now() - started;
+
+      await logAiUsage(
+        ctx as any,
+        "generate_relationship_report",
+        result.provider || "anthropic",
+        result.model || "claude-sonnet-4-5",
+        result.usage,
+        durationMs,
+      );
+
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp(filter);
+
+      const previousVersions = [...input.previousVersions];
+      if (input.previousContent && input.previousContent !== result.content) {
+        previousVersions.push({
+          content: input.previousContent,
+          savedAt: input.previousUpdatedAt || new Date(),
+          savedBy: input.previousGeneratedBy || ctx.userId,
+        });
+        if (previousVersions.length > 10) previousVersions.splice(0, previousVersions.length - 10);
+      }
+
+      await storage.updateRelationshipReport(reportId, {
+        content: result.content,
+        status: "generated",
+        lastGeneratedAt: new Date(),
+        generatedFromDataAsOf: sourceDataAsOf,
+        generatedBy: ctx.userId,
+        savedPrompts: { ...input.savedPromptsBase, versionHistory: previousVersions },
+      });
+    } catch (error: any) {
+      console.error(`[relationship-report] Background generation failed for ${reportId}:`, error);
+      await storage.updateRelationshipReport(reportId, {
+        status: "failed",
+        savedPrompts: {
+          ...input.savedPromptsBase,
+          versionHistory: input.previousVersions,
+          lastError: (error?.message || "Generation failed").slice(0, 500),
+        },
+      }).catch(updateErr => {
+        console.error(`[relationship-report] Failed to mark ${reportId} as failed:`, updateErr);
+      });
+    }
+  }
+
+  // Generate or regenerate a relationship report for a competitor.
+  // Returns the report row immediately with status="generating"; the AI
+  // call runs in the background and updates the row when complete. The
+  // frontend polls /api/relationship-reports while any row is generating.
   app.post("/api/competitors/:competitorId/relationship-report/generate", async (req, res) => {
     if (!await guardFeature(req, res, "relationshipReports")) return;
     if (!await guardManualAction(req, res, "aiResearch")) return;
@@ -121,74 +205,76 @@ export function registerRelationshipReportRoutes(app: Express) {
         if (market?.businessType === "b2c") isB2C = true;
       }
 
-      const started = Date.now();
-      const result = await generateRelationshipReport({
-        ctx: toContextFilter(ctx),
-        competitor,
-        baseline,
-        customGuidance,
-        posture,
-        focus,
-        isB2C,
-      });
-      const durationMs = Date.now() - started;
-
-      await logAiUsage(
-        ctx,
-        "generate_relationship_report",
-        "anthropic",
-        "claude-sonnet-4-5",
-        result.usage,
-        durationMs,
-      );
-
-      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
-      const savedPrompts = { customGuidance: customGuidance || "", posture: posture || null, focus: focus || [] };
-
+      const savedPromptsBase = { customGuidance: customGuidance || "", posture: posture || null, focus: focus || [] };
       const existing = await storage.getRelationshipReportByCompetitor(competitor.id, toContextFilter(ctx));
 
-      if (existing) {
-        const previousVersions = ((existing.savedPrompts as any)?.versionHistory || []) as any[];
-        if (existing.content && existing.content !== result.content) {
-          previousVersions.push({
-            content: existing.content,
-            savedAt: existing.updatedAt || existing.lastGeneratedAt || new Date(),
-            savedBy: existing.generatedBy || ctx.userId,
-          });
-          if (previousVersions.length > 10) {
-            previousVersions.splice(0, previousVersions.length - 10);
-          }
-        }
-        const updated = await storage.updateRelationshipReport(existing.id, {
-          content: result.content,
-          status: "generated",
-          targetName: competitor.name,
-          targetUrl: competitor.url || existing.targetUrl,
-          lastGeneratedAt: new Date(),
-          generatedFromDataAsOf: sourceDataAsOf,
-          generatedBy: ctx.userId,
-          savedPrompts: { ...savedPrompts, versionHistory: previousVersions },
+      // Guard against concurrent regenerations: if a job is already in
+      // flight for this report, return 409 instead of kicking off a second
+      // background task that would race the first on the version history.
+      if (existing?.status === "generating") {
+        return res.status(409).json({
+          error: "A relationship plan is already generating for this competitor. Please wait for it to finish.",
+          report: existing,
         });
-        return res.json(updated);
       }
 
-      const created = await storage.createRelationshipReport({
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        companyProfileId: baseline?.id || null,
-        competitorId: competitor.id,
-        targetName: competitor.name,
-        targetUrl: competitor.url,
-        name: `Relationship Plan: ${competitor.name}`,
-        content: result.content,
-        savedPrompts,
-        status: "generated",
-        lastGeneratedAt: new Date(),
-        generatedFromDataAsOf: sourceDataAsOf,
-        generatedBy: ctx.userId,
-        createdBy: ctx.userId,
+      let stub;
+      let previousContent: string | null = null;
+      let previousVersions: any[] = [];
+      let previousGeneratedBy: string | null = null;
+      let previousUpdatedAt: Date | null = null;
+
+      if (existing) {
+        previousContent = existing.content;
+        previousVersions = ((existing.savedPrompts as any)?.versionHistory || []) as any[];
+        previousGeneratedBy = existing.generatedBy || null;
+        previousUpdatedAt = existing.updatedAt || existing.lastGeneratedAt || null;
+        stub = await storage.updateRelationshipReport(existing.id, {
+          status: "generating",
+          targetName: competitor.name,
+          targetUrl: competitor.url || existing.targetUrl,
+          savedPrompts: { ...savedPromptsBase, versionHistory: previousVersions },
+        });
+      } else {
+        stub = await storage.createRelationshipReport({
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          companyProfileId: baseline?.id || null,
+          competitorId: competitor.id,
+          targetName: competitor.name,
+          targetUrl: competitor.url,
+          name: `Relationship Plan: ${competitor.name}`,
+          content: null,
+          savedPrompts: savedPromptsBase,
+          status: "generating",
+          generatedBy: ctx.userId,
+          createdBy: ctx.userId,
+        });
+      }
+
+      // Kick off background generation. Capture context so it survives the
+      // response cycle. Errors inside are handled by the helper.
+      setImmediate(() => {
+        void runRelationshipReportGeneration(stub.id, {
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          userId: ctx.userId,
+        }, {
+          competitor,
+          baseline,
+          customGuidance,
+          posture,
+          focus,
+          isB2C,
+          previousContent,
+          previousVersions,
+          previousGeneratedBy,
+          previousUpdatedAt,
+          savedPromptsBase,
+        });
       });
-      res.json(created);
+
+      res.status(202).json(stub);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       console.error("Relationship report generation error:", error);
@@ -256,72 +342,72 @@ export function registerRelationshipReportRoutes(app: Express) {
         if (market?.businessType === "b2c") isB2C = true;
       }
 
-      const started = Date.now();
-      const result = await generateRelationshipReport({
-        ctx: toContextFilter(ctx),
-        targetProfile,
-        baseline,
-        customGuidance,
-        posture,
-        focus,
-        isB2C,
-      });
-      const durationMs = Date.now() - started;
-
-      await logAiUsage(
-        ctx,
-        "generate_relationship_report",
-        "anthropic",
-        "claude-sonnet-4-5",
-        result.usage,
-        durationMs,
-      );
-
-      const sourceDataAsOf = await computeLatestSourceDataTimestamp(ctx);
-      const savedPrompts = { customGuidance: customGuidance || "", posture: posture || null, focus: focus || [] };
-
+      const savedPromptsBase = { customGuidance: customGuidance || "", posture: posture || null, focus: focus || [] };
       const existing = await storage.getRelationshipReportByTargetProfile(targetProfile.id, toContextFilter(ctx));
 
-      if (existing) {
-        const previousVersions = ((existing.savedPrompts as any)?.versionHistory || []) as any[];
-        if (existing.content && existing.content !== result.content) {
-          previousVersions.push({
-            content: existing.content,
-            savedAt: existing.updatedAt || existing.lastGeneratedAt || new Date(),
-            savedBy: existing.generatedBy || ctx.userId,
-          });
-          if (previousVersions.length > 10) previousVersions.splice(0, previousVersions.length - 10);
-        }
-        const updated = await storage.updateRelationshipReport(existing.id, {
-          content: result.content,
-          status: "generated",
-          targetName: targetProfile.companyName,
-          targetUrl: targetProfile.websiteUrl || existing.targetUrl,
-          lastGeneratedAt: new Date(),
-          generatedFromDataAsOf: sourceDataAsOf,
-          generatedBy: ctx.userId,
-          savedPrompts: { ...savedPrompts, versionHistory: previousVersions },
+      // See competitor route for rationale: prevent overlapping background jobs.
+      if (existing?.status === "generating") {
+        return res.status(409).json({
+          error: "A relationship plan is already generating for this target. Please wait for it to finish.",
+          report: existing,
         });
-        return res.json(updated);
       }
 
-      const created = await storage.createRelationshipReport({
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        companyProfileId: baseline?.id || null,
-        targetCompanyProfileId: targetProfile.id,
-        targetName: targetProfile.companyName,
-        targetUrl: targetProfile.websiteUrl,
-        name: `Relationship Plan: ${targetProfile.companyName}`,
-        content: result.content,
-        savedPrompts,
-        status: "generated",
-        lastGeneratedAt: new Date(),
-        generatedFromDataAsOf: sourceDataAsOf,
-        generatedBy: ctx.userId,
-        createdBy: ctx.userId,
+      let stub;
+      let previousContent: string | null = null;
+      let previousVersions: any[] = [];
+      let previousGeneratedBy: string | null = null;
+      let previousUpdatedAt: Date | null = null;
+
+      if (existing) {
+        previousContent = existing.content;
+        previousVersions = ((existing.savedPrompts as any)?.versionHistory || []) as any[];
+        previousGeneratedBy = existing.generatedBy || null;
+        previousUpdatedAt = existing.updatedAt || existing.lastGeneratedAt || null;
+        stub = await storage.updateRelationshipReport(existing.id, {
+          status: "generating",
+          targetName: targetProfile.companyName,
+          targetUrl: targetProfile.websiteUrl || existing.targetUrl,
+          savedPrompts: { ...savedPromptsBase, versionHistory: previousVersions },
+        });
+      } else {
+        stub = await storage.createRelationshipReport({
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          companyProfileId: baseline?.id || null,
+          targetCompanyProfileId: targetProfile.id,
+          targetName: targetProfile.companyName,
+          targetUrl: targetProfile.websiteUrl,
+          name: `Relationship Plan: ${targetProfile.companyName}`,
+          content: null,
+          savedPrompts: savedPromptsBase,
+          status: "generating",
+          generatedBy: ctx.userId,
+          createdBy: ctx.userId,
+        });
+      }
+
+      setImmediate(() => {
+        void runRelationshipReportGeneration(stub.id, {
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          userId: ctx.userId,
+        }, {
+          targetProfile,
+          baseline,
+          customGuidance,
+          posture,
+          focus,
+          isB2C,
+          previousContent,
+          previousVersions,
+          previousGeneratedBy,
+          previousUpdatedAt,
+          savedPromptsBase,
+        });
       });
-      res.json(created);
+
+      res.status(202).json(stub);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       console.error("Relationship report generation error:", error);

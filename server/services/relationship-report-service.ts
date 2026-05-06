@@ -10,14 +10,9 @@
  * Future expansion: any external company by ad-hoc lookup.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { storage, type ContextFilter } from "../storage";
-import type { CompanyProfile, Competitor, Battlecard, Activity, GroundingDocument } from "@shared/schema";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
-});
+import { AI_FEATURES, type CompanyProfile, type Competitor, type Battlecard, type Activity, type GroundingDocument } from "@shared/schema";
+import { completeForFeature } from "./ai-provider";
 
 export interface RelationshipReportInput {
   ctx: ContextFilter;
@@ -35,6 +30,8 @@ export interface RelationshipReportInput {
 export interface RelationshipReportResult {
   content: string;
   usage?: { input_tokens?: number; output_tokens?: number };
+  model?: string;
+  provider?: string;
 }
 
 const POSTURE_LABELS: Record<string, string> = {
@@ -326,15 +323,20 @@ What we don't know, what could go wrong, and what additional intelligence we sho
 
 Make every section grounded, specific, and useful. Avoid generic platitudes. Where data is missing, say so explicitly and recommend how to fill the gap rather than fabricating detail.`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: 8192,
-    messages: [{ role: "user", content: prompt }],
+  // Route through the central AI provider so per-feature model assignments
+  // (admin AI configuration page) and the global default config are honored.
+  const result = await completeForFeature(AI_FEATURES.RELATIONSHIP_REPORT, prompt, {
+    maxTokens: 8192,
+    tenantDomain: ctx.tenantDomain,
   });
 
-  const content = message.content[0]?.type === "text" ? message.content[0].text : "";
   return {
-    content,
-    usage: message.usage,
+    content: result.text,
+    usage: {
+      input_tokens: result.usage.inputTokens,
+      output_tokens: result.usage.outputTokens,
+    },
+    model: result.model,
+    provider: result.provider,
   };
 }

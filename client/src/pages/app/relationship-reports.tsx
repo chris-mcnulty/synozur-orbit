@@ -117,7 +117,15 @@ export default function RelationshipReportsPage() {
       return response.json();
     },
     enabled: allowed,
+    // Poll while any report is mid-generation so the UI flips to "generated"
+    // (or "failed") on its own without requiring the user to refresh.
+    refetchInterval: (query) => {
+      const data = query.state.data as RelationshipReport[] | undefined;
+      return data?.some(r => r.status === "generating") ? 5000 : false;
+    },
   });
+
+  const isAnyGenerating = reports.some(r => r.status === "generating");
 
   const generateMutation = useMutation({
     mutationFn: async (params: { targetValue: string; posture: string; customGuidance: string }) => {
@@ -146,8 +154,8 @@ export default function RelationshipReportsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/relationship-reports"] });
       toast({
-        title: "Relationship plan generated",
-        description: "Your 12-month relationship plan is ready below.",
+        title: "Generation started",
+        description: "Your 12-month plan is being built. This usually takes 2–4 minutes; the card below will update automatically when it's ready.",
       });
       setGuidance("");
     },
@@ -312,7 +320,7 @@ export default function RelationshipReportsPage() {
                 posture,
                 customGuidance: guidance,
               })}
-              disabled={!targetValue || generateMutation.isPending}
+              disabled={!targetValue || generateMutation.isPending || isAnyGenerating}
               size="lg"
               className="w-full sm:w-auto"
               data-testid="button-generate-relationship"
@@ -320,7 +328,12 @@ export default function RelationshipReportsPage() {
               {generateMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating 12-month plan…
+                  Starting…
+                </>
+              ) : isAnyGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  A plan is generating…
                 </>
               ) : (
                 <>
@@ -347,7 +360,11 @@ export default function RelationshipReportsPage() {
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {reports.map((rr) => (
+          {reports.map((rr) => {
+            const isGenerating = rr.status === "generating";
+            const isFailed = rr.status === "failed";
+            const lastError = (rr.savedPrompts as any)?.lastError as string | undefined;
+            return (
             <Card key={rr.id} className="group hover:border-primary/50 transition-all" data-testid={`card-relationship-${rr.id}`}>
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start mb-2">
@@ -357,6 +374,17 @@ export default function RelationshipReportsPage() {
                       : <Handshake size={18} />}
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {isGenerating && (
+                      <Badge variant="outline" className="text-xs border-primary/40 text-primary">
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Generating…
+                      </Badge>
+                    )}
+                    {isFailed && (
+                      <Badge variant="destructive" className="text-xs">
+                        Failed
+                      </Badge>
+                    )}
                     {rr.targetCompanyProfileId && !rr.competitorId && (
                       <Badge variant="secondary" className="text-xs">
                         Cross-market
@@ -386,45 +414,63 @@ export default function RelationshipReportsPage() {
                     </>
                   )}
                 </div>
+                {isGenerating && (
+                  <p className="text-xs text-muted-foreground mt-2" data-testid={`text-generating-${rr.id}`}>
+                    Building your 12-month plan. This usually takes 2–4 minutes; this card will update automatically.
+                  </p>
+                )}
+                {isFailed && lastError && (
+                  <p className="text-xs text-destructive mt-2" data-testid={`text-failed-${rr.id}`}>
+                    {lastError}
+                  </p>
+                )}
               </CardHeader>
               <CardFooter className="pt-0 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/pdf`, "_blank")}
-                  data-testid={`button-download-relationship-pdf-${rr.id}`}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/markdown`, "_blank")}
-                  data-testid={`button-download-relationship-md-${rr.id}`}
-                  title="Download as Markdown"
-                >
-                  <FileText className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/docx`, "_blank")}
-                  data-testid={`button-download-relationship-docx-${rr.id}`}
-                  title="Download as Word document"
-                >
-                  <FileText className="w-4 h-4" />
-                </Button>
+                {rr.status !== "generated" || !rr.content ? (
+                  <div className="flex-1 text-xs text-muted-foreground italic px-2 py-1.5">
+                    {isFailed ? "Generation failed — try regenerating below." : "Plan not ready yet."}
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/pdf`, "_blank")}
+                      data-testid={`button-download-relationship-pdf-${rr.id}`}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/markdown`, "_blank")}
+                      data-testid={`button-download-relationship-md-${rr.id}`}
+                      title="Download as Markdown"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/docx`, "_blank")}
+                      data-testid={`button-download-relationship-docx-${rr.id}`}
+                      title="Download as Word document"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
                 {canRegenerate(rr) && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-muted-foreground hover:text-primary"
                     onClick={() => handleRegenerate(rr)}
-                    disabled={generateMutation.isPending}
+                    disabled={generateMutation.isPending || isGenerating}
                     data-testid={`button-regenerate-relationship-${rr.id}`}
-                    title="Regenerate with latest data"
+                    title={isGenerating ? "Generation in progress" : "Regenerate with latest data"}
                   >
                     <RefreshCw className="w-4 h-4" />
                   </Button>
@@ -443,7 +489,8 @@ export default function RelationshipReportsPage() {
                 )}
               </CardFooter>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </AppLayout>
