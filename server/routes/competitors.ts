@@ -1708,7 +1708,7 @@ Return ONLY the JSON object, no other text.`;
       // actually analyzed in this request — never pull in private docs from
       // unrelated competitors.
       const analyzedNames = new Set(analyses.map((a: any) => a.competitor));
-      const analyzedCompetitorIds = competitors
+      const analyzedCompetitorIds = eligibleCompetitors
         .filter((c) => analyzedNames.has(c.name))
         .map((c) => c.id);
       const aggregatedCompetitorDocs = await buildCompetitorDocumentContextForCompetitors(
