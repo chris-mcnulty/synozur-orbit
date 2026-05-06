@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql, eq, and, count } from "drizzle-orm";
 import { getRequestContext, ContextError, getActiveTenantId } from "../context";
-import { hasAdminAccess, grantConsultantAccessSchema } from "./helpers";
+import { hasAdminAccess, hasContentAccess, grantConsultantAccessSchema } from "./helpers";
 import { invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES } from "../services/plan-policy";
 import { fromError } from "zod-validation-error";
 import { getAllProviderStatuses, getAvailableModelsByProvider, invalidateAIConfigCache } from "../services/ai-provider";
@@ -617,7 +617,7 @@ export function registerConsultantPlansRoutes(app: Express) {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
       const user = await storage.getUser(req.session.userId);
       if (!user) return res.status(401).json({ error: "Not authenticated" });
-      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+      if (!hasContentAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
 
       const userDomain = user.email.split("@")[1]?.toLowerCase();
 
@@ -663,7 +663,7 @@ export function registerConsultantPlansRoutes(app: Express) {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
       const user = await storage.getUser(req.session.userId);
       if (!user) return res.status(401).json({ error: "Not authenticated" });
-      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+      if (!hasContentAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
 
       const { type, id } = req.params;
       const isGlobalAdmin = user.role === "Global Admin";
@@ -693,7 +693,7 @@ export function registerConsultantPlansRoutes(app: Express) {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
       const user = await storage.getUser(req.session.userId);
       if (!user) return res.status(401).json({ error: "Not authenticated" });
-      if (!hasAdminAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+      if (!hasContentAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
 
       const { type, id } = req.params;
       const isGlobalAdmin = user.role === "Global Admin";

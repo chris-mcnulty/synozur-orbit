@@ -50,8 +50,18 @@ export function hasCrossTenantReadAccess(role: string): boolean {
   return role === "Global Admin" || role === "Consultant";
 }
 
+// Gates tenant-admin operations: user management, billing, SSO, tenant config, OAuth credentials.
+// Only Domain Admin and Global Admin should reach these routes.
 export function hasAdminAccess(role: string): boolean {
   return role === "Global Admin" || role === "Domain Admin";
+}
+
+// Gates content-authoring and intelligence-building operations: creating/editing markets,
+// competitors, products, personas; running analyses; generating briefings; managing SEO keywords;
+// triggering rebuilds; excluding flagged crawls; promoting product feedback.
+// Analyst, Domain Admin, and Global Admin all pass this check.
+export function hasContentAccess(role: string): boolean {
+  return role === "Global Admin" || role === "Domain Admin" || role === "Analyst";
 }
 
 export function toContextFilter(ctx: RequestContext): ContextFilter {

@@ -9,6 +9,9 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
+  // Valid roles: "Standard User" | "Analyst" | "Domain Admin" | "Consultant" | "Global Admin"
+  // Standard User: read-only. Analyst: content authoring + intelligence building (no user/billing mgmt).
+  // Domain Admin: full tenant admin. Consultant: cross-tenant read (Synozur staff). Global Admin: superadmin.
   role: text("role").notNull().default("Standard User"),
   company: text("company").notNull(),
   companySize: text("company_size"),

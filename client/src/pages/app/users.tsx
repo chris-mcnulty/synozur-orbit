@@ -37,7 +37,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2, Filter } from "lucide-react";
+import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2, Filter, PenLine } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
@@ -297,6 +297,8 @@ export default function UsersPage() {
         return <Crown size={14} className="text-yellow-500" />;
       case "Domain Admin":
         return <Shield size={14} className="text-primary" />;
+      case "Analyst":
+        return <PenLine size={14} className="text-blue-500" />;
       default:
         return <User size={14} className="text-muted-foreground" />;
     }
@@ -307,6 +309,8 @@ export default function UsersPage() {
       case "Global Admin":
         return "default";
       case "Domain Admin":
+        return "secondary";
+      case "Analyst":
         return "secondary";
       default:
         return "outline";
@@ -383,6 +387,7 @@ export default function UsersPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Standard User">Standard User</SelectItem>
+                      <SelectItem value="Analyst">Analyst</SelectItem>
                       <SelectItem value="Domain Admin">Domain Admin</SelectItem>
                     </SelectContent>
                   </Select>
@@ -560,6 +565,7 @@ export default function UsersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Standard User">Standard User</SelectItem>
+                <SelectItem value="Analyst">Analyst</SelectItem>
                 <SelectItem value="Domain Admin">Domain Admin</SelectItem>
               </SelectContent>
             </Select>
@@ -721,6 +727,7 @@ export default function UsersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Standard User">Standard User</SelectItem>
+                        <SelectItem value="Analyst">Analyst</SelectItem>
                         <SelectItem value="Domain Admin">Domain Admin</SelectItem>
                       </SelectContent>
                     </Select>

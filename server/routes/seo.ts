@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { ContextError, getRequestContext, type RequestContext } from "../context";
-import { guardFeature, hasAdminAccess, toContextFilter, validateResourceContext, guardManualAction } from "./helpers";
+import { guardFeature, hasAdminAccess, hasContentAccess, toContextFilter, validateResourceContext, guardManualAction } from "./helpers";
 import { runSerpQuery, normalizeDomain, type SerpQueryEntity } from "../services/seo-provider";
 import type { InsertSeoMetric } from "@shared/schema";
 
@@ -69,7 +69,7 @@ export function registerSeoRoutes(app: Express) {
     if (!await guardFeature(req, res, "seoTracking")) return;
     try {
       const ctx = await getRequestContext(req);
-      if (!hasAdminAccess(ctx.userRole)) {
+      if (!hasContentAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Only Domain or Global Admins can manage tracked keywords" });
       }
       const body = createKeywordSchema.parse(req.body);
@@ -100,7 +100,7 @@ export function registerSeoRoutes(app: Express) {
     if (!await guardFeature(req, res, "seoTracking")) return;
     try {
       const ctx = await getRequestContext(req);
-      if (!hasAdminAccess(ctx.userRole)) {
+      if (!hasContentAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Only Domain or Global Admins can manage tracked keywords" });
       }
       const keyword = await storage.getTrackedKeyword(req.params.id);

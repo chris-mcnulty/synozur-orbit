@@ -5,7 +5,7 @@ import { eq, and, count } from "drizzle-orm";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, guardFeature } from "./helpers";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, guardFeature } from "./helpers";
 import { TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, competitors, companyProfiles } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
@@ -167,7 +167,7 @@ export function registerPlatformRoutes(app: Express) {
     if (!await guardFeature(req, res, "scheduledBriefingUpdates")) return;
     try {
       const ctx = await getRequestContext(req);
-      if (!hasAdminAccess(ctx.userRole)) {
+      if (!hasContentAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to configure scheduled briefings" });
       }
       const { enabled, frequency } = req.body;

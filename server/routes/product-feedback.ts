@@ -4,7 +4,7 @@ import { db } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, guardFeature } from "./helpers";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, guardFeature } from "./helpers";
 import { products, productFeedback, productFeedbackVotes, productFeatures, users } from "@shared/schema";
 import { z } from "zod";
 import { completeForFeature } from "../services/ai-provider";
@@ -479,7 +479,7 @@ export function registerProductFeedbackRoutes(app: Express) {
       if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
 
       const me = await storage.getUser(ctx.userId);
-      if (!hasAdminAccess(me?.role || "")) {
+      if (!hasContentAccess(me?.role || "")) {
         return res.status(403).json({ error: "Only admins can promote feedback to features" });
       }
 
@@ -534,7 +534,7 @@ export function registerProductFeedbackRoutes(app: Express) {
       if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
 
       const me = await storage.getUser(ctx.userId);
-      if (!hasAdminAccess(me?.role || "")) {
+      if (!hasContentAccess(me?.role || "")) {
         return res.status(403).json({ error: "Only admins can run AI grouping" });
       }
 
@@ -613,7 +613,7 @@ ${JSON.stringify(condensed, null, 2)}`;
       if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
 
       const me = await storage.getUser(ctx.userId);
-      if (!hasAdminAccess(me?.role || "")) {
+      if (!hasContentAccess(me?.role || "")) {
         return res.status(403).json({ error: "Only admins can change notification settings" });
       }
 
@@ -642,7 +642,7 @@ ${JSON.stringify(condensed, null, 2)}`;
       if (!validateResourceContext(product, ctx)) return res.status(403).json({ error: "Access denied" });
 
       const me = await storage.getUser(ctx.userId);
-      if (!hasAdminAccess(me?.role || "")) {
+      if (!hasContentAccess(me?.role || "")) {
         return res.status(403).json({ error: "Only admins can manage public links" });
       }
 

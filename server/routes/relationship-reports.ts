@@ -9,6 +9,7 @@ import {
   guardFeature,
   guardManualAction,
   hasAdminAccess,
+  hasContentAccess,
 } from "./helpers";
 import { generateRelationshipReport } from "../services/relationship-report-service";
 import { RELATIONSHIP_POSTURES } from "@shared/schema";
@@ -217,7 +218,7 @@ export function registerRelationshipReportRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
       const user = await storage.getUser(ctx.userId);
-      if (!user || !hasAdminAccess(user.role)) {
+      if (!user || !hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Admin access required to delete reports" });
       }
       const report = await storage.getRelationshipReport(req.params.id);

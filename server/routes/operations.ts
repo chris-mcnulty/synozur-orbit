@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql, and, count } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, hasAdminAccess, guardManualAction } from "./helpers";
+import { toContextFilter, hasAdminAccess, hasContentAccess, guardManualAction } from "./helpers";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite } from "../services/web-crawler";
@@ -526,8 +526,8 @@ export function registerOperationsRoutes(app: Express) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // Only admins can trigger rebuild (expensive operation)
-      if (!hasAdminAccess(user.role)) {
+      // Only content-access roles can trigger rebuild
+      if (!hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - Admin only" });
       }
 

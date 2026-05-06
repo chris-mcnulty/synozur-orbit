@@ -10,7 +10,7 @@ import type { Express, Request } from "express";
 import { randomBytes } from "crypto";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, hasAdminAccess, guardFeature } from "./helpers";
+import { toContextFilter, hasAdminAccess, hasContentAccess, guardFeature } from "./helpers";
 import {
   buildPlannerConsentUrl,
   exchangeCodeForGraphTokens,

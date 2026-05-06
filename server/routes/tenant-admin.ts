@@ -71,9 +71,9 @@ export function registerTenantAdminRoutes(app: Express) {
       }
 
       const { role } = req.body;
-      const validRoles = ["Standard User", "Domain Admin"];
+      const validRoles = ["Standard User", "Analyst", "Domain Admin"];
       if (!role || !validRoles.includes(role)) {
-        return res.status(400).json({ error: "Invalid role. Must be 'Standard User' or 'Domain Admin'" });
+        return res.status(400).json({ error: "Invalid role. Must be 'Standard User', 'Analyst', or 'Domain Admin'" });
       }
 
       // Cannot demote self
@@ -360,9 +360,9 @@ export function registerTenantAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Email and display name are required" });
       }
 
-      const validRoles = ["Standard User", "Domain Admin"];
+      const validRoles = ["Standard User", "Analyst", "Domain Admin"];
       if (role && !validRoles.includes(role)) {
-        return res.status(400).json({ error: "Invalid role. Must be 'Standard User' or 'Domain Admin'" });
+        return res.status(400).json({ error: "Invalid role. Must be 'Standard User', 'Analyst', or 'Domain Admin'" });
       }
 
       // Validate domain access
@@ -501,7 +501,7 @@ export function registerTenantAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Invite already pending for this email" });
       }
 
-      const validRoles = ["Standard User", "Domain Admin"];
+      const validRoles = ["Standard User", "Analyst", "Domain Admin"];
       const invitedRole = validRoles.includes(role) ? role : "Standard User";
 
       // Check user role limits

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createHash } from "crypto";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, logAiUsage, guardFeature, guardManualAction } from "./helpers";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, logAiUsage, guardFeature, guardManualAction } from "./helpers";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "../services/news-monitoring";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Competitor } from "@shared/schema";
@@ -965,7 +965,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
     if (!await guardFeature(req, res, "intelligenceBriefings")) return;
     try {
       const ctx = await getRequestContext(req);
-      if (!hasAdminAccess(ctx.userRole)) {
+      if (!hasContentAccess(ctx.userRole)) {
         return res.status(403).json({ error: "Admin access required to generate briefings" });
       }
       if (!await guardManualAction(req, res, "manualBriefingRebuild")) return;

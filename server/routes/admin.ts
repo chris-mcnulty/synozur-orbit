@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError, getActiveTenantId, getActiveMarketId } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction } from "./helpers";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction } from "./helpers";
 import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
 import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
@@ -1911,7 +1911,7 @@ export function registerAdminRoutes(app: Express) {
         return res.status(401).json({ error: "User not found" });
       }
 
-      if (!hasAdminAccess(user.role)) {
+      if (!hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - admin privileges required" });
       }
 
@@ -1996,7 +1996,7 @@ export function registerAdminRoutes(app: Express) {
       }
       const user = await storage.getUser(req.session.userId);
       if (!user) return res.status(401).json({ error: "User not found" });
-      if (!hasAdminAccess(user.role)) {
+      if (!hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - admin privileges required" });
       }
 
@@ -2099,7 +2099,7 @@ export function registerAdminRoutes(app: Express) {
         return res.status(401).json({ error: "User not found" });
       }
 
-      if (!hasAdminAccess(user.role)) {
+      if (!hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - admin privileges required" });
       }
 
@@ -2233,7 +2233,7 @@ Respond in JSON format:
         return res.status(401).json({ error: "User not found" });
       }
 
-      if (!hasAdminAccess(user.role)) {
+      if (!hasContentAccess(user.role)) {
         return res.status(403).json({ error: "Access denied - admin privileges required" });
       }
 
