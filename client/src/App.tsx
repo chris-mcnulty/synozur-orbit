@@ -23,6 +23,7 @@ import Recommendations from "@/pages/app/recommendations";
 import Activity from "@/pages/app/activity";
 import Reports from "@/pages/app/reports";
 import RelationshipReportsPage from "@/pages/app/relationship-reports";
+import RelationshipReportDetailPage from "@/pages/app/relationship-report-detail";
 import Competitors from "@/pages/app/competitors";
 import CompetitorDetail from "@/pages/app/competitor-detail";
 import Documents from "@/pages/app/documents";
@@ -119,6 +120,7 @@ function Router() {
       <Route path="/app/activity" component={Activity} />
       <Route path="/app/reports">{() => <PageFeatureGate featureKey="pdfReports" label="PDF Reports" description="Generate branded PDF competitive reports. Upgrade to unlock this feature."><Reports /></PageFeatureGate>}</Route>
       <Route path="/app/relationship-reports">{() => <PageFeatureGate featureKey="relationshipReports" label="Relationship Reports" description="On-demand 12-month engagement plans for competitors and market peers. Upgrade to unlock this feature."><RelationshipReportsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/relationship-reports/:id">{() => <PageFeatureGate featureKey="relationshipReports" label="Relationship Reports" description="On-demand 12-month engagement plans for competitors and market peers. Upgrade to unlock this feature."><RelationshipReportDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/documents" component={Documents} />
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
