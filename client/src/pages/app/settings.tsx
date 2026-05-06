@@ -790,6 +790,7 @@ export default function Settings() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Standard User">Standard User</SelectItem>
+                            <SelectItem value="Analyst">Analyst</SelectItem>
                             <SelectItem value="Domain Admin">Domain Admin</SelectItem>
                           </SelectContent>
                         </Select>
@@ -842,6 +843,7 @@ export default function Settings() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="Standard User">Standard User</SelectItem>
+                                <SelectItem value="Analyst">Analyst</SelectItem>
                                 <SelectItem value="Domain Admin">Domain Admin</SelectItem>
                                 {member.role === "Global Admin" && (
                                   <SelectItem value="Global Admin">Global Admin</SelectItem>
