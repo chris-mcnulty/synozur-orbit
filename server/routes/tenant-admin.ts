@@ -86,52 +86,49 @@ export function registerTenantAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot promote to Global Admin" });
       }
 
-      // Seat-cap check on role change (mirrors the invite-time check).
-      // Total seat count doesn't change (the user already exists), so we only
-      // need to validate legacy per-role-bucket caps when the user moves between
-      // buckets (e.g. read-write → admin or admin → read-write).
-      const isTargetAdmin = role === "Domain Admin";
-      const isCurrentAdmin = targetUser.role === "Domain Admin" || targetUser.role === "Global Admin";
-      if (isTargetAdmin !== isCurrentAdmin) {
-        const tenantDomainForCheck = targetDomain;
-        const tenant = await storage.getTenantByDomain(tenantDomainForCheck);
-        if (tenant) {
-          const seatCount = (tenant as any).seatCount as number | null | undefined;
-          const stripeSeatsManaged = !!seatCount && !(tenant as any).billingManagedManually;
-          if (!stripeSeatsManaged) {
-            const tenantUsers = await storage.getUsersByDomain(tenantDomainForCheck);
-            const allInvites = await storage.getTenantInvitesByDomain(tenantDomainForCheck);
-            const pendingInvites = allInvites.filter(i => i.status === "pending");
-            const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
-            const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+      // Seat-limit guard: enforce bucket caps when moving a user INTO a new bucket.
+      // Same-bucket switches (e.g. Standard User ↔ Analyst) don't change bucket counts
+      // and are handled by a separate guard. Stripe total-seat limits are not re-checked
+      // here because a role change doesn't add a net user to the tenant.
+      const isNewRoleReadWrite = role === "Standard User" || role === "Analyst";
+      const isCurrentRoleReadWrite = targetUser.role === "Standard User" || targetUser.role === "Analyst";
+      const isNewRoleAdmin = role === "Domain Admin";
+      const isCurrentRoleAdmin = targetUser.role === "Domain Admin" || targetUser.role === "Global Admin";
 
-            if (isTargetAdmin) {
-              // Moving into the admin bucket — check admin cap.
-              // Exclude the target user's current slot from active-user count since
-              // their seat is being reassigned, not added.
-              const adminCount = tenantUsers.filter(
-                u => u.id !== targetUser.id && (u.role === "Domain Admin" || u.role === "Global Admin")
-              ).length;
-              const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
-              if (adminCount + pendingAdmins >= adminUserLimit) {
-                return res.status(400).json({
-                  error: `Admin user limit (${adminUserLimit}) reached for this tenant. Upgrade your plan to add more admin users.`,
-                });
-              }
-            } else {
-              // Moving into the read-write bucket — check read-write cap.
-              const readWriteCount = tenantUsers.filter(
-                u => u.id !== targetUser.id && (u.role === "Standard User" || u.role === "Analyst")
-              ).length;
-              const pendingReadWrite = pendingInvites.filter(
-                i => i.invitedRole === "Standard User" || i.invitedRole === "Analyst"
-              ).length;
-              if (readWriteCount + pendingReadWrite >= readWriteUserLimit) {
-                return res.status(400).json({
-                  error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.`,
-                });
-              }
-            }
+      const movingIntoReadWrite = isNewRoleReadWrite && !isCurrentRoleReadWrite;
+      const movingIntoAdmin = isNewRoleAdmin && !isCurrentRoleAdmin;
+
+      if (movingIntoReadWrite || movingIntoAdmin) {
+        const tenant = await storage.getTenantByDomain(targetDomain);
+        if (tenant) {
+          const tenantUsers = await storage.getUsersByDomain(targetDomain);
+          const allInvites = await storage.getTenantInvitesByDomain(targetDomain);
+          const pendingInvites = allInvites.filter(i => i.status === "pending");
+          const adminUserLimit = (tenant as any).adminUserLimit ?? 1;
+          const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
+
+          // Exclude the target user's current slot from counts — their seat is being
+          // reassigned, not added, so counting them would cause a false positive.
+          const adminCount = tenantUsers.filter(
+            u => u.id !== targetUser.id && (u.role === "Domain Admin" || u.role === "Global Admin")
+          ).length;
+          const readWriteCount = tenantUsers.filter(
+            u => u.id !== targetUser.id && (u.role === "Standard User" || u.role === "Analyst")
+          ).length;
+          const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
+          const pendingReadWrite = pendingInvites.filter(
+            i => i.invitedRole === "Standard User" || i.invitedRole === "Analyst"
+          ).length;
+
+          if (movingIntoAdmin && adminCount + pendingAdmins >= adminUserLimit) {
+            return res.status(400).json({
+              error: `Admin user limit reached (${adminCount + pendingAdmins}/${adminUserLimit} used by Domain Admins and Global Admins). Upgrade your plan to add more admin users.`,
+            });
+          }
+          if (movingIntoReadWrite && readWriteCount + pendingReadWrite >= readWriteUserLimit) {
+            return res.status(400).json({
+              error: `Read-write user limit reached (${readWriteCount + pendingReadWrite}/${readWriteUserLimit} used by Standard Users and Analysts). Upgrade your plan to add more.`,
+            });
           }
         }
       }
