@@ -274,7 +274,7 @@ export default function IntelligenceBriefingPage() {
       const a = document.createElement("a");
       a.href = url;
       const dateStr = briefing ? new Date(briefing.periodEnd).toISOString().split('T')[0] : "export";
-      a.download = `Intelligence_Briefing_${dateStr}.pdf`;
+      a.download = `Market_Intelligence_${dateStr}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);

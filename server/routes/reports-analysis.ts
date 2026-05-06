@@ -129,7 +129,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
       const { generatePdfReport } = await import("../services/pdf-generator");
       const { enqueuePdf } = await import("../services/job-queue");
-      const reportName = name || `Competitive Analysis - ${new Date().toLocaleDateString()}`;
+      const reportName = name || `Company Analysis Report - ${new Date().toLocaleDateString()}`;
       const { pdfBuffer, report } = await enqueuePdf(
         `report-pdf:${ctx.tenantDomain}`,
         (_signal, reportProgress) => generatePdfReport(
@@ -185,7 +185,7 @@ export function registerReportsAnalysisRoutes(app: Express) {
 
       const { generatePdfReport } = await import("../services/pdf-generator");
       const { enqueuePdf } = await import("../services/job-queue");
-      const reportName = `Full Analysis Report - ${new Date().toLocaleDateString()}`;
+      const reportName = `Company Analysis Report (Full) - ${new Date().toLocaleDateString()}`;
       
       const { pdfBuffer, report } = await enqueuePdf(
         `full-analysis-pdf:${ctx.tenantDomain}`,
@@ -204,12 +204,12 @@ export function registerReportsAnalysisRoutes(app: Express) {
       );
 
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="Company_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
       res.setHeader("X-Report-Id", report.id);
       res.send(pdfBuffer);
 
       // Store to SPE (fire-and-forget)
-      const speFileName = `Full_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      const speFileName = `Company_Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       Promise.resolve().then(async () => {
         const t = await storage.getTenantByDomain(ctx.tenantDomain);
         if (!t?.speStorageEnabled) return;

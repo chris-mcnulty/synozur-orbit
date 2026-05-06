@@ -233,6 +233,54 @@ export function registerRelationshipReportRoutes(app: Express) {
     }
   });
 
+  // Branded PDF download
+  app.get("/api/relationship-reports/:id/download/pdf", async (req, res) => {
+    if (!await guardFeature(req, res, "relationshipReports")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const report = await storage.getRelationshipReport(req.params.id);
+      if (!report) return res.status(404).json({ error: "Report not found" });
+      if (!validateResourceContext(report, ctx)) return res.status(403).json({ error: "Access denied" });
+
+      const { generateRelationshipReportPdf } = await import("../services/pdf-generator");
+      const { enqueuePdf } = await import("../services/job-queue");
+      const { pdfBuffer } = await enqueuePdf(
+        `relationship-report-pdf:${report.id}`,
+        (_signal, reportProgress) =>
+          generateRelationshipReportPdf(report.id, ctx.tenantDomain, ctx.userId, reportProgress),
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetName: report.name },
+      );
+
+      const safeName = (report.name || "Relationship_Report").replace(/[^a-zA-Z0-9]/g, "_");
+      const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+
+      // Store to SPE (fire-and-forget)
+      Promise.resolve().then(async () => {
+        const t = await storage.getTenantByDomain(ctx.tenantDomain);
+        if (!t?.speStorageEnabled) return;
+        const { sharepointFileStorage } = await import("../services/sharepoint-file-storage.js");
+        return sharepointFileStorage.storeFile(pdfBuffer, filename, "application/pdf", {
+          documentType: "report",
+          scope: "tenant",
+          tenantDomain: ctx.tenantDomain,
+          marketId: report.marketId || undefined,
+          createdByUserId: ctx.userId,
+          fileType: "pdf",
+          originalFileName: filename,
+          reportType: "relationship_report",
+        }, ctx.userId, report.id, t.id);
+      }).catch((err) => console.error("[SPE] Failed to store relationship report PDF:", err));
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      console.error("Relationship report PDF generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Markdown download
   app.get("/api/relationship-reports/:id/download/markdown", async (req, res) => {
     if (!await guardFeature(req, res, "relationshipReports")) return;

@@ -302,11 +302,20 @@ export default function RelationshipReportsPage() {
                   variant="outline"
                   size="sm"
                   className="flex-1"
-                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/markdown`, "_blank")}
-                  data-testid={`button-download-relationship-${rr.id}`}
+                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/pdf`, "_blank")}
+                  data-testid={`button-download-relationship-pdf-${rr.id}`}
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  Markdown
+                  PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(`/api/relationship-reports/${rr.id}/download/markdown`, "_blank")}
+                  data-testid={`button-download-relationship-md-${rr.id}`}
+                  title="Download as Markdown"
+                >
+                  <FileText className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="outline"
