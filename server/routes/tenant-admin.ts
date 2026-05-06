@@ -530,9 +530,9 @@ export function registerTenantAdminRoutes(app: Express) {
           const readWriteUserLimit = (tenant as any).readWriteUserLimit ?? 2;
 
           const adminCount = tenantUsers.filter(u => u.role === "Domain Admin" || u.role === "Global Admin").length;
-          const standardCount = tenantUsers.filter(u => u.role === "Standard User").length;
+          const readWriteCount = tenantUsers.filter(u => u.role === "Standard User" || u.role === "Analyst").length;
           const pendingAdmins = pendingInvites.filter(i => i.invitedRole === "Domain Admin").length;
-          const pendingStandard = pendingInvites.filter(i => i.invitedRole === "Standard User").length;
+          const pendingReadWrite = pendingInvites.filter(i => i.invitedRole === "Standard User" || i.invitedRole === "Analyst").length;
 
           if (invitedRole === "Domain Admin") {
             if (adminCount + pendingAdmins >= adminUserLimit) {
@@ -541,7 +541,7 @@ export function registerTenantAdminRoutes(app: Express) {
               });
             }
           } else {
-            if (standardCount + pendingStandard >= readWriteUserLimit) {
+            if (readWriteCount + pendingReadWrite >= readWriteUserLimit) {
               return res.status(400).json({
                 error: `Read-write user limit (${readWriteUserLimit}) reached for this tenant. Upgrade your plan to add more users.`,
               });
