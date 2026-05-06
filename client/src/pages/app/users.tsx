@@ -37,10 +37,11 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2, Filter, PenLine } from "lucide-react";
+import { Plus, MoreHorizontal, Shield, User, Crown, Loader2, Mail, Search, UserPlus, Building2, Filter, PenLine, AlertCircle, Info } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Tenant {
   id: string;
@@ -132,6 +133,7 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team/seat-usage"] });
       setInviteEmail("");
       setInviteRole("Standard User");
       setInviteOpen(false);
@@ -158,6 +160,7 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team/seat-usage"] });
       setEditRoleOpen(false);
       setSelectedUser(null);
       toast.success("Role updated successfully");
@@ -181,6 +184,7 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team/seat-usage"] });
       setRemoveConfirmOpen(false);
       setSelectedUser(null);
       toast.success("User removed successfully");
@@ -212,6 +216,40 @@ export default function UsersPage() {
       toast.error(error.message);
     },
   });
+
+  const { data: seatUsage } = useQuery({
+    queryKey: ["/api/team/seat-usage"],
+    queryFn: async () => {
+      const res = await fetch("/api/team/seat-usage", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: inviteOpen && isAdminUser,
+  });
+
+  useEffect(() => {
+    if (!seatUsage) return;
+    const seatsFull = seatUsage.stripeSeatsManaged
+      ? seatUsage.totalUsed >= seatUsage.seatCount
+      : false;
+    const readWriteFull = !seatUsage.stripeSeatsManaged
+      ? seatUsage.readWriteCount >= seatUsage.readWriteUserLimit
+      : false;
+    const adminFull = !seatUsage.stripeSeatsManaged
+      ? seatUsage.adminCount >= seatUsage.adminUserLimit
+      : false;
+
+    if (seatsFull) return;
+
+    const isReadWriteRole = inviteRole === "Standard User" || inviteRole === "Analyst";
+    const isAdminRole = inviteRole === "Domain Admin";
+
+    if (isReadWriteRole && readWriteFull && !adminFull) {
+      setInviteRole("Domain Admin");
+    } else if (isAdminRole && adminFull && !readWriteFull) {
+      setInviteRole("Standard User");
+    }
+  }, [seatUsage]);
 
   const { data: entraStatus } = useQuery({
     queryKey: ["/api/team/entra/status"],
@@ -396,17 +434,133 @@ export default function UsersPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select value={inviteRole} onValueChange={setInviteRole}>
-                    <SelectTrigger data-testid="select-invite-role">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Standard User">Standard User</SelectItem>
-                      <SelectItem value="Analyst">Analyst</SelectItem>
-                      <SelectItem value="Domain Admin">Domain Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {(() => {
+                    const seatsFull = seatUsage?.stripeSeatsManaged
+                      ? seatUsage.totalUsed >= seatUsage.seatCount
+                      : false;
+                    const readWriteFull = !seatUsage?.stripeSeatsManaged && seatUsage != null
+                      ? seatUsage.readWriteCount >= seatUsage.readWriteUserLimit
+                      : false;
+                    const adminFull = !seatUsage?.stripeSeatsManaged && seatUsage != null
+                      ? seatUsage.adminCount >= seatUsage.adminUserLimit
+                      : false;
+
+                    const readWriteIsInviteRole = inviteRole === "Standard User" || inviteRole === "Analyst";
+                    const adminIsInviteRole = inviteRole === "Domain Admin";
+                    const currentRoleFull =
+                      seatsFull ||
+                      (readWriteIsInviteRole && readWriteFull) ||
+                      (adminIsInviteRole && adminFull);
+
+                    const roleTip = seatsFull
+                      ? `All seats are taken (${seatUsage?.totalUsed}/${seatUsage?.seatCount}). Increase your subscription to invite more.`
+                      : readWriteFull && adminFull
+                        ? `Read-write seats (${seatUsage?.readWriteCount}/${seatUsage?.readWriteUserLimit}) and admin seats (${seatUsage?.adminCount}/${seatUsage?.adminUserLimit}) are both full. Upgrade to add more.`
+                        : readWriteFull
+                          ? `Read-write seats are full (${seatUsage?.readWriteCount}/${seatUsage?.readWriteUserLimit}). Standard User and Analyst are unavailable. Upgrade to add more.`
+                          : adminFull
+                            ? `Admin seats are full (${seatUsage?.adminCount}/${seatUsage?.adminUserLimit}). Domain Admin is unavailable. Upgrade to add more.`
+                            : null;
+
+                    const anyFull = seatsFull || readWriteFull || adminFull;
+
+                    return (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <Label>Role</Label>
+                          {anyFull && roleTip && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex cursor-default"
+                                    tabIndex={0}
+                                    aria-label="Seat limit information"
+                                    data-testid="role-limit-info-icon"
+                                  >
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[240px] text-center">
+                                  {roleTip}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                        <Select value={inviteRole} onValueChange={setInviteRole}>
+                          <SelectTrigger data-testid="select-invite-role" className={currentRoleFull ? "border-destructive/50" : ""}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem
+                              value="Standard User"
+                              disabled={seatsFull || readWriteFull}
+                            >
+                              Standard User
+                            </SelectItem>
+                            <SelectItem
+                              value="Analyst"
+                              disabled={seatsFull || readWriteFull}
+                            >
+                              Analyst
+                            </SelectItem>
+                            <SelectItem
+                              value="Domain Admin"
+                              disabled={seatsFull || adminFull}
+                            >
+                              Domain Admin
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    );
+                  })()}
+                  {seatUsage && (
+                    <div className="space-y-1 pt-1" data-testid="seat-usage-info">
+                      {seatUsage.stripeSeatsManaged ? (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          {seatUsage.totalUsed >= seatUsage.seatCount ? (
+                            <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
+                          ) : null}
+                          <span
+                            className={seatUsage.totalUsed >= seatUsage.seatCount ? "text-destructive font-medium" : ""}
+                            data-testid="seat-usage-total"
+                          >
+                            {seatUsage.totalUsed}/{seatUsage.seatCount} seats used
+                            {seatUsage.totalUsed >= seatUsage.seatCount && " — upgrade to invite more"}
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            {seatUsage.readWriteCount >= seatUsage.readWriteUserLimit ? (
+                              <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
+                            ) : null}
+                            <span
+                              className={seatUsage.readWriteCount >= seatUsage.readWriteUserLimit ? "text-destructive font-medium" : ""}
+                              data-testid="seat-usage-readwrite"
+                            >
+                              {seatUsage.readWriteCount}/{seatUsage.readWriteUserLimit} read-write seats used
+                              {seatUsage.readWriteCount >= seatUsage.readWriteUserLimit && " — upgrade to add more"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            {seatUsage.adminCount >= seatUsage.adminUserLimit ? (
+                              <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
+                            ) : null}
+                            <span
+                              className={seatUsage.adminCount >= seatUsage.adminUserLimit ? "text-destructive font-medium" : ""}
+                              data-testid="seat-usage-admin"
+                            >
+                              {seatUsage.adminCount}/{seatUsage.adminUserLimit} admin seat{seatUsage.adminUserLimit !== 1 ? "s" : ""} used
+                              {seatUsage.adminCount >= seatUsage.adminUserLimit && " — upgrade to add more"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -415,7 +569,14 @@ export default function UsersPage() {
                 </Button>
                 <Button
                   onClick={() => sendInviteMutation.mutate()}
-                  disabled={!inviteEmail || sendInviteMutation.isPending}
+                  disabled={!inviteEmail || sendInviteMutation.isPending || (() => {
+                    if (!seatUsage) return false;
+                    if (seatUsage.stripeSeatsManaged) return seatUsage.totalUsed >= seatUsage.seatCount;
+                    const rw = inviteRole === "Standard User" || inviteRole === "Analyst";
+                    const admin = inviteRole === "Domain Admin";
+                    return (rw && seatUsage.readWriteCount >= seatUsage.readWriteUserLimit) ||
+                           (admin && seatUsage.adminCount >= seatUsage.adminUserLimit);
+                  })()}
                   data-testid="button-send-invite"
                 >
                   {sendInviteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

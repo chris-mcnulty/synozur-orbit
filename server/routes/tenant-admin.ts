@@ -482,6 +482,68 @@ export function registerTenantAdminRoutes(app: Express) {
 
   // ==================== TENANT ADMIN - INVITATIONS ====================
 
+  // Get seat usage counts for the invite dialog
+  app.get("/api/team/seat-usage", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const domain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(domain);
+      const tenantUsers = await storage.getUsersByDomain(domain);
+      const allInvites = await storage.getTenantInvitesByDomain(domain);
+      const pendingInvites = allInvites.filter((i) => i.status === "pending");
+
+      const seatCount = (tenant as any)?.seatCount as number | null | undefined;
+      const stripeSeatsManaged = !!seatCount && !(tenant as any)?.billingManagedManually;
+
+      if (stripeSeatsManaged) {
+        const totalUsed = tenantUsers.length + pendingInvites.length;
+        return res.json({
+          stripeSeatsManaged: true,
+          seatCount: seatCount!,
+          totalUsed,
+          adminCount: null,
+          adminUserLimit: null,
+          readWriteCount: null,
+          readWriteUserLimit: null,
+        });
+      }
+
+      const adminUserLimit = (tenant as any)?.adminUserLimit ?? 1;
+      const readWriteUserLimit = (tenant as any)?.readWriteUserLimit ?? 2;
+
+      const adminCount =
+        tenantUsers.filter((u) => u.role === "Domain Admin" || u.role === "Global Admin").length +
+        pendingInvites.filter((i) => i.invitedRole === "Domain Admin").length;
+      const readWriteCount =
+        tenantUsers.filter((u) => u.role === "Standard User" || u.role === "Analyst").length +
+        pendingInvites.filter((i) => i.invitedRole === "Standard User" || i.invitedRole === "Analyst").length;
+
+      return res.json({
+        stripeSeatsManaged: false,
+        seatCount: null,
+        totalUsed: null,
+        adminCount,
+        adminUserLimit,
+        readWriteCount,
+        readWriteUserLimit,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get pending invites for current tenant
   app.get("/api/team/invites", async (req, res) => {
     try {
