@@ -54,6 +54,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useUser } from "@/lib/userContext";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -84,8 +92,20 @@ interface NavItem {
   comingSoon?: boolean;
 }
 
-// Default expanded sections - Setup, Insights, and Help are expanded by default
-const DEFAULT_EXPANDED_SECTIONS = ['Setup', 'Insights', 'Help'];
+interface NavSubGroup {
+  label: string;
+  items: NavItem[];
+}
+
+type NavGroup =
+  | { group: string; items: NavItem[]; subgroups?: never }
+  | { group: string; subgroups: NavSubGroup[]; items?: never };
+
+// Default expanded sections - Workspace and Intelligence are expanded by default;
+// Marketing/Deliverables/Admin start collapsed to keep the sidebar short.
+const DEFAULT_EXPANDED_SECTIONS = ['Workspace', 'Intelligence'];
+// Bumped key so users on the old structure get the new defaults on first render.
+const EXPANDED_SECTIONS_STORAGE_KEY = 'orbit-expanded-nav-sections-v2';
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -147,7 +167,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   // Load expanded sections from localStorage or use defaults
   const [expandedSections, setExpandedSections] = useState<string[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_EXPANDED_SECTIONS;
-    const saved = localStorage.getItem('orbit-expanded-nav-sections');
+    const saved = localStorage.getItem(EXPANDED_SECTIONS_STORAGE_KEY);
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -163,7 +183,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
       const newSections = prev.includes(sectionId)
         ? prev.filter(s => s !== sectionId)
         : [...prev, sectionId];
-      localStorage.setItem('orbit-expanded-nav-sections', JSON.stringify(newSections));
+      localStorage.setItem(EXPANDED_SECTIONS_STORAGE_KEY, JSON.stringify(newSections));
       return newSections;
     });
   }, []);
@@ -489,86 +509,98 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     return null;
   }
 
-  const navigation: { group: string; items: NavItem[] }[] = [
+  // Items shown in the top-header Help dropdown (no longer in the sidebar).
+  const helpItems: NavItem[] = [
+    { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
+    { label: "Support", icon: TicketIcon, href: "/app/support" },
+    { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
+    { label: "Changelog", icon: FileTextIcon, href: "/app/changelog" },
+    { label: "Roadmap", icon: Map, href: "/app/roadmap" },
+    { label: "About", icon: Info, href: "/app/about" },
+  ];
+
+  const navigation: NavGroup[] = [
     {
-      group: "Home",
+      group: "Workspace",
       items: [
         { label: "Overview", icon: LayoutDashboard, href: "/app" },
-      ]
-    },
-    {
-      group: "Setup",
-      items: [
-        { label: "Company Baseline", icon: Building2, href: "/app/company-profile" },
+        { label: "Company Profile", icon: Building2, href: "/app/company-profile" },
         { label: "Competitors", icon: Target, href: "/app/competitors" },
         { label: "Products", icon: Package, href: "/app/products" },
         { label: "Documents", icon: BookOpen, href: "/app/documents" },
       ]
     },
     {
-      group: "Insights",
-      items: [
-        { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
-        { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
-        { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
-        { label: "Data Sources", icon: Database, href: "/app/data-sources" },
-        { label: "Activity", icon: Activity, href: "/app/activity" },
-        { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
-        { label: "Intelligence", icon: Brain, href: "/app/intelligence" },
-        { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
-      ]
+      group: "Intelligence",
+      subgroups: [
+        {
+          label: "",
+          items: [
+            { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
+            { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
+            { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
+            { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
+          ],
+        },
+        {
+          label: "Sources",
+          items: [
+            { label: "Data Sources", icon: Database, href: "/app/data-sources" },
+            { label: "Activity", icon: Activity, href: "/app/activity" },
+            { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
+          ],
+        },
+      ],
     },
     {
       group: "Marketing",
-      items: [
-        { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
-        { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
-        { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
-        { label: "Personas", icon: UserCircle, href: "/app/marketing/personas" },
-        ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
-        { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
-        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
-        { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
-        { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
-        { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
-        { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
-      ]
+      subgroups: [
+        {
+          label: "Plan",
+          items: [
+            { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
+            { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
+            { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
+            { label: "Personas", icon: UserCircle, href: "/app/marketing/personas" },
+            { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
+            ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
+          ],
+        },
+        {
+          label: "Execute",
+          items: [
+            { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
+            { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
+            { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
+            { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
+            { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
+            { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
+          ],
+        },
+      ],
     },
     {
-      group: "Outputs",
+      group: "Deliverables",
       items: [
         { label: "Reports", icon: FileText, href: "/app/reports" },
         { label: "Relationship Plans", icon: Handshake, href: "/app/relationship-reports" },
         { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
       ]
     },
-    {
-      group: "System",
+    // Admin renders only when the user has at least one admin-only item.
+    ...(isAdminUser ? [{
+      group: "Admin",
       items: [
-        ...(isAdminUser ? [{ label: "User Management", icon: Users, href: "/app/users" }] : []),
+        { label: "User Management", icon: Users, href: "/app/users" },
         { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
-        { label: "Settings", icon: Settings, href: "/app/settings" },
-        ...((user?.role === "Global Admin" || user?.role === "Domain Admin") ? [
-          { label: "Company Roster", icon: Building2, href: "/app/company-roster" },
-          { label: "Document Storage", icon: HardDrive, href: "/app/admin/spe-storage" },
-        ] : []),
+        { label: "Company Roster", icon: Building2, href: "/app/company-roster" },
+        { label: "Document Storage", icon: HardDrive, href: "/app/admin/spe-storage" },
         ...(user?.role === "Global Admin" ? [
           { label: "Admin Dashboard", icon: Crown, href: "/app/admin" },
           { label: "AI Settings", icon: Brain, href: "/app/admin/ai-settings" },
         ] : []),
-      ]
-    },
-    {
-      group: "Help",
-      items: [
-        { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
-        { label: "Support", icon: TicketIcon, href: "/app/support" },
-        { label: "User Guide", icon: HelpCircle, href: "/app/guide" },
-        { label: "Changelog", icon: FileTextIcon, href: "/app/changelog" },
-        { label: "Roadmap", icon: Map, href: "/app/roadmap" },
-        { label: "About", icon: Info, href: "/app/about" },
-      ]
-    }
+      ],
+    } as NavGroup] : []),
   ];
 
   return (
@@ -631,74 +663,92 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           <div className="space-y-2">
             {navigation.map((group, i) => {
               const isExpanded = expandedSections.includes(group.group);
-              const hasActivePage = group.items.some(item => location === item.href);
-              
+              const groupItems: NavItem[] = group.items
+                ? group.items
+                : group.subgroups.flatMap(sg => sg.items);
+              const hasActivePage = groupItems.some(item => location === item.href);
+
+              const renderItem = (item: NavItem) => {
+                const isActive = location === item.href;
+                const indicator = navIndicators[item.href];
+                const isLocked = lockedNavItems.has(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
+                      isActive
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                      isLocked && !isActive && "opacity-50"
+                    )}
+                  >
+                    <div className="relative">
+                      <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                      {indicator?.type === "action" && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                      )}
+                      {indicator?.type === "new" && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
+                      )}
+                    </div>
+                    <span className="flex-1">{item.label}</span>
+                    {item.comingSoon && (
+                      <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
+                        Soon
+                      </Badge>
+                    )}
+                    {isLocked && !item.comingSoon && (
+                      <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
+                    )}
+                    {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
+                      <Badge
+                        variant="secondary"
+                        className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                      >
+                        {indicator.count > 99 ? "99+" : indicator.count}
+                      </Badge>
+                    )}
+                  </Link>
+                );
+              };
+
               return (
-                <Collapsible 
-                  key={i} 
-                  open={isExpanded || hasActivePage} 
+                <Collapsible
+                  key={i}
+                  open={isExpanded || hasActivePage}
                   onOpenChange={() => toggleSection(group.group)}
                 >
                   <CollapsibleTrigger asChild>
                     <button className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider hover:bg-sidebar-accent/30 rounded-md transition-colors">
                       <span>{group.group}</span>
-                      <ChevronDown 
-                        size={14} 
+                      <ChevronDown
+                        size={14}
                         className={cn(
                           "transition-transform duration-200",
                           (isExpanded || hasActivePage) && "rotate-180"
-                        )} 
+                        )}
                       />
                     </button>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="space-y-1 mt-1">
-                      {group.items.map((item) => {
-                        const isActive = location === item.href;
-                        const indicator = navIndicators[item.href];
-                        const isLocked = lockedNavItems.has(item.href);
-                        return (
-                          <Link 
-                            key={item.href} 
-                            href={item.href}
-                            data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                            className={cn(
-                              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
-                              isActive 
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient" 
-                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-                              isLocked && !isActive && "opacity-50"
-                            )}
-                          >
-                            <div className="relative">
-                              <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
-                              {indicator?.type === "action" && (
-                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                      {group.items
+                        ? group.items.map(renderItem)
+                        : group.subgroups.map((sg, sgi) => (
+                            <div key={sgi} className={sgi > 0 ? "mt-3" : ""}>
+                              {sg.label && (
+                                <div className="px-3 pb-1 pt-1 text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+                                  {sg.label}
+                                </div>
                               )}
-                              {indicator?.type === "new" && (
-                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
-                              )}
+                              <div className="space-y-1">
+                                {sg.items.map(renderItem)}
+                              </div>
                             </div>
-                            <span className="flex-1">{item.label}</span>
-                            {item.comingSoon && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
-                                Soon
-                              </Badge>
-                            )}
-                            {isLocked && !item.comingSoon && (
-                              <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
-                            )}
-                            {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
-                              <Badge 
-                                variant="secondary" 
-                                className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
-                              >
-                                {indicator.count > 99 ? "99+" : indicator.count}
-                              </Badge>
-                            )}
-                          </Link>
-                        );
-                      })}
+                          ))}
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
@@ -745,7 +795,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden h-screen bg-background">
         {/* Mobile Header - Orion Style */}
         <header className="h-14 lg:hidden flex items-center px-4 border-b border-border bg-sidebar">
-          <button 
+          <button
             className="text-sidebar-foreground/70 hover:text-sidebar-foreground mr-3"
             onClick={() => setSidebarOpen(true)}
           >
@@ -753,9 +803,9 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           </button>
           <SynozurAppSwitcher currentApp="orbit" forceDark />
           <div className="flex items-center gap-2 ml-2">
-            <img 
-              src="/brand/synozur-horizontal.png" 
-              alt="Synozur" 
+            <img
+              src="/brand/synozur-horizontal.png"
+              alt="Synozur"
               className="h-5 object-contain"
             />
             <span className="text-sidebar-foreground/50">|</span>
@@ -764,7 +814,93 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           <div className="ml-auto flex items-center gap-1">
             <NotificationCentre />
             <RefreshStatusIndicator />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                  data-testid="header-help-trigger-mobile"
+                  aria-label="Help"
+                >
+                  <HelpCircle size={18} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Help</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {helpItems.map((item) => (
+                  <DropdownMenuItem key={item.href} asChild>
+                    <Link href={item.href} className="flex items-center gap-2 cursor-pointer" data-testid={`help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                      <item.icon size={14} className="opacity-70" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Link
+              href="/app/settings"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+              data-testid="header-settings-mobile"
+              aria-label="Settings"
+            >
+              <Settings size={18} />
+            </Link>
           </div>
+        </header>
+
+        {/* Desktop Header - global utility bar (Notifications, Help, Settings) */}
+        <header className="h-12 hidden lg:flex items-center justify-end gap-1 px-4 border-b border-border bg-background">
+          <NotificationCentre />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                data-testid="header-help-trigger"
+                aria-label="Help"
+              >
+                <HelpCircle size={18} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Help</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {helpItems.map((item) => {
+                const indicator = navIndicators[item.href];
+                return (
+                  <DropdownMenuItem key={item.href} asChild>
+                    <Link
+                      href={item.href}
+                      className="flex items-center gap-2 cursor-pointer"
+                      data-testid={`help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      <item.icon size={14} className="opacity-70" />
+                      <span className="flex-1">{item.label}</span>
+                      {indicator?.type === "count" && indicator.count && indicator.count > 0 && (
+                        <Badge
+                          variant="secondary"
+                          className="h-4 min-w-[18px] px-1 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                        >
+                          {indicator.count > 99 ? "99+" : indicator.count}
+                        </Badge>
+                      )}
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Link
+            href="/app/settings"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            data-testid="header-settings"
+            aria-label="Settings"
+          >
+            <Settings size={18} />
+          </Link>
         </header>
 
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}
