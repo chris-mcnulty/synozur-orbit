@@ -78,6 +78,7 @@ import { SynozurAppSwitcher } from "@/components/SynozurAppSwitcher";
 import { calculateStaleness } from "@/lib/staleness";
 import PageBreadcrumbs, { type BreadcrumbCrumb } from "@/components/layout/PageBreadcrumbs";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type NavIndicator = {
   type: "action" | "new" | "count";
@@ -129,6 +130,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const isMobile = useIsMobile();
   const { user, logout, loading, refetch: refetchUser } = useUser();
   
   // Keyboard shortcuts (Cmd/Ctrl + K for command palette, Ctrl+Shift+R for refresh center, etc.)
@@ -812,7 +814,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             <span className="font-semibold text-base text-sidebar-foreground">Orbit</span>
           </div>
           <div className="ml-auto flex items-center gap-1">
-            <NotificationCentre />
+            {isMobile && <NotificationCentre />}
             <RefreshStatusIndicator />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -831,7 +833,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
                 <DropdownMenuSeparator />
                 {helpItems.map((item) => (
                   <DropdownMenuItem key={item.href} asChild>
-                    <Link href={item.href} className="flex items-center gap-2 cursor-pointer" data-testid={`help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <Link href={item.href} className="flex items-center gap-2 cursor-pointer" data-testid={`mobile-help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
                       <item.icon size={14} className="opacity-70" />
                       <span>{item.label}</span>
                     </Link>
@@ -852,7 +854,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
 
         {/* Desktop Header - global utility bar (Notifications, Help, Settings) */}
         <header className="h-12 hidden lg:flex items-center justify-end gap-1 px-4 border-b border-border bg-background">
-          <NotificationCentre />
+          {!isMobile && <NotificationCentre />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -875,7 +877,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
                     <Link
                       href={item.href}
                       className="flex items-center gap-2 cursor-pointer"
-                      data-testid={`help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      data-testid={`desktop-help-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                     >
                       <item.icon size={14} className="opacity-70" />
                       <span className="flex-1">{item.label}</span>
