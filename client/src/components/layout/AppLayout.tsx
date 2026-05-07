@@ -14,7 +14,6 @@ import {
   Plus,
   Users,
   LineChart,
-  Shield,
   BookOpen,
   ClipboardList,
   Crown,
