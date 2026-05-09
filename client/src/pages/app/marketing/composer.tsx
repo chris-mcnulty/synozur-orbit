@@ -58,7 +58,10 @@ export default function ComposerPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo?.features?.socialAccounts === true;
+  // Composer APIs (rewrite, create, patch, calendar) are gated by socialPosts
+  // on the backend; publish is additionally gated by directPublishing. Match
+  // the *minimum* gate so the UI doesn't render only to 403 on every call.
+  const isAllowed = tenantInfo?.features?.socialPosts === true;
 
   const { data: accounts = [] } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],

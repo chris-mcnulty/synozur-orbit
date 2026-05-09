@@ -95,7 +95,11 @@ export default function PlatformCredentialsPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo?.features?.socialAccounts === true;
+  // Platform credentials APIs are gated by directPublishing on the backend
+  // (and additionally restricted to tenant admins). Match the feature gate
+  // here so we don't render the page just to surface a 403; the admin check
+  // still happens via the API response, which sets isAdminForbidden below.
+  const isAllowed = tenantInfo?.features?.directPublishing === true;
 
   const { data, isLoading, error } = useQuery<{ items: CredMetadata[] }, { status?: number; message?: string }>({
     queryKey: ["/api/tenant/platform-credentials"],

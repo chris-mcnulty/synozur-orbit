@@ -1104,10 +1104,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const hashtagPolicy = (VOICE_HASHTAG_POLICIES as readonly string[]).includes(body.hashtagPolicy)
       ? body.hashtagPolicy : (profile?.hashtagPolicy ?? "standard");
 
-    // Sanitize string arrays: trim, drop empties, dedupe, cap length.
-    const cleanStrArray = (v: unknown, max = 50): string[] | null => {
+    // Sanitize string arrays: trim, drop empties, dedupe, cap length. The
+    // caller passes the prior value so each field falls back to its OWN
+    // previous value when the incoming payload is malformed (i.e., not an
+    // array) — without this, a malformed preferredPhrases would
+    // incorrectly inherit forbiddenPhrases.
+    const cleanStrArray = (
+      v: unknown,
+      prior: string[] | null | undefined,
+      max = 50,
+    ): string[] | null => {
       if (v === null) return null;
-      if (!Array.isArray(v)) return profile?.forbiddenPhrases ?? null;
+      if (!Array.isArray(v)) return prior ?? null;
       const out: string[] = [];
       const seen = new Set<string>();
       for (const item of v) {
@@ -1168,8 +1176,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       styleGuidance: typeof body.styleGuidance === "string"
         ? body.styleGuidance.slice(0, 4000)
         : (body.styleGuidance === null ? null : (profile?.styleGuidance ?? null)),
-      forbiddenPhrases: body.forbiddenPhrases !== undefined ? cleanStrArray(body.forbiddenPhrases) : (profile?.forbiddenPhrases ?? null),
-      preferredPhrases: body.preferredPhrases !== undefined ? cleanStrArray(body.preferredPhrases) : (profile?.preferredPhrases ?? null),
+      forbiddenPhrases: body.forbiddenPhrases !== undefined ? cleanStrArray(body.forbiddenPhrases, profile?.forbiddenPhrases) : (profile?.forbiddenPhrases ?? null),
+      preferredPhrases: body.preferredPhrases !== undefined ? cleanStrArray(body.preferredPhrases, profile?.preferredPhrases) : (profile?.preferredPhrases ?? null),
       emojiPolicy,
       hashtagPolicy,
       maxLength,

@@ -69,7 +69,9 @@ export default function CalendarPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo?.features?.socialAccounts === true;
+  // Calendar API (/api/generated-posts/calendar) is gated by socialPosts on
+  // the backend — match it client-side so the UI doesn't render only to 403.
+  const isAllowed = tenantInfo?.features?.socialPosts === true;
 
   const monthStart = startOfMonth(cursorMonth);
   const monthEnd = endOfMonth(cursorMonth);

@@ -313,9 +313,10 @@ export function buildRewriteUserPrompt(input: BuildUserPromptInput): string {
 export function parseVariants(text: string, expected: number): string[] {
   const parts = text.split(/^---VARIANT---\s*$/m).map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return [text.trim()].filter(Boolean);
-  // If the model returned only a single block, treat the whole thing as one
-  // variant rather than failing — the caller will display what it got.
-  return parts.slice(0, Math.max(parts.length, expected));
+  // Cap at the expected count — extra separators in the model output
+  // would otherwise flood the UI. Single-block fallback (parts.length===1)
+  // is preserved by slice(0, expected) when expected >= 1.
+  return parts.slice(0, Math.max(1, expected));
 }
 
 // ─── Snapshot capture (for generated_posts.voice_profile_snapshot) ──────────

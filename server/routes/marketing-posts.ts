@@ -33,8 +33,8 @@ import {
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
-import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { completeForFeature } from "../services/ai-provider";
+import { guardFeature } from "./helpers";
 import {
   fetchVoiceProfile,
   fetchPersona,
@@ -45,33 +45,16 @@ import {
   snapshotVoiceProfile,
 } from "../services/voice-service";
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-async function getTenantPlan(tenantDomain: string): Promise<string> {
-  const tenant = await storage.getTenantByDomain(tenantDomain);
-  return tenant?.plan ?? "free";
-}
-
-async function guardFeature(req: Request, res: Response, feature: string): Promise<boolean> {
-  if (!req.session.userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return false;
-  }
-  try {
-    const ctx = await getRequestContext(req);
-    const plan = await getTenantPlan(ctx.tenantDomain);
-    const gate = await checkFeatureAccessAsync(plan, feature);
-    if (!gate.allowed) {
-      res.status(403).json({ error: gate.reason });
-      return false;
-    }
-    return true;
-  } catch (err: any) {
-    const status = (err && typeof err === "object" && "status" in err) ? (err.status as number) : 500;
-    res.status(status).json({ error: status === 401 ? "Not authenticated" : "Internal server error" });
-    return false;
-  }
-}
+// Status values generated_posts.status can take. Mirrors the values used
+// by marketing-publish-worker and the campaign post UI; PATCH validates
+// against this list to avoid persisting unknown enum values.
+const ALLOWED_POST_STATUSES: readonly string[] = [
+  "draft",
+  "approved",
+  "rejected",
+  "published",
+  "publish_failed",
+];
 
 function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
   if (!Array.isArray(input)) return [];
@@ -101,7 +84,15 @@ async function runRewrite(opts: {
   body: RewriteRequestBody;
   account: typeof socialAccounts.$inferSelect;
   tenantDomain: string;
-}): Promise<{ variants: string[]; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; model: string }> {
+}): Promise<{
+  variants: string[];
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  model: string;
+  /** Persona id actually used for the rewrite (after profile-default fallback). */
+  resolvedPersonaId: string | null;
+  /** Sanitized + default-applied framework refs that were sent to the LLM. */
+  resolvedFrameworkRefs: VoiceFrameworkRef[];
+}> {
   const { body, account, tenantDomain } = opts;
   const profile = await fetchVoiceProfile(account.id);
 
@@ -146,7 +137,13 @@ async function runRewrite(opts: {
   });
 
   const variants = parseVariants(result.text, body.variantCount ?? 3);
-  return { variants, usage: result.usage, model: result.model };
+  return {
+    variants,
+    usage: result.usage,
+    model: result.model,
+    resolvedPersonaId: persona?.id ?? null,
+    resolvedFrameworkRefs: refsToUse,
+  };
 }
 
 // ─── route registration ─────────────────────────────────────────────────────
@@ -215,13 +212,16 @@ export function registerMarketingPostsRoutes(app: Express) {
 
       // Append a lineage entry — but never overwrite editedContent here. The
       // user picks a variant and applies it via the standard PATCH route.
+      // Persist the RESOLVED persona/framework refs (after sanitization +
+      // profile-default fallback) so lineage matches what the LLM actually
+      // saw, not the raw request body.
       const newLineageEntry = {
         at: new Date().toISOString(),
         by: req.session.userId ?? null,
         prompt: body.instructions ?? null,
         model: out.model,
-        personaId: body.personaId ?? null,
-        frameworkRefs: body.frameworkRefs ?? null,
+        personaId: out.resolvedPersonaId,
+        frameworkRefs: out.resolvedFrameworkRefs,
       };
       const existing = (post.rewriteLineage ?? []) as Array<typeof newLineageEntry>;
       await db.update(generatedPosts).set({
@@ -312,12 +312,32 @@ export function registerMarketingPostsRoutes(app: Express) {
       } = req.body ?? {};
 
       const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
-      if (editedContent !== undefined) updateFields.editedContent = editedContent;
+      if (editedContent !== undefined) {
+        if (editedContent !== null && typeof editedContent !== "string") {
+          return res.status(400).json({ error: "editedContent must be a string or null" });
+        }
+        updateFields.editedContent = editedContent;
+      }
       if (content !== undefined && typeof content === "string") updateFields.content = content;
       if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
-      if (status !== undefined) updateFields.status = status;
+      if (status !== undefined) {
+        if (!ALLOWED_POST_STATUSES.includes(status)) {
+          return res.status(400).json({
+            error: `Invalid status. Allowed: ${ALLOWED_POST_STATUSES.join(", ")}`,
+          });
+        }
+        updateFields.status = status;
+      }
       if (scheduledDate !== undefined) {
-        updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
+        if (scheduledDate === null || scheduledDate === "") {
+          updateFields.scheduledDate = null;
+        } else {
+          const parsed = new Date(scheduledDate);
+          if (Number.isNaN(parsed.getTime())) {
+            return res.status(400).json({ error: "scheduledDate is not a valid date" });
+          }
+          updateFields.scheduledDate = parsed;
+        }
       }
 
       // When the user transitions to 'approved' (regardless of campaign vs
