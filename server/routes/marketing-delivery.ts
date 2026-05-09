@@ -409,16 +409,22 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     if (!publisher || !publisher.supported || !publisher.getOAuthAuthorizeUrl) {
       return res.status(400).json({ error: `Direct publishing is not supported for ${account.platform} yet.` });
     }
-    if (!publisher.oauthConfigured()) {
+    if (!await publisher.oauthConfigured(ctx.tenantDomain)) {
       return res.status(503).json({
-        error: `${account.platform} OAuth is not configured on this server. Ask an administrator to set the platform's CLIENT_ID/CLIENT_SECRET.`,
+        error: `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`,
+        configureRequired: true,
+        platform: account.platform,
       });
     }
 
     purgeExpiredStates();
     const state = randomBytes(24).toString("base64url");
     const redirectUri = `${getBaseUrl(req)}/api/social-accounts/oauth/callback`;
-    const authorize = publisher.getOAuthAuthorizeUrl({ redirectUri, state });
+    const authorize = await publisher.getOAuthAuthorizeUrl({
+      redirectUri,
+      state,
+      tenantDomain: ctx.tenantDomain,
+    });
     // Publishers may return a plain URL or { url, codeVerifier } for PKCE.
     const url = typeof authorize === "string" ? authorize : authorize.url;
     const codeVerifier = typeof authorize === "string" ? undefined : authorize.codeVerifier;
@@ -454,7 +460,10 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).send("Platform does not support OAuth");
     }
     try {
-      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri, ctx.codeVerifier);
+      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri, {
+        tenantDomain: ctx.tenantDomain,
+        codeVerifier: ctx.codeVerifier,
+      });
       await db.update(socialAccounts).set({
         encryptedAccessToken: encryptSecret(result.accessToken),
         encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
@@ -688,6 +697,103 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       });
       res.status(400).json({ error: err.message || "Bluesky connect failed" });
     }
+  });
+
+  // ───── Tenant-owned platform OAuth credentials ─────
+  // Per-tenant client_id / client_secret for the OAuth apps each platform
+  // requires. Tenant admins (Domain Admin or Global Admin) manage these;
+  // env vars are not consulted on a multi-tenant deployment.
+  async function requireTenantAdmin(req: Request, res: Response): Promise<boolean> {
+    if (!await guardFeature(req, res, "directPublishing")) return false;
+    const user = await storage.getUser(req.session.userId!);
+    if (!user) {
+      res.status(401).json({ error: "Not authenticated" });
+      return false;
+    }
+    if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+      res.status(403).json({
+        error: "Only a tenant admin can manage platform OAuth credentials.",
+      });
+      return false;
+    }
+    return true;
+  }
+
+  // Lists all configured / configurable platforms for the tenant. Each entry
+  // is metadata only — the secret is never returned over the wire.
+  app.get("/api/tenant/platform-credentials", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { listPlatformCredentialMetadata } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const items = await listPlatformCredentialMetadata(ctx.tenantDomain, PLATFORM_CREDENTIAL_PLATFORMS);
+    res.json({ items });
+  });
+
+  // Save (upsert) credentials for a platform. clientSecret is optional only
+  // for OAuth public clients (Twitter native apps); the per-platform UI
+  // explains when each field is needed.
+  app.put("/api/tenant/platform-credentials/:platform", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { upsertPlatformCredentials } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    const { clientId, clientSecret, notes } = req.body ?? {};
+    if (typeof clientId !== "string" || !clientId.trim()) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    if (clientSecret !== undefined && clientSecret !== null && typeof clientSecret !== "string") {
+      return res.status(400).json({ error: "clientSecret must be a string when provided" });
+    }
+    try {
+      await upsertPlatformCredentials({
+        tenantDomain: ctx.tenantDomain,
+        platform,
+        clientId: clientId.trim(),
+        clientSecret: clientSecret === undefined ? undefined : (clientSecret ? clientSecret.trim() : null),
+        notes: typeof notes === "string" ? notes.slice(0, 500) : null,
+        userId: req.session.userId!,
+      });
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "platform_credentials_update",
+        entityType: "tenant_platform_credentials",
+        entityId: platform,
+        status: "ok",
+        message: `Updated ${platform} credentials`,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Platform Credentials Save Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to save credentials" });
+    }
+  });
+
+  app.delete("/api/tenant/platform-credentials/:platform", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { deletePlatformCredentials } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    await deletePlatformCredentials(ctx.tenantDomain, platform);
+    await db.insert(marketingAuditLog).values({
+      tenantDomain: ctx.tenantDomain,
+      userId: req.session.userId!,
+      action: "platform_credentials_delete",
+      entityType: "tenant_platform_credentials",
+      entityId: platform,
+      status: "ok",
+      message: `Deleted ${platform} credentials`,
+    });
+    res.status(204).send();
   });
 
   app.get("/api/generated-posts/:id/publish-attempts", async (req, res) => {

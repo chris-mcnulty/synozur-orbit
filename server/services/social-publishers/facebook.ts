@@ -1,14 +1,9 @@
 /**
- * FacebookPublisher — Phase 5
+ * FacebookPublisher — multi-tenant credentials refactor
  *
- * Posts to a Facebook Page via the Meta Graph API. The user OAuths once
- * with their personal Facebook account; we then list the Pages they
- * administer and surface them as `availableAuthors`. The selected Page's
- * URN drives where each post goes.
- *
- * Required env vars:
- *   - FACEBOOK_APP_ID
- *   - FACEBOOK_APP_SECRET
+ * Posts to a Facebook Page via the Meta Graph API. Tenants supply their
+ * own Facebook app_id + app_secret via the tenant-credentials UI; env
+ * vars are not consulted.
  *
  * Notes:
  *  - We exchange the short-lived user token for a long-lived (~60-day)
@@ -20,7 +15,8 @@
  *  - Personal-profile posts are not supported by the Graph API for new
  *    apps; we surface a clear error if no Page is selected.
  *
- * Posting requires the app to have been reviewed for `pages_manage_posts`.
+ * Posting requires the tenant's app to have been reviewed for
+ * `pages_manage_posts`.
  */
 
 import type {
@@ -31,6 +27,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
+import { getPlatformCredentials } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
@@ -48,10 +45,6 @@ interface FbPage {
 }
 
 async function fetchManagedPages(userAccessToken: string): Promise<FbPage[]> {
-  // /me/accounts returns the pages the user administers along with a
-  // page-scoped access_token. We don't store those tokens here — we just
-  // need ids/names for the picker. The publish call re-fetches the token
-  // for the selected page.
   const url = `${GRAPH_HOST}/${API_VERSION}/me/accounts?fields=id,name,category&limit=100&access_token=${encodeURIComponent(userAccessToken)}`;
   const out: FbPage[] = [];
   let next: string | null = url;
@@ -72,16 +65,18 @@ export class FacebookPublisher implements SocialPublisher {
   platform = "facebook";
   supported = true;
 
-  oauthConfigured(): boolean {
-    return !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
+  async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    const creds = await getPlatformCredentials(tenantDomain, "facebook");
+    return !!(creds?.clientId && creds.clientSecret);
   }
 
-  getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): string {
-    if (!this.oauthConfigured()) {
-      throw new Error("Facebook OAuth not configured: missing FACEBOOK_APP_ID/SECRET");
+  async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
+    const creds = await getPlatformCredentials(req.tenantDomain, "facebook");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("Facebook OAuth is not configured for this tenant. Configure your Facebook app_id and app_secret in Tenant → Platform Credentials.");
     }
     const params = new URLSearchParams({
-      client_id: process.env.FACEBOOK_APP_ID!,
+      client_id: creds.clientId,
       redirect_uri: req.redirectUri,
       state: req.state,
       scope: req.scope ?? DEFAULT_SCOPE,
@@ -90,16 +85,21 @@ export class FacebookPublisher implements SocialPublisher {
     return `${AUTH_HOST}/${API_VERSION}/dialog/oauth?${params.toString()}`;
   }
 
-  async exchangeOAuthCode(code: string, redirectUri: string): Promise<OAuthCallbackResult> {
-    if (!this.oauthConfigured()) {
-      throw new Error("Facebook OAuth not configured");
+  async exchangeOAuthCode(
+    code: string,
+    redirectUri: string,
+    options: { tenantDomain: string },
+  ): Promise<OAuthCallbackResult> {
+    const creds = await getPlatformCredentials(options.tenantDomain, "facebook");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("Facebook OAuth is not configured for this tenant.");
     }
     // 1. Short-lived user token.
     const tokenResp = await fetch(
       `${GRAPH_HOST}/${API_VERSION}/oauth/access_token?` +
       new URLSearchParams({
-        client_id: process.env.FACEBOOK_APP_ID!,
-        client_secret: process.env.FACEBOOK_APP_SECRET!,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
         redirect_uri: redirectUri,
         code,
       }).toString(),
@@ -115,8 +115,8 @@ export class FacebookPublisher implements SocialPublisher {
       `${GRAPH_HOST}/${API_VERSION}/oauth/access_token?` +
       new URLSearchParams({
         grant_type: "fb_exchange_token",
-        client_id: process.env.FACEBOOK_APP_ID!,
-        client_secret: process.env.FACEBOOK_APP_SECRET!,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
         fb_exchange_token: shortTok.access_token,
       }).toString(),
     );
@@ -143,9 +143,6 @@ export class FacebookPublisher implements SocialPublisher {
       vanityName: null,
     }));
 
-    // Default to the first Page, or fall back to the personal account so
-    // the row isn't unusable. The publish call will reject personal posts
-    // with a clear message.
     const defaultAuthor = availableAuthors[0]
       ?? { mode: "person" as const, urn: `fb:user:${me.id}`, name: me.name ?? "Personal account", vanityName: null };
 
@@ -212,8 +209,6 @@ export class FacebookPublisher implements SocialPublisher {
       };
     }
 
-    // Re-derive the page access token. With a long-lived user token this is
-    // non-expiring; cheap and avoids storing per-page secrets.
     const pageTokenResp = await fetch(
       `${GRAPH_HOST}/${API_VERSION}/${pageId}?fields=access_token&access_token=${encodeURIComponent(userAccessToken)}`,
     );
@@ -264,8 +259,6 @@ export class FacebookPublisher implements SocialPublisher {
 
     const payload = await resp.json().catch(() => null) as { id?: string } | null;
     const postId = payload?.id;
-    // Graph returns either `<page_id>_<post_id>` or just the post id; the
-    // public URL works either way.
     const publishedUrl = postId
       ? `https://www.facebook.com/${postId.includes("_") ? postId.replace("_", "/posts/") : `${pageId}/posts/${postId}`}`
       : null;

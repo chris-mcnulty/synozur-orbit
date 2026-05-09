@@ -55,6 +55,7 @@ import BrandLibraryPage from "@/pages/app/marketing/brand-library";
 import CampaignsPage from "@/pages/app/marketing/campaigns";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
+import PlatformCredentialsPage from "@/pages/app/marketing/platform-credentials";
 import ComposerPage from "@/pages/app/marketing/composer";
 import CalendarPage from "@/pages/app/marketing/calendar";
 import SendsPage from "@/pages/app/marketing/sends";
@@ -159,6 +160,7 @@ function Router() {
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
+      <Route path="/app/marketing/platform-credentials" component={PlatformCredentialsPage} />
       <Route path="/app/marketing/composer" component={ComposerPage} />
       <Route path="/app/marketing/calendar" component={CalendarPage} />
       <Route path="/app/marketing/sends" component={SendsPage} />

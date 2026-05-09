@@ -1,18 +1,14 @@
 /**
- * LinkedInPublisher — Task #97
+ * LinkedInPublisher — Task #97 + multi-tenant credentials refactor
  *
  * Implements direct publishing to LinkedIn via the UGC Posts API and the
- * standard 3-legged OAuth code flow ("Sign In with LinkedIn using OpenID
- * Connect" + `w_member_social` scope, or `w_organization_social` for company
- * pages). We deliberately keep the implementation minimal: one text-only
- * post; image/multimedia uploads are a v2 follow-up.
+ * standard 3-legged OAuth code flow. Tenants supply their own LinkedIn
+ * client_id + client_secret via the tenant-credentials UI; env vars are
+ * not consulted (this is a multi-tenant deployment and tenant admins can't
+ * set environment variables).
  *
- * Required env vars (request via the environment-secrets skill):
- *   - LINKEDIN_CLIENT_ID
- *   - LINKEDIN_CLIENT_SECRET
- *
- * If those are missing, `oauthConfigured()` returns false and the route
- * layer returns a friendly "Connect not yet configured" error.
+ * Required scopes: `openid profile email w_member_social`,
+ * plus `w_organization_social rw_organization_admin` for company pages.
  */
 
 import type {
@@ -23,6 +19,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
+import { getPlatformCredentials } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
@@ -32,17 +29,19 @@ export class LinkedInPublisher implements SocialPublisher {
   platform = "linkedin";
   supported = true;
 
-  oauthConfigured(): boolean {
-    return !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
+  async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    const creds = await getPlatformCredentials(tenantDomain, "linkedin");
+    return !!(creds?.clientId && creds.clientSecret);
   }
 
-  getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): string {
-    if (!this.oauthConfigured()) {
-      throw new Error("LinkedIn OAuth not configured: missing LINKEDIN_CLIENT_ID/SECRET");
+  async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
+    const creds = await getPlatformCredentials(req.tenantDomain, "linkedin");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("LinkedIn OAuth is not configured for this tenant. Configure your LinkedIn client_id and client_secret in Tenant → Platform Credentials.");
     }
     const params = new URLSearchParams({
       response_type: "code",
-      client_id: process.env.LINKEDIN_CLIENT_ID!,
+      client_id: creds.clientId,
       redirect_uri: req.redirectUri,
       state: req.state,
       scope: req.scope ?? DEFAULT_SCOPE,
@@ -50,9 +49,14 @@ export class LinkedInPublisher implements SocialPublisher {
     return `${AUTH_HOST}/oauth/v2/authorization?${params.toString()}`;
   }
 
-  async exchangeOAuthCode(code: string, redirectUri: string): Promise<OAuthCallbackResult> {
-    if (!this.oauthConfigured()) {
-      throw new Error("LinkedIn OAuth not configured");
+  async exchangeOAuthCode(
+    code: string,
+    redirectUri: string,
+    options: { tenantDomain: string },
+  ): Promise<OAuthCallbackResult> {
+    const creds = await getPlatformCredentials(options.tenantDomain, "linkedin");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("LinkedIn OAuth is not configured for this tenant.");
     }
     const tokenResp = await fetch(`${AUTH_HOST}/oauth/v2/accessToken`, {
       method: "POST",
@@ -61,8 +65,8 @@ export class LinkedInPublisher implements SocialPublisher {
         grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        client_id: process.env.LINKEDIN_CLIENT_ID!,
-        client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
       }).toString(),
     });
     if (!tokenResp.ok) {

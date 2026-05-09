@@ -46,6 +46,7 @@ import {
   Handshake,
   PencilLine,
   CalendarDays,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -579,6 +580,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
             { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
             { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
+            { label: "Platform Credentials", icon: KeyRound, href: "/app/marketing/platform-credentials", enterprise: true },
             { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
           ],
         },

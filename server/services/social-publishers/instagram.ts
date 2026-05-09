@@ -1,25 +1,21 @@
 /**
- * InstagramPublisher — Phase 5
+ * InstagramPublisher — multi-tenant credentials refactor
  *
  * Posts to an Instagram Business / Creator account via the Meta Graph
- * Instagram Content Publishing API. Reuses the same Facebook App
- * credentials (FACEBOOK_APP_ID/SECRET) — Instagram publishing rides on
- * top of the Facebook OAuth flow with extra scopes:
+ * Instagram Content Publishing API. Instagram publishing rides on the
+ * Facebook OAuth flow, so we look up *Facebook* credentials in the
+ * platform-credentials service. Tenants supply these via the tenant-
+ * credentials UI; env vars are not consulted.
+ *
+ * Required scopes (added to the Facebook defaults):
  *   - instagram_basic
  *   - instagram_content_publish
  *
- * Required setup (operator):
- *  1. Connect a Facebook Page to an Instagram Business/Creator account.
- *  2. Have the user OAuth with `instagram_content_publish` scope.
- *  3. Submit the Facebook App for review for that scope.
- *
- * Posting flow (per Meta docs):
+ * Posting flow:
  *  1. POST /{ig-user-id}/media       (creates a container)
- *  2. POST /{ig-user-id}/media_publish  (publishes the container)
+ *  2. POST /{ig-user-id}/media_publish
  *
- * Image is REQUIRED — Instagram has no text-only post type. We use
- * `post.overrideImageUrl` (publicly reachable URL). Captions can include
- * the post text + hashtags. Carousel/video posts are a follow-up.
+ * Image is REQUIRED — Instagram has no text-only post type.
  */
 
 import type {
@@ -30,6 +26,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
+import { getPlatformCredentials } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
@@ -49,7 +46,6 @@ interface IgAccountForPage {
 }
 
 async function discoverInstagramAccounts(userAccessToken: string): Promise<IgAccountForPage[]> {
-  // Walk the user's pages and resolve `instagram_business_account` for each.
   const pagesUrl = `${GRAPH_HOST}/${API_VERSION}/me/accounts?fields=id,name&limit=100&access_token=${encodeURIComponent(userAccessToken)}`;
   const out: IgAccountForPage[] = [];
   let next: string | null = pagesUrl;
@@ -86,16 +82,19 @@ export class InstagramPublisher implements SocialPublisher {
   platform = "instagram";
   supported = true;
 
-  oauthConfigured(): boolean {
-    return !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
+  // Reads "facebook" credentials — Instagram rides on the Facebook app.
+  async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    const creds = await getPlatformCredentials(tenantDomain, "facebook");
+    return !!(creds?.clientId && creds.clientSecret);
   }
 
-  getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): string {
-    if (!this.oauthConfigured()) {
-      throw new Error("Instagram OAuth not configured: missing FACEBOOK_APP_ID/SECRET (Instagram rides on Facebook).");
+  async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
+    const creds = await getPlatformCredentials(req.tenantDomain, "facebook");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("Instagram OAuth requires Facebook credentials. Configure your Facebook app_id and app_secret in Tenant → Platform Credentials (Instagram rides on the Facebook app).");
     }
     const params = new URLSearchParams({
-      client_id: process.env.FACEBOOK_APP_ID!,
+      client_id: creds.clientId,
       redirect_uri: req.redirectUri,
       state: req.state,
       scope: req.scope ?? DEFAULT_SCOPE,
@@ -104,16 +103,20 @@ export class InstagramPublisher implements SocialPublisher {
     return `${AUTH_HOST}/${API_VERSION}/dialog/oauth?${params.toString()}`;
   }
 
-  async exchangeOAuthCode(code: string, redirectUri: string): Promise<OAuthCallbackResult> {
-    if (!this.oauthConfigured()) {
-      throw new Error("Instagram OAuth not configured");
+  async exchangeOAuthCode(
+    code: string,
+    redirectUri: string,
+    options: { tenantDomain: string },
+  ): Promise<OAuthCallbackResult> {
+    const creds = await getPlatformCredentials(options.tenantDomain, "facebook");
+    if (!creds?.clientId || !creds.clientSecret) {
+      throw new Error("Instagram OAuth requires Facebook credentials for this tenant.");
     }
-    // Short-lived → long-lived user token (60 days).
     const tokenResp = await fetch(
       `${GRAPH_HOST}/${API_VERSION}/oauth/access_token?` +
       new URLSearchParams({
-        client_id: process.env.FACEBOOK_APP_ID!,
-        client_secret: process.env.FACEBOOK_APP_SECRET!,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
         redirect_uri: redirectUri,
         code,
       }).toString(),
@@ -128,8 +131,8 @@ export class InstagramPublisher implements SocialPublisher {
       `${GRAPH_HOST}/${API_VERSION}/oauth/access_token?` +
       new URLSearchParams({
         grant_type: "fb_exchange_token",
-        client_id: process.env.FACEBOOK_APP_ID!,
-        client_secret: process.env.FACEBOOK_APP_SECRET!,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
         fb_exchange_token: shortTok.access_token,
       }).toString(),
     );
@@ -137,7 +140,6 @@ export class InstagramPublisher implements SocialPublisher {
       ? await longResp.json() as { access_token: string; expires_in?: number }
       : { access_token: shortTok.access_token, expires_in: shortTok.expires_in };
 
-    // Resolve every IG Business account linked to a Page the user manages.
     const igAccounts = await discoverInstagramAccounts(longTok.access_token);
 
     if (igAccounts.length === 0) {
@@ -234,7 +236,6 @@ export class InstagramPublisher implements SocialPublisher {
       ? `${text}\n\n${hashtags.map(h => h.startsWith("#") ? h : `#${h}`).join(" ")}`
       : text;
 
-    // Step 1 — create media container.
     const containerResp = await fetch(`${GRAPH_HOST}/${API_VERSION}/${igUserId}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -265,9 +266,6 @@ export class InstagramPublisher implements SocialPublisher {
       };
     }
 
-    // Step 2 — publish the container. Containers can take a few seconds to
-    // be processed; on transient errors the worker retries via its existing
-    // backoff.
     const publishResp = await fetch(`${GRAPH_HOST}/${API_VERSION}/${igUserId}/media_publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -289,7 +287,6 @@ export class InstagramPublisher implements SocialPublisher {
     }
     const published = await publishResp.json() as { id?: string };
 
-    // To produce a public URL, look up the permalink on the new media item.
     let publishedUrl: string | null = null;
     if (published.id) {
       try {

@@ -1,21 +1,15 @@
 /**
- * TwitterPublisher (X / Twitter) — Phase 5
+ * TwitterPublisher (X / Twitter) — multi-tenant credentials refactor
  *
- * Posts a tweet via the X API v2 `POST /2/tweets` endpoint, authorising
- * with OAuth 2.0 Authorization Code + PKCE. Text-only; image attachments
- * are a follow-up (would require chunked v1.1 media upload).
- *
- * Required env vars:
- *   - TWITTER_CLIENT_ID
- *   - TWITTER_CLIENT_SECRET     (only used for confidential clients;
- *                               public-client apps may omit it)
+ * Posts a tweet via the X API v2 `POST /2/tweets`, authorising with OAuth
+ * 2.0 Authorization Code + PKCE. Tenants supply their own Twitter
+ * client_id (and optional client_secret for confidential clients) via the
+ * tenant-credentials UI; env vars are not consulted.
  *
  * Notes:
  *  - Token endpoint requires HTTP Basic auth for confidential clients.
- *  - Tweet text limit is 280 chars (Twitter Blue extends this; we don't
- *    try to detect plan, we just let the API reject over-long bodies).
- *  - The /2/users/me lookup gives us the user id + handle for the URN
- *    and the published tweet URL.
+ *  - Tweet text limit is 280 chars (X Premium extends this; we let the API
+ *    reject over-long bodies rather than guess plan).
  */
 
 import { randomBytes, createHash } from "crypto";
@@ -28,6 +22,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
+import { getPlatformCredentials } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
@@ -44,22 +39,28 @@ function codeChallengeFromVerifier(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
+function buildBasicAuthHeader(clientId: string, clientSecret: string): string {
+  return `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+}
+
 export class TwitterPublisher implements SocialPublisher {
   platform = "twitter";
   supported = true;
 
-  oauthConfigured(): boolean {
-    return !!process.env.TWITTER_CLIENT_ID;
+  async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    const creds = await getPlatformCredentials(tenantDomain, "twitter");
+    return !!creds?.clientId;
   }
 
-  getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): OAuthAuthorizeResult {
-    if (!this.oauthConfigured()) {
-      throw new Error("Twitter OAuth not configured: missing TWITTER_CLIENT_ID");
+  async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<OAuthAuthorizeResult> {
+    const creds = await getPlatformCredentials(req.tenantDomain, "twitter");
+    if (!creds?.clientId) {
+      throw new Error("Twitter OAuth is not configured for this tenant. Configure your Twitter (X) client_id in Tenant → Platform Credentials.");
     }
     const codeVerifier = generateCodeVerifier();
     const params = new URLSearchParams({
       response_type: "code",
-      client_id: process.env.TWITTER_CLIENT_ID!,
+      client_id: creds.clientId,
       redirect_uri: req.redirectUri,
       scope: req.scope ?? DEFAULT_SCOPE,
       state: req.state,
@@ -75,12 +76,13 @@ export class TwitterPublisher implements SocialPublisher {
   async exchangeOAuthCode(
     code: string,
     redirectUri: string,
-    codeVerifier?: string,
+    options: { tenantDomain: string; codeVerifier?: string },
   ): Promise<OAuthCallbackResult> {
-    if (!this.oauthConfigured()) {
-      throw new Error("Twitter OAuth not configured");
+    const creds = await getPlatformCredentials(options.tenantDomain, "twitter");
+    if (!creds?.clientId) {
+      throw new Error("Twitter OAuth is not configured for this tenant.");
     }
-    if (!codeVerifier) {
+    if (!options.codeVerifier) {
       throw new Error("Twitter OAuth requires a code_verifier (PKCE) — internal state was lost");
     }
 
@@ -88,8 +90,8 @@ export class TwitterPublisher implements SocialPublisher {
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
-      client_id: process.env.TWITTER_CLIENT_ID!,
-      code_verifier: codeVerifier,
+      client_id: creds.clientId,
+      code_verifier: options.codeVerifier,
     });
     const headers: Record<string, string> = {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -97,9 +99,8 @@ export class TwitterPublisher implements SocialPublisher {
     // Confidential clients authenticate with HTTP Basic. Public clients
     // (e.g. native apps) skip this. We treat presence of the secret as the
     // signal that the app is confidential.
-    if (process.env.TWITTER_CLIENT_SECRET) {
-      const basic = Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString("base64");
-      headers.Authorization = `Basic ${basic}`;
+    if (creds.clientSecret) {
+      headers.Authorization = buildBasicAuthHeader(creds.clientId, creds.clientSecret);
     }
 
     const tokenResp = await fetch(`${API_HOST}/2/oauth2/token`, {
@@ -119,7 +120,6 @@ export class TwitterPublisher implements SocialPublisher {
       refresh_token?: string;
     };
 
-    // Look up the authenticated user to capture id/username for URN + URL.
     const meResp = await fetch(`${API_HOST}/2/users/me`, {
       headers: { Authorization: `Bearer ${tok.access_token}` },
     });
@@ -158,20 +158,22 @@ export class TwitterPublisher implements SocialPublisher {
     };
   }
 
-  /** Refresh the access token using the stored refresh_token. Returns the
-   *  refreshed token bundle so the worker can persist it. Throws on failure. */
-  async refreshToken(refreshToken: string): Promise<{
+  /** Refresh the access token using the stored refresh_token. */
+  async refreshToken(
+    tenantDomain: string,
+    refreshToken: string,
+  ): Promise<{
     accessToken: string;
     refreshToken: string | null;
     expiresAt: Date | null;
   }> {
-    if (!this.oauthConfigured()) throw new Error("Twitter OAuth not configured");
+    const creds = await getPlatformCredentials(tenantDomain, "twitter");
+    if (!creds?.clientId) throw new Error("Twitter OAuth is not configured for this tenant.");
     const headers: Record<string, string> = {
       "Content-Type": "application/x-www-form-urlencoded",
     };
-    if (process.env.TWITTER_CLIENT_SECRET) {
-      const basic = Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString("base64");
-      headers.Authorization = `Basic ${basic}`;
+    if (creds.clientSecret) {
+      headers.Authorization = buildBasicAuthHeader(creds.clientId, creds.clientSecret);
     }
     const resp = await fetch(`${API_HOST}/2/oauth2/token`, {
       method: "POST",
@@ -179,7 +181,7 @@ export class TwitterPublisher implements SocialPublisher {
       body: new URLSearchParams({
         grant_type: "refresh_token",
         refresh_token: refreshToken,
-        client_id: process.env.TWITTER_CLIENT_ID!,
+        client_id: creds.clientId,
       }).toString(),
     });
     if (!resp.ok) {
@@ -218,9 +220,6 @@ export class TwitterPublisher implements SocialPublisher {
       };
     }
 
-    // If the access token is expired and we have a refresh token, refresh
-    // proactively. The worker persists `refreshedAccessToken` etc. when set
-    // on the result so subsequent publishes don't keep refreshing.
     let refreshedAccessToken: string | null = null;
     let refreshedRefreshToken: string | null = null;
     let refreshedTokenExpiresAt: Date | null = null;
@@ -234,7 +233,7 @@ export class TwitterPublisher implements SocialPublisher {
       }
       try {
         const rt = decryptSecret(account.encryptedRefreshToken);
-        const refreshed = await this.refreshToken(rt);
+        const refreshed = await this.refreshToken(account.tenantDomain, rt);
         accessToken = refreshed.accessToken;
         refreshedAccessToken = refreshed.accessToken;
         refreshedRefreshToken = refreshed.refreshToken;

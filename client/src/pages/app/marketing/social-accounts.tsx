@@ -761,13 +761,32 @@ export default function SocialAccountsPage() {
         method: "POST",
         credentials: "include",
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Connect failed");
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        // The API surfaces a `configureRequired` flag when a tenant hasn't
+        // yet registered their OAuth app. Redirect to the credentials page
+        // rather than showing a confusing toast.
+        if (body?.configureRequired) {
+          const platform = body.platform || "this platform";
+          toast({
+            title: `${platform} credentials needed`,
+            description: "A tenant admin must configure platform credentials before connecting. Redirecting...",
+          });
+          setTimeout(() => { window.location.href = "/app/marketing/platform-credentials"; }, 1200);
+          throw new Error("Configure credentials first");
+        }
+        throw new Error(body.error || "Connect failed");
+      }
       return r.json() as Promise<{ authorizeUrl: string }>;
     },
     onSuccess: (data) => {
       window.location.href = data.authorizeUrl;
     },
-    onError: (err: Error) => toast({ title: "Connect failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      if (err.message !== "Configure credentials first") {
+        toast({ title: "Connect failed", description: err.message, variant: "destructive" });
+      }
+    },
   });
 
   const disconnectMutation = useMutation({

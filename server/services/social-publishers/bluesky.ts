@@ -57,8 +57,11 @@ export class BlueskyPublisher implements SocialPublisher {
   platform = "bluesky";
   supported = true;
 
-  // Non-OAuth flow — no server-level credentials required.
-  oauthConfigured(): boolean {
+  // Non-OAuth flow — no client credentials needed at all.
+  // The "oauthConfigured" semantic here is "can this tenant connect a row?",
+  // which for Bluesky is always true since users supply their app password
+  // directly per account.
+  async oauthConfigured(_tenantDomain: string): Promise<boolean> {
     return true;
   }
 

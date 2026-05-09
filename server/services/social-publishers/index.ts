@@ -41,6 +41,10 @@ export interface PublishResult {
 export interface OAuthAuthorizeRequest {
   redirectUri: string;
   state: string;
+  /** Tenant the connect flow is happening under — publishers use this to
+   *  look up tenant-owned OAuth credentials in the platform_credentials
+   *  service (env-var fallback was removed; multi-tenant tenants must BYO). */
+  tenantDomain: string;
   /** Optional override for the publisher's default scope set. */
   scope?: string;
 }
@@ -77,16 +81,19 @@ export interface SocialPublisher {
   platform: string;
   /** Whether direct publishing is implemented; stubs return false. */
   supported: boolean;
-  /** Whether OAuth credentials (client id/secret) are configured. */
-  oauthConfigured(): boolean;
+  /** Whether OAuth credentials are configured for THIS tenant. Async because
+   *  credentials live in the database (per-tenant) — env vars are no longer
+   *  consulted for any platform. Bluesky returns true unconditionally
+   *  because it uses an app-password flow rather than OAuth. */
+  oauthConfigured(tenantDomain: string): Promise<boolean>;
   /** May return either a plain URL string (legacy) or an object including
    *  a codeVerifier for PKCE flows (Twitter/X). The route layer normalises
    *  both shapes. */
-  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): string | OAuthAuthorizeResult;
+  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): Promise<string | OAuthAuthorizeResult>;
   exchangeOAuthCode?(
     code: string,
     redirectUri: string,
-    codeVerifier?: string,
+    options: { tenantDomain: string; codeVerifier?: string },
   ): Promise<OAuthCallbackResult>;
   publish(ctx: PublishContext): Promise<PublishResult>;
 }
