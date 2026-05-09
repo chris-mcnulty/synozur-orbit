@@ -346,7 +346,7 @@ export function registerMarketingPostsRoutes(app: Express) {
       if (status === "approved" && !post.voiceProfileSnapshot && post.socialAccountId) {
         const profile = await fetchVoiceProfile(post.socialAccountId);
         if (profile) {
-          (updateFields as any).voiceProfileSnapshot = snapshotVoiceProfile(profile);
+          updateFields.voiceProfileSnapshot = snapshotVoiceProfile(profile);
         }
       }
 
