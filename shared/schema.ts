@@ -2378,9 +2378,11 @@ export type CampaignSocialAccount = typeof campaignSocialAccounts.$inferSelect;
 export type InsertCampaignSocialAccount = z.infer<typeof insertCampaignSocialAccountSchema>;
 
 // Generated Posts — AI-generated social posts per campaign × social account
+// campaignId is nullable: standalone composer posts have no campaign and
+// auto-publish purely on schedule + status='approved'.
 export const generatedPosts = pgTable("generated_posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   socialAccountId: varchar("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
   tenantDomain: text("tenant_domain").notNull(),
   platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook

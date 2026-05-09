@@ -8,6 +8,7 @@ import { registerGoogleRoutes } from "./auth/google-routes";
 import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { registerMarketingLinksRoutes } from "./routes/marketing-links";
 import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes } from "./routes/marketing-delivery";
+import { registerMarketingPostsRoutes } from "./routes/marketing-posts";
 import { registerPlannerWebhookPublicRoutes } from "./routes/planner-webhook";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
@@ -55,6 +56,8 @@ export async function registerRoutes(
   registerPlannerWebhookPublicRoutes(app);
   // Authenticated marketing delivery routes (oauth, lists, sends, audit)
   registerMarketingDeliveryRoutes(app);
+  // Phase 2/3/4: rewrite, standalone post CRUD, calendar
+  registerMarketingPostsRoutes(app);
   
   app.get("/api/content/:filename", (req, res) => {
     const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];

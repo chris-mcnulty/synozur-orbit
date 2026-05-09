@@ -55,6 +55,8 @@ import BrandLibraryPage from "@/pages/app/marketing/brand-library";
 import CampaignsPage from "@/pages/app/marketing/campaigns";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
+import ComposerPage from "@/pages/app/marketing/composer";
+import CalendarPage from "@/pages/app/marketing/calendar";
 import SendsPage from "@/pages/app/marketing/sends";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
 import PersonasPage from "@/pages/app/marketing/personas";
@@ -157,6 +159,8 @@ function Router() {
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
+      <Route path="/app/marketing/composer" component={ComposerPage} />
+      <Route path="/app/marketing/calendar" component={CalendarPage} />
       <Route path="/app/marketing/sends" component={SendsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
       <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>

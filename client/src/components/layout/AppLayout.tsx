@@ -44,6 +44,8 @@ import {
   FileText as FileTextIcon,
   UserCircle,
   Handshake,
+  PencilLine,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -570,6 +572,8 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         {
           label: "Execute",
           items: [
+            { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true },
+            { label: "Social Calendar", icon: CalendarDays, href: "/app/marketing/calendar", enterprise: true },
             { label: "Social Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
             { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
             { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },

@@ -1,0 +1,439 @@
+/**
+ * Marketing Posts Routes — Phase 2/3/4 of social posting personalization
+ *
+ *   - POST   /api/posts/rewrite-preview        AI rewrite for an unsaved draft
+ *   - POST   /api/generated-posts/:id/rewrite  AI rewrite for an existing post
+ *   - POST   /api/generated-posts              Create a standalone post
+ *   - PATCH  /api/generated-posts/:id          Update standalone or campaign post
+ *   - DELETE /api/generated-posts/:id          Delete a post
+ *   - GET    /api/generated-posts/calendar     Calendar view (date-range list)
+ *
+ * Auth: tenant-scoped via getRequestContext. Gated by socialPosts feature.
+ *
+ * Standalone posts:
+ *  - campaignId is nullable on generated_posts (migration 0017).
+ *  - The publish worker auto-publishes campaign posts only when the
+ *    campaign-link has autoPublish=true. Standalone posts auto-publish
+ *    purely on schedule + status='approved' — see marketing-publish-worker.
+ */
+
+import type { Express, Request, Response } from "express";
+import { db } from "../db";
+import { and, eq, ne, gte, lte, isNotNull, inArray, or, isNull, desc, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import {
+  generatedPosts,
+  socialAccounts,
+  socialAccountVoiceProfiles,
+  campaigns,
+  marketingAuditLog,
+  AI_FEATURES,
+  type VoiceFrameworkRef,
+  type GeneratedPost,
+} from "@shared/schema";
+import { getRequestContext } from "../context";
+import { storage } from "../storage";
+import { checkFeatureAccessAsync } from "../services/plan-policy";
+import { completeForFeature } from "../services/ai-provider";
+import {
+  fetchVoiceProfile,
+  fetchPersona,
+  resolveFrameworkRefs,
+  buildSystemPrompt,
+  buildRewriteUserPrompt,
+  parseVariants,
+  snapshotVoiceProfile,
+} from "../services/voice-service";
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+async function getTenantPlan(tenantDomain: string): Promise<string> {
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  return tenant?.plan ?? "free";
+}
+
+async function guardFeature(req: Request, res: Response, feature: string): Promise<boolean> {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  try {
+    const ctx = await getRequestContext(req);
+    const plan = await getTenantPlan(ctx.tenantDomain);
+    const gate = await checkFeatureAccessAsync(plan, feature);
+    if (!gate.allowed) {
+      res.status(403).json({ error: gate.reason });
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    const status = (err && typeof err === "object" && "status" in err) ? (err.status as number) : 500;
+    res.status(status).json({ error: status === 401 ? "Not authenticated" : "Internal server error" });
+    return false;
+  }
+}
+
+function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
+  if (!Array.isArray(input)) return [];
+  const out: VoiceFrameworkRef[] = [];
+  for (const r of input) {
+    if (!r || typeof r !== "object") continue;
+    const kind = (r as any).kind;
+    const id = (r as any).id;
+    if (typeof id !== "string" || !id) continue;
+    if (kind !== "long_form" && kind !== "grounding" && kind !== "global") continue;
+    out.push({ kind, id });
+  }
+  return out;
+}
+
+interface RewriteRequestBody {
+  draft?: string;
+  brief?: string;
+  socialAccountId?: string;
+  personaId?: string | null;
+  frameworkRefs?: VoiceFrameworkRef[];
+  instructions?: string;
+  variantCount?: number;
+}
+
+async function runRewrite(opts: {
+  body: RewriteRequestBody;
+  account: typeof socialAccounts.$inferSelect;
+  tenantDomain: string;
+}): Promise<{ variants: string[]; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; model: string }> {
+  const { body, account, tenantDomain } = opts;
+  const profile = await fetchVoiceProfile(account.id);
+
+  // Optional persona — fall back to profile default if caller didn't pass one.
+  // null is treated as an explicit "none" (do not use even the default).
+  let persona = null;
+  if (body.personaId === undefined) {
+    if (profile?.defaultPersonaId) {
+      persona = await fetchPersona(profile.defaultPersonaId, tenantDomain);
+    }
+  } else if (body.personaId) {
+    persona = await fetchPersona(body.personaId, tenantDomain);
+  }
+
+  // Optional framework refs — same fallback semantics: undefined means use
+  // profile defaults, [] means explicitly none.
+  const refsToUse: VoiceFrameworkRef[] =
+    body.frameworkRefs !== undefined
+      ? sanitizeFrameworkRefs(body.frameworkRefs)
+      : (profile?.defaultFrameworkRefs ?? []);
+  const frameworks = await resolveFrameworkRefs(refsToUse, tenantDomain);
+
+  const systemPrompt = buildSystemPrompt({
+    account,
+    profile,
+    persona,
+    frameworks,
+    platform: account.platform,
+    instructions: body.instructions ?? null,
+  });
+  const userPrompt = buildRewriteUserPrompt({
+    draft: body.draft ?? null,
+    brief: body.brief ?? null,
+    variantCount: body.variantCount,
+  });
+
+  const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS, userPrompt, {
+    systemPrompt,
+    temperature: 0.7,
+    maxTokens: 1500,
+    tenantDomain,
+  });
+
+  const variants = parseVariants(result.text, body.variantCount ?? 3);
+  return { variants, usage: result.usage, model: result.model };
+}
+
+// ─── route registration ─────────────────────────────────────────────────────
+
+export function registerMarketingPostsRoutes(app: Express) {
+  // ───── Rewrite preview (no post id required) ─────
+  app.post("/api/posts/rewrite-preview", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const body = (req.body ?? {}) as RewriteRequestBody;
+      if (!body.socialAccountId) {
+        return res.status(400).json({ error: "socialAccountId is required" });
+      }
+      const [account] = await db.select().from(socialAccounts).where(and(
+        eq(socialAccounts.id, body.socialAccountId),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!account) return res.status(404).json({ error: "Social account not found" });
+
+      // Need at least a draft, brief, or some signal. Voice profile alone is
+      // OK for rewriting an existing draft, but a preview with nothing to
+      // work from is rejected to avoid burning tokens on noise.
+      if (!body.draft && !body.brief && !body.instructions) {
+        return res.status(400).json({ error: "Provide a draft, brief, or instructions to rewrite from." });
+      }
+
+      const out = await runRewrite({ body, account, tenantDomain: ctx.tenantDomain });
+      res.json(out);
+    } catch (err: any) {
+      console.error("[Posts Rewrite Preview Error]", err.message);
+      res.status(500).json({ error: err.message || "Rewrite failed" });
+    }
+  });
+
+  // ───── Rewrite an existing generated_post ─────
+  app.post("/api/generated-posts/:id/rewrite", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [post] = await db.select().from(generatedPosts).where(and(
+        eq(generatedPosts.id, req.params.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      if (!post.socialAccountId) {
+        return res.status(409).json({ error: "Post has no social account; assign one before rewriting." });
+      }
+      const [account] = await db.select().from(socialAccounts).where(and(
+        eq(socialAccounts.id, post.socialAccountId),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!account) return res.status(404).json({ error: "Linked social account not found" });
+
+      const body = (req.body ?? {}) as RewriteRequestBody;
+      const out = await runRewrite({
+        body: {
+          ...body,
+          // Default the draft to the post's edited or generated content if
+          // the caller didn't pass one.
+          draft: body.draft ?? post.editedContent ?? post.content,
+        },
+        account,
+        tenantDomain: ctx.tenantDomain,
+      });
+
+      // Append a lineage entry — but never overwrite editedContent here. The
+      // user picks a variant and applies it via the standard PATCH route.
+      const newLineageEntry = {
+        at: new Date().toISOString(),
+        by: req.session.userId ?? null,
+        prompt: body.instructions ?? null,
+        model: out.model,
+        personaId: body.personaId ?? null,
+        frameworkRefs: body.frameworkRefs ?? null,
+      };
+      const existing = (post.rewriteLineage ?? []) as Array<typeof newLineageEntry>;
+      await db.update(generatedPosts).set({
+        rewriteLineage: [...existing, newLineageEntry].slice(-20),
+        updatedAt: new Date(),
+      }).where(eq(generatedPosts.id, post.id));
+
+      res.json(out);
+    } catch (err: any) {
+      console.error("[Post Rewrite Error]", err.message);
+      res.status(500).json({ error: err.message || "Rewrite failed" });
+    }
+  });
+
+  // ───── Create a standalone post (campaignId nullable) ─────
+  app.post("/api/generated-posts", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const {
+        socialAccountId,
+        content,
+        editedContent,
+        hashtags,
+        scheduledDate,
+        sourceUrl,
+        campaignId,
+      } = req.body ?? {};
+
+      if (!socialAccountId || typeof socialAccountId !== "string") {
+        return res.status(400).json({ error: "socialAccountId is required" });
+      }
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ error: "content is required" });
+      }
+      const [account] = await db.select().from(socialAccounts).where(and(
+        eq(socialAccounts.id, socialAccountId),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!account) return res.status(404).json({ error: "Social account not found" });
+
+      // If campaignId was supplied, verify ownership. Null is allowed (standalone).
+      if (campaignId) {
+        const [campaign] = await db.select({ id: campaigns.id }).from(campaigns).where(and(
+          eq(campaigns.id, campaignId),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ));
+        if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const [row] = await db.insert(generatedPosts).values({
+        id: randomUUID(),
+        campaignId: campaignId || null,
+        socialAccountId: account.id,
+        tenantDomain: ctx.tenantDomain,
+        platform: account.platform,
+        content: content.trim(),
+        editedContent: editedContent ?? null,
+        hashtags: Array.isArray(hashtags) ? hashtags : [],
+        scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
+        sourceUrl: sourceUrl ?? null,
+        status: "draft",
+      } as any).returning();
+
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[Post Create Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to create post" });
+    }
+  });
+
+  // ───── Patch a post (works for both standalone and campaign-scoped) ─────
+  // Note: campaign-scoped posts also have their own PUT route in
+  // marketing-saturn.ts. This one is platform-agnostic and is the path the
+  // composer + calendar drag-to-reschedule both call.
+  app.patch("/api/generated-posts/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [post] = await db.select().from(generatedPosts).where(and(
+        eq(generatedPosts.id, req.params.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+
+      const {
+        editedContent, hashtags, status, scheduledDate, content,
+      } = req.body ?? {};
+
+      const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
+      if (editedContent !== undefined) updateFields.editedContent = editedContent;
+      if (content !== undefined && typeof content === "string") updateFields.content = content;
+      if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
+      if (status !== undefined) updateFields.status = status;
+      if (scheduledDate !== undefined) {
+        updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
+      }
+
+      // When the user transitions to 'approved' (regardless of campaign vs
+      // standalone), capture the voice profile in effect right now so a
+      // later edit to the profile doesn't retroactively change history.
+      if (status === "approved" && !post.voiceProfileSnapshot && post.socialAccountId) {
+        const profile = await fetchVoiceProfile(post.socialAccountId);
+        if (profile) {
+          (updateFields as any).voiceProfileSnapshot = snapshotVoiceProfile(profile);
+        }
+      }
+
+      const [row] = await db.update(generatedPosts)
+        .set(updateFields as any)
+        .where(eq(generatedPosts.id, post.id))
+        .returning();
+      res.json(row);
+    } catch (err: any) {
+      console.error("[Post Patch Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to update post" });
+    }
+  });
+
+  // ───── Delete a post (works for standalone or campaign-scoped) ─────
+  app.delete("/api/generated-posts/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [post] = await db.select().from(generatedPosts).where(and(
+        eq(generatedPosts.id, req.params.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      await db.delete(generatedPosts).where(eq(generatedPosts.id, post.id));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Post Delete Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to delete post" });
+    }
+  });
+
+  // ───── Calendar list ─────
+  // Returns scheduled or recently-published posts within a date range.
+  // Filters: from/to (ISO), socialAccountId(s), platform(s), status(es),
+  // includeUnscheduled=true to also return drafts with no scheduledDate.
+  app.get("/api/generated-posts/calendar", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { from, to, socialAccountId, platform, status, includeUnscheduled } = req.query;
+      const fromDate = typeof from === "string" ? new Date(from) : null;
+      const toDate = typeof to === "string" ? new Date(to) : null;
+      const accountFilter = Array.isArray(socialAccountId)
+        ? socialAccountId.map(String)
+        : (typeof socialAccountId === "string" ? [socialAccountId] : []);
+      const platformFilter = Array.isArray(platform)
+        ? platform.map(String)
+        : (typeof platform === "string" ? [platform] : []);
+      const statusFilter = Array.isArray(status)
+        ? status.map(String)
+        : (typeof status === "string" ? [status] : []);
+
+      const conds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain)];
+      // Date window: posts scheduled in [from, to], OR (when requested) posts
+      // with no scheduledDate that are still drafts/approved.
+      const dateWindow = and(
+        isNotNull(generatedPosts.scheduledDate),
+        fromDate ? gte(generatedPosts.scheduledDate, fromDate) : undefined,
+        toDate ? lte(generatedPosts.scheduledDate, toDate) : undefined,
+      );
+      if (includeUnscheduled === "true" || includeUnscheduled === "1") {
+        const unscheduled = and(
+          isNull(generatedPosts.scheduledDate),
+          inArray(generatedPosts.status, ["draft", "approved"]),
+        );
+        const combined = or(dateWindow, unscheduled);
+        if (combined) conds.push(combined);
+      } else if (dateWindow) {
+        conds.push(dateWindow);
+      }
+      if (accountFilter.length) conds.push(inArray(generatedPosts.socialAccountId, accountFilter));
+      if (platformFilter.length) conds.push(inArray(generatedPosts.platform, platformFilter));
+      if (statusFilter.length) {
+        conds.push(inArray(generatedPosts.status, statusFilter));
+      } else {
+        // By default, exclude rejected/deleted from calendar view.
+        conds.push(ne(generatedPosts.status, "rejected"));
+        conds.push(ne(generatedPosts.status, "deleted"));
+      }
+
+      const rows = await db.select({
+        id: generatedPosts.id,
+        platform: generatedPosts.platform,
+        content: generatedPosts.content,
+        editedContent: generatedPosts.editedContent,
+        scheduledDate: generatedPosts.scheduledDate,
+        publishedAt: generatedPosts.publishedAt,
+        status: generatedPosts.status,
+        socialAccountId: generatedPosts.socialAccountId,
+        campaignId: generatedPosts.campaignId,
+        accountName: socialAccounts.accountName,
+      })
+        .from(generatedPosts)
+        .leftJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
+        .where(and(...conds))
+        .orderBy(generatedPosts.scheduledDate, desc(generatedPosts.createdAt));
+
+      res.json(rows.map(r => ({
+        ...r,
+        // Provide a short preview to avoid sending full bodies in the
+        // calendar payload. Full content is fetched via the click-through.
+        preview: ((r.editedContent ?? r.content) || "").slice(0, 240),
+      })));
+    } catch (err: any) {
+      console.error("[Posts Calendar Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to load calendar" });
+    }
+  });
+}
