@@ -32,6 +32,7 @@ const PLATFORMS = [
   { value: "twitter", label: "X / Twitter" },
   { value: "instagram", label: "Instagram" },
   { value: "facebook", label: "Facebook" },
+  { value: "bluesky", label: "Bluesky" },
 ];
 
 interface SocialAccount {
@@ -120,7 +121,96 @@ function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
   );
 }
 
-const DIRECT_PUBLISH_PLATFORMS = new Set(["linkedin"]);
+const DIRECT_PUBLISH_PLATFORMS = new Set(["linkedin", "twitter", "facebook", "instagram", "bluesky"]);
+// Platforms that don't use the standard /oauth/connect flow.
+const NON_OAUTH_PLATFORMS = new Set(["bluesky"]);
+
+// ─── Bluesky connect dialog (app-password flow, non-OAuth) ───────────────────
+
+function BlueskyConnectDialog({
+  account, open, onOpenChange,
+}: {
+  account: SocialAccount;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [identifier, setIdentifier] = useState("");
+  const [appPassword, setAppPassword] = useState("");
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/social-accounts/${account.id}/bluesky/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ identifier: identifier.trim(), appPassword: appPassword.trim() }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Connect failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "Bluesky connected" });
+      onOpenChange(false);
+      setIdentifier("");
+      setAppPassword("");
+    },
+    onError: (err: Error) => toast({ title: "Connect failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect Bluesky — {account.accountName}</DialogTitle>
+          <DialogDescription>
+            Bluesky uses app passwords instead of OAuth. Generate one at{" "}
+            <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="underline">
+              bsky.app/settings/app-passwords
+            </a>{" "}
+            and paste it below. The password is encrypted at rest.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Handle or email</Label>
+            <Input
+              value={identifier}
+              onChange={e => setIdentifier(e.target.value)}
+              placeholder="alice.bsky.social"
+              data-testid="bluesky-input-identifier"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">App password</Label>
+            <Input
+              type="password"
+              value={appPassword}
+              onChange={e => setAppPassword(e.target.value)}
+              placeholder="xxxx-xxxx-xxxx-xxxx"
+              data-testid="bluesky-input-password"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} data-testid="bluesky-cancel">
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => connectMutation.mutate()}
+              disabled={!identifier.trim() || !appPassword.trim() || connectMutation.isPending}
+              data-testid="bluesky-connect-submit"
+            >
+              {connectMutation.isPending ? "Connecting..." : "Connect"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ─── Voice Profile Editor ────────────────────────────────────────────────────
 
@@ -605,6 +695,7 @@ export default function SocialAccountsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
   const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
+  const [blueskyAccount, setBlueskyAccount] = useState<SocialAccount | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -876,7 +967,13 @@ export default function SocialAccountsPage() {
                               variant="outline"
                               size="sm"
                               className="text-xs h-7"
-                              onClick={() => connectMutation.mutate(account.id)}
+                              onClick={() => {
+                                if (NON_OAUTH_PLATFORMS.has(account.platform)) {
+                                  setBlueskyAccount(account);
+                                } else {
+                                  connectMutation.mutate(account.id);
+                                }
+                              }}
                               disabled={connectMutation.isPending}
                               data-testid={`button-reconnect-${account.id}`}
                             >
@@ -898,7 +995,13 @@ export default function SocialAccountsPage() {
                         <Button
                           size="sm"
                           className="text-xs h-7 w-full"
-                          onClick={() => connectMutation.mutate(account.id)}
+                          onClick={() => {
+                            if (NON_OAUTH_PLATFORMS.has(account.platform)) {
+                              setBlueskyAccount(account);
+                            } else {
+                              connectMutation.mutate(account.id);
+                            }
+                          }}
                           disabled={connectMutation.isPending}
                           data-testid={`button-connect-${account.id}`}
                         >
@@ -961,6 +1064,14 @@ export default function SocialAccountsPage() {
             account={voiceAccount}
             open={!!voiceAccount}
             onOpenChange={(open) => { if (!open) setVoiceAccount(null); }}
+          />
+        )}
+
+        {blueskyAccount && (
+          <BlueskyConnectDialog
+            account={blueskyAccount}
+            open={!!blueskyAccount}
+            onOpenChange={(open) => { if (!open) setBlueskyAccount(null); }}
           />
         )}
       </div>

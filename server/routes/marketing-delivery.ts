@@ -98,7 +98,8 @@ function getBaseUrl(req: Request): string {
 
 // In-memory store of CSRF state for OAuth flow. The per-state record is
 // short-lived; if the user takes longer than 10 minutes the flow expires.
-const oauthStates = new Map<string, { tenantDomain: string; userId: string; socialAccountId: string; expiresAt: number; redirectUri: string }>();
+// codeVerifier is set for PKCE flows (Twitter/X).
+const oauthStates = new Map<string, { tenantDomain: string; userId: string; socialAccountId: string; expiresAt: number; redirectUri: string; codeVerifier?: string }>();
 function purgeExpiredStates() {
   const now = Date.now();
   oauthStates.forEach((v, k) => {
@@ -417,14 +418,18 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     purgeExpiredStates();
     const state = randomBytes(24).toString("base64url");
     const redirectUri = `${getBaseUrl(req)}/api/social-accounts/oauth/callback`;
+    const authorize = publisher.getOAuthAuthorizeUrl({ redirectUri, state });
+    // Publishers may return a plain URL or { url, codeVerifier } for PKCE.
+    const url = typeof authorize === "string" ? authorize : authorize.url;
+    const codeVerifier = typeof authorize === "string" ? undefined : authorize.codeVerifier;
     oauthStates.set(state, {
       tenantDomain: ctx.tenantDomain,
       userId: req.session.userId!,
       socialAccountId: account.id,
       redirectUri,
       expiresAt: Date.now() + 10 * 60 * 1000,
+      codeVerifier,
     });
-    const url = publisher.getOAuthAuthorizeUrl({ redirectUri, state });
     res.json({ authorizeUrl: url });
   });
 
@@ -449,7 +454,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).send("Platform does not support OAuth");
     }
     try {
-      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri);
+      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri, ctx.codeVerifier);
       await db.update(socialAccounts).set({
         encryptedAccessToken: encryptSecret(result.accessToken),
         encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
@@ -617,6 +622,72 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       details: { authorUrn: candidate.urn, mode: candidate.mode },
     });
     res.json({ success: true, current: { mode: candidate.mode, urn: candidate.urn, name: candidate.name } });
+  });
+
+  // ───── Bluesky app-password connect (non-OAuth) ─────
+  // Bluesky uses atproto app-passwords rather than OAuth. The user generates
+  // an app password in their Bluesky settings, hands it to us, and we
+  // validate by creating a session. The password is stored encrypted under
+  // `encryptedAccessToken` because the publisher re-creates a session on
+  // every publish.
+  app.post("/api/social-accounts/:id/bluesky/connect", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const ctx = await getRequestContext(req);
+    const [account] = await db.select().from(socialAccounts)
+      .where(and(eq(socialAccounts.id, req.params.id), eq(socialAccounts.tenantDomain, ctx.tenantDomain)));
+    if (!account) return res.status(404).json({ error: "Account not found" });
+    if (account.platform !== "bluesky") {
+      return res.status(400).json({ error: "This route is for Bluesky accounts only" });
+    }
+    const { identifier, appPassword } = req.body ?? {};
+    if (typeof identifier !== "string" || typeof appPassword !== "string" || !identifier.trim() || !appPassword.trim()) {
+      return res.status(400).json({ error: "identifier and appPassword are required" });
+    }
+    try {
+      const { BlueskyPublisher } = await import("../services/social-publishers/bluesky");
+      const publisher = new BlueskyPublisher();
+      const result = await publisher.connectWithAppPassword(identifier, appPassword);
+      await db.update(socialAccounts).set({
+        encryptedAccessToken: encryptSecret(result.accessToken),
+        encryptedRefreshToken: null,
+        tokenExpiresAt: null,
+        tokenScope: null,
+        authorMode: result.authorMode,
+        authorUrn: result.authorUrn,
+        availableAuthors: result.availableAuthors ?? null,
+        accountId: result.accountId ?? account.accountId,
+        accountName: result.accountName ?? account.accountName,
+        profileUrl: result.profileUrl ?? account.profileUrl,
+        connectedAt: new Date(),
+        connectedBy: req.session.userId!,
+        lastPublishError: null,
+        status: "active",
+        updatedAt: new Date(),
+      }).where(eq(socialAccounts.id, account.id));
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "social_oauth_connect",
+        entityType: "social_account",
+        entityId: account.id,
+        status: "ok",
+        message: "Connected Bluesky (app password)",
+        details: { handle: result.accountName },
+      });
+      res.json({ success: true, accountName: result.accountName });
+    } catch (err: any) {
+      console.error("[Bluesky Connect] Failed:", err.message);
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "social_oauth_connect",
+        entityType: "social_account",
+        entityId: account.id,
+        status: "error",
+        message: err.message || "Bluesky connect failed",
+      });
+      res.status(400).json({ error: err.message || "Bluesky connect failed" });
+    }
   });
 
   app.get("/api/generated-posts/:id/publish-attempts", async (req, res) => {

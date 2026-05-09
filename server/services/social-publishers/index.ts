@@ -15,6 +15,10 @@
 
 import type { SocialAccount, GeneratedPost } from "@shared/schema";
 import { LinkedInPublisher } from "./linkedin";
+import { TwitterPublisher } from "./twitter";
+import { BlueskyPublisher } from "./bluesky";
+import { FacebookPublisher } from "./facebook";
+import { InstagramPublisher } from "./instagram";
 
 export interface PublishContext {
   account: SocialAccount;
@@ -39,6 +43,13 @@ export interface OAuthAuthorizeRequest {
   state: string;
   /** Optional override for the publisher's default scope set. */
   scope?: string;
+}
+
+export interface OAuthAuthorizeResult {
+  url: string;
+  /** PKCE code_verifier — caller must persist alongside the state and pass
+   *  it back to exchangeOAuthCode. Omitted when the flow doesn't use PKCE. */
+  codeVerifier?: string;
 }
 
 export interface AuthorIdentity {
@@ -68,38 +79,31 @@ export interface SocialPublisher {
   supported: boolean;
   /** Whether OAuth credentials (client id/secret) are configured. */
   oauthConfigured(): boolean;
-  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): string;
-  exchangeOAuthCode?(code: string, redirectUri: string): Promise<OAuthCallbackResult>;
+  /** May return either a plain URL string (legacy) or an object including
+   *  a codeVerifier for PKCE flows (Twitter/X). The route layer normalises
+   *  both shapes. */
+  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): string | OAuthAuthorizeResult;
+  exchangeOAuthCode?(
+    code: string,
+    redirectUri: string,
+    codeVerifier?: string,
+  ): Promise<OAuthCallbackResult>;
   publish(ctx: PublishContext): Promise<PublishResult>;
 }
 
 const linkedinPublisher = new LinkedInPublisher();
+const twitterPublisher = new TwitterPublisher();
+const blueskyPublisher = new BlueskyPublisher();
+const facebookPublisher = new FacebookPublisher();
+const instagramPublisher = new InstagramPublisher();
 
 const PUBLISHERS: Record<string, SocialPublisher> = {
   linkedin: linkedinPublisher,
-  // Stubs — keep type-safe so the rest of the system can tolerate any platform
-  // value persisted today; they always return `supported: false` so the worker
-  // skips them and the UI shows "Export instead".
-  twitter: makeStubPublisher("twitter"),
-  instagram: makeStubPublisher("instagram"),
-  facebook: makeStubPublisher("facebook"),
-  bluesky: makeStubPublisher("bluesky"),
+  twitter: twitterPublisher,
+  bluesky: blueskyPublisher,
+  facebook: facebookPublisher,
+  instagram: instagramPublisher,
 };
-
-function makeStubPublisher(platform: string): SocialPublisher {
-  return {
-    platform,
-    supported: false,
-    oauthConfigured: () => false,
-    async publish() {
-      return {
-        success: false,
-        errorCode: "platform_unsupported",
-        errorMessage: `${platform} direct publishing is not yet supported — please export to CSV and upload manually.`,
-      };
-    },
-  };
-}
 
 export function getPublisher(platform: string): SocialPublisher | null {
   return PUBLISHERS[platform.toLowerCase()] ?? null;
