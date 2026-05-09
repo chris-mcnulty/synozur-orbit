@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
+import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -1249,6 +1250,14 @@ export default function CampaignDetailPage() {
                               rows={5}
                               data-testid={`textarea-edit-${post.id}`}
                             />
+                            {post.socialAccountId && (
+                              <AIRewritePanel
+                                socialAccountId={post.socialAccountId}
+                                draft={editContent}
+                                postId={post.id}
+                                onApply={(variant) => setEditContent(variant)}
+                              />
+                            )}
                             <div className="flex gap-2">
                               <Button size="sm" onClick={() => updatePostMutation.mutate({ postId: post.id, editedContent: editContent })} data-testid={`button-save-edit-${post.id}`}>Save</Button>
                               <Button size="sm" variant="ghost" onClick={() => setEditingPostId(null)}>Cancel</Button>

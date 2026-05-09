@@ -73,6 +73,9 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
   let processed = 0;
   try {
     const now = new Date();
+    // Two paths: campaign-linked posts must be on a campaign-social-account
+    // link with autoPublish=true; standalone posts (campaignId IS NULL) are
+    // self-authorizing — being approved + scheduled is enough.
     const candidates = await db
       .select({
         post: generatedPosts,
@@ -80,12 +83,11 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
       })
       .from(generatedPosts)
       .innerJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
-      .innerJoin(
+      .leftJoin(
         campaignSocialAccounts,
         and(
           eq(campaignSocialAccounts.campaignId, generatedPosts.campaignId),
           eq(campaignSocialAccounts.socialAccountId, generatedPosts.socialAccountId),
-          eq(campaignSocialAccounts.autoPublish, true),
         ),
       )
       .where(
@@ -99,6 +101,11 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           ),
           isNotNull(socialAccounts.encryptedAccessToken),
           eq(socialAccounts.status, "active"),
+          // Standalone (no campaign) OR a campaign link with autoPublish=true.
+          or(
+            isNull(generatedPosts.campaignId),
+            eq(campaignSocialAccounts.autoPublish, true),
+          ),
         ),
       )
       .limit(MAX_POSTS_PER_TICK);

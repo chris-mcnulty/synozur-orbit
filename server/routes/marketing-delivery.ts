@@ -98,7 +98,8 @@ function getBaseUrl(req: Request): string {
 
 // In-memory store of CSRF state for OAuth flow. The per-state record is
 // short-lived; if the user takes longer than 10 minutes the flow expires.
-const oauthStates = new Map<string, { tenantDomain: string; userId: string; socialAccountId: string; expiresAt: number; redirectUri: string }>();
+// codeVerifier is set for PKCE flows (Twitter/X).
+const oauthStates = new Map<string, { tenantDomain: string; userId: string; socialAccountId: string; expiresAt: number; redirectUri: string; codeVerifier?: string }>();
 function purgeExpiredStates() {
   const now = Date.now();
   oauthStates.forEach((v, k) => {
@@ -408,23 +409,33 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     if (!publisher || !publisher.supported || !publisher.getOAuthAuthorizeUrl) {
       return res.status(400).json({ error: `Direct publishing is not supported for ${account.platform} yet.` });
     }
-    if (!publisher.oauthConfigured()) {
+    if (!await publisher.oauthConfigured(ctx.tenantDomain)) {
       return res.status(503).json({
-        error: `${account.platform} OAuth is not configured on this server. Ask an administrator to set the platform's CLIENT_ID/CLIENT_SECRET.`,
+        error: `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`,
+        configureRequired: true,
+        platform: account.platform,
       });
     }
 
     purgeExpiredStates();
     const state = randomBytes(24).toString("base64url");
     const redirectUri = `${getBaseUrl(req)}/api/social-accounts/oauth/callback`;
+    const authorize = await publisher.getOAuthAuthorizeUrl({
+      redirectUri,
+      state,
+      tenantDomain: ctx.tenantDomain,
+    });
+    // Publishers may return a plain URL or { url, codeVerifier } for PKCE.
+    const url = typeof authorize === "string" ? authorize : authorize.url;
+    const codeVerifier = typeof authorize === "string" ? undefined : authorize.codeVerifier;
     oauthStates.set(state, {
       tenantDomain: ctx.tenantDomain,
       userId: req.session.userId!,
       socialAccountId: account.id,
       redirectUri,
       expiresAt: Date.now() + 10 * 60 * 1000,
+      codeVerifier,
     });
-    const url = publisher.getOAuthAuthorizeUrl({ redirectUri, state });
     res.json({ authorizeUrl: url });
   });
 
@@ -449,7 +460,10 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).send("Platform does not support OAuth");
     }
     try {
-      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri);
+      const result = await publisher.exchangeOAuthCode(code, ctx.redirectUri, {
+        tenantDomain: ctx.tenantDomain,
+        codeVerifier: ctx.codeVerifier,
+      });
       await db.update(socialAccounts).set({
         encryptedAccessToken: encryptSecret(result.accessToken),
         encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
@@ -617,6 +631,169 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       details: { authorUrn: candidate.urn, mode: candidate.mode },
     });
     res.json({ success: true, current: { mode: candidate.mode, urn: candidate.urn, name: candidate.name } });
+  });
+
+  // ───── Bluesky app-password connect (non-OAuth) ─────
+  // Bluesky uses atproto app-passwords rather than OAuth. The user generates
+  // an app password in their Bluesky settings, hands it to us, and we
+  // validate by creating a session. The password is stored encrypted under
+  // `encryptedAccessToken` because the publisher re-creates a session on
+  // every publish.
+  app.post("/api/social-accounts/:id/bluesky/connect", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const ctx = await getRequestContext(req);
+    const [account] = await db.select().from(socialAccounts)
+      .where(and(eq(socialAccounts.id, req.params.id), eq(socialAccounts.tenantDomain, ctx.tenantDomain)));
+    if (!account) return res.status(404).json({ error: "Account not found" });
+    if (account.platform !== "bluesky") {
+      return res.status(400).json({ error: "This route is for Bluesky accounts only" });
+    }
+    const { identifier, appPassword } = req.body ?? {};
+    if (typeof identifier !== "string" || typeof appPassword !== "string" || !identifier.trim() || !appPassword.trim()) {
+      return res.status(400).json({ error: "identifier and appPassword are required" });
+    }
+    try {
+      const { BlueskyPublisher } = await import("../services/social-publishers/bluesky");
+      const publisher = new BlueskyPublisher();
+      const result = await publisher.connectWithAppPassword(identifier, appPassword);
+      await db.update(socialAccounts).set({
+        encryptedAccessToken: encryptSecret(result.accessToken),
+        encryptedRefreshToken: null,
+        tokenExpiresAt: null,
+        tokenScope: null,
+        authorMode: result.authorMode,
+        authorUrn: result.authorUrn,
+        availableAuthors: result.availableAuthors ?? null,
+        accountId: result.accountId ?? account.accountId,
+        accountName: result.accountName ?? account.accountName,
+        profileUrl: result.profileUrl ?? account.profileUrl,
+        connectedAt: new Date(),
+        connectedBy: req.session.userId!,
+        lastPublishError: null,
+        status: "active",
+        updatedAt: new Date(),
+      }).where(eq(socialAccounts.id, account.id));
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "social_oauth_connect",
+        entityType: "social_account",
+        entityId: account.id,
+        status: "ok",
+        message: "Connected Bluesky (app password)",
+        details: { handle: result.accountName },
+      });
+      res.json({ success: true, accountName: result.accountName });
+    } catch (err: any) {
+      console.error("[Bluesky Connect] Failed:", err.message);
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "social_oauth_connect",
+        entityType: "social_account",
+        entityId: account.id,
+        status: "error",
+        message: err.message || "Bluesky connect failed",
+      });
+      res.status(400).json({ error: err.message || "Bluesky connect failed" });
+    }
+  });
+
+  // ───── Tenant-owned platform OAuth credentials ─────
+  // Per-tenant client_id / client_secret for the OAuth apps each platform
+  // requires. Tenant admins (Domain Admin or Global Admin) manage these;
+  // env vars are not consulted on a multi-tenant deployment.
+  async function requireTenantAdmin(req: Request, res: Response): Promise<boolean> {
+    if (!await guardFeature(req, res, "directPublishing")) return false;
+    const user = await storage.getUser(req.session.userId!);
+    if (!user) {
+      res.status(401).json({ error: "Not authenticated" });
+      return false;
+    }
+    if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
+      res.status(403).json({
+        error: "Only a tenant admin can manage platform OAuth credentials.",
+      });
+      return false;
+    }
+    return true;
+  }
+
+  // Lists all configured / configurable platforms for the tenant. Each entry
+  // is metadata only — the secret is never returned over the wire.
+  app.get("/api/tenant/platform-credentials", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { listPlatformCredentialMetadata } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const items = await listPlatformCredentialMetadata(ctx.tenantDomain, PLATFORM_CREDENTIAL_PLATFORMS);
+    res.json({ items });
+  });
+
+  // Save (upsert) credentials for a platform. clientSecret is optional only
+  // for OAuth public clients (Twitter native apps); the per-platform UI
+  // explains when each field is needed.
+  app.put("/api/tenant/platform-credentials/:platform", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { upsertPlatformCredentials } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    const { clientId, clientSecret, notes } = req.body ?? {};
+    if (typeof clientId !== "string" || !clientId.trim()) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    if (clientSecret !== undefined && clientSecret !== null && typeof clientSecret !== "string") {
+      return res.status(400).json({ error: "clientSecret must be a string when provided" });
+    }
+    try {
+      await upsertPlatformCredentials({
+        tenantDomain: ctx.tenantDomain,
+        platform,
+        clientId: clientId.trim(),
+        clientSecret: clientSecret === undefined ? undefined : (clientSecret ? clientSecret.trim() : null),
+        notes: typeof notes === "string" ? notes.slice(0, 500) : null,
+        userId: req.session.userId!,
+      });
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        userId: req.session.userId!,
+        action: "platform_credentials_update",
+        entityType: "tenant_platform_credentials",
+        entityId: platform,
+        status: "ok",
+        message: `Updated ${platform} credentials`,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Platform Credentials Save Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to save credentials" });
+    }
+  });
+
+  app.delete("/api/tenant/platform-credentials/:platform", async (req, res) => {
+    if (!await requireTenantAdmin(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { deletePlatformCredentials } = await import("../services/platform-credentials-service");
+    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    await deletePlatformCredentials(ctx.tenantDomain, platform);
+    await db.insert(marketingAuditLog).values({
+      tenantDomain: ctx.tenantDomain,
+      userId: req.session.userId!,
+      action: "platform_credentials_delete",
+      entityType: "tenant_platform_credentials",
+      entityId: platform,
+      status: "ok",
+      message: `Deleted ${platform} credentials`,
+    });
+    res.status(204).send();
   });
 
   app.get("/api/generated-posts/:id/publish-attempts", async (req, res) => {

@@ -15,6 +15,10 @@
 
 import type { SocialAccount, GeneratedPost } from "@shared/schema";
 import { LinkedInPublisher } from "./linkedin";
+import { TwitterPublisher } from "./twitter";
+import { BlueskyPublisher } from "./bluesky";
+import { FacebookPublisher } from "./facebook";
+import { InstagramPublisher } from "./instagram";
 
 export interface PublishContext {
   account: SocialAccount;
@@ -37,8 +41,19 @@ export interface PublishResult {
 export interface OAuthAuthorizeRequest {
   redirectUri: string;
   state: string;
+  /** Tenant the connect flow is happening under — publishers use this to
+   *  look up tenant-owned OAuth credentials in the platform_credentials
+   *  service (env-var fallback was removed; multi-tenant tenants must BYO). */
+  tenantDomain: string;
   /** Optional override for the publisher's default scope set. */
   scope?: string;
+}
+
+export interface OAuthAuthorizeResult {
+  url: string;
+  /** PKCE code_verifier — caller must persist alongside the state and pass
+   *  it back to exchangeOAuthCode. Omitted when the flow doesn't use PKCE. */
+  codeVerifier?: string;
 }
 
 export interface AuthorIdentity {
@@ -66,40 +81,36 @@ export interface SocialPublisher {
   platform: string;
   /** Whether direct publishing is implemented; stubs return false. */
   supported: boolean;
-  /** Whether OAuth credentials (client id/secret) are configured. */
-  oauthConfigured(): boolean;
-  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): string;
-  exchangeOAuthCode?(code: string, redirectUri: string): Promise<OAuthCallbackResult>;
+  /** Whether OAuth credentials are configured for THIS tenant. Async because
+   *  credentials live in the database (per-tenant) — env vars are no longer
+   *  consulted for any platform. Bluesky returns true unconditionally
+   *  because it uses an app-password flow rather than OAuth. */
+  oauthConfigured(tenantDomain: string): Promise<boolean>;
+  /** May return either a plain URL string (legacy) or an object including
+   *  a codeVerifier for PKCE flows (Twitter/X). The route layer normalises
+   *  both shapes. */
+  getOAuthAuthorizeUrl?(req: OAuthAuthorizeRequest): Promise<string | OAuthAuthorizeResult>;
+  exchangeOAuthCode?(
+    code: string,
+    redirectUri: string,
+    options: { tenantDomain: string; codeVerifier?: string },
+  ): Promise<OAuthCallbackResult>;
   publish(ctx: PublishContext): Promise<PublishResult>;
 }
 
 const linkedinPublisher = new LinkedInPublisher();
+const twitterPublisher = new TwitterPublisher();
+const blueskyPublisher = new BlueskyPublisher();
+const facebookPublisher = new FacebookPublisher();
+const instagramPublisher = new InstagramPublisher();
 
 const PUBLISHERS: Record<string, SocialPublisher> = {
   linkedin: linkedinPublisher,
-  // Stubs — keep type-safe so the rest of the system can tolerate any platform
-  // value persisted today; they always return `supported: false` so the worker
-  // skips them and the UI shows "Export instead".
-  twitter: makeStubPublisher("twitter"),
-  instagram: makeStubPublisher("instagram"),
-  facebook: makeStubPublisher("facebook"),
-  bluesky: makeStubPublisher("bluesky"),
+  twitter: twitterPublisher,
+  bluesky: blueskyPublisher,
+  facebook: facebookPublisher,
+  instagram: instagramPublisher,
 };
-
-function makeStubPublisher(platform: string): SocialPublisher {
-  return {
-    platform,
-    supported: false,
-    oauthConfigured: () => false,
-    async publish() {
-      return {
-        success: false,
-        errorCode: "platform_unsupported",
-        errorMessage: `${platform} direct publishing is not yet supported — please export to CSV and upload manually.`,
-      };
-    },
-  };
-}
 
 export function getPublisher(platform: string): SocialPublisher | null {
   return PUBLISHERS[platform.toLowerCase()] ?? null;

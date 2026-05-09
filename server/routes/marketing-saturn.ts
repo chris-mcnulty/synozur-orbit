@@ -52,7 +52,20 @@ import {
   personas,
   markets,
   suggestedContentAssets,
+  socialAccountVoiceProfiles,
+  longFormRecommendations,
+  groundingDocuments,
+  globalGroundingDocuments,
+  MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES,
+  VOICE_PERSON_OPTIONS,
+  VOICE_AUTHOR_PERSPECTIVES,
+  VOICE_EMOJI_POLICIES,
+  VOICE_HASHTAG_POLICIES,
   type InsertPersona,
+  type InsertSocialAccountVoiceProfile,
+  type VoiceFrameworkRef,
+  type VoiceSampleSnippet,
+  type VoiceToneAttributes,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
@@ -968,6 +981,325 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
       ));
     res.status(204).send();
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // ACCOUNT VOICE PROFILES
+  // Per-account voice settings used by AI rewrites and the composer.
+  // ══════════════════════════════════════════════════════════
+
+  // Helper: validate framework refs against the three allowed source tables
+  // and the current tenant. Returns the cleansed list (drops invalid refs
+  // silently — the UI will show what it has, but we never persist garbage).
+  async function validateFrameworkRefs(
+    refs: VoiceFrameworkRef[] | null | undefined,
+    ctx: { tenantDomain: string; marketId: string },
+  ): Promise<VoiceFrameworkRef[]> {
+    if (!Array.isArray(refs) || refs.length === 0) return [];
+    const longFormIds = refs.filter(r => r.kind === "long_form").map(r => r.id);
+    const groundingIds = refs.filter(r => r.kind === "grounding").map(r => r.id);
+    const globalIds = refs.filter(r => r.kind === "global").map(r => r.id);
+    const valid = new Set<string>();
+    if (longFormIds.length) {
+      const rows = await db.select({ id: longFormRecommendations.id })
+        .from(longFormRecommendations)
+        .where(and(
+          inArray(longFormRecommendations.id, longFormIds),
+          eq(longFormRecommendations.tenantDomain, ctx.tenantDomain),
+          eq(longFormRecommendations.type, "messaging_framework"),
+        ));
+      rows.forEach(r => valid.add(`long_form:${r.id}`));
+    }
+    if (groundingIds.length) {
+      const rows = await db.select({ id: groundingDocuments.id, contexts: groundingDocuments.contexts })
+        .from(groundingDocuments)
+        .where(and(
+          inArray(groundingDocuments.id, groundingIds),
+          eq(groundingDocuments.tenantDomain, ctx.tenantDomain),
+        ));
+      rows.forEach(r => {
+        if (Array.isArray(r.contexts) && r.contexts.includes("marketing_content")) {
+          valid.add(`grounding:${r.id}`);
+        }
+      });
+    }
+    if (globalIds.length) {
+      const rows = await db.select({ id: globalGroundingDocuments.id, category: globalGroundingDocuments.category })
+        .from(globalGroundingDocuments)
+        .where(and(
+          inArray(globalGroundingDocuments.id, globalIds),
+          eq(globalGroundingDocuments.isActive, true),
+        ));
+      rows.forEach(r => {
+        if ((MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES as readonly string[]).includes(r.category)) {
+          valid.add(`global:${r.id}`);
+        }
+      });
+    }
+    // Preserve original ordering, drop invalids.
+    return refs.filter(r => valid.has(`${r.kind}:${r.id}`));
+  }
+
+  // Helper: load the social account row (tenant-scoped) and its voice profile,
+  // if any. Caller handles the missing-account case.
+  async function loadAccount(socialAccountId: string, tenantDomain: string) {
+    const [account] = await db.select().from(socialAccounts).where(and(
+      eq(socialAccounts.id, socialAccountId),
+      eq(socialAccounts.tenantDomain, tenantDomain),
+    ));
+    return account ?? null;
+  }
+  async function loadVoiceProfile(socialAccountId: string) {
+    const [profile] = await db.select().from(socialAccountVoiceProfiles).where(
+      eq(socialAccountVoiceProfiles.socialAccountId, socialAccountId),
+    );
+    return profile ?? null;
+  }
+
+  // GET — return the profile, or a synthetic default if none exists yet
+  // (avoids forcing the UI to handle 404 vs empty-state separately).
+  app.get("/api/social-accounts/:id/voice-profile", async (req, res) => {
+    if (!await guardFeature(req, res, "socialAccounts")) return;
+    const ctx = await getRequestContext(req);
+    const account = await loadAccount(req.params.id, ctx.tenantDomain);
+    if (!account) return res.status(404).json({ error: "Social account not found" });
+    const profile = await loadVoiceProfile(account.id);
+    if (profile) return res.json(profile);
+    // Synthetic default — does NOT create a row. UI saves to materialize.
+    res.json({
+      socialAccountId: account.id,
+      tenantDomain: account.tenantDomain,
+      person: account.authorMode === "organization" ? "third" : "first",
+      authorPerspective: account.authorMode === "organization" ? "brand" : "individual",
+      toneAttributes: null,
+      styleGuidance: null,
+      forbiddenPhrases: null,
+      preferredPhrases: null,
+      emojiPolicy: "sparing",
+      hashtagPolicy: "standard",
+      maxLength: null,
+      sampleSnippets: [],
+      defaultPersonaId: null,
+      defaultFrameworkRefs: [],
+      isUnsaved: true,
+    });
+  });
+
+  // PUT — upsert. We accept the full profile shape; partial fields default
+  // to current row values (or sensible defaults on first save).
+  app.put("/api/social-accounts/:id/voice-profile", async (req, res) => {
+    if (!await guardFeature(req, res, "socialAccounts")) return;
+    const ctx = await getRequestContext(req);
+    const account = await loadAccount(req.params.id, ctx.tenantDomain);
+    if (!account) return res.status(404).json({ error: "Social account not found" });
+    const profile = await loadVoiceProfile(account.id);
+
+    const body = req.body ?? {};
+    const person = (VOICE_PERSON_OPTIONS as readonly string[]).includes(body.person)
+      ? body.person : (profile?.person ?? (account.authorMode === "organization" ? "third" : "first"));
+    const authorPerspective = (VOICE_AUTHOR_PERSPECTIVES as readonly string[]).includes(body.authorPerspective)
+      ? body.authorPerspective : (profile?.authorPerspective ?? (account.authorMode === "organization" ? "brand" : "individual"));
+    const emojiPolicy = (VOICE_EMOJI_POLICIES as readonly string[]).includes(body.emojiPolicy)
+      ? body.emojiPolicy : (profile?.emojiPolicy ?? "sparing");
+    const hashtagPolicy = (VOICE_HASHTAG_POLICIES as readonly string[]).includes(body.hashtagPolicy)
+      ? body.hashtagPolicy : (profile?.hashtagPolicy ?? "standard");
+
+    // Sanitize string arrays: trim, drop empties, dedupe, cap length. The
+    // caller passes the prior value so each field falls back to its OWN
+    // previous value when the incoming payload is malformed (i.e., not an
+    // array) — without this, a malformed preferredPhrases would
+    // incorrectly inherit forbiddenPhrases.
+    const cleanStrArray = (
+      v: unknown,
+      prior: string[] | null | undefined,
+      max = 50,
+    ): string[] | null => {
+      if (v === null) return null;
+      if (!Array.isArray(v)) return prior ?? null;
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const item of v) {
+        if (typeof item !== "string") continue;
+        const t = item.trim();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        out.push(t);
+        if (out.length >= max) break;
+      }
+      return out;
+    };
+
+    const sampleSnippets: VoiceSampleSnippet[] = Array.isArray(body.sampleSnippets)
+      ? body.sampleSnippets
+          .filter((s: any) => s && typeof s.content === "string" && s.content.trim().length > 0)
+          .slice(0, 10)
+          .map((s: any) => ({ label: typeof s.label === "string" ? s.label.slice(0, 80) : undefined, content: s.content.slice(0, 1000) }))
+      : (profile?.sampleSnippets ?? []);
+
+    // Validate persona belongs to this tenant (if supplied).
+    let defaultPersonaId: string | null = null;
+    if (typeof body.defaultPersonaId === "string" && body.defaultPersonaId) {
+      const [persona] = await db.select({ id: personas.id }).from(personas).where(and(
+        eq(personas.id, body.defaultPersonaId),
+        eq(personas.tenantDomain, ctx.tenantDomain),
+      ));
+      if (persona) defaultPersonaId = persona.id;
+    } else if (body.defaultPersonaId === null) {
+      defaultPersonaId = null;
+    } else {
+      defaultPersonaId = profile?.defaultPersonaId ?? null;
+    }
+
+    const defaultFrameworkRefs = body.defaultFrameworkRefs !== undefined
+      ? await validateFrameworkRefs(body.defaultFrameworkRefs, ctx)
+      : (profile?.defaultFrameworkRefs ?? []);
+
+    const toneAttributes: VoiceToneAttributes | null =
+      body.toneAttributes && typeof body.toneAttributes === "object"
+        ? Object.fromEntries(
+            Object.entries(body.toneAttributes)
+              .filter(([, v]) => typeof v === "number" && !Number.isNaN(v))
+              .map(([k, v]) => [k, Math.max(0, Math.min(1, v as number))])
+          )
+        : (body.toneAttributes === null ? null : (profile?.toneAttributes ?? null));
+
+    const maxLength: number | null = typeof body.maxLength === "number" && body.maxLength > 0
+      ? Math.floor(body.maxLength)
+      : (body.maxLength === null ? null : (profile?.maxLength ?? null));
+
+    const values = {
+      socialAccountId: account.id,
+      tenantDomain: ctx.tenantDomain,
+      person,
+      authorPerspective,
+      toneAttributes,
+      styleGuidance: typeof body.styleGuidance === "string"
+        ? body.styleGuidance.slice(0, 4000)
+        : (body.styleGuidance === null ? null : (profile?.styleGuidance ?? null)),
+      forbiddenPhrases: body.forbiddenPhrases !== undefined ? cleanStrArray(body.forbiddenPhrases, profile?.forbiddenPhrases) : (profile?.forbiddenPhrases ?? null),
+      preferredPhrases: body.preferredPhrases !== undefined ? cleanStrArray(body.preferredPhrases, profile?.preferredPhrases) : (profile?.preferredPhrases ?? null),
+      emojiPolicy,
+      hashtagPolicy,
+      maxLength,
+      sampleSnippets,
+      defaultPersonaId,
+      defaultFrameworkRefs,
+      createdBy: profile?.createdBy ?? ctx.userId,
+      updatedAt: new Date(),
+    };
+
+    if (profile) {
+      const [row] = await db.update(socialAccountVoiceProfiles)
+        .set(values)
+        .where(eq(socialAccountVoiceProfiles.id, profile.id))
+        .returning();
+      return res.json(row);
+    }
+    const [row] = await db.insert(socialAccountVoiceProfiles)
+      .values({ id: randomUUID(), ...values } as InsertSocialAccountVoiceProfile)
+      .returning();
+    res.status(201).json(row);
+  });
+
+  // DELETE — reset to defaults by removing the row. Next GET returns the
+  // synthetic default again. Safe because no FK from generatedPosts (we
+  // snapshot voice into the post row at schedule time).
+  app.delete("/api/social-accounts/:id/voice-profile", async (req, res) => {
+    if (!await guardFeature(req, res, "socialAccounts")) return;
+    const ctx = await getRequestContext(req);
+    const account = await loadAccount(req.params.id, ctx.tenantDomain);
+    if (!account) return res.status(404).json({ error: "Social account not found" });
+    await db.delete(socialAccountVoiceProfiles)
+      .where(eq(socialAccountVoiceProfiles.socialAccountId, account.id));
+    res.status(204).send();
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // MESSAGING FRAMEWORK PICKER (unified across three sources)
+  // Returns long-form messaging frameworks, marketing-tagged grounding
+  // documents, and global brand-voice/marketing-guideline docs in one list,
+  // tenant-scoped where applicable. Used by the voice profile defaults and
+  // (later) the composer's per-rewrite framework picker.
+  // ══════════════════════════════════════════════════════════
+  app.get("/api/messaging-frameworks/available", async (req, res) => {
+    if (!await guardFeature(req, res, "socialAccounts")) return;
+    const ctx = await getRequestContext(req);
+
+    const [longForm, grounding, global] = await Promise.all([
+      db.select({
+        id: longFormRecommendations.id,
+        label: sql<string>`COALESCE(NULLIF(${longFormRecommendations.type}, ''), 'Messaging Framework')`,
+        marketId: longFormRecommendations.marketId,
+        updatedAt: longFormRecommendations.updatedAt,
+      }).from(longFormRecommendations)
+        .where(and(
+          eq(longFormRecommendations.tenantDomain, ctx.tenantDomain),
+          eq(longFormRecommendations.type, "messaging_framework"),
+          eq(longFormRecommendations.status, "generated"),
+        )),
+      db.select({
+        id: groundingDocuments.id,
+        name: groundingDocuments.name,
+        scope: groundingDocuments.scope,
+        marketId: groundingDocuments.marketId,
+        contexts: groundingDocuments.contexts,
+        updatedAt: groundingDocuments.updatedAt,
+      }).from(groundingDocuments)
+        .where(eq(groundingDocuments.tenantDomain, ctx.tenantDomain)),
+      db.select({
+        id: globalGroundingDocuments.id,
+        name: globalGroundingDocuments.name,
+        category: globalGroundingDocuments.category,
+        updatedAt: globalGroundingDocuments.updatedAt,
+      }).from(globalGroundingDocuments)
+        .where(and(
+          eq(globalGroundingDocuments.isActive, true),
+          inArray(globalGroundingDocuments.category, MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES as unknown as string[]),
+        )),
+    ]);
+
+    const items = [
+      ...longForm.map(r => ({
+        kind: "long_form" as const,
+        id: r.id,
+        label: "Messaging Framework",
+        scope: r.marketId === ctx.marketId ? "market" : "tenant",
+        marketScoped: r.marketId === ctx.marketId,
+        updatedAt: r.updatedAt,
+      })),
+      ...grounding
+        .filter(r => Array.isArray(r.contexts) && r.contexts.includes("marketing_content"))
+        .map(r => ({
+          kind: "grounding" as const,
+          id: r.id,
+          label: r.name,
+          scope: r.marketId ? (r.marketId === ctx.marketId ? "market" : "tenant") : "tenant",
+          marketScoped: r.marketId === ctx.marketId,
+          updatedAt: r.updatedAt,
+        })),
+      ...global.map(r => ({
+        kind: "global" as const,
+        id: r.id,
+        label: r.name,
+        category: r.category,
+        scope: "global",
+        marketScoped: false,
+        updatedAt: r.updatedAt,
+      })),
+    ];
+
+    // Market-scoped first, then tenant, then global. Secondary sort by recency.
+    const scopeRank = { market: 0, tenant: 1, global: 2 } as const;
+    items.sort((a, b) => {
+      const sa = scopeRank[(a.scope as keyof typeof scopeRank)] ?? 3;
+      const sb = scopeRank[(b.scope as keyof typeof scopeRank)] ?? 3;
+      if (sa !== sb) return sa - sb;
+      const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    res.json({ items });
   });
 
   // ══════════════════════════════════════════════════════════

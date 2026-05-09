@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, real, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, real, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -2159,6 +2159,184 @@ export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit
 export type SocialAccount = typeof socialAccounts.$inferSelect;
 export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 
+// ─── Tenant-Owned Platform OAuth Credentials ────────────────────────────────
+// Each tenant brings their own OAuth client/app credentials per platform.
+// Multi-tenant deployments can't share a single SaaS-vendor app via env vars
+// because tenant admins don't have access to set environment variables and
+// because each tenant typically wants its own OAuth consent-screen branding,
+// rate-limit budget, and review state.
+//
+// One row per (tenantDomain, platform). Secrets are encrypted at rest with
+// the same encryption.ts helpers used for socialAccounts.encryptedAccessToken.
+//
+// The platform string matches socialAccounts.platform values: 'linkedin',
+// 'twitter', 'facebook', 'instagram'. (Bluesky uses app-passwords on each
+// social account, so it never appears here.)
+export const PLATFORM_CREDENTIAL_PLATFORMS = [
+  "linkedin",
+  "twitter",
+  "facebook",
+  "instagram",
+] as const;
+export type PlatformCredentialPlatform = (typeof PLATFORM_CREDENTIAL_PLATFORMS)[number];
+
+export const tenantPlatformCredentials = pgTable("tenant_platform_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  platform: text("platform").notNull(),
+  // Encrypted ciphertext blobs. The clientId is encrypted too — it's not
+  // strictly secret but treating both alike keeps the ciphertext schema
+  // uniform and prevents accidental log leakage of the client_id.
+  encryptedClientId: text("encrypted_client_id").notNull(),
+  encryptedClientSecret: text("encrypted_client_secret"),
+  // Free-form notes the admin can leave for their team (e.g., "Production
+  // app — review approved 2026-01"). Never sent to the OAuth provider.
+  notes: text("notes"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantPlatformUnique: uniqueIndex("tenant_platform_credentials_tenant_platform_idx")
+    .on(table.tenantDomain, table.platform),
+}));
+
+export const tenantPlatformCredentialsRelations = relations(tenantPlatformCredentials, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [tenantPlatformCredentials.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertTenantPlatformCredentialSchema = createInsertSchema(tenantPlatformCredentials).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type TenantPlatformCredential = typeof tenantPlatformCredentials.$inferSelect;
+export type InsertTenantPlatformCredential = z.infer<typeof insertTenantPlatformCredentialSchema>;
+
+// ─── Account Voice Profiles ──────────────────────────────────────────────────
+// Per-social-account personalization layer. Drives AI rewrites and direct-
+// composed posts so content reads in the right voice for each account
+// (1st vs 3rd person, tone, hashtag/emoji policy, sample snippets, defaults
+// for ICP persona and grounding-doc messaging frameworks).
+//
+// One row per social_account. The polymorphic `defaultFrameworkRefs` is an
+// ordered list of references to messaging-framework-like sources:
+//   - { kind: 'long_form', id }    → longFormRecommendations (type='messaging_framework')
+//   - { kind: 'grounding', id }    → groundingDocuments where 'marketing_content' ∈ contexts
+//   - { kind: 'global', id }       → globalGroundingDocuments (brand_voice/marketing_guidelines)
+// We don't FK these because they span three tables; resolution + permission
+// checks happen at read time.
+
+export const VOICE_PERSON_OPTIONS = ["first", "third"] as const;
+export type VoicePerson = (typeof VOICE_PERSON_OPTIONS)[number];
+
+export const VOICE_AUTHOR_PERSPECTIVES = ["individual", "brand"] as const;
+export type VoiceAuthorPerspective = (typeof VOICE_AUTHOR_PERSPECTIVES)[number];
+
+export const VOICE_EMOJI_POLICIES = ["none", "sparing", "liberal"] as const;
+export type VoiceEmojiPolicy = (typeof VOICE_EMOJI_POLICIES)[number];
+
+export const VOICE_HASHTAG_POLICIES = ["none", "minimal", "standard", "heavy"] as const;
+export type VoiceHashtagPolicy = (typeof VOICE_HASHTAG_POLICIES)[number];
+
+export const VOICE_FRAMEWORK_REF_KINDS = ["long_form", "grounding", "global"] as const;
+export type VoiceFrameworkRefKind = (typeof VOICE_FRAMEWORK_REF_KINDS)[number];
+
+export interface VoiceFrameworkRef {
+  kind: VoiceFrameworkRefKind;
+  id: string;
+}
+
+// Tone vector: every dimension 0..1. Treated as guidance, not a hard control.
+export interface VoiceToneAttributes {
+  formal?: number;
+  playful?: number;
+  technical?: number;
+  warm?: number;
+  bold?: number;
+}
+
+// Few-shot exemplars the rewrite prompt shows the model.
+export interface VoiceSampleSnippet {
+  label?: string;
+  content: string;
+}
+
+// Compact snapshot persisted onto generatedPosts at schedule/publish time so
+// later edits to a profile don't retroactively change what shipped.
+export interface VoiceProfileSnapshot {
+  profileId: string;
+  capturedAt: string; // ISO
+  person: VoicePerson;
+  authorPerspective: VoiceAuthorPerspective;
+  toneAttributes?: VoiceToneAttributes | null;
+  styleGuidance?: string | null;
+  forbiddenPhrases?: string[] | null;
+  preferredPhrases?: string[] | null;
+  emojiPolicy: VoiceEmojiPolicy;
+  hashtagPolicy: VoiceHashtagPolicy;
+  maxLength?: number | null;
+  defaultPersonaId?: string | null;
+  defaultFrameworkRefs?: VoiceFrameworkRef[] | null;
+}
+
+export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  socialAccountId: varchar("social_account_id").notNull()
+    .references(() => socialAccounts.id, { onDelete: "cascade" })
+    .unique(),
+  tenantDomain: text("tenant_domain").notNull(),
+  // Voice fundamentals
+  person: text("person").notNull().default("first"), // 'first' | 'third'
+  authorPerspective: text("author_perspective").notNull().default("individual"), // 'individual' | 'brand'
+  // Tone + style
+  toneAttributes: jsonb("tone_attributes").$type<VoiceToneAttributes>(),
+  styleGuidance: text("style_guidance"),
+  forbiddenPhrases: text("forbidden_phrases").array(),
+  preferredPhrases: text("preferred_phrases").array(),
+  // Policies
+  emojiPolicy: text("emoji_policy").notNull().default("sparing"),
+  hashtagPolicy: text("hashtag_policy").notNull().default("standard"),
+  maxLength: integer("max_length"),
+  // Few-shot exemplars
+  sampleSnippets: jsonb("sample_snippets").$type<VoiceSampleSnippet[]>().default([]),
+  // Default targeting for rewrites (always optional at the call-site)
+  defaultPersonaId: varchar("default_persona_id").references(() => personas.id, { onDelete: "set null" }),
+  defaultFrameworkRefs: jsonb("default_framework_refs").$type<VoiceFrameworkRef[]>().default([]),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const socialAccountVoiceProfilesRelations = relations(socialAccountVoiceProfiles, ({ one }) => ({
+  socialAccount: one(socialAccounts, {
+    fields: [socialAccountVoiceProfiles.socialAccountId],
+    references: [socialAccounts.id],
+  }),
+  defaultPersona: one(personas, {
+    fields: [socialAccountVoiceProfiles.defaultPersonaId],
+    references: [personas.id],
+  }),
+  createdByUser: one(users, {
+    fields: [socialAccountVoiceProfiles.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertSocialAccountVoiceProfileSchema = createInsertSchema(socialAccountVoiceProfiles).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type SocialAccountVoiceProfile = typeof socialAccountVoiceProfiles.$inferSelect;
+export type InsertSocialAccountVoiceProfile = z.infer<typeof insertSocialAccountVoiceProfileSchema>;
+
+// Categories of globalGroundingDocuments that count as messaging-framework
+// grounding sources for the voice/rewrite picker. Kept here so frontend and
+// backend stay in sync.
+export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
+  "brand_voice",
+  "marketing_guidelines",
+] as const;
+
 // Campaigns — group assets + social accounts for coordinated content creation
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2254,9 +2432,11 @@ export type CampaignSocialAccount = typeof campaignSocialAccounts.$inferSelect;
 export type InsertCampaignSocialAccount = z.infer<typeof insertCampaignSocialAccountSchema>;
 
 // Generated Posts — AI-generated social posts per campaign × social account
+// campaignId is nullable: standalone composer posts have no campaign and
+// auto-publish purely on schedule + status='approved'.
 export const generatedPosts = pgTable("generated_posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  campaignId: varchar("campaign_id").references(() => campaigns.id, { onDelete: "cascade" }),
   socialAccountId: varchar("social_account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
   tenantDomain: text("tenant_domain").notNull(),
   platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook
@@ -2277,6 +2457,18 @@ export const generatedPosts = pgTable("generated_posts", {
   publishError: text("publish_error"),
   publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
   publishNextAttemptAt: timestamp("publish_next_attempt_at"),
+  // Voice profile applied at schedule/publish time. Snapshot (not FK) so
+  // later edits to the voice profile don't retroactively change history.
+  voiceProfileSnapshot: jsonb("voice_profile_snapshot").$type<VoiceProfileSnapshot>(),
+  // Audit trail of AI rewrites: [{ at, by, prompt, model, frameworkRefs }, ...]
+  rewriteLineage: jsonb("rewrite_lineage").$type<Array<{
+    at: string;
+    by?: string | null;
+    prompt?: string | null;
+    model?: string | null;
+    personaId?: string | null;
+    frameworkRefs?: VoiceFrameworkRef[] | null;
+  }>>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
