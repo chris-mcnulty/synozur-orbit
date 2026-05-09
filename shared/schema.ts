@@ -2159,6 +2159,130 @@ export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit
 export type SocialAccount = typeof socialAccounts.$inferSelect;
 export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 
+// ─── Account Voice Profiles ──────────────────────────────────────────────────
+// Per-social-account personalization layer. Drives AI rewrites and direct-
+// composed posts so content reads in the right voice for each account
+// (1st vs 3rd person, tone, hashtag/emoji policy, sample snippets, defaults
+// for ICP persona and grounding-doc messaging frameworks).
+//
+// One row per social_account. The polymorphic `defaultFrameworkRefs` is an
+// ordered list of references to messaging-framework-like sources:
+//   - { kind: 'long_form', id }    → longFormRecommendations (type='messaging_framework')
+//   - { kind: 'grounding', id }    → groundingDocuments where 'marketing_content' ∈ contexts
+//   - { kind: 'global', id }       → globalGroundingDocuments (brand_voice/marketing_guidelines)
+// We don't FK these because they span three tables; resolution + permission
+// checks happen at read time.
+
+export const VOICE_PERSON_OPTIONS = ["first", "third"] as const;
+export type VoicePerson = (typeof VOICE_PERSON_OPTIONS)[number];
+
+export const VOICE_AUTHOR_PERSPECTIVES = ["individual", "brand"] as const;
+export type VoiceAuthorPerspective = (typeof VOICE_AUTHOR_PERSPECTIVES)[number];
+
+export const VOICE_EMOJI_POLICIES = ["none", "sparing", "liberal"] as const;
+export type VoiceEmojiPolicy = (typeof VOICE_EMOJI_POLICIES)[number];
+
+export const VOICE_HASHTAG_POLICIES = ["none", "minimal", "standard", "heavy"] as const;
+export type VoiceHashtagPolicy = (typeof VOICE_HASHTAG_POLICIES)[number];
+
+export const VOICE_FRAMEWORK_REF_KINDS = ["long_form", "grounding", "global"] as const;
+export type VoiceFrameworkRefKind = (typeof VOICE_FRAMEWORK_REF_KINDS)[number];
+
+export interface VoiceFrameworkRef {
+  kind: VoiceFrameworkRefKind;
+  id: string;
+}
+
+// Tone vector: every dimension 0..1. Treated as guidance, not a hard control.
+export interface VoiceToneAttributes {
+  formal?: number;
+  playful?: number;
+  technical?: number;
+  warm?: number;
+  bold?: number;
+}
+
+// Few-shot exemplars the rewrite prompt shows the model.
+export interface VoiceSampleSnippet {
+  label?: string;
+  content: string;
+}
+
+// Compact snapshot persisted onto generatedPosts at schedule/publish time so
+// later edits to a profile don't retroactively change what shipped.
+export interface VoiceProfileSnapshot {
+  profileId: string;
+  capturedAt: string; // ISO
+  person: VoicePerson;
+  authorPerspective: VoiceAuthorPerspective;
+  toneAttributes?: VoiceToneAttributes | null;
+  styleGuidance?: string | null;
+  forbiddenPhrases?: string[] | null;
+  preferredPhrases?: string[] | null;
+  emojiPolicy: VoiceEmojiPolicy;
+  hashtagPolicy: VoiceHashtagPolicy;
+  maxLength?: number | null;
+  defaultPersonaId?: string | null;
+  defaultFrameworkRefs?: VoiceFrameworkRef[] | null;
+}
+
+export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  socialAccountId: varchar("social_account_id").notNull()
+    .references(() => socialAccounts.id, { onDelete: "cascade" })
+    .unique(),
+  tenantDomain: text("tenant_domain").notNull(),
+  // Voice fundamentals
+  person: text("person").notNull().default("first"), // 'first' | 'third'
+  authorPerspective: text("author_perspective").notNull().default("individual"), // 'individual' | 'brand'
+  // Tone + style
+  toneAttributes: jsonb("tone_attributes").$type<VoiceToneAttributes>(),
+  styleGuidance: text("style_guidance"),
+  forbiddenPhrases: text("forbidden_phrases").array(),
+  preferredPhrases: text("preferred_phrases").array(),
+  // Policies
+  emojiPolicy: text("emoji_policy").notNull().default("sparing"),
+  hashtagPolicy: text("hashtag_policy").notNull().default("standard"),
+  maxLength: integer("max_length"),
+  // Few-shot exemplars
+  sampleSnippets: jsonb("sample_snippets").$type<VoiceSampleSnippet[]>().default([]),
+  // Default targeting for rewrites (always optional at the call-site)
+  defaultPersonaId: varchar("default_persona_id").references(() => personas.id, { onDelete: "set null" }),
+  defaultFrameworkRefs: jsonb("default_framework_refs").$type<VoiceFrameworkRef[]>().default([]),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const socialAccountVoiceProfilesRelations = relations(socialAccountVoiceProfiles, ({ one }) => ({
+  socialAccount: one(socialAccounts, {
+    fields: [socialAccountVoiceProfiles.socialAccountId],
+    references: [socialAccounts.id],
+  }),
+  defaultPersona: one(personas, {
+    fields: [socialAccountVoiceProfiles.defaultPersonaId],
+    references: [personas.id],
+  }),
+  createdByUser: one(users, {
+    fields: [socialAccountVoiceProfiles.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertSocialAccountVoiceProfileSchema = createInsertSchema(socialAccountVoiceProfiles).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type SocialAccountVoiceProfile = typeof socialAccountVoiceProfiles.$inferSelect;
+export type InsertSocialAccountVoiceProfile = z.infer<typeof insertSocialAccountVoiceProfileSchema>;
+
+// Categories of globalGroundingDocuments that count as messaging-framework
+// grounding sources for the voice/rewrite picker. Kept here so frontend and
+// backend stay in sync.
+export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
+  "brand_voice",
+  "marketing_guidelines",
+] as const;
+
 // Campaigns — group assets + social accounts for coordinated content creation
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2277,6 +2401,18 @@ export const generatedPosts = pgTable("generated_posts", {
   publishError: text("publish_error"),
   publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
   publishNextAttemptAt: timestamp("publish_next_attempt_at"),
+  // Voice profile applied at schedule/publish time. Snapshot (not FK) so
+  // later edits to the voice profile don't retroactively change history.
+  voiceProfileSnapshot: jsonb("voice_profile_snapshot").$type<VoiceProfileSnapshot>(),
+  // Audit trail of AI rewrites: [{ at, by, prompt, model, frameworkRefs }, ...]
+  rewriteLineage: jsonb("rewrite_lineage").$type<Array<{
+    at: string;
+    by?: string | null;
+    prompt?: string | null;
+    model?: string | null;
+    personaId?: string | null;
+    frameworkRefs?: VoiceFrameworkRef[] | null;
+  }>>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

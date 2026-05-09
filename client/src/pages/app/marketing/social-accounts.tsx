@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2, Mic, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -23,6 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const PLATFORMS = [
   { value: "linkedin", label: "LinkedIn" },
@@ -119,6 +122,481 @@ function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
 
 const DIRECT_PUBLISH_PLATFORMS = new Set(["linkedin"]);
 
+// ─── Voice Profile Editor ────────────────────────────────────────────────────
+
+type FrameworkRefKind = "long_form" | "grounding" | "global";
+interface FrameworkRef { kind: FrameworkRefKind; id: string }
+interface FrameworkItem {
+  kind: FrameworkRefKind;
+  id: string;
+  label: string;
+  scope: "market" | "tenant" | "global";
+  category?: string;
+  updatedAt?: string;
+}
+interface ToneAttrs {
+  formal?: number; playful?: number; technical?: number; warm?: number; bold?: number;
+}
+interface SampleSnippet { label?: string; content: string }
+interface VoiceProfile {
+  id?: string;
+  socialAccountId: string;
+  person: "first" | "third";
+  authorPerspective: "individual" | "brand";
+  toneAttributes?: ToneAttrs | null;
+  styleGuidance?: string | null;
+  forbiddenPhrases?: string[] | null;
+  preferredPhrases?: string[] | null;
+  emojiPolicy: "none" | "sparing" | "liberal";
+  hashtagPolicy: "none" | "minimal" | "standard" | "heavy";
+  maxLength?: number | null;
+  sampleSnippets?: SampleSnippet[];
+  defaultPersonaId?: string | null;
+  defaultFrameworkRefs?: FrameworkRef[];
+  isUnsaved?: boolean;
+}
+interface PersonaRow { id: string; name: string; role?: string | null; isIcp?: boolean }
+
+const TONE_DIMENSIONS: Array<{ key: keyof ToneAttrs; label: string }> = [
+  { key: "formal",    label: "Formal" },
+  { key: "playful",   label: "Playful" },
+  { key: "technical", label: "Technical" },
+  { key: "warm",      label: "Warm" },
+  { key: "bold",      label: "Bold" },
+];
+
+function PhraseListEditor({
+  label, value, onChange, placeholder, testId,
+}: {
+  label: string;
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  testId: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const t = draft.trim();
+    if (!t) return;
+    if (value.includes(t)) { setDraft(""); return; }
+    onChange([...value, t]);
+    setDraft("");
+  };
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder={placeholder}
+          data-testid={`${testId}-input`}
+        />
+        <Button type="button" variant="outline" onClick={add} data-testid={`${testId}-add`}>Add</Button>
+      </div>
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {value.map(phrase => (
+            <Badge key={phrase} variant="secondary" className="gap-1" data-testid={`${testId}-chip`}>
+              {phrase}
+              <button
+                type="button"
+                onClick={() => onChange(value.filter(p => p !== phrase))}
+                className="ml-1 hover:text-destructive"
+                aria-label={`Remove ${phrase}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VoiceProfileDialog({
+  account, open, onOpenChange,
+}: {
+  account: SocialAccount;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<VoiceProfile | null>(null);
+
+  const { data: loaded, isLoading } = useQuery<VoiceProfile>({
+    queryKey: ["/api/social-accounts", account.id, "voice-profile"],
+    queryFn: async () => {
+      const r = await fetch(`/api/social-accounts/${account.id}/voice-profile`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load voice profile");
+      return r.json();
+    },
+    enabled: open,
+  });
+
+  const { data: personasList = [] } = useQuery<PersonaRow[]>({
+    queryKey: ["/api/personas"],
+    queryFn: async () => {
+      const r = await fetch("/api/personas", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open,
+  });
+
+  const { data: frameworksData } = useQuery<{ items: FrameworkItem[] }>({
+    queryKey: ["/api/messaging-frameworks/available"],
+    queryFn: async () => {
+      const r = await fetch("/api/messaging-frameworks/available", { credentials: "include" });
+      return r.ok ? r.json() : { items: [] };
+    },
+    enabled: open,
+  });
+  const frameworks = frameworksData?.items ?? [];
+
+  useEffect(() => {
+    if (loaded) setDraft({ ...loaded, sampleSnippets: loaded.sampleSnippets ?? [] });
+  }, [loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (next: VoiceProfile) => {
+      const r = await fetch(`/api/social-accounts/${account.id}/voice-profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(next),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Save failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", account.id, "voice-profile"] });
+      toast({ title: "Voice profile saved" });
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/social-accounts/${account.id}/voice-profile`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok && r.status !== 204) throw new Error("Reset failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", account.id, "voice-profile"] });
+      toast({ title: "Voice profile reset to defaults" });
+    },
+    onError: (err: Error) => toast({ title: "Reset failed", description: err.message, variant: "destructive" }),
+  });
+
+  if (!open) return null;
+  if (isLoading || !draft) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Voice — {account.accountName}</DialogTitle>
+          </DialogHeader>
+          <div className="py-12 text-center text-muted-foreground">Loading...</div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Sort personas: ICPs first, then by name.
+  const personasSorted = [...personasList].sort((a, b) => {
+    if (a.isIcp !== b.isIcp) return a.isIcp ? -1 : 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+
+  // Group frameworks by scope for the picker.
+  const frameworksByGroup: Record<string, FrameworkItem[]> = {};
+  frameworks.forEach(f => {
+    const key = f.scope === "market" || f.scope === "tenant"
+      ? (f.kind === "long_form" ? "Messaging Framework" : "Marketing Content (Tenant)")
+      : "Brand Voice & Guidelines (Global)";
+    (frameworksByGroup[key] ??= []).push(f);
+  });
+
+  const tone = draft.toneAttributes ?? {};
+  const setTone = (key: keyof ToneAttrs, v: number) =>
+    setDraft({ ...draft, toneAttributes: { ...tone, [key]: v } });
+
+  const refKey = (r: FrameworkRef) => `${r.kind}:${r.id}`;
+  const selectedRefs = new Set((draft.defaultFrameworkRefs ?? []).map(refKey));
+
+  const toggleRef = (item: FrameworkItem) => {
+    const k = `${item.kind}:${item.id}`;
+    const current = draft.defaultFrameworkRefs ?? [];
+    const next = selectedRefs.has(k)
+      ? current.filter(r => refKey(r) !== k)
+      : [...current, { kind: item.kind, id: item.id }];
+    setDraft({ ...draft, defaultFrameworkRefs: next });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Mic className="w-4 h-4" /> Voice — {account.accountName}</DialogTitle>
+          <DialogDescription>
+            How AI should write on behalf of this account. Applied to direct-composed posts and AI rewrites.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue="basics">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="basics" data-testid="voice-tab-basics">Basics</TabsTrigger>
+            <TabsTrigger value="tone" data-testid="voice-tab-tone">Tone</TabsTrigger>
+            <TabsTrigger value="phrases" data-testid="voice-tab-phrases">Phrases</TabsTrigger>
+            <TabsTrigger value="defaults" data-testid="voice-tab-defaults">Defaults</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="basics" className="space-y-4 pt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Person</Label>
+                <Select value={draft.person} onValueChange={(v: any) => setDraft({ ...draft, person: v })}>
+                  <SelectTrigger data-testid="voice-select-person"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="first">First person ("I", "we")</SelectItem>
+                    <SelectItem value="third">Third person ("Synozur", "the team")</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Perspective</Label>
+                <Select value={draft.authorPerspective} onValueChange={(v: any) => setDraft({ ...draft, authorPerspective: v })}>
+                  <SelectTrigger data-testid="voice-select-perspective"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="individual">Individual</SelectItem>
+                    <SelectItem value="brand">Brand / Company</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Emoji policy</Label>
+                <Select value={draft.emojiPolicy} onValueChange={(v: any) => setDraft({ ...draft, emojiPolicy: v })}>
+                  <SelectTrigger data-testid="voice-select-emoji"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="sparing">Sparing</SelectItem>
+                    <SelectItem value="liberal">Liberal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Hashtag policy</Label>
+                <Select value={draft.hashtagPolicy} onValueChange={(v: any) => setDraft({ ...draft, hashtagPolicy: v })}>
+                  <SelectTrigger data-testid="voice-select-hashtags"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="minimal">Minimal (1–2)</SelectItem>
+                    <SelectItem value="standard">Standard (3–5)</SelectItem>
+                    <SelectItem value="heavy">Heavy (6+)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Max length <span className="text-muted-foreground font-normal">(characters, optional)</span></Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={draft.maxLength ?? ""}
+                  onChange={e => setDraft({ ...draft, maxLength: e.target.value === "" ? null : Number(e.target.value) })}
+                  placeholder="Platform default"
+                  data-testid="voice-input-maxlength"
+                />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Style guidance</Label>
+                <Textarea
+                  rows={4}
+                  value={draft.styleGuidance ?? ""}
+                  onChange={e => setDraft({ ...draft, styleGuidance: e.target.value })}
+                  placeholder="e.g., Lead with a sharp insight. Avoid jargon. Always include a concrete example or stat."
+                  data-testid="voice-textarea-style"
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="tone" className="space-y-4 pt-4">
+            <p className="text-xs text-muted-foreground">Move sliders to bias the model toward each tone dimension. Leave at 0 to ignore.</p>
+            {TONE_DIMENSIONS.map(({ key, label }) => (
+              <div key={key} className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <Label>{label}</Label>
+                  <span className="text-muted-foreground">{Math.round((tone[key] ?? 0) * 100)}%</span>
+                </div>
+                <Slider
+                  min={0} max={100} step={5}
+                  value={[Math.round((tone[key] ?? 0) * 100)]}
+                  onValueChange={([v]) => setTone(key, (v ?? 0) / 100)}
+                  data-testid={`voice-slider-${key}`}
+                />
+              </div>
+            ))}
+          </TabsContent>
+
+          <TabsContent value="phrases" className="space-y-4 pt-4">
+            <PhraseListEditor
+              label="Preferred phrases"
+              value={draft.preferredPhrases ?? []}
+              onChange={v => setDraft({ ...draft, preferredPhrases: v })}
+              placeholder="e.g., 'orbit around your customers'"
+              testId="voice-preferred"
+            />
+            <PhraseListEditor
+              label="Forbidden phrases"
+              value={draft.forbiddenPhrases ?? []}
+              onChange={v => setDraft({ ...draft, forbiddenPhrases: v })}
+              placeholder="e.g., 'synergy', 'leverage'"
+              testId="voice-forbidden"
+            />
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-xs">Sample snippets <span className="text-muted-foreground font-normal">(few-shot examples for the AI)</span></Label>
+              {(draft.sampleSnippets ?? []).map((snippet, idx) => (
+                <div key={idx} className="space-y-1 p-2 border rounded">
+                  <div className="flex gap-2">
+                    <Input
+                      value={snippet.label ?? ""}
+                      onChange={e => {
+                        const next = [...(draft.sampleSnippets ?? [])];
+                        next[idx] = { ...snippet, label: e.target.value };
+                        setDraft({ ...draft, sampleSnippets: next });
+                      }}
+                      placeholder="Label (optional)"
+                      className="text-xs h-7"
+                      data-testid={`voice-snippet-label-${idx}`}
+                    />
+                    <Button
+                      type="button" variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => setDraft({ ...draft, sampleSnippets: (draft.sampleSnippets ?? []).filter((_, i) => i !== idx) })}
+                      data-testid={`voice-snippet-remove-${idx}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    value={snippet.content}
+                    onChange={e => {
+                      const next = [...(draft.sampleSnippets ?? [])];
+                      next[idx] = { ...snippet, content: e.target.value };
+                      setDraft({ ...draft, sampleSnippets: next });
+                    }}
+                    placeholder="A short post that exemplifies this voice"
+                    data-testid={`voice-snippet-content-${idx}`}
+                  />
+                </div>
+              ))}
+              {(draft.sampleSnippets ?? []).length < 10 && (
+                <Button
+                  type="button" variant="outline" size="sm"
+                  onClick={() => setDraft({ ...draft, sampleSnippets: [...(draft.sampleSnippets ?? []), { content: "" }] })}
+                  data-testid="voice-snippet-add"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Add snippet
+                </Button>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="defaults" className="space-y-4 pt-4">
+            <p className="text-xs text-muted-foreground">
+              These pre-populate the AI rewrite picker as removable suggestions. Selecting nothing here is fine — every rewrite call lets the user choose explicitly.
+            </p>
+            <div>
+              <Label className="text-xs">Default audience persona <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select
+                value={draft.defaultPersonaId ?? "__none__"}
+                onValueChange={v => setDraft({ ...draft, defaultPersonaId: v === "__none__" ? null : v })}
+              >
+                <SelectTrigger data-testid="voice-select-persona"><SelectValue placeholder="No specific audience" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No specific audience</SelectItem>
+                  {personasSorted.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.isIcp ? "★ " : ""}{p.name}{p.role ? ` — ${p.role}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs">Default messaging frameworks <span className="text-muted-foreground font-normal">(optional, multi-select)</span></Label>
+              {frameworks.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">
+                  No messaging frameworks, marketing-tagged grounding documents, or brand-voice guidelines are available yet.
+                </p>
+              ) : (
+                <div className="space-y-3 mt-2">
+                  {Object.entries(frameworksByGroup).map(([group, items]) => (
+                    <div key={group}>
+                      <div className="text-xs font-medium text-muted-foreground mb-1">{group}</div>
+                      <div className="space-y-1">
+                        {items.map(item => {
+                          const k = `${item.kind}:${item.id}`;
+                          const checked = selectedRefs.has(k);
+                          return (
+                            <label key={k} className="flex items-start gap-2 p-2 border rounded cursor-pointer hover:bg-muted/50" data-testid={`voice-framework-${k}`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleRef(item)}
+                                className="mt-0.5"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm">{item.label}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {item.scope === "market" ? "Market" : item.scope === "tenant" ? "Tenant" : "Global"}
+                                  {item.category ? ` · ${item.category.replace(/_/g, " ")}` : ""}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        <div className="flex gap-2 pt-4 border-t mt-4">
+          <Button
+            variant="outline"
+            onClick={() => resetMutation.mutate()}
+            disabled={resetMutation.isPending || draft.isUnsaved}
+            data-testid="voice-button-reset"
+          >
+            Reset to defaults
+          </Button>
+          <div className="flex-1" />
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="voice-button-cancel">Cancel</Button>
+          <Button
+            onClick={() => saveMutation.mutate(draft)}
+            disabled={saveMutation.isPending}
+            data-testid="voice-button-save"
+          >
+            {saveMutation.isPending ? "Saving..." : "Save voice"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
 export default function SocialAccountsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -126,6 +604,7 @@ export default function SocialAccountsPage() {
   const [form, setForm] = useState({ platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
+  const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -336,6 +815,16 @@ export default function SocialAccountsPage() {
                         variant="ghost"
                         size="icon"
                         className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
+                        onClick={() => setVoiceAccount(account)}
+                        title="Account voice"
+                        data-testid={`button-voice-${account.id}`}
+                      >
+                        <Mic className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
                         onClick={() => {
                           setEditForm({ id: account.id, platform: account.platform, accountName: account.accountName, accountId: account.accountId || "", profileUrl: account.profileUrl || "", notes: account.notes || "" });
                           setEditOpen(true);
@@ -466,6 +955,14 @@ export default function SocialAccountsPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {voiceAccount && (
+          <VoiceProfileDialog
+            account={voiceAccount}
+            open={!!voiceAccount}
+            onOpenChange={(open) => { if (!open) setVoiceAccount(null); }}
+          />
+        )}
       </div>
     </AppLayout>
   );
