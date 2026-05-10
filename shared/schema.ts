@@ -2169,11 +2169,11 @@ export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 // One row per (tenantDomain, platform). Secrets are encrypted at rest with
 // the same encryption.ts helpers used for socialAccounts.encryptedAccessToken.
 //
-// The platform string matches socialAccounts.platform values: 'linkedin',
-// 'twitter', 'facebook', 'instagram'. (Bluesky uses app-passwords on each
-// social account, so it never appears here.)
+// The platform string matches socialAccounts.platform values: 'twitter',
+// 'facebook', 'instagram'. (Bluesky uses app-passwords on each social
+// account, so it never appears here. LinkedIn uses a single Synozur-owned
+// OAuth app served from env vars — see platform-credentials-service.ts.)
 export const PLATFORM_CREDENTIAL_PLATFORMS = [
-  "linkedin",
   "twitter",
   "facebook",
   "instagram",

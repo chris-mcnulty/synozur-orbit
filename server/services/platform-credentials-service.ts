@@ -1,14 +1,14 @@
 /**
  * Platform Credentials Service
  *
- * Per-tenant OAuth client_id/client_secret storage. Each tenant brings their
- * own OAuth app (LinkedIn / Twitter / Facebook / Instagram); we no longer
- * read these from environment variables because tenant admins can't set
- * env vars on a multi-tenant deployment.
+ * Per-tenant OAuth client_id/client_secret storage for platforms where
+ * tenants must bring their own OAuth app (Twitter / Facebook / Instagram).
  *
- * Returns null when a tenant hasn't configured credentials for a platform —
- * publishers report `oauthConfigured(): false` in that case so the route
- * layer can show a clear "Configure credentials first" message.
+ * LinkedIn is the exception: it uses a single Synozur-owned Developer App
+ * shared across all tenants (the standard SaaS model — Buffer, Hootsuite,
+ * etc. work the same way). LinkedIn credentials come from the
+ * LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET env vars and are never
+ * exposed to tenant admins.
  */
 
 import { db } from "../db";
@@ -30,11 +30,21 @@ export interface ResolvedPlatformCredentials {
  * Returns decrypted credentials for the (tenant, platform) pair, or null if
  * none configured. Decryption failures are treated as missing — callers
  * should surface that as "credentials need to be re-entered".
+ *
+ * For LinkedIn, the lookup is tenant-independent: a single Synozur-owned app
+ * is read from env vars and returned for every tenant. Per-tenant DB rows
+ * for `linkedin` are never read.
  */
 export async function getPlatformCredentials(
   tenantDomain: string,
   platform: PlatformCredentialPlatform | string,
 ): Promise<ResolvedPlatformCredentials | null> {
+  if (platform === "linkedin") {
+    const clientId = process.env.LINKEDIN_CLIENT_ID?.trim();
+    const clientSecret = process.env.LINKEDIN_CLIENT_SECRET?.trim();
+    if (!clientId || !clientSecret) return null;
+    return { clientId, clientSecret };
+  }
   const [row] = await db.select().from(tenantPlatformCredentials).where(and(
     eq(tenantPlatformCredentials.tenantDomain, tenantDomain),
     eq(tenantPlatformCredentials.platform, platform),

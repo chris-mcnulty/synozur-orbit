@@ -1,14 +1,17 @@
 /**
- * LinkedInPublisher — Task #97 + multi-tenant credentials refactor
+ * LinkedInPublisher
  *
  * Implements direct publishing to LinkedIn via the UGC Posts API and the
- * standard 3-legged OAuth code flow. Tenants supply their own LinkedIn
- * client_id + client_secret via the tenant-credentials UI; env vars are
- * not consulted (this is a multi-tenant deployment and tenant admins can't
- * set environment variables).
+ * standard 3-legged OAuth code flow. Uses a single Synozur-owned LinkedIn
+ * Developer App (LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET env vars) that
+ * every tenant connects through — tenant admins do not register their own
+ * LinkedIn apps. From the customer's POV this is "click Connect, log in,
+ * done", matching how Buffer/Hootsuite/Sprout work.
  *
  * Required scopes: `openid profile email w_member_social`,
  * plus `w_organization_social rw_organization_admin` for company pages.
+ * These scopes require LinkedIn Marketing Developer Platform / Community
+ * Management API approval on the Synozur app.
  */
 
 import type {
@@ -37,7 +40,7 @@ export class LinkedInPublisher implements SocialPublisher {
   async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
     const creds = await getPlatformCredentials(req.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn OAuth is not configured for this tenant. Configure your LinkedIn client_id and client_secret in Tenant → Platform Credentials.");
+      throw new Error("LinkedIn integration is not available — LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET env vars are not set on this deployment.");
     }
     const params = new URLSearchParams({
       response_type: "code",
@@ -56,7 +59,7 @@ export class LinkedInPublisher implements SocialPublisher {
   ): Promise<OAuthCallbackResult> {
     const creds = await getPlatformCredentials(options.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn OAuth is not configured for this tenant.");
+      throw new Error("LinkedIn integration is not available — LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET env vars are not set on this deployment.");
     }
     const tokenResp = await fetch(`${AUTH_HOST}/oauth/v2/accessToken`, {
       method: "POST",

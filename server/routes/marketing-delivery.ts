@@ -410,8 +410,11 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).json({ error: `Direct publishing is not supported for ${account.platform} yet.` });
     }
     if (!await publisher.oauthConfigured(ctx.tenantDomain)) {
+      const errorMessage = account.platform === "linkedin"
+        ? "LinkedIn integration is not available on this deployment. Contact Synozur support."
+        : `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`;
       return res.status(503).json({
-        error: `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`,
+        error: errorMessage,
         configureRequired: true,
         platform: account.platform,
       });

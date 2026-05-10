@@ -1,13 +1,16 @@
 /**
  * Platform Credentials Page
  *
- * Tenant admins register their own OAuth apps (LinkedIn / Twitter / X /
- * Facebook / Instagram) and paste the client_id + client_secret here.
- * Secrets are encrypted at rest. The page is admin-only; non-admins see
- * a 403 from the API and a friendly notice on the page.
+ * Tenant admins register their own OAuth apps (Twitter / X / Facebook /
+ * Instagram) and paste the client_id + client_secret here. Secrets are
+ * encrypted at rest. The page is admin-only; non-admins see a 403 from
+ * the API and a friendly notice on the page.
  *
- * Bluesky is intentionally not listed: it uses per-account app passwords
- * managed on the Social Accounts page, not OAuth client credentials.
+ * LinkedIn is intentionally not listed: it uses a single Synozur-owned
+ * Developer App shared across all tenants (env vars on the deployment),
+ * the same way Buffer/Hootsuite work — customers just click "Connect" on
+ * the Social Accounts page. Bluesky is also not listed: it uses
+ * per-account app passwords managed on the Social Accounts page.
  */
 
 import { useState } from "react";
@@ -49,14 +52,6 @@ interface PlatformConfig {
 }
 
 const PLATFORMS: PlatformConfig[] = [
-  {
-    key: "linkedin",
-    label: "LinkedIn",
-    secretRequired: true,
-    description: "LinkedIn Developer App. Required scopes: openid, profile, email, w_member_social, w_organization_social, rw_organization_admin.",
-    redirectNote: "Add your tenant's `…/api/social-accounts/oauth/callback` URL as an authorized redirect URL on the LinkedIn app.",
-    helpUrl: "https://www.linkedin.com/developers/apps",
-  },
   {
     key: "twitter",
     label: "X / Twitter",
@@ -183,20 +178,21 @@ export default function PlatformCredentialsPage() {
             <KeyRound className="w-6 h-6" /> Platform Credentials
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Each platform requires your tenant to register its own OAuth app. Paste the client_id and (when applicable) client_secret below — they're encrypted at rest.
+            For X/Twitter and Meta platforms, your tenant registers its own OAuth app and pastes the client_id and (when applicable) client_secret below — they're encrypted at rest.
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Why per-tenant?</CardTitle>
+            <CardTitle className="text-base">What's not on this page</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>
-              Multi-tenant deployments don't share a single SaaS-vendor OAuth app. Each tenant brings its own so the consent screen carries your brand, your rate-limit budget is independent, and your platform review state is yours alone.
+              <span className="font-medium text-foreground">LinkedIn</span> uses a single Synozur-managed Developer App shared across all tenants — your team just clicks <em>Connect LinkedIn</em> on the{" "}
+              <Link href="/app/marketing/social-accounts" className="text-primary underline">Social Accounts</Link> page and signs in. No app registration required.
             </p>
             <p>
-              Bluesky doesn't appear here — it uses per-account app passwords entered on the{" "}
+              <span className="font-medium text-foreground">Bluesky</span> uses per-account app passwords entered on the{" "}
               <Link href="/app/marketing/social-accounts" className="text-primary underline">Social Accounts</Link> page.
             </p>
           </CardContent>
