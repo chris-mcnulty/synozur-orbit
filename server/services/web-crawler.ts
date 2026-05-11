@@ -1,4 +1,5 @@
 import { fetchPageHeadless, isHeadlessAvailable } from "./headless-crawler";
+import { isValidUrl, normalizeUrl } from "../utils/url-normalization";
 
 interface CrawlResult {
   url: string;
@@ -433,16 +434,22 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
   let socialLinks: CrawlSummary["socialLinks"] = {};
   let blogSnapshot: CrawlSummary["blogSnapshot"] | undefined;
   let crawlMethod: "headless" | "http" = "http";
-  
+
   if (signal?.aborted) throw new Error("Crawl aborted before start");
+
+  if (!isValidUrl(url)) {
+    console.error(`[Web Crawler] Skipping crawl — malformed URL: ${url}`);
+    return { baseUrl: url, pages: [], totalWordCount: 0, crawledAt, socialLinks: {}, crawlMethod: "http" };
+  }
+  const normalizedUrl = normalizeUrl(url);
+
+  console.log(`[Web Crawler] Starting crawl of ${normalizedUrl} (headless: ${useHeadless})`);
   
-  console.log(`[Web Crawler] Starting crawl of ${url} (headless: ${useHeadless})`);
-  
-  const homepage = await fetchPage(url, useHeadless);
+  const homepage = await fetchPage(normalizedUrl, useHeadless);
   if (!homepage) {
-    console.log(`[Web Crawler] Failed to fetch homepage for ${url}`);
+    console.log(`[Web Crawler] Failed to fetch homepage for ${normalizedUrl}`);
     return {
-      baseUrl: url,
+      baseUrl: normalizedUrl,
       pages: [],
       totalWordCount: 0,
       crawledAt,
@@ -606,10 +613,10 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
     finalCrawlMethod = "http";
   }
   
-  console.log(`[Web Crawler] Completed crawl of ${url}: ${pages.length} pages, ${totalWordCount} words (method: ${finalCrawlMethod}, headless: ${headlessCount}, http: ${httpCount})`);
+  console.log(`[Web Crawler] Completed crawl of ${normalizedUrl}: ${pages.length} pages, ${totalWordCount} words (method: ${finalCrawlMethod}, headless: ${headlessCount}, http: ${httpCount})`);
   
   return {
-    baseUrl: url,
+    baseUrl: normalizedUrl,
     pages,
     totalWordCount,
     crawledAt,
