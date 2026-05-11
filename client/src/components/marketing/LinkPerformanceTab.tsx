@@ -1,13 +1,15 @@
 /**
  * Link Performance tab for the marketing index page. Renders a tenant-wide
- * roll-up of every tracked link, with last-30-day sparklines and a CSV
- * export. Bots are excluded from the daily counts (they're tagged on click).
+ * roll-up of every tracked link, with last-30-day sparklines, a CSV export,
+ * and a CSV import that creates new tracked links from a file.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Download, Link2, MousePointerClick, ExternalLink } from "lucide-react";
+import { Loader2, Download, Upload, Link2, MousePointerClick, ExternalLink } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface AnalyticsLink {
   id: string;
@@ -65,6 +67,11 @@ function Sparkline({ data, max }: { data: number[]; max: number }) {
 }
 
 export function LinkPerformanceTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
   const { data, isLoading } = useQuery<AnalyticsResp>({
     queryKey: ["/api/marketing-links/analytics"],
     queryFn: async () => {
@@ -75,9 +82,40 @@ export function LinkPerformanceTab() {
   });
 
   const handleExport = () => {
-    // Use a same-origin download so cookies are sent automatically. Anchor
-    // navigation streams the CSV without leaving the SPA.
     window.location.assign("/api/marketing-links/export.csv");
+  };
+
+  const handleImportChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const r = await fetch("/api/marketing-links/import.csv", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "text/csv" },
+        body: text,
+      });
+      const result = await r.json();
+      if (!r.ok) {
+        toast({ title: "Import failed", description: result.error ?? "Unknown error", variant: "destructive" });
+        return;
+      }
+      const { imported, failed, errors } = result as { imported: number; failed: number; errors: string[] };
+      const desc = failed > 0
+        ? `${imported} imported, ${failed} skipped.${errors.length ? " First error: " + errors[0] : ""}`
+        : `${imported} link${imported !== 1 ? "s" : ""} imported successfully.`;
+      toast({ title: "Import complete", description: desc, variant: failed > 0 ? "default" : "default" });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing-links/analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing-links"] });
+    } catch {
+      toast({ title: "Import failed", description: "Could not read the file.", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
   };
 
   if (isLoading) {
@@ -88,107 +126,140 @@ export function LinkPerformanceTab() {
     );
   }
 
-  if (!data || data.links.length === 0) {
-    return (
-      <Card data-testid="performance-empty-state">
-        <CardContent className="text-center py-12">
-          <Link2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground/60" />
-          <p className="text-sm font-medium">No tracked links yet</p>
-          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-            Create tracked links from a campaign or enable "wrap outbound URLs" when generating posts and emails. Click counts will show up here.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const peakDaily = Math.max(1, ...data.links.flatMap(l => l.sparkline));
+  const peakDaily = data ? Math.max(1, ...data.links.flatMap(l => l.sparkline)) : 1;
 
   return (
     <div className="space-y-4" data-testid="performance-tab-content">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Tracked Links</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold" data-testid="stat-link-count">{data.totals.linkCount}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">All-Time Clicks</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold" data-testid="stat-total-clicks">{data.totals.totalClicks.toLocaleString()}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Last {data.days} Days</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold" data-testid="stat-recent-clicks">{data.totals.recentClicks.toLocaleString()}</div></CardContent>
-        </Card>
+      {data && (
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Tracked Links</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold" data-testid="stat-link-count">{data.totals.linkCount}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">All-Time Clicks</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold" data-testid="stat-total-clicks">{data.totals.totalClicks.toLocaleString()}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Last {data.days} Days</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold" data-testid="stat-recent-clicks">{data.totals.recentClicks.toLocaleString()}</div></CardContent>
+          </Card>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2">
+        {(!data || data.links.length === 0) && (
+          <Card className="flex-1" data-testid="performance-empty-state">
+            <CardContent className="text-center py-12">
+              <Link2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground/60" />
+              <p className="text-sm font-medium">No tracked links yet</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                Create tracked links from a campaign, import a CSV below, or enable "wrap outbound URLs" when generating posts and emails.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleImportChange}
+            data-testid="input-import-csv"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importing}
+            data-testid="button-import-csv"
+          >
+            {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            Import CSV
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport} data-testid="button-export-csv">
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
+        </div>
       </div>
 
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={handleExport} data-testid="button-export-csv">
-          <Download className="w-3.5 h-3.5" /> Export CSV
-        </Button>
-      </div>
-
-      <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/30">
-              <tr className="text-left text-xs text-muted-foreground">
-                <th className="px-4 py-2.5 font-medium">Link</th>
-                <th className="px-4 py-2.5 font-medium">UTM</th>
-                <th className="px-4 py-2.5 font-medium text-right">Last 30d</th>
-                <th className="px-4 py-2.5 font-medium text-right">All-time</th>
-                <th className="px-4 py-2.5 font-medium">Trend</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.links.map(link => (
-                <tr key={link.id} className="border-b last:border-b-0 hover:bg-muted/20" data-testid={`row-link-${link.id}`}>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-col">
-                      <span className="font-medium truncate max-w-xs" data-testid={`text-perf-label-${link.id}`}>
-                        {link.label || link.slug}
-                      </span>
-                      <a
-                        href={link.destinationUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-muted-foreground hover:underline flex items-center gap-1 truncate max-w-xs"
-                      >
-                        <span className="truncate">{link.destinationUrl}</span>
-                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      </a>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <code className="text-[10px] bg-muted px-1 rounded">/r/{link.slug}</code>
-                        <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                          {link.source === "manual" ? "Manual" : link.source === "email-wrap" ? "Email" : "Post"}
-                        </Badge>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1 max-w-[180px]">
-                      {link.utmSource && <Badge variant="outline" className="text-[10px]">{link.utmSource}</Badge>}
-                      {link.utmMedium && <Badge variant="outline" className="text-[10px]">{link.utmMedium}</Badge>}
-                      {link.utmCampaign && <Badge variant="outline" className="text-[10px]">{link.utmCampaign}</Badge>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5 text-sm font-semibold" data-testid={`text-perf-recent-${link.id}`}>
-                      <MousePointerClick className="w-3.5 h-3.5 text-muted-foreground" />
-                      {link.recentClicks}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-sm" data-testid={`text-perf-total-${link.id}`}>
-                    {link.clickCount}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <Sparkline data={link.sparkline} max={peakDaily} />
-                  </td>
+      {data && data.links.length > 0 && (
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/30">
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2.5 font-medium">Link</th>
+                  <th className="px-4 py-2.5 font-medium">UTM</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Last 30d</th>
+                  <th className="px-4 py-2.5 font-medium text-right">All-time</th>
+                  <th className="px-4 py-2.5 font-medium">Trend</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+              </thead>
+              <tbody>
+                {data.links.map(link => (
+                  <tr key={link.id} className="border-b last:border-b-0 hover:bg-muted/20" data-testid={`row-link-${link.id}`}>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-col">
+                        <span className="font-medium truncate max-w-xs" data-testid={`text-perf-label-${link.id}`}>
+                          {link.label || link.slug}
+                        </span>
+                        <a
+                          href={link.destinationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-muted-foreground hover:underline flex items-center gap-1 truncate max-w-xs"
+                        >
+                          <span className="truncate">{link.destinationUrl}</span>
+                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        </a>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <code className="text-[10px] bg-muted px-1 rounded">/r/{link.slug}</code>
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                            {link.source === "manual" ? "Manual" : link.source === "email-wrap" ? "Email" : "Post"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1 max-w-[180px]">
+                        {link.utmSource && <Badge variant="outline" className="text-[10px]">{link.utmSource}</Badge>}
+                        {link.utmMedium && <Badge variant="outline" className="text-[10px]">{link.utmMedium}</Badge>}
+                        {link.utmCampaign && <Badge variant="outline" className="text-[10px]">{link.utmCampaign}</Badge>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5 text-sm font-semibold" data-testid={`text-perf-recent-${link.id}`}>
+                        <MousePointerClick className="w-3.5 h-3.5 text-muted-foreground" />
+                        {link.recentClicks}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-sm" data-testid={`text-perf-total-${link.id}`}>
+                      {link.clickCount}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Sparkline data={link.sparkline} max={peakDaily} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="text-xs text-muted-foreground px-0.5">
+        <span className="font-medium">CSV import format:</span> Columns must include{" "}
+        <code className="bg-muted px-1 rounded">Destination URL</code> (required). Optional:{" "}
+        <code className="bg-muted px-1 rounded">Label</code>,{" "}
+        <code className="bg-muted px-1 rounded">UTM Source</code>,{" "}
+        <code className="bg-muted px-1 rounded">UTM Medium</code>,{" "}
+        <code className="bg-muted px-1 rounded">UTM Campaign</code>,{" "}
+        <code className="bg-muted px-1 rounded">UTM Content</code>,{" "}
+        <code className="bg-muted px-1 rounded">UTM Term</code>. The exported CSV is compatible with re-import.
+      </div>
     </div>
   );
 }

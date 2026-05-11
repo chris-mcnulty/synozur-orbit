@@ -422,6 +422,126 @@ export function registerMarketingLinksRoutes(app: Express) {
   });
 
   // ──────────────────────────────────────────────────────────
+  // CSV IMPORT
+  // ──────────────────────────────────────────────────────────
+  // Accepts a plain-text CSV body (Content-Type: text/plain or text/csv).
+  // Recognised columns (case-insensitive): Destination URL, Label,
+  // UTM Source, UTM Medium, UTM Campaign, UTM Content, UTM Term.
+  // Each valid row generates a new tracked link with a fresh slug.
+  // Returns { imported, failed, errors[] }.
+  app.post("/api/marketing-links/import.csv", async (req, res) => {
+    if (!await guardCampaigns(req, res)) return;
+    const ctx = await getRequestContext(req);
+
+    // Accept text/csv, text/plain, or application/octet-stream
+    const rawBody: string = await new Promise((resolve, reject) => {
+      let data = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => { data += chunk; });
+      req.on("end", () => resolve(data));
+      req.on("error", reject);
+    });
+
+    if (!rawBody.trim()) {
+      return res.status(400).json({ error: "Empty CSV body" });
+    }
+
+    const lines = rawBody.split(/\r?\n/);
+    if (lines.length < 2) {
+      return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    }
+
+    // Parse header — normalise to lowercase, trim whitespace
+    const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim().toLowerCase());
+
+    const col = (row: string[], name: string): string => {
+      const idx = headers.indexOf(name);
+      if (idx === -1) return "";
+      const v = row[idx] ?? "";
+      return v.replace(/^"|"$/g, "").trim();
+    };
+
+    let imported = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Naive CSV split — handles quoted fields containing commas
+      const row: string[] = [];
+      let cur = "";
+      let inQuote = false;
+      for (const ch of line) {
+        if (ch === '"') { inQuote = !inQuote; continue; }
+        if (ch === "," && !inQuote) { row.push(cur); cur = ""; continue; }
+        cur += ch;
+      }
+      row.push(cur);
+
+      const destinationUrl = col(row, "destination url");
+      if (!destinationUrl) {
+        failed++;
+        errors.push(`Row ${i}: missing Destination URL`);
+        continue;
+      }
+
+      try {
+        const u = new URL(destinationUrl);
+        if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("protocol");
+      } catch {
+        failed++;
+        errors.push(`Row ${i}: invalid URL — ${destinationUrl}`);
+        continue;
+      }
+
+      const utmSource   = col(row, "utm source");
+      const utmMedium   = col(row, "utm medium");
+      const utmCampaign = col(row, "utm campaign");
+      const utmContent  = col(row, "utm content");
+      const utmTerm     = col(row, "utm term");
+
+      const finalDestination = (utmSource || utmMedium || utmCampaign)
+        ? applyUtmParams(destinationUrl, {
+            source: utmSource || undefined,
+            medium: utmMedium || undefined,
+            campaign: utmCampaign || undefined,
+            content: utmContent || undefined,
+            term: utmTerm || undefined,
+          })
+        : destinationUrl;
+
+      try {
+        const slug = await generateUniqueSlug();
+        const label = col(row, "label") || null;
+        await db.insert(marketingLinks).values({
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          campaignId: null,
+          slug,
+          destinationUrl: finalDestination,
+          label,
+          utmSource: utmSource || null,
+          utmMedium: utmMedium || null,
+          utmCampaign: utmCampaign || null,
+          utmContent: utmContent || null,
+          utmTerm: utmTerm || null,
+          status: "active",
+          source: "manual",
+          createdBy: ctx.userId,
+        } satisfies InsertMarketingLink);
+        imported++;
+      } catch (err: any) {
+        failed++;
+        errors.push(`Row ${i}: ${err.message}`);
+      }
+    }
+
+    res.json({ imported, failed, errors: errors.slice(0, 20) });
+  });
+
+  // ──────────────────────────────────────────────────────────
   // BULK UTM SUGGESTION HELPER — used by the campaign Link Builder UI to
   // pre-fill UTM defaults from the campaign name.
   // ──────────────────────────────────────────────────────────
