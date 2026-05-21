@@ -667,43 +667,16 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Convert markdown to simple HTML then to docx-compatible format
-      const content = recommendation.content || "";
-      
-      // Simple markdown to HTML conversion for basic formatting
-      let html = content
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-        .replace(/^- (.*$)/gim, '<li>$1</li>')
-        .replace(/\n/gim, '<br/>');
+      const { buildBrandedDocx } = await import("../services/docx-generator.js");
+      const title = recommendation.type
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const docBuffer = await buildBrandedDocx(title, recommendation.content || "");
 
-      // Create a simple Word-compatible HTML document
-      const docContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
-            h1 { color: #333; border-bottom: 2px solid #810FFB; padding-bottom: 10px; }
-            h2 { color: #555; margin-top: 30px; }
-            h3 { color: #666; }
-            li { margin: 5px 0; }
-          </style>
-        </head>
-        <body>
-          ${html}
-        </body>
-        </html>
-      `;
-
-      const filename = `${recommendation.type}_${new Date().toISOString().split('T')[0]}.doc`;
-      res.setHeader("Content-Type", "application/msword");
+      const filename = `${recommendation.type}_${new Date().toISOString().split("T")[0]}.docx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(docContent);
+      res.send(docBuffer);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

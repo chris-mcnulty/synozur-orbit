@@ -625,30 +625,15 @@ export function registerRelationshipReportRoutes(app: Express) {
       if (!report) return res.status(404).json({ error: "Report not found" });
       if (!validateResourceContext(report, ctx)) return res.status(403).json({ error: "Access denied" });
 
-      const content = report.content || "";
-      const html = content
-        .replace(/^### (.*$)/gim, "<h3>$1</h3>")
-        .replace(/^## (.*$)/gim, "<h2>$1</h2>")
-        .replace(/^# (.*$)/gim, "<h1>$1</h1>")
-        .replace(/\*\*(.*?)\*\*/gim, "<strong>$1</strong>")
-        .replace(/\*(.*?)\*/gim, "<em>$1</em>")
-        .replace(/^- (.*$)/gim, "<li>$1</li>")
-        .replace(/\n/gim, "<br/>");
+      const { buildBrandedDocx } = await import("../services/docx-generator.js");
+      const title = report.name || "Relationship Plan";
+      const docBuffer = await buildBrandedDocx(title, report.content || "");
 
-      const docContent = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
-h1 { color: #333; border-bottom: 2px solid #810FFB; padding-bottom: 10px; }
-h2 { color: #555; margin-top: 30px; }
-h3 { color: #666; }
-li { margin: 5px 0; }
-</style></head><body>${html}</body></html>`;
-
-      const safeName = (report.name || "Relationship_Plan").replace(/[^a-zA-Z0-9]/g, "_");
-      const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.doc`;
-      res.setHeader("Content-Type", "application/msword");
+      const safeName = title.replace(/[^a-zA-Z0-9]/g, "_");
+      const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(docContent);
+      res.send(docBuffer);
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
