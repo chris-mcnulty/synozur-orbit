@@ -328,6 +328,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(solutionAreas.id, req.params.id),
         eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -341,9 +342,29 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(solutionAreas.id, req.params.id),
         eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
       ));
     res.status(204).send();
   });
+
+  // Resolve the subset of incoming solutionAreaIds that actually belong to
+  // the caller's tenant+market. Used by all join-table writers so the link
+  // table can't accumulate cross-tenant or cross-market references.
+  async function validSolutionAreaIds(
+    ctx: { tenantDomain: string; marketId: string },
+    ids: unknown,
+  ): Promise<string[]> {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const candidates = ids.filter((s): s is string => typeof s === "string" && s.length > 0);
+    if (candidates.length === 0) return [];
+    const found = await db.select({ id: solutionAreas.id }).from(solutionAreas)
+      .where(and(
+        inArray(solutionAreas.id, candidates),
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ));
+    return found.map(f => f.id);
+  }
 
   // ══════════════════════════════════════════════════════════
   // CONTENT ASSETS
@@ -478,9 +499,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
         productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
       );
     }
-    if (Array.isArray(solutionAreaIds) && solutionAreaIds.length) {
+    const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+    if (validAreas.length) {
       await db.insert(contentAssetSolutionAreas).values(
-        solutionAreaIds.map((solutionAreaId: string) => ({ assetId: row.id, solutionAreaId }))
+        validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
       );
     }
     res.status(201).json(row);
@@ -524,9 +546,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
     if (solutionAreaIds !== undefined) {
       await db.delete(contentAssetSolutionAreas).where(eq(contentAssetSolutionAreas.assetId, row.id));
-      if (Array.isArray(solutionAreaIds) && solutionAreaIds.length) {
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
         await db.insert(contentAssetSolutionAreas).values(
-          solutionAreaIds.map((solutionAreaId: string) => ({ assetId: row.id, solutionAreaId }))
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
     }
@@ -1014,9 +1037,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
           productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
         );
       }
-      if (Array.isArray(solutionAreaIds) && solutionAreaIds.length) {
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
         await db.insert(brandAssetSolutionAreas).values(
-          solutionAreaIds.map((solutionAreaId: string) => ({ assetId: row.id, solutionAreaId }))
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
       res.status(201).json(row);
@@ -1063,9 +1087,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
     if (solutionAreaIds !== undefined) {
       await db.delete(brandAssetSolutionAreas).where(eq(brandAssetSolutionAreas.assetId, row.id));
-      if (Array.isArray(solutionAreaIds) && solutionAreaIds.length) {
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
         await db.insert(brandAssetSolutionAreas).values(
-          solutionAreaIds.map((solutionAreaId: string) => ({ assetId: row.id, solutionAreaId }))
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
     }
@@ -1568,6 +1593,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
           ne(campaigns.status, "deleted"),
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
@@ -1668,6 +1694,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
             .where(and(
               inArray(solutionAreas.id, solutionAreaIds),
               eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+              eq(solutionAreas.marketId, ctx.marketId),
             ));
           if (validAreas.length > 0) {
             await tx.insert(campaignSolutionAreas).values(
@@ -1706,22 +1733,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
         ))
         .returning();
       if (!row) return res.status(404).json({ error: "Not found" });
       if (solutionAreaIds !== undefined) {
         await db.delete(campaignSolutionAreas).where(eq(campaignSolutionAreas.campaignId, row.id));
-        if (Array.isArray(solutionAreaIds) && solutionAreaIds.length > 0) {
-          const validAreas = await db.select({ id: solutionAreas.id }).from(solutionAreas)
-            .where(and(
-              inArray(solutionAreas.id, solutionAreaIds),
-              eq(solutionAreas.tenantDomain, ctx.tenantDomain),
-            ));
-          if (validAreas.length > 0) {
-            await db.insert(campaignSolutionAreas).values(
-              validAreas.map(a => ({ campaignId: row.id, solutionAreaId: a.id }))
-            );
-          }
+        const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+        if (validAreas.length > 0) {
+          await db.insert(campaignSolutionAreas).values(
+            validAreas.map(solutionAreaId => ({ campaignId: row.id, solutionAreaId }))
+          );
         }
       }
       res.json(row);
@@ -2260,11 +2282,13 @@ Return ONLY a valid JSON object (no markdown fences) with:
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const solutionAreaIds = ((req.query.solutionAreaIds as string | undefined) || "")
+      // Param names mirror the other list endpoints: singular query string,
+      // comma-separated values.
+      const solutionAreaIds = ((req.query.solutionAreaId as string | undefined) || "")
         .split(",").map(s => s.trim()).filter(Boolean);
-      const productIds = ((req.query.productIds as string | undefined) || "")
+      const productIds = ((req.query.productId as string | undefined) || "")
         .split(",").map(s => s.trim()).filter(Boolean);
-      const assetTypesParam = ((req.query.assetTypes as string | undefined) || "")
+      const assetTypesParam = ((req.query.assetType as string | undefined) || "")
         .split(",").map(s => s.trim())
         .filter(t => (CONTENT_ASSET_TYPES as readonly string[]).includes(t));
       const limitPerType = Math.max(1, Math.min(100, parseInt((req.query.limit as string) || "50", 10) || 50));
