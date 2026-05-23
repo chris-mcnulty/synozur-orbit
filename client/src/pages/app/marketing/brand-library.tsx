@@ -39,10 +39,18 @@ interface BrandAsset {
   fileType?: string;
   categoryId?: string;
   productIds?: string[];
+  assetType?: string;
+  solutionAreaIds?: string[];
   tags?: { seasons?: string[]; locations?: string[]; topics?: string[] };
   sourceContentAssetId?: string;
   status: string;
   createdAt: string;
+}
+
+interface SolutionArea {
+  id: string;
+  name: string;
+  color?: string;
 }
 
 interface BrandAssetCategory {
@@ -67,6 +75,17 @@ const SEASON_OPTIONS = [
   "Holiday", "Back to School", "Year End",
 ];
 
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  workshop: "Workshop",
+  case_study: "Case Study",
+  app: "App",
+  model: "Model",
+  blog_post: "Blog Post",
+  whitepaper: "Whitepaper",
+  video: "Video",
+  other: "Other",
+};
+
 export default function BrandLibraryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -74,6 +93,8 @@ export default function BrandLibraryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [fileTypeFilter, setFileTypeFilter] = useState<string>("all");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<string>("all");
+  const [solutionAreaFilter, setSolutionAreaFilter] = useState<string>("all");
   const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
@@ -85,16 +106,19 @@ export default function BrandLibraryPage() {
     name: "", description: "", url: "", fileUrl: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
+    assetType: "other", solutionAreaIds: [] as string[],
   });
   const [form, setForm] = useState({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
+    assetType: "other", solutionAreaIds: [] as string[],
   });
 
   const resetForm = () => setForm({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [], tags: { seasons: [], topics: [] },
+    assetType: "other", solutionAreaIds: [],
   });
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -113,17 +137,19 @@ export default function BrandLibraryPage() {
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, fileTypeFilter]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, fileTypeFilter, assetTypeFilter, solutionAreaFilter]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
   const serverCategoryParam = categoryFilter === "all" ? undefined : categoryFilter;
   const serverFileTypeParam = fileTypeFilter === "all" ? undefined : fileTypeFilter;
+  const serverAssetTypeParam = assetTypeFilter === "all" ? undefined : assetTypeFilter;
+  const serverSolutionAreaParam = solutionAreaFilter === "all" ? undefined : solutionAreaFilter;
 
   const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<BrandAsset>>({
     queryKey: [
       "/api/brand-assets",
       "paginated",
-      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, fileType: serverFileTypeParam },
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, fileType: serverFileTypeParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
@@ -131,6 +157,8 @@ export default function BrandLibraryPage() {
       if (serverStatusParam) params.set("status", serverStatusParam);
       if (serverCategoryParam) params.set("categoryId", serverCategoryParam);
       if (serverFileTypeParam) params.set("fileType", serverFileTypeParam);
+      if (serverAssetTypeParam) params.set("assetType", serverAssetTypeParam);
+      if (serverSolutionAreaParam) params.set("solutionAreaId", serverSolutionAreaParam);
       const r = await fetch(`/api/brand-assets?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
       return r.json();
@@ -161,6 +189,15 @@ export default function BrandLibraryPage() {
     enabled: isAllowed,
   });
 
+  const { data: solutionAreas = [] } = useQuery<SolutionArea[]>({
+    queryKey: ["/api/solution-areas"],
+    queryFn: async () => {
+      const r = await fetch("/api/solution-areas", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
   useEffect(() => {
     if (isAllowed && categories.length === 0) {
       fetch("/api/brand-asset-categories/seed-defaults", {
@@ -182,6 +219,8 @@ export default function BrandLibraryPage() {
           ...data,
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
           productIds: data.productIds.length ? data.productIds : null,
+          assetType: data.assetType || "other",
+          solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
         }),
       });
       if (!r.ok) {
@@ -294,6 +333,8 @@ export default function BrandLibraryPage() {
           categoryId: data.categoryId || null,
           productIds: data.productIds.length ? data.productIds : null,
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
+          assetType: data.assetType || "other",
+          solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -348,6 +389,8 @@ export default function BrandLibraryPage() {
         seasons: asset.tags?.seasons || [],
         topics: asset.tags?.topics || [],
       },
+      assetType: asset.assetType || "other",
+      solutionAreaIds: asset.solutionAreaIds || [],
     });
     setEditAsset(asset);
     setEditOpen(true);
@@ -562,12 +605,13 @@ export default function BrandLibraryPage() {
           )}
         </div>
       </div>
-      {asset.tags && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {asset.tags.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
-            {asset.tags.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
-          </div>
+      <div className="flex flex-wrap gap-1 mt-1">
+        {asset.assetType && asset.assetType !== "other" && (
+          <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">{ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType}</Badge>
         )}
+        {asset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+        {asset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
+      </div>
     </div>
   );
 
@@ -675,6 +719,18 @@ export default function BrandLibraryPage() {
                     </div>
 
                     <div>
+                      <Label>Asset Type</Label>
+                      <Select value={form.assetType} onValueChange={v => setForm(f => ({ ...f, assetType: v }))}>
+                        <SelectTrigger data-testid="select-brand-asset-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                            <SelectItem key={v} value={v}>{l}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
                       <Label>Products</Label>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -698,6 +754,36 @@ export default function BrandLibraryPage() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
+
+                    {solutionAreas.length > 0 && (
+                      <div>
+                        <Label>Solution Areas</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-brand-select-solution-areas">
+                              {form.solutionAreaIds.length ? `${form.solutionAreaIds.length} selected` : "Select solution areas"}
+                              <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                            {solutionAreas.map(a => (
+                              <DropdownMenuCheckboxItem
+                                key={a.id}
+                                checked={form.solutionAreaIds.includes(a.id)}
+                                onCheckedChange={() => setForm(f => ({
+                                  ...f,
+                                  solutionAreaIds: f.solutionAreaIds.includes(a.id)
+                                    ? f.solutionAreaIds.filter(id => id !== a.id)
+                                    : [...f.solutionAreaIds, a.id],
+                                }))}
+                              >
+                                {a.name}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
 
                     <Collapsible>
                       <CollapsibleTrigger asChild>
@@ -821,6 +907,30 @@ export default function BrandLibraryPage() {
                 ))}
             </SelectContent>
           </Select>
+          <Select value={assetTypeFilter} onValueChange={setAssetTypeFilter}>
+            <SelectTrigger className="h-7 w-[140px] text-xs" data-testid="select-asset-type-filter-brand">
+              <SelectValue placeholder="Asset type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                <SelectItem key={v} value={v}>{l}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {solutionAreas.length > 0 && (
+            <Select value={solutionAreaFilter} onValueChange={setSolutionAreaFilter}>
+              <SelectTrigger className="h-7 w-[160px] text-xs" data-testid="select-solution-area-filter-brand">
+                <SelectValue placeholder="Solution area" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All areas</SelectItem>
+                {solutionAreas.map(a => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {isLoading && !assetsPage ? (
@@ -926,28 +1036,81 @@ export default function BrandLibraryPage() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Products</Label>
+                      <Label>Asset Type</Label>
+                      <Select value={editForm.assetType} onValueChange={v => setEditForm(f => ({ ...f, assetType: v }))}>
+                        <SelectTrigger data-testid="select-edit-brand-asset-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                            <SelectItem key={v} value={v}>{l}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Products</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-brand-select-products">
+                          {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                          <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                        {marketProducts.map(p => (
+                          <DropdownMenuCheckboxItem
+                            key={p.id}
+                            checked={editForm.productIds.includes(p.id)}
+                            onCheckedChange={() => toggleEditProduct(p.id)}
+                          >
+                            {p.name}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {solutionAreas.length > 0 && (
+                    <div>
+                      <Label>Solution Areas</Label>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-brand-select-products">
-                            {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-brand-select-solution-areas">
+                            {editForm.solutionAreaIds.length ? `${editForm.solutionAreaIds.length} selected` : "Select solution areas"}
                             <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
-                          {marketProducts.map(p => (
+                          {solutionAreas.map(a => (
                             <DropdownMenuCheckboxItem
-                              key={p.id}
-                              checked={editForm.productIds.includes(p.id)}
-                              onCheckedChange={() => toggleEditProduct(p.id)}
+                              key={a.id}
+                              checked={editForm.solutionAreaIds.includes(a.id)}
+                              onCheckedChange={() => setEditForm(f => ({
+                                ...f,
+                                solutionAreaIds: f.solutionAreaIds.includes(a.id)
+                                  ? f.solutionAreaIds.filter(id => id !== a.id)
+                                  : [...f.solutionAreaIds, a.id],
+                              }))}
                             >
-                              {p.name}
+                              {a.name}
                             </DropdownMenuCheckboxItem>
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      {editForm.solutionAreaIds.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {editForm.solutionAreaIds.map(sid => {
+                            const area = solutionAreas.find(a => a.id === sid);
+                            return area ? (
+                              <Badge key={sid} variant="secondary" className="gap-1 text-xs">
+                                {area.name}
+                                <X className="w-3 h-3 cursor-pointer" onClick={() => setEditForm(f => ({ ...f, solutionAreaIds: f.solutionAreaIds.filter(id => id !== sid) }))} />
+                              </Badge>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                   <Collapsible>
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">

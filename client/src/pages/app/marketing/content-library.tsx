@@ -46,10 +46,18 @@ interface ContentAsset {
   fileType?: string;
   categoryId?: string;
   productIds?: string[];
+  assetType?: string;
+  solutionAreaIds?: string[];
   tags?: { seasons?: string[]; locations?: string[]; topics?: string[] };
   status: string;
   capturedViaExtension: boolean;
   createdAt: string;
+}
+
+interface SolutionArea {
+  id: string;
+  name: string;
+  color?: string;
 }
 
 interface Category {
@@ -83,6 +91,17 @@ const TOPIC_OPTIONS = [
   "Sustainability", "Innovation", "Leadership", "Customer Success",
 ];
 
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  workshop: "Workshop",
+  case_study: "Case Study",
+  app: "App",
+  model: "Model",
+  blog_post: "Blog Post",
+  whitepaper: "Whitepaper",
+  video: "Video",
+  other: "Other",
+};
+
 export default function ContentLibraryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -91,6 +110,8 @@ export default function ContentLibraryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<string>("all");
+  const [solutionAreaFilter, setSolutionAreaFilter] = useState<string>("all");
   const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
@@ -101,7 +122,7 @@ export default function ContentLibraryPage() {
     title: "", description: "", url: "", content: "", leadImageUrl: "",
     categoryId: "", productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
-    aiSummary: "",
+    aiSummary: "", assetType: "other", solutionAreaIds: [] as string[],
   });
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [bulkGenerating, setBulkGenerating] = useState(false);
@@ -132,6 +153,7 @@ export default function ContentLibraryPage() {
     title: "", description: "", url: "", content: "", aiSummary: "",
     leadImageUrl: "", categoryId: "", productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
+    assetType: "other", solutionAreaIds: [] as string[],
   });
 
   const resetForm = () => {
@@ -139,6 +161,7 @@ export default function ContentLibraryPage() {
       title: "", description: "", url: "", content: "", aiSummary: "",
       leadImageUrl: "", categoryId: "", productIds: [],
       tags: { seasons: [], topics: [] },
+      assetType: "other", solutionAreaIds: [],
     });
     setUrlInput("");
     setExtractionResult(null);
@@ -161,17 +184,19 @@ export default function ContentLibraryPage() {
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, sourceFilter]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, sourceFilter, assetTypeFilter, solutionAreaFilter]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
   const serverCategoryParam = categoryFilter === "all" ? undefined : categoryFilter;
   const serverSourceParam = sourceFilter === "all" ? undefined : sourceFilter;
+  const serverAssetTypeParam = assetTypeFilter === "all" ? undefined : assetTypeFilter;
+  const serverSolutionAreaParam = solutionAreaFilter === "all" ? undefined : solutionAreaFilter;
 
   const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<ContentAsset>>({
     queryKey: [
       "/api/content-assets",
       "paginated",
-      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam },
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
@@ -179,6 +204,8 @@ export default function ContentLibraryPage() {
       if (serverStatusParam) params.set("status", serverStatusParam);
       if (serverCategoryParam) params.set("categoryId", serverCategoryParam);
       if (serverSourceParam) params.set("source", serverSourceParam);
+      if (serverAssetTypeParam) params.set("assetType", serverAssetTypeParam);
+      if (serverSolutionAreaParam) params.set("solutionAreaId", serverSolutionAreaParam);
       const r = await fetch(`/api/content-assets?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
       return r.json();
@@ -204,6 +231,15 @@ export default function ContentLibraryPage() {
     queryKey: ["/api/marketing/products"],
     queryFn: async () => {
       const r = await fetch("/api/marketing/products", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const { data: solutionAreas = [] } = useQuery<SolutionArea[]>({
+    queryKey: ["/api/solution-areas"],
+    queryFn: async () => {
+      const r = await fetch("/api/solution-areas", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
@@ -303,6 +339,8 @@ export default function ContentLibraryPage() {
           extractionStatus: extractionResult ? "extracted" : "manual",
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
           productIds: data.productIds.length ? data.productIds : null,
+          assetType: data.assetType || "other",
+          solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -386,6 +424,8 @@ export default function ContentLibraryPage() {
           productIds: data.productIds.length ? data.productIds : null,
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
           aiSummary: data.aiSummary || null,
+          assetType: data.assetType || "other",
+          solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -413,6 +453,8 @@ export default function ContentLibraryPage() {
         topics: asset.tags?.topics || [],
       },
       aiSummary: asset.aiSummary || "",
+      assetType: asset.assetType || "other",
+      solutionAreaIds: asset.solutionAreaIds || [],
     });
     setDetailAsset(asset);
     setEditOpen(true);
@@ -838,12 +880,13 @@ export default function ContentLibraryPage() {
             <Package className="w-3 h-3" /> Product
           </Button>
         </div>
-        {asset.tags && (
-          <div className="flex flex-wrap gap-1">
-            {asset.tags.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
-            {asset.tags.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1">
+          {asset.assetType && asset.assetType !== "other" && (
+            <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">{ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType}</Badge>
+          )}
+          {asset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+          {asset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
+        </div>
       </CardContent>
     </Card>
   );
@@ -1049,30 +1092,72 @@ export default function ContentLibraryPage() {
                           </Select>
                         </div>
                         <div>
-                          <Label>Products</Label>
+                          <Label>Asset Type</Label>
+                          <Select value={form.assetType} onValueChange={v => setForm(f => ({ ...f, assetType: v }))}>
+                            <SelectTrigger data-testid="select-content-asset-type"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                                <SelectItem key={v} value={v}>{l}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label>Products</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-select-products">
+                              {form.productIds.length ? `${form.productIds.length} selected` : "Select products"}
+                              <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                            {marketProducts.length === 0 ? (
+                              <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
+                            ) : marketProducts.map(p => (
+                              <DropdownMenuCheckboxItem
+                                key={p.id}
+                                checked={form.productIds.includes(p.id)}
+                                onCheckedChange={() => toggleProduct(p.id)}
+                              >
+                                {p.name}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      {solutionAreas.length > 0 && (
+                        <div>
+                          <Label>Solution Areas</Label>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-select-products">
-                                {form.productIds.length ? `${form.productIds.length} selected` : "Select products"}
+                              <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-select-solution-areas">
+                                {form.solutionAreaIds.length ? `${form.solutionAreaIds.length} selected` : "Select solution areas"}
                                 <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
-                              {marketProducts.length === 0 ? (
-                                <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
-                              ) : marketProducts.map(p => (
+                              {solutionAreas.map(a => (
                                 <DropdownMenuCheckboxItem
-                                  key={p.id}
-                                  checked={form.productIds.includes(p.id)}
-                                  onCheckedChange={() => toggleProduct(p.id)}
+                                  key={a.id}
+                                  checked={form.solutionAreaIds.includes(a.id)}
+                                  onCheckedChange={() => setForm(f => ({
+                                    ...f,
+                                    solutionAreaIds: f.solutionAreaIds.includes(a.id)
+                                      ? f.solutionAreaIds.filter(id => id !== a.id)
+                                      : [...f.solutionAreaIds, a.id],
+                                  }))}
                                 >
-                                  {p.name}
+                                  {a.name}
                                 </DropdownMenuCheckboxItem>
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
-                      </div>
+                      )}
 
                       <Collapsible>
                         <CollapsibleTrigger asChild>
@@ -1189,30 +1274,72 @@ export default function ContentLibraryPage() {
                           </Select>
                         </div>
                         <div>
-                          <Label>Products</Label>
+                          <Label>Asset Type</Label>
+                          <Select value={form.assetType} onValueChange={v => setForm(f => ({ ...f, assetType: v }))}>
+                            <SelectTrigger data-testid="select-review-asset-type"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                                <SelectItem key={v} value={v}>{l}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label>Products</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-review-products">
+                              {form.productIds.length ? `${form.productIds.length} selected` : "Select products"}
+                              <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                            {marketProducts.length === 0 ? (
+                              <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
+                            ) : marketProducts.map(p => (
+                              <DropdownMenuCheckboxItem
+                                key={p.id}
+                                checked={form.productIds.includes(p.id)}
+                                onCheckedChange={() => toggleProduct(p.id)}
+                              >
+                                {p.name}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      {solutionAreas.length > 0 && (
+                        <div>
+                          <Label>Solution Areas</Label>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-review-products">
-                                {form.productIds.length ? `${form.productIds.length} selected` : "Select products"}
+                              <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-review-solution-areas">
+                                {form.solutionAreaIds.length ? `${form.solutionAreaIds.length} selected` : "Select solution areas"}
                                 <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
-                              {marketProducts.length === 0 ? (
-                                <div className="px-2 py-1 text-sm text-muted-foreground">No products in this market</div>
-                              ) : marketProducts.map(p => (
+                              {solutionAreas.map(a => (
                                 <DropdownMenuCheckboxItem
-                                  key={p.id}
-                                  checked={form.productIds.includes(p.id)}
-                                  onCheckedChange={() => toggleProduct(p.id)}
+                                  key={a.id}
+                                  checked={form.solutionAreaIds.includes(a.id)}
+                                  onCheckedChange={() => setForm(f => ({
+                                    ...f,
+                                    solutionAreaIds: f.solutionAreaIds.includes(a.id)
+                                      ? f.solutionAreaIds.filter(id => id !== a.id)
+                                      : [...f.solutionAreaIds, a.id],
+                                  }))}
                                 >
-                                  {p.name}
+                                  {a.name}
                                 </DropdownMenuCheckboxItem>
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
-                      </div>
+                      )}
 
                       <Collapsible>
                         <CollapsibleTrigger asChild>
@@ -1352,6 +1479,30 @@ export default function ContentLibraryPage() {
               <SelectItem value="captured">Captured</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={assetTypeFilter} onValueChange={setAssetTypeFilter}>
+            <SelectTrigger className="h-7 w-[140px] text-xs" data-testid="select-asset-type-filter-content">
+              <SelectValue placeholder="Asset type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                <SelectItem key={v} value={v}>{l}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {solutionAreas.length > 0 && (
+            <Select value={solutionAreaFilter} onValueChange={setSolutionAreaFilter}>
+              <SelectTrigger className="h-7 w-[160px] text-xs" data-testid="select-solution-area-filter-content">
+                <SelectValue placeholder="Solution area" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All areas</SelectItem>
+                {solutionAreas.map(a => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {suggestions.length > 0 && (
@@ -1482,11 +1633,16 @@ export default function ContentLibraryPage() {
                       </div>
                     </td>
                     <td className="py-2.5 px-3">
-                      {asset.categoryId ? (
-                        <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId) || "—"}</Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {asset.categoryId ? (
+                          <Badge variant="outline" className="text-xs">{categoryName(asset.categoryId) || "—"}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                        {asset.assetType && asset.assetType !== "other" && (
+                          <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">{ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType}</Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3">
                       <Badge className={`text-xs ${asset.status === "active" ? "bg-green-500/20 text-green-400 border-green-500/50" : "bg-gray-500/20 text-gray-400 border-gray-500/50"}`}>
@@ -1713,28 +1869,81 @@ export default function ContentLibraryPage() {
                         </Select>
                       </div>
                       <div>
-                        <Label className="text-xs text-muted-foreground">Linked Products</Label>
+                        <Label className="text-xs text-muted-foreground">Asset Type</Label>
+                        <Select value={editForm.assetType} onValueChange={v => setEditForm(f => ({ ...f, assetType: v }))}>
+                          <SelectTrigger data-testid="select-edit-content-asset-type"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
+                              <SelectItem key={v} value={v}>{l}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Linked Products</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-products">
+                            {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                            <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
+                          {marketProducts.map(p => (
+                            <DropdownMenuCheckboxItem
+                              key={p.id}
+                              checked={editForm.productIds.includes(p.id)}
+                              onCheckedChange={() => toggleEditProduct(p.id)}
+                            >
+                              {p.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {solutionAreas.length > 0 && (
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Solution Areas</Label>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-products">
-                              {editForm.productIds.length ? `${editForm.productIds.length} selected` : "Select products"}
+                            <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-edit-select-solution-areas">
+                              {editForm.solutionAreaIds.length ? `${editForm.solutionAreaIds.length} selected` : "Select solution areas"}
                               <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent className="w-64 max-h-48 overflow-y-auto">
-                            {marketProducts.map(p => (
+                            {solutionAreas.map(a => (
                               <DropdownMenuCheckboxItem
-                                key={p.id}
-                                checked={editForm.productIds.includes(p.id)}
-                                onCheckedChange={() => toggleEditProduct(p.id)}
+                                key={a.id}
+                                checked={editForm.solutionAreaIds.includes(a.id)}
+                                onCheckedChange={() => setEditForm(f => ({
+                                  ...f,
+                                  solutionAreaIds: f.solutionAreaIds.includes(a.id)
+                                    ? f.solutionAreaIds.filter(id => id !== a.id)
+                                    : [...f.solutionAreaIds, a.id],
+                                }))}
                               >
-                                {p.name}
+                                {a.name}
                               </DropdownMenuCheckboxItem>
                             ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        {editForm.solutionAreaIds.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {editForm.solutionAreaIds.map(sid => {
+                              const area = solutionAreas.find(a => a.id === sid);
+                              return area ? (
+                                <Badge key={sid} variant="secondary" className="gap-1 text-xs">
+                                  {area.name}
+                                  <X className="w-3 h-3 cursor-pointer" onClick={() => setEditForm(f => ({ ...f, solutionAreaIds: f.solutionAreaIds.filter(id => id !== sid) }))} />
+                                </Badge>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    )}
                     {editForm.productIds.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {editForm.productIds.map(pid => {
