@@ -1988,6 +1988,52 @@ export const insertMarketingProductTagSchema = createInsertSchema(marketingProdu
 export type MarketingProductTag = typeof marketingProductTags.$inferSelect;
 export type InsertMarketingProductTag = z.infer<typeof insertMarketingProductTagSchema>;
 
+// Solution Areas — taxonomy for grouping assets and campaigns by theme
+// (e.g., GTM, AI, Cloud Security). Cuts across products and asset types,
+// so a campaign can target "AI" and pull workshops, case studies, apps,
+// and models tagged to that area in a single sweep. Optional parentId
+// supports hierarchy ("AI > Copilot Adoption") — the UI treats them as
+// flat until someone needs sub-areas.
+export const solutionAreas = pgTable("solution_areas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  description: text("description"),
+  color: text("color"),
+  icon: text("icon"),
+  parentId: varchar("parent_id"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantMarketSlugIdx: uniqueIndex("solution_areas_tenant_market_slug_idx")
+    .on(t.tenantDomain, t.marketId, t.slug),
+}));
+
+export const insertSolutionAreaSchema = createInsertSchema(solutionAreas).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type SolutionArea = typeof solutionAreas.$inferSelect;
+export type InsertSolutionArea = z.infer<typeof insertSolutionAreaSchema>;
+
+// Content / brand asset types — first-class enum so campaign assembly can
+// group "all workshops + case studies + apps + models" without inferring
+// from user-defined category strings or file mime types.
+export const CONTENT_ASSET_TYPES = [
+  "workshop",
+  "case_study",
+  "app",
+  "model",
+  "blog_post",
+  "whitepaper",
+  "video",
+  "other",
+] as const;
+export type ContentAssetType = (typeof CONTENT_ASSET_TYPES)[number];
+
 // Content Assets — marketing content items (copy, articles, slides, etc.)
 export const contentAssets = pgTable("content_assets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2004,6 +2050,7 @@ export const contentAssets = pgTable("content_assets", {
   fileType: text("file_type"),
   fileSize: integer("file_size"),
   categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
+  assetType: text("asset_type").notNull().default("other"),
   productIds: text("product_ids").array(),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   status: text("status").notNull().default("active"),
@@ -2023,6 +2070,7 @@ export const contentAssetsRelations = relations(contentAssets, ({ one, many }) =
     references: [users.id],
   }),
   productTagLinks: many(contentAssetProductTags),
+  solutionAreaLinks: many(contentAssetSolutionAreas),
   campaignAssets: many(campaignAssets),
 }));
 
@@ -2054,6 +2102,14 @@ export const contentAssetProductTags = pgTable("content_asset_product_tags", {
   tagId: varchar("tag_id").notNull().references(() => marketingProductTags.id, { onDelete: "cascade" }),
 });
 
+// Content Asset ↔ Solution Area join
+export const contentAssetSolutionAreas = pgTable("content_asset_solution_areas", {
+  assetId: varchar("asset_id").notNull().references(() => contentAssets.id, { onDelete: "cascade" }),
+  solutionAreaId: varchar("solution_area_id").notNull().references(() => solutionAreas.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.assetId, t.solutionAreaId] }),
+}));
+
 // Brand Asset Categories
 export const brandAssetCategories = pgTable("brand_asset_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2083,6 +2139,7 @@ export const brandAssets = pgTable("brand_assets", {
   fileType: text("file_type"),
   fileSize: integer("file_size"),
   categoryId: varchar("category_id").references(() => brandAssetCategories.id, { onDelete: "set null" }),
+  assetType: text("asset_type").notNull().default("other"),
   productIds: text("product_ids").array(),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   sourceContentAssetId: varchar("source_content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
@@ -2102,6 +2159,7 @@ export const brandAssetsRelations = relations(brandAssets, ({ one, many }) => ({
     references: [users.id],
   }),
   productTagLinks: many(brandAssetProductTags),
+  solutionAreaLinks: many(brandAssetSolutionAreas),
 }));
 
 export const insertBrandAssetSchema = createInsertSchema(brandAssets).omit({
@@ -2115,6 +2173,14 @@ export const brandAssetProductTags = pgTable("brand_asset_product_tags", {
   assetId: varchar("asset_id").notNull().references(() => brandAssets.id, { onDelete: "cascade" }),
   tagId: varchar("tag_id").notNull().references(() => marketingProductTags.id, { onDelete: "cascade" }),
 });
+
+// Brand Asset ↔ Solution Area join
+export const brandAssetSolutionAreas = pgTable("brand_asset_solution_areas", {
+  assetId: varchar("asset_id").notNull().references(() => brandAssets.id, { onDelete: "cascade" }),
+  solutionAreaId: varchar("solution_area_id").notNull().references(() => solutionAreas.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.assetId, t.solutionAreaId] }),
+}));
 
 // Social Accounts — connected social media accounts for publishing
 export const socialAccounts = pgTable("social_accounts", {
@@ -2367,6 +2433,7 @@ export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   }),
   campaignAssets: many(campaignAssets),
   campaignSocialAccounts: many(campaignSocialAccounts),
+  campaignSolutionAreas: many(campaignSolutionAreas),
   generatedPosts: many(generatedPosts),
 }));
 
@@ -2431,6 +2498,14 @@ export const insertCampaignSocialAccountSchema = createInsertSchema(campaignSoci
 export type CampaignSocialAccount = typeof campaignSocialAccounts.$inferSelect;
 export type InsertCampaignSocialAccount = z.infer<typeof insertCampaignSocialAccountSchema>;
 
+// Campaign ↔ Solution Area join
+export const campaignSolutionAreas = pgTable("campaign_solution_areas", {
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  solutionAreaId: varchar("solution_area_id").notNull().references(() => solutionAreas.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.campaignId, t.solutionAreaId] }),
+}));
+
 // Generated Posts — AI-generated social posts per campaign × social account
 // campaignId is nullable: standalone composer posts have no campaign and
 // auto-publish purely on schedule + status='approved'.
@@ -2444,6 +2519,11 @@ export const generatedPosts = pgTable("generated_posts", {
   hashtags: jsonb("hashtags").$type<string[]>().default([]),
   imagePrompt: text("image_prompt"), // Suggested image generation prompt
   sourceUrl: text("source_url"),
+  // FK back to the content asset this post was drafted from. Lets us
+  // resolve the asset's lead image at CSV-export time even after manual
+  // edits, and survive renames/URL changes that would break sourceUrl
+  // lookups.
+  sourceAssetId: varchar("source_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
   overrideImageUrl: text("override_image_url"),
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),
@@ -2481,6 +2561,10 @@ export const generatedPostsRelations = relations(generatedPosts, ({ one }) => ({
   socialAccount: one(socialAccounts, {
     fields: [generatedPosts.socialAccountId],
     references: [socialAccounts.id],
+  }),
+  sourceAsset: one(contentAssets, {
+    fields: [generatedPosts.sourceAssetId],
+    references: [contentAssets.id],
   }),
 }));
 

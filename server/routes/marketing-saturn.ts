@@ -23,14 +23,18 @@ import {
   contentAssets,
   contentAssetCategories,
   contentAssetProductTags,
+  contentAssetSolutionAreas,
   brandAssets,
   brandAssetCategories,
   brandAssetProductTags,
+  brandAssetSolutionAreas,
   marketingProductTags,
+  solutionAreas,
   socialAccounts,
   campaigns,
   campaignAssets,
   campaignSocialAccounts,
+  campaignSolutionAreas,
   generatedPosts,
   generatedEmails,
   scheduledJobRuns,
@@ -38,11 +42,14 @@ import {
   companyProfiles,
   DEFAULT_CONTENT_CATEGORIES,
   DEFAULT_BRAND_ASSET_CATEGORIES,
+  CONTENT_ASSET_TYPES,
+  type ContentAssetType,
   type InsertContentAsset,
   type InsertContentAssetCategory,
   type InsertBrandAsset,
   type InsertBrandAssetCategory,
   type InsertMarketingProductTag,
+  type InsertSolutionArea,
   type InsertSocialAccount,
   type InsertCampaign,
   type InsertCampaignAsset,
@@ -243,6 +250,123 @@ export function registerSaturnMarketingRoutes(app: Express) {
   });
 
   // ══════════════════════════════════════════════════════════
+  // SOLUTION AREAS
+  // ══════════════════════════════════════════════════════════
+
+  const slugifySolutionArea = (name: string): string =>
+    name.toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "")
+      .slice(0, 64) || "area";
+
+  app.get("/api/solution-areas", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const rows = await db.select().from(solutionAreas)
+      .where(and(
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ))
+      .orderBy(solutionAreas.sortOrder, solutionAreas.name);
+    res.json(rows);
+  });
+
+  app.post("/api/solution-areas", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const { name, description, color, icon, parentId, sortOrder } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+    const baseSlug = slugifySolutionArea(name);
+    // Append a short suffix on slug collision rather than failing — tenants
+    // can rename later via PATCH.
+    let slug = baseSlug;
+    const existing = await db.select({ slug: solutionAreas.slug }).from(solutionAreas)
+      .where(and(
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ));
+    const taken = new Set(existing.map(e => e.slug));
+    if (taken.has(slug)) {
+      let i = 2;
+      while (taken.has(`${baseSlug}-${i}`)) i++;
+      slug = `${baseSlug}-${i}`;
+    }
+    try {
+      const [row] = await db.insert(solutionAreas).values({
+        id: randomUUID(),
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name: name.trim(),
+        slug,
+        description: description?.trim() || null,
+        color: color || null,
+        icon: icon || null,
+        parentId: parentId || null,
+        sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+        createdBy: ctx.userId,
+      } as InsertSolutionArea).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[solution-areas POST]", err.message);
+      res.status(500).json({ error: "Failed to create solution area" });
+    }
+  });
+
+  app.patch("/api/solution-areas/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const { name, description, color, icon, parentId, sortOrder } = req.body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (color !== undefined) updates.color = color;
+    if (icon !== undefined) updates.icon = icon;
+    if (parentId !== undefined) updates.parentId = parentId || null;
+    if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+    const [row] = await db.update(solutionAreas)
+      .set(updates)
+      .where(and(
+        eq(solutionAreas.id, req.params.id),
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json(row);
+  });
+
+  app.delete("/api/solution-areas/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    await db.delete(solutionAreas)
+      .where(and(
+        eq(solutionAreas.id, req.params.id),
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ));
+    res.status(204).send();
+  });
+
+  // Resolve the subset of incoming solutionAreaIds that actually belong to
+  // the caller's tenant+market. Used by all join-table writers so the link
+  // table can't accumulate cross-tenant or cross-market references.
+  async function validSolutionAreaIds(
+    ctx: { tenantDomain: string; marketId: string },
+    ids: unknown,
+  ): Promise<string[]> {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const candidates = ids.filter((s): s is string => typeof s === "string" && s.length > 0);
+    if (candidates.length === 0) return [];
+    const found = await db.select({ id: solutionAreas.id }).from(solutionAreas)
+      .where(and(
+        inArray(solutionAreas.id, candidates),
+        eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+        eq(solutionAreas.marketId, ctx.marketId),
+      ));
+    return found.map(f => f.id);
+  }
+
+  // ══════════════════════════════════════════════════════════
   // CONTENT ASSETS
   // ══════════════════════════════════════════════════════════
 
@@ -281,6 +405,28 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } else if (source === "manual") {
       conditions.push(eq(contentAssets.capturedViaExtension, false));
     }
+    const assetType = req.query.assetType as string | undefined;
+    if (assetType) {
+      const types = assetType.split(",").filter(t => (CONTENT_ASSET_TYPES as readonly string[]).includes(t));
+      if (types.length) conditions.push(inArray(contentAssets.assetType, types));
+    }
+    const solutionAreaId = req.query.solutionAreaId as string | undefined;
+    if (solutionAreaId) {
+      const ids = solutionAreaId.split(",").filter(Boolean);
+      if (ids.length) {
+        const links = await db.select({ assetId: contentAssetSolutionAreas.assetId })
+          .from(contentAssetSolutionAreas)
+          .where(inArray(contentAssetSolutionAreas.solutionAreaId, ids));
+        const matchedIds = Array.from(new Set(links.map(l => l.assetId)));
+        if (matchedIds.length === 0) {
+          // No assets in any of the requested areas — short-circuit with an
+          // impossible condition so the same paginated envelope is returned.
+          conditions.push(sql`false`);
+        } else {
+          conditions.push(inArray(contentAssets.id, matchedIds));
+        }
+      }
+    }
     const where = and(...conditions);
 
     if (!pagination.isPaginated) {
@@ -309,17 +455,27 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(contentAssets.marketId, ctx.marketId),
       ));
     if (!row) return res.status(404).json({ error: "Not found" });
-    // Fetch product tag IDs
-    const tagLinks = await db.select().from(contentAssetProductTags)
-      .where(eq(contentAssetProductTags.assetId, row.id));
-    res.json({ ...row, productTagIds: tagLinks.map(t => t.tagId) });
+    const [tagLinks, areaLinks] = await Promise.all([
+      db.select().from(contentAssetProductTags)
+        .where(eq(contentAssetProductTags.assetId, row.id)),
+      db.select().from(contentAssetSolutionAreas)
+        .where(eq(contentAssetSolutionAreas.assetId, row.id)),
+    ]);
+    res.json({
+      ...row,
+      productTagIds: tagLinks.map(t => t.tagId),
+      solutionAreaIds: areaLinks.map(a => a.solutionAreaId),
+    });
   });
 
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status } = req.body;
+    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status, assetType, solutionAreaIds } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "title is required" });
+    const safeAssetType = typeof assetType === "string" && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)
+      ? (assetType as ContentAssetType)
+      : "other";
     const [row] = await db.insert(contentAssets).values({
       id: randomUUID(),
       tenantDomain: ctx.tenantDomain,
@@ -332,6 +488,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       leadImageUrl: leadImageUrl || null,
       extractionStatus: extractionStatus || "none",
       categoryId: categoryId || null,
+      assetType: safeAssetType,
       productIds: productIds?.length ? productIds : null,
       tags: tags || null,
       status: status === "archived" ? "archived" : "active",
@@ -342,13 +499,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
         productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
       );
     }
+    const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+    if (validAreas.length) {
+      await db.insert(contentAssetSolutionAreas).values(
+        validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
+      );
+    }
     res.status(201).json(row);
   });
 
   app.patch("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags } = req.body;
+    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
@@ -360,6 +523,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (leadImageUrl !== undefined) updates.leadImageUrl = leadImageUrl;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
     if (tags !== undefined) updates.tags = tags;
+    if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
+      updates.assetType = assetType;
+    }
 
     const [row] = await db.update(contentAssets)
       .set(updates)
@@ -375,6 +541,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (productTagIds.length) {
         await db.insert(contentAssetProductTags).values(
           productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
+        );
+      }
+    }
+    if (solutionAreaIds !== undefined) {
+      await db.delete(contentAssetSolutionAreas).where(eq(contentAssetSolutionAreas.assetId, row.id));
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
+        await db.insert(contentAssetSolutionAreas).values(
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
     }
@@ -771,6 +946,26 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (fileType) {
       conditions.push(eq(brandAssets.fileType, fileType));
     }
+    const assetType = req.query.assetType as string | undefined;
+    if (assetType) {
+      const types = assetType.split(",").filter(t => (CONTENT_ASSET_TYPES as readonly string[]).includes(t));
+      if (types.length) conditions.push(inArray(brandAssets.assetType, types));
+    }
+    const solutionAreaId = req.query.solutionAreaId as string | undefined;
+    if (solutionAreaId) {
+      const ids = solutionAreaId.split(",").filter(Boolean);
+      if (ids.length) {
+        const links = await db.select({ assetId: brandAssetSolutionAreas.assetId })
+          .from(brandAssetSolutionAreas)
+          .where(inArray(brandAssetSolutionAreas.solutionAreaId, ids));
+        const matchedIds = Array.from(new Set(links.map(l => l.assetId)));
+        if (matchedIds.length === 0) {
+          conditions.push(sql`false`);
+        } else {
+          conditions.push(inArray(brandAssets.id, matchedIds));
+        }
+      }
+    }
     const where = and(...conditions);
     const baseQuery = db.select({
         asset: brandAssets,
@@ -801,17 +996,28 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(brandAssets.marketId, ctx.marketId),
       ));
     if (!row) return res.status(404).json({ error: "Not found" });
-    const tagLinks = await db.select().from(brandAssetProductTags)
-      .where(eq(brandAssetProductTags.assetId, row.id));
-    res.json({ ...row, productTagIds: tagLinks.map(t => t.tagId) });
+    const [tagLinks, areaLinks] = await Promise.all([
+      db.select().from(brandAssetProductTags)
+        .where(eq(brandAssetProductTags.assetId, row.id)),
+      db.select().from(brandAssetSolutionAreas)
+        .where(eq(brandAssetSolutionAreas.assetId, row.id)),
+    ]);
+    res.json({
+      ...row,
+      productTagIds: tagLinks.map(t => t.tagId),
+      solutionAreaIds: areaLinks.map(a => a.solutionAreaId),
+    });
   });
 
   app.post("/api/brand-assets", async (req, res) => {
     try {
       if (!await guardFeature(req, res, "brandLibrary")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, url, categoryId, productTagIds, productIds, tags, fileType } = req.body;
+      const { name, description, url, categoryId, productTagIds, productIds, tags, fileType, assetType, solutionAreaIds } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+      const safeAssetType = typeof assetType === "string" && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)
+        ? (assetType as ContentAssetType)
+        : "other";
       const [row] = await db.insert(brandAssets).values({
         id: randomUUID(),
         tenantDomain: ctx.tenantDomain,
@@ -820,6 +1026,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         description: description || null,
         url: url || null,
         categoryId: categoryId || null,
+        assetType: safeAssetType,
         fileType: fileType || null,
         productIds: productIds?.length ? productIds : null,
         tags: tags || null,
@@ -828,6 +1035,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (productTagIds?.length) {
         await db.insert(brandAssetProductTags).values(
           productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
+        );
+      }
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
+        await db.insert(brandAssetSolutionAreas).values(
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
       res.status(201).json(row);
@@ -840,7 +1053,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/brand-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, url, fileUrl, fileType, categoryId, status, productTagIds, productIds, tags } = req.body;
+    const { name, description, url, fileUrl, fileType, categoryId, status, productTagIds, productIds, tags, assetType, solutionAreaIds } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -851,6 +1064,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (status !== undefined) updates.status = status;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
     if (tags !== undefined) updates.tags = tags;
+    if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
+      updates.assetType = assetType;
+    }
 
     const [row] = await db.update(brandAssets)
       .set(updates)
@@ -866,6 +1082,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (productTagIds.length) {
         await db.insert(brandAssetProductTags).values(
           productTagIds.map((tagId: string) => ({ assetId: row.id, tagId }))
+        );
+      }
+    }
+    if (solutionAreaIds !== undefined) {
+      await db.delete(brandAssetSolutionAreas).where(eq(brandAssetSolutionAreas.assetId, row.id));
+      const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+      if (validAreas.length) {
+        await db.insert(brandAssetSolutionAreas).values(
+          validAreas.map(solutionAreaId => ({ assetId: row.id, solutionAreaId }))
         );
       }
     }
@@ -1323,6 +1548,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
           ilike(campaigns.description, pattern),
         )!);
       }
+      const solutionAreaId = req.query.solutionAreaId as string | undefined;
+      if (solutionAreaId) {
+        const ids = solutionAreaId.split(",").filter(Boolean);
+        if (ids.length) {
+          const links = await db.select({ campaignId: campaignSolutionAreas.campaignId })
+            .from(campaignSolutionAreas)
+            .where(inArray(campaignSolutionAreas.solutionAreaId, ids));
+          const matchedIds = Array.from(new Set(links.map(l => l.campaignId)));
+          if (matchedIds.length === 0) {
+            conditions.push(sql`false`);
+          } else {
+            conditions.push(inArray(campaigns.id, matchedIds));
+          }
+        }
+      }
       const where = and(...conditions);
 
       if (!pagination.isPaginated) {
@@ -1353,17 +1593,27 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
           ne(campaigns.status, "deleted"),
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
 
-      const assets = await db.select().from(campaignAssets)
-        .where(eq(campaignAssets.campaignId, campaign.id))
-        .orderBy(campaignAssets.sortOrder);
-      const socialAccts = await db.select().from(campaignSocialAccounts)
-        .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+      const [assets, socialAccts, areaLinks] = await Promise.all([
+        db.select().from(campaignAssets)
+          .where(eq(campaignAssets.campaignId, campaign.id))
+          .orderBy(campaignAssets.sortOrder),
+        db.select().from(campaignSocialAccounts)
+          .where(eq(campaignSocialAccounts.campaignId, campaign.id)),
+        db.select().from(campaignSolutionAreas)
+          .where(eq(campaignSolutionAreas.campaignId, campaign.id)),
+      ]);
 
-      res.json({ ...campaign, assets, socialAccounts: socialAccts });
+      res.json({
+        ...campaign,
+        assets,
+        socialAccounts: socialAccts,
+        solutionAreaIds: areaLinks.map(a => a.solutionAreaId),
+      });
     } catch (err: any) {
       console.error("[Campaign Detail Error]", err.message);
       res.status(500).json({ error: "Failed to load campaign" });
@@ -1374,7 +1624,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const validAssetIds: string[] = [];
@@ -1438,6 +1688,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
             } as InsertCampaignSocialAccount))
           );
         }
+
+        if (Array.isArray(solutionAreaIds) && solutionAreaIds.length > 0) {
+          const validAreas = await tx.select({ id: solutionAreas.id }).from(solutionAreas)
+            .where(and(
+              inArray(solutionAreas.id, solutionAreaIds),
+              eq(solutionAreas.tenantDomain, ctx.tenantDomain),
+              eq(solutionAreas.marketId, ctx.marketId),
+            ));
+          if (validAreas.length > 0) {
+            await tx.insert(campaignSolutionAreas).values(
+              validAreas.map(a => ({ campaignId, solutionAreaId: a.id }))
+            );
+          }
+        }
       });
 
       const [row] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
@@ -1452,7 +1716,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "campaigns")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags } = req.body;
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds } = req.body;
       const updateData: any = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
@@ -1469,9 +1733,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
         ))
         .returning();
       if (!row) return res.status(404).json({ error: "Not found" });
+      if (solutionAreaIds !== undefined) {
+        await db.delete(campaignSolutionAreas).where(eq(campaignSolutionAreas.campaignId, row.id));
+        const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);
+        if (validAreas.length > 0) {
+          await db.insert(campaignSolutionAreas).values(
+            validAreas.map(solutionAreaId => ({ campaignId: row.id, solutionAreaId }))
+          );
+        }
+      }
       res.json(row);
     } catch (err: any) {
       console.error("[PATCH /api/campaigns/:id]", err);
@@ -1547,6 +1821,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
               campaignId: newId,
               socialAccountId: s.socialAccountId,
             } as InsertCampaignSocialAccount))
+          );
+        }
+
+        const sourceAreas = await tx.select().from(campaignSolutionAreas)
+          .where(eq(campaignSolutionAreas.campaignId, source.id));
+        if (sourceAreas.length > 0) {
+          await tx.insert(campaignSolutionAreas).values(
+            sourceAreas.map(a => ({ campaignId: newId, solutionAreaId: a.solutionAreaId }))
           );
         }
       });
@@ -1990,6 +2272,124 @@ Return ONLY a valid JSON object (no markdown fences) with:
   });
 
   // ══════════════════════════════════════════════════════════
+  // CAMPAIGN ASSET SUGGESTIONS — discover content + brand assets
+  // tagged to the given solution areas (and optionally products),
+  // grouped by assetType so the campaign wizard can offer one-click
+  // "Assemble from solution area" assembly across types.
+  // ══════════════════════════════════════════════════════════
+
+  app.get("/api/campaigns/asset-suggestions", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      // Param names mirror the other list endpoints: singular query string,
+      // comma-separated values.
+      const solutionAreaIds = ((req.query.solutionAreaId as string | undefined) || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      const productIds = ((req.query.productId as string | undefined) || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      const assetTypesParam = ((req.query.assetType as string | undefined) || "")
+        .split(",").map(s => s.trim())
+        .filter(t => (CONTENT_ASSET_TYPES as readonly string[]).includes(t));
+      const limitPerType = Math.max(1, Math.min(100, parseInt((req.query.limit as string) || "50", 10) || 50));
+
+      // Solution-area filter: assets must be linked to AT LEAST ONE of the areas.
+      // No areas given → don't constrain on solution-area membership.
+      let contentAreaMatch: Set<string> | null = null;
+      let brandAreaMatch: Set<string> | null = null;
+      if (solutionAreaIds.length > 0) {
+        const [cLinks, bLinks] = await Promise.all([
+          db.select({ assetId: contentAssetSolutionAreas.assetId })
+            .from(contentAssetSolutionAreas)
+            .where(inArray(contentAssetSolutionAreas.solutionAreaId, solutionAreaIds)),
+          db.select({ assetId: brandAssetSolutionAreas.assetId })
+            .from(brandAssetSolutionAreas)
+            .where(inArray(brandAssetSolutionAreas.solutionAreaId, solutionAreaIds)),
+        ]);
+        contentAreaMatch = new Set(cLinks.map(l => l.assetId));
+        brandAreaMatch = new Set(bLinks.map(l => l.assetId));
+      }
+
+      const contentConditions: any[] = [
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+        eq(contentAssets.status, "active"),
+      ];
+      if (contentAreaMatch) {
+        if (contentAreaMatch.size === 0) contentConditions.push(sql`false`);
+        else contentConditions.push(inArray(contentAssets.id, Array.from(contentAreaMatch)));
+      }
+      if (assetTypesParam.length > 0) {
+        contentConditions.push(inArray(contentAssets.assetType, assetTypesParam));
+      }
+      if (productIds.length > 0) {
+        const productLiterals = sql.join(productIds.map(p => sql`${p}`), sql`, `);
+        contentConditions.push(sql`${contentAssets.productIds} && ARRAY[${productLiterals}]::text[]`);
+      }
+
+      const brandConditions: any[] = [
+        eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
+        ne(brandAssets.status, "archived"),
+      ];
+      if (brandAreaMatch) {
+        if (brandAreaMatch.size === 0) brandConditions.push(sql`false`);
+        else brandConditions.push(inArray(brandAssets.id, Array.from(brandAreaMatch)));
+      }
+      if (assetTypesParam.length > 0) {
+        brandConditions.push(inArray(brandAssets.assetType, assetTypesParam));
+      }
+      if (productIds.length > 0) {
+        const productLiterals = sql.join(productIds.map(p => sql`${p}`), sql`, `);
+        brandConditions.push(sql`${brandAssets.productIds} && ARRAY[${productLiterals}]::text[]`);
+      }
+
+      // Pull a generous slice from each table; we'll bucket and cap per-type below.
+      const maxPerTable = limitPerType * (CONTENT_ASSET_TYPES.length);
+      const [contentRows, brandRows] = await Promise.all([
+        db.select().from(contentAssets)
+          .where(and(...contentConditions))
+          .orderBy(desc(contentAssets.createdAt))
+          .limit(maxPerTable),
+        db.select().from(brandAssets)
+          .where(and(...brandConditions))
+          .orderBy(desc(brandAssets.createdAt))
+          .limit(maxPerTable),
+      ]);
+
+      const byType: Record<string, { content: any[]; brand: any[] }> = {};
+      for (const t of CONTENT_ASSET_TYPES) byType[t] = { content: [], brand: [] };
+      for (const row of contentRows) {
+        const t = (row.assetType || "other") as ContentAssetType;
+        const bucket = byType[t] || byType.other;
+        if (bucket.content.length < limitPerType) bucket.content.push(row);
+      }
+      for (const row of brandRows) {
+        const t = (row.assetType || "other") as ContentAssetType;
+        const bucket = byType[t] || byType.other;
+        if (bucket.brand.length < limitPerType) bucket.brand.push(row);
+      }
+
+      res.json({
+        byType,
+        totals: {
+          content: contentRows.length,
+          brand: brandRows.length,
+        },
+        appliedFilters: {
+          solutionAreaIds,
+          productIds,
+          assetTypes: assetTypesParam,
+          limitPerType,
+        },
+      });
+    } catch (err: any) {
+      console.error("[asset-suggestions]", err.message);
+      res.status(500).json({ error: "Failed to load asset suggestions" });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════
   // POST GENERATION — async via job queue
   // ══════════════════════════════════════════════════════════
 
@@ -2008,6 +2408,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
       const thematicBrief: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
       const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
       const useThematicMode: boolean = !!(thematicBrief);
+      // Default on: each source content asset's lead image becomes one of
+      // the image variants for posts drafted from that asset. Callers can
+      // opt out by sending { includeAssetLeadImages: false }.
+      const includeAssetLeadImages: boolean = req.body?.includeAssetLeadImages !== false;
 
       await db.delete(generatedPosts)
         .where(and(
@@ -2049,7 +2453,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           personaIds,
           useThematicMode ? thematicBrief : "",
           useThematicMode ? thematicUrl : "",
-          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost },
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages },
           reportProgress,
         ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
@@ -2204,6 +2608,14 @@ Return ONLY a valid JSON object (no markdown fences) with:
       for (const ca of cas) if (ca.url) contentAssetByUrl.set(ca.url, ca);
     }
 
+    const sourceAssetIds = Array.from(new Set(posts.map(p => p.sourceAssetId).filter(Boolean))) as string[];
+    const contentAssetById = new Map<string, any>();
+    if (sourceAssetIds.length) {
+      const cas = await db.select().from(contentAssets)
+        .where(and(eq(contentAssets.tenantDomain, ctx.tenantDomain), inArray(contentAssets.id, sourceAssetIds)));
+      for (const ca of cas) contentAssetById.set(ca.id, ca);
+    }
+
     const now = new Date();
     const sortedPosts = [...posts].sort((a, b) => {
       const aDate = a.scheduledDate ? new Date(a.scheduledDate) : null;
@@ -2297,6 +2709,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
         const ba = brandMap.get(post.overrideBrandAssetId);
         if (ba?.fileUrl) return ba.fileUrl;
         if (ba?.url) return ba.url;
+      }
+      if (post.sourceAssetId) {
+        const ca = contentAssetById.get(post.sourceAssetId);
+        if (ca?.leadImageUrl) return ca.leadImageUrl;
+        if (ca?.fileUrl && typeof ca.fileType === "string" && ca.fileType.startsWith("image/")) return ca.fileUrl;
       }
       if (post.sourceUrl) {
         const ca = contentAssetByUrl.get(post.sourceUrl);
@@ -3427,9 +3844,12 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
-  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string } = {},
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
+  // Default ON: lead images from source content assets are folded into the
+  // image-variation grid alongside selected brand-library images.
+  const includeAssetLeadImages = wrapOpts.includeAssetLeadImages !== false;
   await db.update(scheduledJobRuns)
     .set({ status: "running", startedAt: new Date() })
     .where(eq(scheduledJobRuns.id, jobId));
@@ -3526,15 +3946,38 @@ async function generatePostsAsync(
       ? `\n\n## Supporting Campaign Assets\n${selectedAssets.map(buildAssetContext).join("\n\n---\n\n")}`
       : "";
 
+    // Per-asset base visual: prefer the extracted lead image, fall back to
+    // the uploaded fileUrl when it's an image MIME type (covers assets that
+    // are themselves an uploaded JPG/PNG rather than a URL).
+    const assetBaseVisual = (a: any): string | null => {
+      if (a.leadImageUrl) return a.leadImageUrl;
+      if (a.fileUrl && typeof a.fileType === "string" && a.fileType.startsWith("image/")) {
+        return a.fileUrl;
+      }
+      return null;
+    };
+
     // Pools of (context, sourceUrl) the generator should pull from. In thematic mode
     // there is one pool (the brief, optionally enriched with assets). In asset mode
     // each selected asset becomes a pool entry the generator rotates across.
-    const contextPools: { context: string; sourceUrl: string | null; thematic: boolean; label: string }[] = isThematic
+    // assetId + leadImageUrl flow through so each variant can be persisted with
+    // a FK back to its source asset and (optionally) that asset's hero image.
+    type ContextPool = {
+      context: string;
+      sourceUrl: string | null;
+      thematic: boolean;
+      label: string;
+      assetId: string | null;
+      leadImageUrl: string | null;
+    };
+    const contextPools: ContextPool[] = isThematic
       ? [{
           context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}${supportingAssetContext}`,
           sourceUrl: thematicUrl || null,
           thematic: true,
           label: "campaign theme",
+          assetId: null,
+          leadImageUrl: null,
         }]
       : selectedAssets.length > 0
         ? selectedAssets.map(a => ({
@@ -3542,12 +3985,16 @@ async function generatePostsAsync(
             sourceUrl: a.url || null,
             thematic: false,
             label: a.title,
+            assetId: a.id,
+            leadImageUrl: assetBaseVisual(a),
           }))
         : [{
             context: "(no specific assets provided — draw from your knowledge of best practices)",
             sourceUrl: null,
             thematic: false,
             label: "general",
+            assetId: null,
+            leadImageUrl: null,
           }];
 
     const { target: targetVariantsPerPlatform, eligibleDays, capped } = calculateTargetVariantsPerPlatform(campaignRow);
@@ -3573,7 +4020,14 @@ async function generatePostsAsync(
       });
       const platformGuide = getPlatformGuide(account.platform);
       const variantGroupId = randomUUID();
-      const cleanedVariantsForAccount: { content: string; hashtags: string[]; imagePrompt: string; sourceUrl: string | null }[] = [];
+      const cleanedVariantsForAccount: {
+        content: string;
+        hashtags: string[];
+        imagePrompt: string;
+        sourceUrl: string | null;
+        sourceAssetId: string | null;
+        leadImageUrl: string | null;
+      }[] = [];
       const usedOpenings: string[] = []; // first ~80 chars of each accepted variant — passed back to the AI to forbid reuse
 
       let angleIndex = 0;
@@ -3693,6 +4147,8 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             hashtags,
             imagePrompt: parsed.imagePrompt ?? "",
             sourceUrl: pool.sourceUrl,
+            sourceAssetId: pool.assetId,
+            leadImageUrl: pool.leadImageUrl,
           });
           usedOpenings.push(postContent.replace(/\s+/g, " ").trim().slice(0, 80));
         }
@@ -3700,50 +4156,85 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
 
       console.log(`[Saturn] ${account.platform}/${account.accountName}: produced ${cleanedVariantsForAccount.length}/${targetVariantsPerPlatform} unique variants across ${safetyLoops} batches`);
 
-      // Persist variants. When brand images are provided, expand variants × images,
-      // but iterate IMAGES on the outer loop so consecutive scheduled days never share
-      // the same text — only the image rotates underneath the unique text variants.
-      if (brandImageAssets.length > 0) {
-        let comboIndex = 0;
+      // Persist variants. Image-variation strategy:
+      //   1. (if enabled) one row per variant carrying its source asset's
+      //      lead image — these come first so day-1 scheduling shows the
+      //      authentic asset visual.
+      //   2. The existing brand-image × variant grid (image outer, variant
+      //      inner — preserves the "same image, different copy on
+      //      consecutive days" scheduling intent). Brand images that match
+      //      a variant's own lead image URL are deduped.
+      //   3. Text-only fallback rows for any variant left with no image
+      //      attached (e.g. no brand images selected AND lead images
+      //      disabled, or the source asset had no usable visual). Keeps
+      //      drafts from being silently dropped.
+      const haveBrand = brandImageAssets.length > 0;
+      let leadCount = 0;
+      let comboIndex = 0;
+      let textOnlyCount = 0;
+
+      const accountSocialAccountId = account.id === "placeholder" ? null : account.id;
+      const buildBaseRow = (v: typeof cleanedVariantsForAccount[number]): InsertGeneratedPost => ({
+        id: randomUUID(),
+        campaignId,
+        socialAccountId: accountSocialAccountId,
+        tenantDomain,
+        platform: account.platform,
+        content: v.content,
+        hashtags: v.hashtags,
+        imagePrompt: v.imagePrompt,
+        sourceUrl: v.sourceUrl,
+        sourceAssetId: v.sourceAssetId,
+        variantGroup: variantGroupId,
+        generationJobId: jobId,
+      } as InsertGeneratedPost);
+
+      if (includeAssetLeadImages) {
+        for (const v of cleanedVariantsForAccount) {
+          if (!v.leadImageUrl) continue;
+          generatedRows.push({
+            ...buildBaseRow(v),
+            overrideImageUrl: v.leadImageUrl,
+          });
+          leadCount++;
+        }
+      }
+
+      if (haveBrand) {
         for (let ii = 0; ii < brandImageAssets.length; ii++) {
+          const img = brandImageAssets[ii];
+          const brandUrl = img.fileUrl || img.url || null;
           for (let vi = 0; vi < cleanedVariantsForAccount.length; vi++) {
             const v = cleanedVariantsForAccount[vi];
-            const img = brandImageAssets[ii];
+            // Skip a brand image that duplicates this variant's own lead
+            // image — we already pushed that combo in pass 1.
+            if (includeAssetLeadImages && v.leadImageUrl && brandUrl && brandUrl === v.leadImageUrl) {
+              continue;
+            }
             generatedRows.push({
-              id: randomUUID(),
-              campaignId,
-              socialAccountId: account.id === "placeholder" ? null : account.id,
-              tenantDomain,
-              platform: account.platform,
-              content: v.content,
-              hashtags: v.hashtags,
-              imagePrompt: v.imagePrompt,
-              sourceUrl: v.sourceUrl,
-              variantGroup: variantGroupId,
-              generationJobId: jobId,
+              ...buildBaseRow(v),
               overrideBrandAssetId: img.id,
-            } as InsertGeneratedPost);
+            });
             comboIndex++;
           }
         }
-        console.log(`[Saturn] ${account.platform}: ${comboIndex} text × image combos (${cleanedVariantsForAccount.length} unique texts × ${brandImageAssets.length} images)`);
-      } else {
+      }
+
+      if (!haveBrand) {
+        // No brand grid → make sure every variant has at least one row.
+        // Variants that had a lead image are already covered above.
         for (const v of cleanedVariantsForAccount) {
-          generatedRows.push({
-            id: randomUUID(),
-            campaignId,
-            socialAccountId: account.id === "placeholder" ? null : account.id,
-            tenantDomain,
-            platform: account.platform,
-            content: v.content,
-            hashtags: v.hashtags,
-            imagePrompt: v.imagePrompt,
-            sourceUrl: v.sourceUrl,
-            variantGroup: variantGroupId,
-            generationJobId: jobId,
-          } as InsertGeneratedPost);
+          if (includeAssetLeadImages && v.leadImageUrl) continue;
+          generatedRows.push(buildBaseRow(v));
+          textOnlyCount++;
         }
       }
+
+      console.log(
+        `[Saturn] ${account.platform}: produced ${leadCount} lead-image + ${comboIndex} brand-image + ${textOnlyCount} text-only rows ` +
+        `(${cleanedVariantsForAccount.length} unique texts, ${brandImageAssets.length} brand images, ` +
+        `includeAssetLeadImages=${includeAssetLeadImages})`
+      );
     }
 
     // Optional wrap-on-generate. Done as a final pass so the AI never has to
