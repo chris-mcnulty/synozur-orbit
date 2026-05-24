@@ -16,6 +16,22 @@
 
 ---
 
+### LinkedIn Developer App
+**File:** `linkedin-app-setup.md`
+
+**For:** Synozur Global Admins setting up the single shared LinkedIn app used by all tenants
+
+**Contains:**
+- Prerequisites (Company Page admin, privacy policy)
+- App creation, verification, redirect URLs
+- Community Management API application — full copy to paste
+- Privacy policy section to add to synozur.com/privacy
+- Demo video script
+- Env var configuration + smoke test
+- Troubleshooting and common rejection reasons
+
+---
+
 # UX Optimization Proposal Documentation
 
 ## Overview
