@@ -22,7 +22,7 @@ Orbit and Vega are **distinct products**. Orbit is GTM intelligence; Vega is the
 
 - **Legal entity:** The Synozur Alliance LLC
 - **Address:** 13300 Bothell-Everett Highway, Suite 303, Mill Creek, WA 98012
-- **County (for jurisdiction clauses):** Snohomish County, Washington
+- **County (for jurisdiction clauses):** Snohomish County, Washington (the Mill Creek office straddles the King/Snohomish line; Synozur's office is on the Snohomish side)
 - **Contact:** contactus@synozur.com
 - **Website:** https://www.synozur.com
 - **Privacy policy:** https://www.synozur.com/privacy
