@@ -673,6 +673,14 @@ export async function monitorCompetitorSocialMedia(
   
   await storage.updateCompetitor(competitorId, updates);
 
+  await recordEngagementSnapshots({
+    competitorId,
+    tenantDomain: tenantDomain || competitor.tenantDomain || null,
+    marketId: competitor.marketId || null,
+    capturedAt: now,
+    updates,
+  });
+
   if (competitor.organizationId) {
     const orgSocialUpdates: any = { lastSocialCrawl: now };
     if (updates.linkedInContent) orgSocialUpdates.linkedInContent = updates.linkedInContent;
@@ -686,8 +694,50 @@ export async function monitorCompetitorSocialMedia(
     await storage.updateOrganization(competitor.organizationId, orgSocialUpdates)
       .catch(err => console.error("[Org Update] Social sync failed:", err.message));
   }
-  
+
   return results;
+}
+
+// Append one row per platform whose engagement was refreshed on this crawl. Time-series
+// data powers the visualization dashboard; the current JSONB snapshots on competitors stay
+// the source of truth for "latest values" reads.
+async function recordEngagementSnapshots(params: {
+  competitorId: string;
+  tenantDomain: string | null;
+  marketId: string | null;
+  capturedAt: Date;
+  updates: any;
+}): Promise<void> {
+  const { competitorId, tenantDomain, marketId, capturedAt, updates } = params;
+  if (!tenantDomain) return;
+
+  const platforms: Array<{ platform: "linkedin" | "instagram" | "twitter" | "facebook"; data: any }> = [
+    { platform: "linkedin", data: updates.linkedInEngagement },
+    { platform: "instagram", data: updates.instagramEngagement },
+    { platform: "twitter", data: updates.twitterEngagement },
+    { platform: "facebook", data: updates.facebookEngagement },
+  ];
+
+  for (const { platform, data } of platforms) {
+    if (!data || typeof data !== "object") continue;
+    try {
+      await storage.createEngagementSnapshot({
+        competitorId,
+        tenantDomain,
+        marketId,
+        platform,
+        followers: typeof data.followers === "number" ? data.followers : null,
+        posts: typeof data.posts === "number" ? data.posts : null,
+        reactions: typeof data.reactions === "number" ? data.reactions : null,
+        comments: typeof data.comments === "number" ? data.comments : null,
+        likes: typeof data.likes === "number" ? data.likes : null,
+        raw: data,
+        capturedAt,
+      });
+    } catch (err) {
+      console.error(`[EngagementSnapshot] Failed for ${competitorId}/${platform}:`, err);
+    }
+  }
 }
 
 interface CompanyProfileSocialResult {

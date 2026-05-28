@@ -170,6 +170,12 @@ import {
   seoMetrics,
   type SeoMetric,
   type InsertSeoMetric,
+  competitorPricingSnapshots,
+  type CompetitorPricingSnapshot,
+  type InsertCompetitorPricingSnapshot,
+  competitorEngagementSnapshots,
+  type CompetitorEngagementSnapshot,
+  type InsertCompetitorEngagementSnapshot,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -306,7 +312,22 @@ export interface IStorage {
   archiveCompetitorDocument(id: string): Promise<void>;
   unarchiveCompetitorDocument(id: string): Promise<void>;
   deleteCompetitorDocument(id: string): Promise<void>;
-  
+
+  // Pricing Intelligence: per-competitor pricing-page snapshots over time
+  createPricingSnapshot(snapshot: InsertCompetitorPricingSnapshot): Promise<CompetitorPricingSnapshot>;
+  getPricingSnapshot(id: string): Promise<CompetitorPricingSnapshot | undefined>;
+  getPricingSnapshotsForCompetitor(competitorId: string, limit?: number): Promise<CompetitorPricingSnapshot[]>;
+  getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined>;
+  deletePricingSnapshot(id: string): Promise<void>;
+  getPricingSnapshotsForTenant(ctx: ContextFilter, opts?: { since?: Date; until?: Date; competitorIds?: string[]; lightweight?: boolean }): Promise<CompetitorPricingSnapshot[]>;
+
+  // Engagement snapshots: time-series social metrics for the visualization dashboard
+  createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot>;
+  getEngagementSnapshotsForTenant(ctx: ContextFilter, opts?: { since?: Date; until?: Date; competitorIds?: string[]; platforms?: string[]; lightweight?: boolean }): Promise<CompetitorEngagementSnapshot[]>;
+
+  // Activity (visualization dashboard): SQL-side filtering by date + type + sentiment requirement
+  getActivityForVisualization(ctx: ContextFilter, opts: { since: Date; until: Date; types?: string[]; requireSentiment?: boolean }): Promise<Activity[]>;
+
   // Global Grounding Document methods (application-wide AI context)
   getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
   getActiveGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
@@ -1287,6 +1308,153 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompetitorDocument(id: string): Promise<void> {
     await db.delete(competitorDocuments).where(eq(competitorDocuments.id, id));
+  }
+
+  // Pricing Intelligence: per-competitor pricing-page snapshots
+  async createPricingSnapshot(snapshot: InsertCompetitorPricingSnapshot): Promise<CompetitorPricingSnapshot> {
+    const [created] = await db.insert(competitorPricingSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  async getPricingSnapshot(id: string): Promise<CompetitorPricingSnapshot | undefined> {
+    const [row] = await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.id, id));
+    return row || undefined;
+  }
+
+  async getPricingSnapshotsForCompetitor(competitorId: string, limit = 50): Promise<CompetitorPricingSnapshot[]> {
+    return await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.competitorId, competitorId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(limit);
+  }
+
+  async getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined> {
+    const rows = await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.competitorId, competitorId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(1);
+    return rows[0] || undefined;
+  }
+
+  async deletePricingSnapshot(id: string): Promise<void> {
+    await db.delete(competitorPricingSnapshots).where(eq(competitorPricingSnapshots.id, id));
+  }
+
+  async getPricingSnapshotsForTenant(
+    ctx: ContextFilter,
+    opts: { since?: Date; until?: Date; competitorIds?: string[]; lightweight?: boolean } = {},
+  ): Promise<CompetitorPricingSnapshot[]> {
+    // In a tenant's default market, snapshots written with marketId=null are still part of
+    // the active context — include them. In a non-default market, scope strictly.
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(competitorPricingSnapshots.marketId, ctx.marketId), isNull(competitorPricingSnapshots.marketId))
+      : eq(competitorPricingSnapshots.marketId, ctx.marketId);
+    const conditions = [
+      eq(competitorPricingSnapshots.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+    ];
+    if (opts.since) conditions.push(gte(competitorPricingSnapshots.capturedAt, opts.since));
+    if (opts.until) conditions.push(sql`${competitorPricingSnapshots.capturedAt} <= ${opts.until}`);
+    if (opts.competitorIds?.length) conditions.push(inArray(competitorPricingSnapshots.competitorId, opts.competitorIds));
+
+    // Lightweight selection skips the heavy `rawContent` column (up to ~100KB per row).
+    if (opts.lightweight) {
+      const rows = await db.select({
+        id: competitorPricingSnapshots.id,
+        tenantDomain: competitorPricingSnapshots.tenantDomain,
+        marketId: competitorPricingSnapshots.marketId,
+        competitorId: competitorPricingSnapshots.competitorId,
+        pricingUrl: competitorPricingSnapshots.pricingUrl,
+        tiers: competitorPricingSnapshots.tiers,
+        pricingModel: competitorPricingSnapshots.pricingModel,
+        currency: competitorPricingSnapshots.currency,
+        hasFreeTier: competitorPricingSnapshots.hasFreeTier,
+        changeScore: competitorPricingSnapshots.changeScore,
+        changeSummary: competitorPricingSnapshots.changeSummary,
+        changeAnalysis: competitorPricingSnapshots.changeAnalysis,
+        crawlMethod: competitorPricingSnapshots.crawlMethod,
+        capturedAt: competitorPricingSnapshots.capturedAt,
+        createdAt: competitorPricingSnapshots.createdAt,
+      })
+        .from(competitorPricingSnapshots)
+        .where(and(...conditions))
+        .orderBy(desc(competitorPricingSnapshots.capturedAt));
+      return rows.map(r => ({ ...r, rawContent: null })) as CompetitorPricingSnapshot[];
+    }
+
+    return await db.select().from(competitorPricingSnapshots)
+      .where(and(...conditions))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt));
+  }
+
+  // Engagement snapshots
+  async createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot> {
+    const [created] = await db.insert(competitorEngagementSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  async getEngagementSnapshotsForTenant(
+    ctx: ContextFilter,
+    opts: { since?: Date; until?: Date; competitorIds?: string[]; platforms?: string[]; lightweight?: boolean } = {},
+  ): Promise<CompetitorEngagementSnapshot[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(competitorEngagementSnapshots.marketId, ctx.marketId), isNull(competitorEngagementSnapshots.marketId))
+      : eq(competitorEngagementSnapshots.marketId, ctx.marketId);
+    const conditions = [
+      eq(competitorEngagementSnapshots.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+    ];
+    if (opts.since) conditions.push(gte(competitorEngagementSnapshots.capturedAt, opts.since));
+    if (opts.until) conditions.push(sql`${competitorEngagementSnapshots.capturedAt} <= ${opts.until}`);
+    if (opts.competitorIds?.length) conditions.push(inArray(competitorEngagementSnapshots.competitorId, opts.competitorIds));
+    if (opts.platforms?.length) conditions.push(inArray(competitorEngagementSnapshots.platform, opts.platforms));
+
+    if (opts.lightweight) {
+      const rows = await db.select({
+        id: competitorEngagementSnapshots.id,
+        tenantDomain: competitorEngagementSnapshots.tenantDomain,
+        marketId: competitorEngagementSnapshots.marketId,
+        competitorId: competitorEngagementSnapshots.competitorId,
+        platform: competitorEngagementSnapshots.platform,
+        followers: competitorEngagementSnapshots.followers,
+        posts: competitorEngagementSnapshots.posts,
+        reactions: competitorEngagementSnapshots.reactions,
+        comments: competitorEngagementSnapshots.comments,
+        likes: competitorEngagementSnapshots.likes,
+        capturedAt: competitorEngagementSnapshots.capturedAt,
+        createdAt: competitorEngagementSnapshots.createdAt,
+      })
+        .from(competitorEngagementSnapshots)
+        .where(and(...conditions))
+        .orderBy(competitorEngagementSnapshots.capturedAt);
+      return rows.map(r => ({ ...r, raw: null })) as CompetitorEngagementSnapshot[];
+    }
+
+    return await db.select().from(competitorEngagementSnapshots)
+      .where(and(...conditions))
+      .orderBy(competitorEngagementSnapshots.capturedAt);
+  }
+
+  async getActivityForVisualization(
+    ctx: ContextFilter,
+    opts: { since: Date; until: Date; types?: string[]; requireSentiment?: boolean },
+  ): Promise<Activity[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
+      : eq(activity.marketId, ctx.marketId);
+    const conditions = [
+      eq(activity.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+      isNotNull(activity.competitorId),
+      gte(activity.createdAt, opts.since),
+      sql`${activity.createdAt} <= ${opts.until}`,
+    ];
+    if (opts.types?.length) conditions.push(inArray(activity.type, opts.types));
+    if (opts.requireSentiment) conditions.push(isNotNull(activity.sentimentScore));
+    return await db.select().from(activity)
+      .where(and(...conditions))
+      .orderBy(activity.createdAt);
   }
 
   // Global Grounding Document methods (application-wide AI context)

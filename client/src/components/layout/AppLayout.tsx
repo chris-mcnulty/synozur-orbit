@@ -553,6 +553,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             { label: "Data Sources", icon: Database, href: "/app/data-sources" },
             { label: "Activity", icon: Activity, href: "/app/activity" },
             { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
+            { label: "Visualizations", icon: BarChart2, href: "/app/insights/visualizations" },
           ],
         },
       ],

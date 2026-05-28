@@ -14,6 +14,8 @@ import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
 import { registerBattlecardRoutes } from "./routes/battlecards";
 import { registerCompetitorDocumentRoutes } from "./routes/competitor-documents";
+import { registerPricingIntelligenceRoutes } from "./routes/pricing-intelligence";
+import { registerDashboardVisualizationRoutes } from "./routes/dashboard-visualizations";
 import { registerNotificationsActivityRoutes } from "./routes/notifications-activity";
 import { registerCollaborationRoutes } from "./routes/collaboration";
 import { registerReportsAnalysisRoutes } from "./routes/reports-analysis";
@@ -87,6 +89,8 @@ export async function registerRoutes(
   registerCompetitorRoutes(app);
   registerBattlecardRoutes(app);
   registerCompetitorDocumentRoutes(app);
+  registerPricingIntelligenceRoutes(app);
+  registerDashboardVisualizationRoutes(app);
   registerNotificationsActivityRoutes(app);
   registerCollaborationRoutes(app);
   registerReportsAnalysisRoutes(app);

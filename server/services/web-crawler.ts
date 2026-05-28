@@ -3,7 +3,7 @@ import { isValidUrl, normalizeUrl } from "../utils/url-normalization";
 
 interface CrawlResult {
   url: string;
-  pageType: "homepage" | "about" | "services" | "products" | "blog" | "other";
+  pageType: "homepage" | "about" | "services" | "products" | "pricing" | "blog" | "other";
   title: string;
   content: string;
   wordCount: number;
@@ -290,15 +290,20 @@ function findInternalLinks(html: string, baseUrl: string): string[] {
 function classifyPageType(url: string, html: string): CrawlResult["pageType"] {
   const urlLower = url.toLowerCase();
   const htmlLower = html.toLowerCase();
-  
+
+  // Check pricing first since /pricing was previously folded into "products".
+  if (urlLower.includes("/pricing") || urlLower.includes("/plans") || urlLower.endsWith("/price") ||
+      urlLower.includes("/subscribe") || urlLower.includes("/pricing-plans")) {
+    return "pricing";
+  }
   if (urlLower.includes("/about") || urlLower.includes("/who-we-are") || urlLower.includes("/our-story")) {
     return "about";
   }
-  if (urlLower.includes("/service") || urlLower.includes("/solution") || urlLower.includes("/what-we-do") || 
+  if (urlLower.includes("/service") || urlLower.includes("/solution") || urlLower.includes("/what-we-do") ||
       urlLower.includes("/expertise") || urlLower.includes("/capabilit")) {
     return "services";
   }
-  if (urlLower.includes("/product") || urlLower.includes("/pricing")) {
+  if (urlLower.includes("/product")) {
     return "products";
   }
   if (BLOG_SLUGS.some(slug => urlLower.includes(`/${slug}`))) {
@@ -630,4 +635,44 @@ export function getCombinedContent(summary: CrawlSummary): string {
   return summary.pages
     .map((p) => `[${p.pageType.toUpperCase()}] ${p.title}\n${p.content}`)
     .join("\n\n---\n\n");
+}
+
+// Fetch a single pricing-style page directly. Returns the rendered text plus the
+// raw HTML so callers can do structured extraction (e.g., AI parsing of tier tables).
+export interface PricingPageFetch {
+  url: string;
+  finalUrl: string;
+  title: string;
+  content: string;
+  html: string;
+  crawlMethod: "headless" | "http";
+  crawledAt: string;
+}
+
+export async function crawlPricingPage(
+  url: string,
+  options: { useHeadless?: boolean; signal?: AbortSignal } = {},
+): Promise<PricingPageFetch | null> {
+  if (!isValidUrl(url)) return null;
+  if (options.signal?.aborted) return null;
+
+  const normalized = normalizeUrl(url);
+  const fetched = await fetchPage(normalized, options.useHeadless !== false, 2);
+  if (!fetched) return null;
+
+  // Prefer rendered DOM text when available (headless), otherwise extract from raw HTML.
+  const text = (fetched.renderedContent && fetched.renderedContent.length > 200)
+    ? fetched.renderedContent
+    : extractTextContent(fetched.html);
+  const title = extractTitle(fetched.html);
+
+  return {
+    url: normalized,
+    finalUrl: fetched.finalUrl,
+    title,
+    content: text,
+    html: fetched.html,
+    crawlMethod: fetched.method,
+    crawledAt: new Date().toISOString(),
+  };
 }

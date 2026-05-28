@@ -586,3 +586,122 @@ Features:
 - [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
 - [ ] **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
 **Effort**: MVP Complete, additional features ongoing
+
+---
+
+## Proposed: Platform Capability & UX Expansion
+
+The items below are new candidates for the backlog aimed at broadening Orbit's reach into daily user workflows, reducing time-to-insight, and opening Orbit to programmatic and cross-team usage. Each item is sized at a first-pass estimate and should be refined during prioritization.
+
+### Chat & Collaboration Surfaces
+
+#### Slack & Microsoft Teams Integration
+**Status**: Proposed
+**Why**: Customers live in chat. Pushing competitor alerts, briefing summaries, and action-item notifications into Slack/Teams channels turns Orbit from a destination into an always-on signal.
+- [ ] OAuth app for Slack (bot token) and Teams (Graph + bot framework)
+- [ ] Channel routing per tenant: competitor alerts, briefing digests, support replies, plan-limit warnings
+- [ ] Slash commands: `/orbit competitor <name>`, `/orbit briefing latest`, `/orbit action items`
+- [ ] Per-user mute / per-channel digest cadence settings
+- [ ] Reuse `alert-dispatch` service as the delivery fan-out
+**Effort**: High
+
+#### AI Conversational Intelligence Assistant ("Ask Orbit")
+**Status**: Proposed
+**Why**: Natural-language Q&A over the tenant's competitive corpus is faster than navigating pages. Pairs well with the existing AI-usage logging and plan gating.
+- [ ] Retrieval-augmented chat grounded in competitor profiles, activity log, briefings, marketing plan, and product roadmap
+- [ ] Inline citations linking back to the underlying source (competitor card, change diff, briefing section)
+- [ ] Saved conversations, sharable answer cards, "Pin to dashboard" widget
+- [ ] Streaming responses with cost & token reporting via existing `logAiUsage`
+- [ ] Enterprise-only gating with per-tenant monthly quota
+**Effort**: High
+
+### Reach & Mobility
+
+#### Mobile-First Progressive Web App (PWA)
+**Status**: Proposed
+**Why**: Field-facing roles (sales, exec) consume briefings on phones. A PWA shell gives installable, offline-capable access without app-store overhead.
+- [ ] Installable manifest + service worker with cached briefings and competitor cards
+- [ ] Responsive redesign for the Briefings, Action Items, and Competitor Detail pages
+- [ ] Push notification channel reusing the alert-dispatch threshold settings
+- [ ] Touch-optimized command palette and refresh center
+**Effort**: Medium-High
+
+#### Calendar Sync for Marketing Plan & Briefings
+**Status**: Proposed
+**Why**: Marketing tasks and weekly briefings should live next to the user's other commitments. Mirrors the Planner integration pattern.
+- [ ] One-way push of marketing tasks (with due dates) to Outlook / Google Calendar
+- [ ] Briefing publish events appear as calendar entries with deep link
+- [ ] Per-user toggle and reconnect flow; reuse Entra refresh-token pattern
+- [ ] ICS feed fallback for tenants without delegated OAuth
+**Effort**: Medium
+
+### Analyst Workflows
+
+#### Custom Dashboard Builder
+**Status**: Proposed
+**Why**: Different personas need different glances. A widget-based home page reduces dependency on hard-coded layouts and is a natural pair with item 3.7 (interactive visualisations).
+- [ ] Widget library: competitor activity feed, action-item queue, freshness gauges, SEO movers, plan-limit usage
+- [ ] Drag-and-drop layout with persisted per-user configuration
+- [ ] Shareable dashboard templates (tenant-level, with "Apply to my view" copy)
+- [ ] Foundation for embedding charts produced by item 3.7
+**Effort**: High
+
+#### Persona-Driven Workspace Modes
+**Status**: Proposed
+**Why**: Sales, Marketing, PM, and Exec each have a narrow happy-path through Orbit. Surfacing a "mode" selector tailors navigation, default filters, and home-page widgets.
+- [ ] Mode selector on first login and in user menu (Sales / Marketing / Product / Executive)
+- [ ] Per-mode default landing page, sidebar emphasis, and command-palette suggestions
+- [ ] Per-mode briefing template (sales talk tracks vs. marketing themes vs. product gaps)
+- [ ] Telemetry on mode usage to inform future packaging
+**Effort**: Medium
+
+### New Intelligence Domains
+
+#### Competitor Pricing Intelligence Tracker
+**Status**: Proposed
+**Why**: Pricing changes are among the most actionable competitive signals but get lost in generic page diffs. A specialised extractor and change feed is high-leverage.
+- [ ] Dedicated pricing-page URL on each competitor with structured-data extraction (plans, tiers, monthly/annual, features)
+- [ ] Change history with side-by-side diff and AI-summarised "what changed and why it matters"
+- [ ] Pricing-event alerts routed through existing alert thresholds
+- [ ] Pricing snapshot section in battlecards and PDF reports
+**Effort**: Medium-High
+
+#### Win/Loss Analysis Module
+**Status**: Proposed
+**Why**: Closes the loop from competitive intel to revenue outcomes. Pairs with the planned HubSpot CRM integration.
+- [ ] Deal-outcome log with competitor tagging, deal size, segment, and reason codes
+- [ ] CRM sync (HubSpot first) to auto-import closed deals and competitor stamps
+- [ ] AI-generated win/loss themes and trend reports per competitor
+- [ ] Surface themes into the battlecard "Sales challenges" section
+**Effort**: High
+
+#### Industry Benchmarking (Anonymous Aggregates)
+**Status**: Proposed
+**Why**: Multi-tenant data is a moat. Opt-in, anonymised aggregates ("how often peers refresh", "share of competitors in your industry tracking pricing", "median action-item velocity") drive stickiness and inform plan upgrades.
+- [ ] Tenant opt-in with clear data-use disclosure and per-metric toggles
+- [ ] Aggregation job producing industry/segment baselines (k-anonymity threshold)
+- [ ] Benchmark widgets on Intelligence Health and Insights pages
+- [ ] Quarterly anonymised "State of Competitive Intelligence" report
+**Effort**: High (privacy review required)
+
+### Platform Extensibility & Trust
+
+#### Public REST API + Webhooks
+**Status**: Proposed
+**Why**: Enterprise buyers ask for programmatic access. A versioned read API plus outbound webhooks unlocks Zapier/Make/Power Automate and customer-built workflows.
+- [ ] OAuth-scoped API keys with per-tenant and per-user scopes
+- [ ] Read endpoints for competitors, activity log, recommendations, action items, briefings
+- [ ] Write endpoints for action-item status, support tickets, marketing tasks
+- [ ] Outbound webhook subscriptions per event type (competitor change, briefing published, ticket reply)
+- [ ] Rate-limit middleware and usage dashboard
+- [ ] Public docs site (OpenAPI spec + examples)
+**Effort**: High
+
+#### Audit Log & Data Export Center
+**Status**: Proposed
+**Why**: Enterprise security reviews and GDPR/CCPA postures expect tenant-scoped audit trails and self-serve data export. Centralising these also helps Support resolve "who changed what" tickets.
+- [ ] Append-only `audit_log` capturing principal, action, resource, before/after diff
+- [ ] Filterable admin view (user, date range, resource, action type) with CSV export
+- [ ] Full-tenant export bundle (JSON + assets) triggered from Settings, delivered via signed URL
+- [ ] Right-to-erasure workflow for individual users with admin confirmation
+**Effort**: Medium-High

@@ -583,7 +583,10 @@ Return ONLY valid JSON, no markdown or explanations.`;
       const competitor = await storage.getCompetitor(battlecard.competitorId);
       const companyProfile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
-      
+      const pricingSnapshot = competitor
+        ? await storage.getLatestPricingSnapshotForCompetitor(competitor.id)
+        : null;
+
       const { generateBattlecardPdf } = await import("../services/battlecard-export");
       const { enqueuePdf } = await import("../services/job-queue");
       const pdfBuffer = await enqueuePdf(
@@ -602,6 +605,7 @@ Return ONLY valid JSON, no markdown or explanations.`;
             fundingRaised: competitor.fundingRaised,
           } : null,
           reportProgress,
+          pricingSnapshot || null,
         ),
         undefined,
         { tenantDomain: ctx.tenantDomain, targetId: req.params.id, targetName: competitor?.name },
