@@ -473,7 +473,10 @@ export async function autoPushBriefingToHubspot(opts: {
     }
 
     const actionItemsForPush = (opts.briefingData.actionItems || []).slice(0, 25).map((ai) => {
-      const aiAny = ai as Record<string, unknown>;
+      // ActionItem is a strict shape; the push pipeline historically reads loose
+      // optional fields (`relatedCompetitors`, etc.) that aren't in the canonical
+      // type. Cast via unknown to acknowledge the structural mismatch.
+      const aiAny = ai as unknown as Record<string, unknown>;
       const related = Array.isArray(aiAny.relatedCompetitors)
         ? (aiAny.relatedCompetitors as unknown[]).filter((x): x is string => typeof x === "string")
         : [];

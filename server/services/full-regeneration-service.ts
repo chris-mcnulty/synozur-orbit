@@ -387,10 +387,10 @@ async function runRegenerationInBackground(
     const refreshedCompetitors = await storage.getCompetitorsByContext(contextFilter);
     const refreshedProfile = await storage.getCompanyProfileByContext(contextFilter);
     const sourceTimestamps: number[] = [];
-    if (refreshedProfile?.lastCrawledAt) sourceTimestamps.push(new Date(refreshedProfile.lastCrawledAt).getTime());
+    if (refreshedProfile?.lastFullCrawl) sourceTimestamps.push(new Date(refreshedProfile.lastFullCrawl).getTime());
     for (const rc of refreshedCompetitors) {
-      if (rc.lastCrawledAt) sourceTimestamps.push(new Date(rc.lastCrawledAt).getTime());
-      if ((rc as any).socialLastFetchedAt) sourceTimestamps.push(new Date((rc as any).socialLastFetchedAt).getTime());
+      if (rc.lastFullCrawl) sourceTimestamps.push(new Date(rc.lastFullCrawl).getTime());
+      if (rc.lastSocialCrawl) sourceTimestamps.push(new Date(rc.lastSocialCrawl).getTime());
     }
     const sourceDataAsOf = sourceTimestamps.length > 0 ? new Date(Math.max(...sourceTimestamps)) : null;
 

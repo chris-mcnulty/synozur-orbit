@@ -145,7 +145,7 @@ export function registerNotificationsActivityRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
       const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 10 : rawLimit), 50);
-      const activities = await storage.getActivityByProduct(req.params.id, limit);
+      const activities = await storage.getActivityByProduct(req.params.id, toContextFilter(ctx), limit);
       res.json(activities);
     } catch (error: any) {
       if (error instanceof ContextError) {

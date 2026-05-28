@@ -27,7 +27,7 @@ interface WebsiteMonitoringResult {
   changeScore: number;
   summary?: string;
   changeAnalysis?: StructuredChangeAnalysis;
-  status: "success" | "error" | "no_content";
+  status: "success" | "error" | "no_content" | "timeout";
   message?: string;
   pagesMonitored: number;
 }
@@ -529,7 +529,7 @@ interface ProductMonitoringResult {
   changeScore: number;
   summary?: string;
   changeAnalysis?: StructuredChangeAnalysis;
-  status: "success" | "error" | "no_content" | "no_url";
+  status: "success" | "error" | "no_content" | "no_url" | "timeout";
   message?: string;
   pagesMonitored: number;
 }

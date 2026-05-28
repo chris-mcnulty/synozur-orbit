@@ -2250,17 +2250,29 @@ export async function generateIntelligenceBriefingPdf(
   }
 
   reportProgress?.({ phase: "Gathering source data", percent: 20 });
-  const companyProfile = await storage.getCompanyProfileByContext({
+  // Resolve the effective marketId + isDefaultMarket the same way request-context
+  // resolution does (see server/context.ts): if the briefing lives on the tenant
+  // default market the marketId column may be NULL — we still need to pass the
+  // *real* default market id so storage methods that do `eq(marketId, ctx.marketId)`
+  // can match it, and set isDefaultMarket so they OR-in `isNull(marketId)` to
+  // include legacy NULL-marketId rows.
+  const defaultMarket = await storage.getDefaultMarket(tenant.id);
+  const effectiveMarketId = briefing.marketId || defaultMarket?.id || "";
+  const isDefaultMarket = !!defaultMarket && defaultMarket.id === effectiveMarketId;
+  const briefingContext = {
+    tenantId: tenant.id,
     tenantDomain,
-    marketId: briefing.marketId || undefined,
-  });
+    marketId: effectiveMarketId,
+    isDefaultMarket,
+  };
+  const companyProfile = await storage.getCompanyProfileByContext(briefingContext);
 
-  const competitors = await storage.getCompetitorsByContext({ tenantDomain, marketId: briefing.marketId || undefined });
+  const competitors = await storage.getCompetitorsByContext(briefingContext);
   const sourceDates: number[] = [];
-  if (companyProfile?.lastCrawledAt) sourceDates.push(new Date(companyProfile.lastCrawledAt).getTime());
+  if (companyProfile?.lastFullCrawl) sourceDates.push(new Date(companyProfile.lastFullCrawl).getTime());
   for (const c of competitors) {
-    if (c.lastCrawledAt) sourceDates.push(new Date(c.lastCrawledAt).getTime());
-    if ((c as any).socialLastFetchedAt) sourceDates.push(new Date((c as any).socialLastFetchedAt).getTime());
+    if (c.lastFullCrawl) sourceDates.push(new Date(c.lastFullCrawl).getTime());
+    if (c.lastSocialCrawl) sourceDates.push(new Date(c.lastSocialCrawl).getTime());
   }
   const dataAsOf = sourceDates.length > 0 ? new Date(Math.max(...sourceDates)) : undefined;
 

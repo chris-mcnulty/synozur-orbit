@@ -78,10 +78,10 @@ export async function computeLatestSourceDataTimestamp(ctx: RequestContext): Pro
   const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
   const competitors = await storage.getCompetitorsByContext(ctxFilter);
   const dates: number[] = [];
-  if (companyProfile?.lastCrawledAt) dates.push(new Date(companyProfile.lastCrawledAt).getTime());
+  if (companyProfile?.lastFullCrawl) dates.push(new Date(companyProfile.lastFullCrawl).getTime());
   for (const c of competitors) {
-    if (c.lastCrawledAt) dates.push(new Date(c.lastCrawledAt).getTime());
-    if ((c as any).socialLastFetchedAt) dates.push(new Date((c as any).socialLastFetchedAt).getTime());
+    if (c.lastFullCrawl) dates.push(new Date(c.lastFullCrawl).getTime());
+    if (c.lastSocialCrawl) dates.push(new Date(c.lastSocialCrawl).getTime());
   }
   return dates.length > 0 ? new Date(Math.max(...dates)) : null;
 }
