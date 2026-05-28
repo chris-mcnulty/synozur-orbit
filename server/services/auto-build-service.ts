@@ -4,8 +4,12 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { calculateScores, getCurrentWeeklyPeriod } from "./scoring-service";
+import { runWithConcurrency, AI_CONCURRENCY } from "./promise-pool";
 import { generateBriefing } from "./intelligence-briefing-service";
 import { generateExecutiveSummary } from "./executive-summary-service";
+import { monitorCompetitorPricing } from "./pricing-intelligence";
+import { generateBattlecardForCompetitor } from "./battlecard-generator";
+import { checkFeatureAccessAsync } from "./plan-policy";
 import { validateCompetitorUrl } from "../utils/url-validator";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -66,7 +70,7 @@ export async function startAutoBuild(
     status: "pending",
     currentStep: "Initializing",
     stepsCompleted: 0,
-    totalSteps: 12,
+    totalSteps: 14,
     startedAt: new Date(),
     discoveredCompetitors: [],
     details: [],
@@ -155,7 +159,7 @@ async function runAutoBuildWithProfile(
     console.log(`[Auto Build ${jobId}] ${step}`);
   };
 
-  updateStep("Step 1/12: Crawling baseline company website...");
+  updateStep("Step 1/14: Crawling baseline company website...");
   try {
     if (profile.websiteUrl) {
       const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
@@ -193,7 +197,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 1;
 
-  updateStep("Step 2/12: Refreshing baseline social media...");
+  updateStep("Step 2/14: Refreshing baseline social media...");
   try {
     await monitorCompanyProfileSocialMedia(profile.id, userId, tenantDomain, marketId);
     progress.details.push("Baseline social media refreshed");
@@ -202,7 +206,7 @@ async function runAutoBuildWithProfile(
   }
   progress.stepsCompleted = 2;
 
-  updateStep("Step 3/12: Discovering competitors with AI...");
+  updateStep("Step 3/14: Discovering competitors with AI...");
   let suggestions: Array<{ name: string; url: string; description: string; rationale: string }> = [];
   try {
     const refreshedProfile = await storage.getCompanyProfile(profile.id);
@@ -285,7 +289,7 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 3;
 
-  updateStep("Step 4/12: Adding competitors...");
+  updateStep("Step 4/14: Adding competitors...");
   const createdCompetitors: any[] = [];
   for (const suggestion of suggestions) {
     try {
@@ -327,7 +331,7 @@ Only return the JSON array, no other text.`;
     progress.details.push("WARNING: No competitors were successfully added. Skipping competitor-dependent steps (crawl, social, analysis, scoring). Reports will be baseline-only.");
   }
 
-  updateStep("Step 5/12: Crawling competitor websites...");
+  updateStep("Step 5/14: Crawling competitor websites...");
   for (const competitor of createdCompetitors) {
     try {
       const crawlResult = await crawlCompetitorWebsite(competitor.url);
@@ -362,7 +366,58 @@ Only return the JSON array, no other text.`;
   }
   progress.stepsCompleted = 5;
 
-  updateStep("Step 6/12: Refreshing competitor social profiles...");
+  // Step 6 (NEW): Detect pricing pages from the crawl results, persist
+  // pricingPageUrl, and capture a first pricing snapshot for any competitor
+  // whose tenant plan allows it. Best-effort — failures don't abort.
+  updateStep("Step 6/14: Detecting pricing pages & capturing initial snapshots...");
+  try {
+    const pricingGate = await checkFeatureAccessAsync(
+      (await storage.getTenantByDomain(tenantDomain))?.plan || "free",
+      "pricingIntelligence",
+    );
+    if (!pricingGate.allowed) {
+      progress.details.push("Pricing capture skipped: tenant plan does not include Pricing Intelligence");
+    } else {
+      // Run captures in parallel with the same bounded concurrency the analysis lane
+      // uses elsewhere. Each capture does an HTTP fetch + 1-2 Anthropic calls, so for
+      // 10 competitors serializing this step would add minutes to wall time.
+      let pricingFound = 0;
+      let pricingCaptured = 0;
+      await runWithConcurrency(createdCompetitors, AI_CONCURRENCY.anthropic, async (competitor) => {
+        try {
+          const freshComp = await storage.getCompetitor(competitor.id);
+          const crawlData = freshComp?.crawlData as any;
+          const pages = Array.isArray(crawlData?.pages) ? crawlData.pages : [];
+          const pricingPage = pages.find((p: any) => p && p.pageType === "pricing");
+          if (!pricingPage?.url) return;
+          pricingFound++;
+          await storage.updateCompetitor(competitor.id, { pricingPageUrl: pricingPage.url });
+          const result = await monitorCompetitorPricing(competitor.id, {
+            userId,
+            tenantDomain,
+          });
+          if (result.status === "success") {
+            pricingCaptured++;
+            progress.details.push(`Captured pricing snapshot for ${competitor.name} (${(result.snapshot?.tiers as any[] | undefined)?.length || 0} tiers)`);
+          } else {
+            progress.details.push(`⚠ Pricing capture for ${competitor.name}: ${result.status}${result.message ? ` — ${result.message}` : ""}`);
+          }
+        } catch (err: any) {
+          progress.details.push(`⚠ Pricing capture failed for ${competitor.name}: ${err.message}`);
+        }
+      });
+      if (pricingFound === 0) {
+        progress.details.push("No pricing pages detected during crawl");
+      } else {
+        progress.details.push(`Pricing capture summary: ${pricingCaptured}/${pricingFound} competitors with detected pricing pages snapshotted`);
+      }
+    }
+  } catch (err: any) {
+    progress.details.push(`⚠ Pricing capture step failed: ${err.message}`);
+  }
+  progress.stepsCompleted = 6;
+
+  updateStep("Step 7/14: Refreshing competitor social profiles...");
   for (const competitor of createdCompetitors) {
     try {
       const socialResults = await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
@@ -383,9 +438,9 @@ Only return the JSON array, no other text.`;
       progress.details.push(`⚠ Social monitoring failed for ${competitor.name}: ${err.message}`);
     }
   }
-  progress.stepsCompleted = 6;
+  progress.stepsCompleted = 7;
 
-  updateStep("Step 7/12: Running AI analysis on competitors...");
+  updateStep("Step 8/14: Running AI analysis on competitors...");
   for (const competitor of createdCompetitors) {
     try {
       const freshComp = await storage.getCompetitor(competitor.id);
@@ -431,9 +486,9 @@ Only return the JSON array, no other text.`;
       progress.details.push(`Analysis warning for ${competitor.name}: ${err.message}`);
     }
   }
-  progress.stepsCompleted = 7;
+  progress.stepsCompleted = 8;
 
-  updateStep("Step 8/12: AI Company Research (enriching metadata)...");
+  updateStep("Step 9/14: AI Company Research (enriching metadata)...");
   try {
     const refreshedProfile = await storage.getCompanyProfile(profile.id);
     if (refreshedProfile) {
@@ -499,9 +554,9 @@ Only return the JSON array, no other text.`;
   } catch (err: any) {
     progress.details.push(`AI Company Research step warning: ${err.message}`);
   }
-  progress.stepsCompleted = 8;
+  progress.stepsCompleted = 9;
 
-  updateStep("Step 9/12: Calculating competitive scores...");
+  updateStep("Step 10/14: Calculating competitive scores...");
   try {
     // Scores live in score_history (one row per period per entity), not on the
     // competitors table — the per-row score columns were removed when scoring
@@ -543,9 +598,9 @@ Only return the JSON array, no other text.`;
   } catch (err: any) {
     progress.details.push(`Scoring warning: ${err.message}`);
   }
-  progress.stepsCompleted = 9;
+  progress.stepsCompleted = 10;
 
-  updateStep("Step 10/12: Generating gap analysis & recommendations...");
+  updateStep("Step 11/14: Generating gap analysis & recommendations...");
   try {
     const tenant = await storage.getTenantByDomain(tenantDomain);
     if (!tenant) throw new Error("Tenant not found");
@@ -591,23 +646,60 @@ Only return the JSON array, no other text.`;
   } catch (err: any) {
     progress.details.push(`Gap analysis warning: ${err.message}`);
   }
-  progress.stepsCompleted = 10;
+  progress.stepsCompleted = 11;
 
-  updateStep("Step 11/12: Generating executive summary...");
+  updateStep("Step 12/14: Generating executive summary...");
   try {
     await generateExecutiveSummary(tenantDomain, marketId, profile.id);
     progress.details.push("Executive summary generated");
   } catch (err: any) {
     progress.details.push(`Executive summary warning: ${err.message}`);
   }
-  progress.stepsCompleted = 11;
+  progress.stepsCompleted = 12;
+
+  // Step 13 (NEW): Generate sales battlecards for each competitor. Mirrors the
+  // battlecards lane in full-regeneration. Skipped when no competitors were added.
+  if (!hasCompetitors) {
+    updateStep("Step 13/14: Skipping battlecards (no competitors tracked)...");
+    progress.details.push("Battlecards skipped: no competitors were discovered or added.");
+  } else {
+    updateStep(`Step 13/14: Generating battlecards (0/${createdCompetitors.length})...`);
+    let battlecardsCreated = 0;
+    let battlecardsFailed = 0;
+    for (const competitor of createdCompetitors) {
+      try {
+        const freshComp = await storage.getCompetitor(competitor.id);
+        if (!freshComp) continue;
+        const result = await generateBattlecardForCompetitor({
+          competitor: freshComp,
+          ourCompanyName: profile.companyName,
+          ourPositioning: profile.companyName + (profile.description ? `: ${profile.description}` : ""),
+          tenantDomain,
+          marketId,
+          userId,
+        });
+        if (result.status === "failed") {
+          battlecardsFailed++;
+          progress.details.push(`⚠ Battlecard generation failed for ${competitor.name}: ${result.error || "unknown"}`);
+        } else {
+          battlecardsCreated++;
+          updateStep(`Step 13/14: Generating battlecards (${battlecardsCreated}/${createdCompetitors.length})...`);
+        }
+      } catch (err: any) {
+        battlecardsFailed++;
+        progress.details.push(`⚠ Battlecard generation failed for ${competitor.name}: ${err.message}`);
+      }
+    }
+    progress.details.push(`Battlecards generated: ${battlecardsCreated}/${createdCompetitors.length}${battlecardsFailed > 0 ? ` (${battlecardsFailed} failed)` : ""}`);
+  }
+  progress.stepsCompleted = 13;
 
   if (options.generateBriefing) {
     if (!hasCompetitors) {
-      updateStep("Step 12/12: Skipping intelligence briefing (no competitors tracked)...");
+      updateStep("Step 14/14: Skipping intelligence briefing (no competitors tracked)...");
       progress.details.push("Intelligence briefing skipped: no competitors were discovered or added. Add competitors manually and regenerate the briefing for competitive insights.");
     } else {
-      updateStep("Step 12/12: Generating 30-day intelligence briefing...");
+      updateStep("Step 14/14: Generating 30-day intelligence briefing...");
       try {
         const briefing = await generateBriefing(tenantDomain, 30, marketId);
         if (briefing) {
@@ -618,9 +710,9 @@ Only return the JSON array, no other text.`;
       }
     }
   } else {
-    updateStep("Step 12/12: Finalizing...");
+    updateStep("Step 14/14: Finalizing...");
   }
-  progress.stepsCompleted = 12;
+  progress.stepsCompleted = 14;
 
   const allCompetitorsForGaps = await storage.getCompetitorsByTenantDomain(tenantDomain);
   const marketCompetitorsForGaps = allCompetitorsForGaps.filter(c => c.marketId === marketId);

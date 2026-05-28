@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap, MessageSquare, AtSign, UserPlus } from "lucide-react";
+import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap, MessageSquare, AtSign, UserPlus, DollarSign, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { useSearch, useLocation } from "wouter";
@@ -52,6 +52,12 @@ interface Competitor {
   lastFullCrawl?: string;
 }
 
+interface PricingChange {
+  kind: "tier_added" | "tier_removed" | "price_changed" | "features_changed" | "model_changed" | "other" | string;
+  description: string;
+  significance: "high" | "medium" | "low" | string;
+}
+
 interface Activity {
   id: string;
   type: string;
@@ -71,6 +77,16 @@ interface Activity {
     changedSections?: string[];
     addedContent?: string[];
     removedContent?: string[];
+    // pricing_update specifics
+    pricingUrl?: string;
+    snapshotId?: string;
+    previousTierCount?: number;
+    currentTierCount?: number;
+    changeAnalysis?: {
+      changes?: PricingChange[];
+      categories?: string[];
+      narrative?: string;
+    };
   };
 }
 
@@ -87,7 +103,7 @@ export default function Activity() {
   
   // Update tab when URL changes
   useEffect(() => {
-    if (tabFromUrl && ["insights", "social", "blog", "log"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["insights", "social", "blogs", "pricing", "feed", "collaboration"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -173,11 +189,15 @@ export default function Activity() {
 
   const isEnterprise = tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
 
-  const websiteChanges = activity.filter((item) => 
-    item.type === "website_update" && 
-    item.summary && 
+  const websiteChanges = activity.filter((item) =>
+    item.type === "website_update" &&
+    item.summary &&
     !item.summary.toLowerCase().includes("no significant")
   );
+
+  const pricingChanges = activity
+    .filter((item) => item.type === "pricing_update")
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const competitorsWithBlogs = competitors.filter((c) => 
     c.blogSnapshot && c.blogSnapshot.postCount > 0
@@ -272,6 +292,10 @@ export default function Activity() {
           <TabsTrigger value="blogs" className="gap-2" data-testid="tab-blogs">
             <Rss className="h-4 w-4" />
             Blog Activity
+          </TabsTrigger>
+          <TabsTrigger value="pricing" className="gap-2" data-testid="tab-pricing">
+            <DollarSign className="h-4 w-4" />
+            Pricing
           </TabsTrigger>
           <TabsTrigger value="feed" className="gap-2" data-testid="tab-feed">
             <FileText className="h-4 w-4" />
@@ -679,6 +703,106 @@ export default function Activity() {
           )}
         </TabsContent>
 
+        <TabsContent value="pricing" className="space-y-4" data-testid="tabcontent-pricing">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Pricing Changes</h2>
+            <Badge variant="outline" className="text-xs">{pricingChanges.length} events</Badge>
+          </div>
+
+          {pricingChanges.length === 0 ? (
+            <Card className="p-12 text-center">
+              <DollarSign className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No pricing changes yet</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Set a pricing page URL on a competitor (Competitor → Pricing tab) and the
+                scheduled monitor will capture snapshots and surface changes here. The
+                first snapshot establishes a baseline — changes appear from the second
+                snapshot onward.
+              </p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {pricingChanges.map((item) => (
+                <Card key={item.id} data-testid={`pricing-event-${item.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="gap-1">
+                          <Globe className="h-3 w-3" />
+                          {item.competitorName || "Unknown"}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <DollarSign className="h-3 w-3" /> Pricing
+                        </Badge>
+                        {item.details?.changeScore != null && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {item.details.changeScore}% diff
+                          </Badge>
+                        )}
+                        {item.details?.previousTierCount != null && item.details.currentTierCount != null && item.details.previousTierCount !== item.details.currentTierCount && (
+                          <Badge variant="outline" className="text-[10px] gap-1">
+                            {item.details.currentTierCount > item.details.previousTierCount ? (
+                              <ArrowUp className="h-3 w-3 text-green-500" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 text-amber-500" />
+                            )}
+                            {item.details.previousTierCount} → {item.details.currentTierCount} tiers
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground">{formatTimeAgo(item.date)}</span>
+                      </div>
+                      <Badge variant={item.impact === "High" ? "destructive" : item.impact === "Medium" ? "default" : "secondary"}>
+                        {item.impact} Impact
+                      </Badge>
+                    </div>
+                    <CardTitle className="text-base mt-2">{item.description}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {item.summary && (
+                      <p className="text-sm text-muted-foreground">{cleanSignalSummary(item.summary, item.description)}</p>
+                    )}
+                    {item.details?.changeAnalysis?.changes && item.details.changeAnalysis.changes.length > 0 && (
+                      <ul className="mt-3 space-y-1.5 border-t border-border pt-3">
+                        {item.details.changeAnalysis.changes.map((c, i) => (
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <Badge
+                              variant={c.significance === "high" ? "destructive" : c.significance === "medium" ? "default" : "secondary"}
+                              className="text-[10px] uppercase shrink-0"
+                            >
+                              {c.significance}
+                            </Badge>
+                            <span>{c.description}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="mt-3 flex items-center gap-3 text-xs">
+                      {item.details?.pricingUrl && (
+                        <a
+                          href={item.details.pricingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          View pricing page →
+                        </a>
+                      )}
+                      {item.competitorId && (
+                        <a
+                          href={`/app/competitors/${item.competitorId}?tab=pricing`}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          Open competitor tab →
+                        </a>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="feed" className="space-y-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Raw Activity Log</h2>
@@ -760,10 +884,51 @@ export default function Activity() {
                           <p className="text-sm text-muted-foreground">{cleanSignalSummary(item.summary, item.description)}</p>
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            {item.type === 'change' ? "Detected text content change on homepage." : 
+                            {item.type === 'change' ? "Detected text content change on homepage." :
                              item.type === 'website_update' ? "Website content update detected." :
+                             item.type === 'pricing_update' ? "Pricing page change detected." :
                              "Activity recorded."}
                           </p>
+                        )}
+
+                        {/* Show pricing change details */}
+                        {item.type === 'pricing_update' && item.details?.changeAnalysis?.changes && item.details.changeAnalysis.changes.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <p className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-2">
+                              <DollarSign className="h-3 w-3" /> Pricing changes
+                              {item.details.changeScore != null && (
+                                <Badge variant="outline" className="text-[10px]">{item.details.changeScore}% diff</Badge>
+                              )}
+                              {item.details.previousTierCount != null && item.details.currentTierCount != null && item.details.previousTierCount !== item.details.currentTierCount && (
+                                <Badge variant="outline" className="text-[10px]">
+                                  {item.details.previousTierCount} → {item.details.currentTierCount} tiers
+                                </Badge>
+                              )}
+                            </p>
+                            <ul className="space-y-1.5">
+                              {item.details.changeAnalysis.changes.slice(0, 6).map((c, i) => (
+                                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                                  <Badge
+                                    variant={c.significance === "high" ? "destructive" : c.significance === "medium" ? "default" : "secondary"}
+                                    className="text-[10px] uppercase shrink-0"
+                                  >
+                                    {c.significance}
+                                  </Badge>
+                                  <span>{c.description}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {item.details.pricingUrl && (
+                              <a
+                                href={item.details.pricingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                View pricing page →
+                              </a>
+                            )}
+                          </div>
                         )}
                         
                         {/* Show blog post links for blog activities */}

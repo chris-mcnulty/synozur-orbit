@@ -668,6 +668,7 @@ export default function RefreshCenter() {
                 companyProfile?.lastFullCrawl,
                 ...competitors.map((c: any) => c.lastFullCrawl),
                 ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => c.lastSocialCrawl),
+                ...competitors.filter((c: any) => c.pricingPageUrl).map((c: any) => c.lastPricingCheck),
               ].filter(Boolean);
 
               const artifacts = [

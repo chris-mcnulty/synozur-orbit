@@ -476,6 +476,7 @@ export const competitors = pgTable("competitors", {
   lastFullCrawl: timestamp("last_full_crawl"), // Timestamp of last multi-page crawl
   previousWebsiteContent: text("previous_website_content"), // Previous crawl content for change detection
   lastWebsiteMonitor: timestamp("last_website_monitor"), // Timestamp of last website change monitoring
+  lastPricingCheck: timestamp("last_pricing_check"), // Timestamp of last pricing snapshot capture (drives scheduled pricing monitor cadence)
   socialCheckFrequency: text("social_check_frequency").notNull().default("daily"), // "hourly", "daily", "weekly"
   excludeFromCrawl: boolean("exclude_from_crawl").notNull().default(false),
   status: text("status").notNull().default("Active"),

@@ -331,6 +331,11 @@ export async function monitorCompetitorPricing(
     capturedAt: now,
   });
 
+  // Stamp the competitor with the capture time so the scheduled pricing monitor
+  // can interval-gate without scanning the snapshots table.
+  await storage.updateCompetitor(competitor.id, { lastPricingCheck: now })
+    .catch(err => console.error(`[PricingIntelligence] lastPricingCheck update failed for ${competitor.id}:`, err));
+
   const realChange = isSignificant && changeAnalysis !== null && changeAnalysis.changes.length > 0;
   if (realChange && changeAnalysis && options.userId) {
     const analysis = changeAnalysis;
