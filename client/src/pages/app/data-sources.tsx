@@ -428,15 +428,15 @@ export default function DataSourcesPage() {
   // Calculate oldest timestamps for global freshness bar
   const oldestWebsite = (() => {
     const dates = [
-      companyProfile?.lastCrawledAt,
-      ...competitors.map((c: any) => c.lastCrawledAt),
+      companyProfile?.lastFullCrawl,
+      ...competitors.map((c: any) => c.lastFullCrawl),
     ].filter(Boolean);
     if (dates.length === 0) return null;
     return dates.sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())[0];
   })();
 
   const oldestSocial = (() => {
-    const dates = competitors.map((c: any) => c.socialLastFetchedAt).filter(Boolean);
+    const dates = competitors.map((c: any) => c.lastSocialCrawl).filter(Boolean);
     if (dates.length === 0) return null;
     return dates.sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())[0];
   })();

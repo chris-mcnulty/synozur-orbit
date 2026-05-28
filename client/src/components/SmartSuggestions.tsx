@@ -86,15 +86,15 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const sourceDates = [
-    ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
-    ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
-    ...competitors.map((c: any) => c.socialLastFetchedAt).filter(Boolean),
+    ...(companyProfile?.lastFullCrawl ? [companyProfile.lastFullCrawl] : []),
+    ...competitors.map((c: any) => c.lastFullCrawl).filter(Boolean),
+    ...competitors.map((c: any) => c.lastSocialCrawl).filter(Boolean),
   ];
 
   const suggestions: StaleSuggestion[] = [];
 
   if (companyProfile) {
-    const staleness = getFullStalenessInfo(companyProfile.lastCrawledAt);
+    const staleness = getFullStalenessInfo(companyProfile.lastFullCrawl);
     if (staleness.level === "stale" || staleness.level === "never") {
       suggestions.push({
         id: `baseline-${companyProfile.id}`,
@@ -102,7 +102,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
         category: "baseline",
         name: "Company Baseline",
         message: staleness.level === "never" ? "Website not yet crawled" : `Website data is ${staleness.timeAgo} old`,
-        lastUpdated: companyProfile.lastCrawledAt,
+        lastUpdated: companyProfile.lastFullCrawl,
         targetId: companyProfile.id,
         priority: 1,
       });
@@ -110,7 +110,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   }
 
   competitors.forEach((competitor: any) => {
-    const websiteStaleness = getFullStalenessInfo(competitor.lastCrawledAt);
+    const websiteStaleness = getFullStalenessInfo(competitor.lastFullCrawl);
     if (websiteStaleness.level === "stale" || websiteStaleness.level === "never") {
       suggestions.push({
         id: `competitor-website-${competitor.id}`,
@@ -118,13 +118,13 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
         category: "competitor",
         name: competitor.name,
         message: websiteStaleness.level === "never" ? "Website not yet crawled" : `Website data is ${websiteStaleness.timeAgo} old`,
-        lastUpdated: competitor.lastCrawledAt,
+        lastUpdated: competitor.lastFullCrawl,
         targetId: competitor.id,
         priority: 2,
       });
     }
     if (competitor.linkedInUrl) {
-      const socialStaleness = getFullStalenessInfo(competitor.socialLastFetchedAt);
+      const socialStaleness = getFullStalenessInfo(competitor.lastSocialCrawl);
       if (socialStaleness.level === "stale" || socialStaleness.level === "never") {
         suggestions.push({
           id: `competitor-social-${competitor.id}`,
@@ -132,7 +132,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
           category: "social",
           name: competitor.name,
           message: socialStaleness.level === "never" ? "Social data not yet fetched" : `Social data is ${socialStaleness.timeAgo} old`,
-          lastUpdated: competitor.socialLastFetchedAt,
+          lastUpdated: competitor.lastSocialCrawl,
           targetId: competitor.id,
           priority: 3,
         });

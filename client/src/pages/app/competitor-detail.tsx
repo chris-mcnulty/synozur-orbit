@@ -966,8 +966,8 @@ export default function CompetitorDetail() {
           mode="entity"
           entityName={competitor.name}
           entityType="competitor"
-          websiteLastUpdated={competitor.lastCrawledAt || competitor.lastCrawl || null}
-          socialLastUpdated={competitor.socialLastFetchedAt || null}
+          websiteLastUpdated={competitor.lastFullCrawl || competitor.lastCrawl || null}
+          socialLastUpdated={competitor.lastSocialCrawl || null}
           autoRefreshAllowed={false}
           readOnly
           onRefresh={async (sources) => {
@@ -1817,8 +1817,8 @@ export default function CompetitorDetail() {
         entityName={competitor.name}
         entityType="competitor"
         sources={{
-          website: { lastUpdated: competitor.lastCrawledAt || competitor.lastCrawl || null },
-          ...(hasSocialUrls ? { social: { lastUpdated: competitor.socialLastFetchedAt || null } } : {}),
+          website: { lastUpdated: competitor.lastFullCrawl || competitor.lastCrawl || null },
+          ...(hasSocialUrls ? { social: { lastUpdated: competitor.lastSocialCrawl || null } } : {}),
         }}
         onConfirm={async (selectedSources) => {
           if (selectedSources.includes("website")) {

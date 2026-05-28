@@ -461,9 +461,9 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
 
     // Data Sources staleness indicator
     const staleDatasources = [
-      companyProfile?.lastCrawledAt,
-      ...competitors.map((c: any) => c.lastCrawledAt),
-      ...competitors.map((c: any) => c.socialLastFetchedAt),
+      companyProfile?.lastFullCrawl,
+      ...competitors.map((c: any) => c.lastFullCrawl),
+      ...competitors.map((c: any) => c.lastSocialCrawl),
     ].filter((ts) => ts && calculateStaleness(ts) === "stale").length;
     if (staleDatasources > 0) {
       indicators["/app/data-sources"] = { type: "count", count: staleDatasources };

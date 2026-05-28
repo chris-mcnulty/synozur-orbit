@@ -855,9 +855,9 @@ export default function Dashboard() {
 
       {(() => {
         const sourceDateItems = [
-          ...(companyProfile?.lastCrawledAt ? [{ label: "Baseline", date: companyProfile.lastCrawledAt }] : []),
-          ...competitors.map((c: any) => ({ label: c.name + " (website)", date: c.lastCrawledAt })),
-          ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => ({ label: c.name + " (social)", date: c.socialLastFetchedAt })),
+          ...(companyProfile?.lastFullCrawl ? [{ label: "Baseline", date: companyProfile.lastFullCrawl }] : []),
+          ...competitors.map((c: any) => ({ label: c.name + " (website)", date: c.lastFullCrawl })),
+          ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => ({ label: c.name + " (social)", date: c.lastSocialCrawl })),
         ];
         const allSourceDates = sourceDateItems.map(s => s.date).filter(Boolean);
         const artifactItems = [

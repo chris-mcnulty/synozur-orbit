@@ -42,8 +42,8 @@ type HarveyBall = "full" | "three-quarter" | "half" | "quarter" | "empty";
 interface CompetitorListItem {
   id: string;
   name: string;
-  lastCrawledAt?: string | null;
-  socialLastFetchedAt?: string | null;
+  lastFullCrawl?: string | null;
+  lastSocialCrawl?: string | null;
   headquarters?: string | null;
   founded?: string | null;
   revenue?: string | null;
@@ -487,9 +487,9 @@ export default function BattleCardsPage() {
 
         {battleCards.length > 0 && (() => {
           const sourceDates = [
-            ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
-            ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
-            ...competitors.filter((c: any) => c.socialLastFetchedAt).map((c: any) => c.socialLastFetchedAt),
+            ...(companyProfile?.lastFullCrawl ? [companyProfile.lastFullCrawl] : []),
+            ...competitors.map((c: any) => c.lastFullCrawl).filter(Boolean),
+            ...competitors.filter((c: any) => c.lastSocialCrawl).map((c: any) => c.lastSocialCrawl),
           ];
           const oldestCard = battleCards.reduce((oldest: BattleCardData, bc: BattleCardData) => {
             const d = new Date(bc.lastGeneratedAt || bc.createdAt).getTime();

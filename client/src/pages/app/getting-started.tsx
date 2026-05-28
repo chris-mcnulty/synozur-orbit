@@ -73,9 +73,9 @@ export default function GettingStartedPage() {
   // Check if all data sources are fresh (no stale sources)
   const allDataFresh = (() => {
     const timestamps = [
-      companyProfile?.lastCrawledAt,
-      ...competitors.map((c: any) => c.lastCrawledAt),
-      ...competitors.map((c: any) => c.socialLastFetchedAt),
+      companyProfile?.lastFullCrawl,
+      ...competitors.map((c: any) => c.lastFullCrawl),
+      ...competitors.map((c: any) => c.lastSocialCrawl),
     ].filter(Boolean);
     if (timestamps.length === 0) return false;
     return timestamps.every((ts: string) => calculateStaleness(ts) !== "stale");

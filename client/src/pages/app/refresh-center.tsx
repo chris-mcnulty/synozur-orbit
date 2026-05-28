@@ -481,7 +481,7 @@ export default function RefreshCenter() {
                 {loadingActions.has("baseline") ? (
                   <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                 ) : (
-                  <StalenessDot lastUpdated={companyProfile?.lastCrawledAt} />
+                  <StalenessDot lastUpdated={companyProfile?.lastFullCrawl} />
                 )}
               </div>
               <h3 className="font-semibold mt-4">Refresh Baseline</h3>
@@ -509,7 +509,7 @@ export default function RefreshCenter() {
                   {loadingActions.has("websites") ? (
                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                   ) : (
-                    <StalenessDot lastUpdated={getOldestUpdate(competitors, "lastCrawledAt")} />
+                    <StalenessDot lastUpdated={getOldestUpdate(competitors, "lastFullCrawl")} />
                   )}
                 </div>
               </div>
@@ -538,7 +538,7 @@ export default function RefreshCenter() {
                   {loadingActions.has("social") ? (
                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                   ) : (
-                    <StalenessDot lastUpdated={getOldestUpdate(competitors, "socialLastFetchedAt")} />
+                    <StalenessDot lastUpdated={getOldestUpdate(competitors, "lastSocialCrawl")} />
                   )}
                 </div>
               </div>
@@ -665,9 +665,9 @@ export default function RefreshCenter() {
           <CardContent>
             {(() => {
               const allSourceDates = [
-                companyProfile?.lastCrawledAt,
-                ...competitors.map((c: any) => c.lastCrawledAt),
-                ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => c.socialLastFetchedAt),
+                companyProfile?.lastFullCrawl,
+                ...competitors.map((c: any) => c.lastFullCrawl),
+                ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => c.lastSocialCrawl),
               ].filter(Boolean);
 
               const artifacts = [

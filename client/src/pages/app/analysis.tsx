@@ -802,9 +802,9 @@ export default function Analysis() {
         <>
         {(() => {
           const sourceDates = [
-            ...(companyProfile?.lastCrawledAt ? [companyProfile.lastCrawledAt] : []),
-            ...competitors.map((c: any) => c.lastCrawledAt).filter(Boolean),
-            ...competitors.filter((c: any) => c.socialLastFetchedAt).map((c: any) => c.socialLastFetchedAt),
+            ...(companyProfile?.lastFullCrawl ? [companyProfile.lastFullCrawl] : []),
+            ...competitors.map((c: any) => c.lastFullCrawl).filter(Boolean),
+            ...competitors.filter((c: any) => c.lastSocialCrawl).map((c: any) => c.lastSocialCrawl),
           ];
           const freshness = checkArtifactFreshness(analysis?.generatedFromDataAsOf || analysis?.createdAt, sourceDates);
           if (!freshness.isStale) return null;

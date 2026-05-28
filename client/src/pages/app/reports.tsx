@@ -173,9 +173,9 @@ export default function Reports() {
 
   const latestSourceDate = (() => {
     const dates = [
-      companyProfile?.lastCrawledAt,
-      ...competitors.map((c: any) => c.lastCrawledAt),
-      ...competitors.map((c: any) => c.socialLastFetchedAt),
+      companyProfile?.lastFullCrawl,
+      ...competitors.map((c: any) => c.lastFullCrawl),
+      ...competitors.map((c: any) => c.lastSocialCrawl),
     ].filter(Boolean).map((d: string) => new Date(d).getTime());
     return dates.length > 0 ? new Date(Math.max(...dates)).toISOString() : null;
   })();

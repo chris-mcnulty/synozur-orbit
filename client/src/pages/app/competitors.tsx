@@ -1628,9 +1628,9 @@ export default function Competitors() {
           entityName={refreshStrategyTarget.name}
           entityType="competitor"
           sources={{
-            website: { lastUpdated: refreshStrategyTarget.lastCrawledAt || refreshStrategyTarget.lastCrawl || null },
+            website: { lastUpdated: refreshStrategyTarget.lastFullCrawl || refreshStrategyTarget.lastCrawl || null },
             ...(refreshStrategyTarget.linkedInUrl || refreshStrategyTarget.twitterUrl || refreshStrategyTarget.instagramUrl || refreshStrategyTarget.facebookUrl
-              ? { social: { lastUpdated: refreshStrategyTarget.socialLastFetchedAt || null } }
+              ? { social: { lastUpdated: refreshStrategyTarget.lastSocialCrawl || null } }
               : {}),
           }}
           onConfirm={async (selectedSources) => {
