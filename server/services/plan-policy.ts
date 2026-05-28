@@ -48,6 +48,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "collaboration", label: "Collaboration", description: "Threaded comments, @mentions, shared annotations and action item assignments across artifacts", category: "platform" },
   { key: "hubspotIntegration", label: "HubSpot CRM Sync", description: "Connect a HubSpot portal to enrich competitors with CRM data, surface deal context, and push battlecards / briefings / action items into HubSpot. Pro: inbound only. Enterprise/Unlimited: inbound + outbound + auto-push.", category: "platform" },
   { key: "pricingIntelligence", label: "Pricing Intelligence", description: "Track competitor pricing pages with structured tier extraction, change history, and AI-summarised diffs surfaced in activity, battlecards, and the visualization dashboard.", category: "monitoring" },
+  { key: "visualizationDashboard", label: "Visualization Dashboard", description: "Interactive Recharts-based dashboard with engagement trends, posting frequency, sentiment over time, and competitor activity analytics.", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -111,6 +112,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     collaboration: false,
     hubspotIntegration: false,
     pricingIntelligence: false,
+    visualizationDashboard: false,
   },
   trial: {
     battlecards: true,
@@ -153,6 +155,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     collaboration: false,
     hubspotIntegration: false,
     pricingIntelligence: false,
+    visualizationDashboard: false,
   },
   pro: {
     battlecards: true,
@@ -195,6 +198,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     collaboration: true,
     hubspotIntegration: true,
     pricingIntelligence: true,
+    visualizationDashboard: false,
   },
   enterprise: {
     battlecards: true,
@@ -237,6 +241,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     collaboration: true,
     hubspotIntegration: true,
     pricingIntelligence: true,
+    visualizationDashboard: true,
   },
   unlimited: {
     battlecards: true,
@@ -279,6 +284,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     collaboration: true,
     hubspotIntegration: true,
     pricingIntelligence: true,
+    visualizationDashboard: true,
   },
 };
 

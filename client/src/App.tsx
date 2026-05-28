@@ -75,6 +75,7 @@ import PositioningMapPage from "@/pages/app/positioning-map";
 import PublicFeedbackPage from "@/pages/feedback-public";
 import SeoDashboard from "@/pages/app/seo-dashboard";
 import InsightsOutcomesPage from "@/pages/app/insights-outcomes";
+import InsightsVisualizationsPage from "@/pages/app/insights-visualizations";
 import SettingsIntegrationsPage from "@/pages/app/settings-integrations";
 import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
 import DeveloperPortalPage from "@/pages/app/developer";
@@ -177,6 +178,7 @@ function Router() {
       <Route path="/app/positioning-map" component={PositioningMapPage} />
       <Route path="/app/seo-dashboard">{() => <PageFeatureGate featureKey="seoTracking" label="SEO &amp; Share of Voice" description="Track keyword rankings and competitive share-of-voice. Upgrade to unlock this feature."><SeoDashboard /></PageFeatureGate>}</Route>
       <Route path="/app/insights/outcomes">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Outcome Metrics & Orbit Score" description="ROI dashboard with Orbit Score, GA4 analytics, and outcome trend charts. Upgrade to unlock this feature."><InsightsOutcomesPage /></PageFeatureGate>}</Route>
+      <Route path="/app/insights/visualizations">{() => <PageFeatureGate featureKey="visualizationDashboard" label="Visualization Dashboard" description="Interactive engagement, posting, sentiment, and pricing trends. Upgrade to Enterprise to unlock this feature."><InsightsVisualizationsPage /></PageFeatureGate>}</Route>
 
       {/* Fallback to 404 */}
       <Route component={NotFound} />

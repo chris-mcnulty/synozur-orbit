@@ -242,6 +242,7 @@ const FEATURE_REQUIRED_PLAN: Record<string, string> = {
   personaBuilder: "Pro",
   autoBuild: "Enterprise",
   pricingIntelligence: "Pro",
+  visualizationDashboard: "Enterprise",
 };
 
 export function PageFeatureGate({ featureKey, label, description, children }: {

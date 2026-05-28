@@ -542,6 +542,36 @@ export const activity = pgTable("activity", {
   competitorCreatedIdx: index("activity_competitor_created_idx").on(table.competitorId, table.createdAt),
 }));
 
+export const ENGAGEMENT_PLATFORMS = ["linkedin", "instagram", "twitter", "facebook"] as const;
+export type EngagementPlatform = (typeof ENGAGEMENT_PLATFORMS)[number];
+
+// Time-series engagement metrics per competitor + platform. One row per crawl so we can
+// chart trends in the visualization dashboard. Latest values still live on the
+// `competitors` JSONB engagement columns for fast single-record reads.
+export const competitorEngagementSnapshots = pgTable("competitor_engagement_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  platform: text("platform").notNull(), // one of ENGAGEMENT_PLATFORMS
+  followers: integer("followers"),
+  posts: integer("posts"),
+  reactions: integer("reactions"),
+  comments: integer("comments"),
+  likes: integer("likes"),
+  // Platform-specific extras (tweets count, shares, etc.) without growing the column set.
+  raw: jsonb("raw"),
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  competitorPlatformCapturedIdx: index("competitor_engagement_snapshots_competitor_platform_idx").on(
+    table.competitorId, table.platform, table.capturedAt
+  ),
+  tenantCapturedIdx: index("competitor_engagement_snapshots_tenant_captured_idx").on(
+    table.tenantDomain, table.capturedAt
+  ),
+}));
+
 // Pricing intelligence: structured snapshots of competitor pricing pages over time.
 // Each row captures the extracted tier structure plus the raw content used for diffing
 // the next run. Change summaries are AI-generated when significant changes are detected.
@@ -897,6 +927,13 @@ export const insertCompetitorPricingSnapshotSchema = createInsertSchema(competit
 });
 export type InsertCompetitorPricingSnapshot = z.infer<typeof insertCompetitorPricingSnapshotSchema>;
 export type CompetitorPricingSnapshot = typeof competitorPricingSnapshots.$inferSelect;
+
+export const insertCompetitorEngagementSnapshotSchema = createInsertSchema(competitorEngagementSnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertCompetitorEngagementSnapshot = z.infer<typeof insertCompetitorEngagementSnapshotSchema>;
+export type CompetitorEngagementSnapshot = typeof competitorEngagementSnapshots.$inferSelect;
 
 export const insertRecommendationSchema = createInsertSchema(recommendations).omit({
   id: true,

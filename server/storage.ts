@@ -173,6 +173,9 @@ import {
   competitorPricingSnapshots,
   type CompetitorPricingSnapshot,
   type InsertCompetitorPricingSnapshot,
+  competitorEngagementSnapshots,
+  type CompetitorEngagementSnapshot,
+  type InsertCompetitorEngagementSnapshot,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -316,6 +319,11 @@ export interface IStorage {
   getPricingSnapshotsForCompetitor(competitorId: string, limit?: number): Promise<CompetitorPricingSnapshot[]>;
   getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined>;
   deletePricingSnapshot(id: string): Promise<void>;
+  getPricingSnapshotsForTenant(tenantDomain: string, opts?: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[] }): Promise<CompetitorPricingSnapshot[]>;
+
+  // Engagement snapshots: time-series social metrics for the visualization dashboard
+  createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot>;
+  getEngagementSnapshotsForTenant(tenantDomain: string, opts?: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[]; platforms?: string[] }): Promise<CompetitorEngagementSnapshot[]>;
 
   // Global Grounding Document methods (application-wide AI context)
   getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
@@ -1328,6 +1336,43 @@ export class DatabaseStorage implements IStorage {
 
   async deletePricingSnapshot(id: string): Promise<void> {
     await db.delete(competitorPricingSnapshots).where(eq(competitorPricingSnapshots.id, id));
+  }
+
+  async getPricingSnapshotsForTenant(
+    tenantDomain: string,
+    opts: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[] } = {},
+  ): Promise<CompetitorPricingSnapshot[]> {
+    const conditions = [eq(competitorPricingSnapshots.tenantDomain, tenantDomain)];
+    if (opts.since) conditions.push(gte(competitorPricingSnapshots.capturedAt, opts.since));
+    if (opts.until) conditions.push(sql`${competitorPricingSnapshots.capturedAt} <= ${opts.until}`);
+    if (opts.marketId === null) conditions.push(isNull(competitorPricingSnapshots.marketId));
+    else if (opts.marketId) conditions.push(eq(competitorPricingSnapshots.marketId, opts.marketId));
+    if (opts.competitorIds?.length) conditions.push(inArray(competitorPricingSnapshots.competitorId, opts.competitorIds));
+    return await db.select().from(competitorPricingSnapshots)
+      .where(and(...conditions))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt));
+  }
+
+  // Engagement snapshots
+  async createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot> {
+    const [created] = await db.insert(competitorEngagementSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  async getEngagementSnapshotsForTenant(
+    tenantDomain: string,
+    opts: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[]; platforms?: string[] } = {},
+  ): Promise<CompetitorEngagementSnapshot[]> {
+    const conditions = [eq(competitorEngagementSnapshots.tenantDomain, tenantDomain)];
+    if (opts.since) conditions.push(gte(competitorEngagementSnapshots.capturedAt, opts.since));
+    if (opts.until) conditions.push(sql`${competitorEngagementSnapshots.capturedAt} <= ${opts.until}`);
+    if (opts.marketId === null) conditions.push(isNull(competitorEngagementSnapshots.marketId));
+    else if (opts.marketId) conditions.push(eq(competitorEngagementSnapshots.marketId, opts.marketId));
+    if (opts.competitorIds?.length) conditions.push(inArray(competitorEngagementSnapshots.competitorId, opts.competitorIds));
+    if (opts.platforms?.length) conditions.push(inArray(competitorEngagementSnapshots.platform, opts.platforms));
+    return await db.select().from(competitorEngagementSnapshots)
+      .where(and(...conditions))
+      .orderBy(competitorEngagementSnapshots.capturedAt);
   }
 
   // Global Grounding Document methods (application-wide AI context)
