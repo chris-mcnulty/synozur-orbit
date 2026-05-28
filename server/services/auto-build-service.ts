@@ -4,6 +4,7 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { calculateScores, getCurrentWeeklyPeriod } from "./scoring-service";
+import { runWithConcurrency, AI_CONCURRENCY } from "./promise-pool";
 import { generateBriefing } from "./intelligence-briefing-service";
 import { generateExecutiveSummary } from "./executive-summary-service";
 import { monitorCompetitorPricing } from "./pricing-intelligence";
@@ -377,15 +378,18 @@ Only return the JSON array, no other text.`;
     if (!pricingGate.allowed) {
       progress.details.push("Pricing capture skipped: tenant plan does not include Pricing Intelligence");
     } else {
+      // Run captures in parallel with the same bounded concurrency the analysis lane
+      // uses elsewhere. Each capture does an HTTP fetch + 1-2 Anthropic calls, so for
+      // 10 competitors serializing this step would add minutes to wall time.
       let pricingFound = 0;
       let pricingCaptured = 0;
-      for (const competitor of createdCompetitors) {
+      await runWithConcurrency(createdCompetitors, AI_CONCURRENCY.anthropic, async (competitor) => {
         try {
           const freshComp = await storage.getCompetitor(competitor.id);
           const crawlData = freshComp?.crawlData as any;
           const pages = Array.isArray(crawlData?.pages) ? crawlData.pages : [];
           const pricingPage = pages.find((p: any) => p && p.pageType === "pricing");
-          if (!pricingPage?.url) continue;
+          if (!pricingPage?.url) return;
           pricingFound++;
           await storage.updateCompetitor(competitor.id, { pricingPageUrl: pricingPage.url });
           const result = await monitorCompetitorPricing(competitor.id, {
@@ -401,7 +405,7 @@ Only return the JSON array, no other text.`;
         } catch (err: any) {
           progress.details.push(`⚠ Pricing capture failed for ${competitor.name}: ${err.message}`);
         }
-      }
+      });
       if (pricingFound === 0) {
         progress.details.push("No pricing pages detected during crawl");
       } else {

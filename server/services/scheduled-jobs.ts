@@ -1188,6 +1188,15 @@ async function runPricingMonitorJob(): Promise<void> {
               tenantDomain: tenant.domain,
               signal,
             });
+            // Stamp lastPricingCheck on every outcome so persistently-failing
+            // competitors don't re-queue every 6h. The service only stamps on
+            // success (so the freshness UI reflects "last successful capture");
+            // here we additionally stamp on no_content / error / no_url so the
+            // scheduler's 7-day gate engages regardless of result.
+            if (result.status !== "success") {
+              await storage.updateCompetitor(competitor.id, { lastPricingCheck: new Date() })
+                .catch((err) => console.error(`[Scheduled Job] lastPricingCheck stamp on ${result.status} failed for ${competitor.name}:`, err.message));
+            }
             return {
               status: result.status,
               entityType: "competitor",
