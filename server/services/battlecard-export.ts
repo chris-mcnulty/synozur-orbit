@@ -1,7 +1,68 @@
-import type { Battlecard, Tenant, ProductBattlecard } from "@shared/schema";
+import type {
+  Battlecard,
+  Tenant,
+  ProductBattlecard,
+  CompetitorPricingSnapshot,
+  PricingTier,
+} from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
 import { withPdfPage } from "./pdf-browser-pool";
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderPricingSnapshotSection(
+  snapshot: CompetitorPricingSnapshot | null | undefined,
+  primaryColor: string,
+): string {
+  if (!snapshot) return "";
+  const tiers = (snapshot.tiers as PricingTier[] | null) || [];
+  if (!tiers.length && !snapshot.changeSummary) return "";
+
+  const tierCards = tiers
+    .slice(0, 6)
+    .map(t => {
+      const features = (t.features || []).slice(0, 6)
+        .map(f => `<li>${escapeHtml(f)}</li>`).join("");
+      const priceLine = t.price ? escapeHtml(t.price) : (t.priceAmount != null ? `$${t.priceAmount}` : "—");
+      const period = t.billingPeriod ? ` <span style="font-size:9pt;color:#6b7280;">/${escapeHtml(t.billingPeriod)}</span>` : "";
+      const audience = t.audience ? `<div style="font-size:9pt;color:#6b7280;margin-bottom:6px;">${escapeHtml(t.audience)}</div>` : "";
+      const highlight = t.isHighlighted ? `border-color:${primaryColor};` : "";
+      return `
+      <div class="pricing-tier" style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;${highlight}">
+        <div style="font-weight:600;font-size:11pt;margin-bottom:4px;">${escapeHtml(t.name || "Tier")}</div>
+        ${audience}
+        <div style="font-size:13pt;font-weight:700;color:${primaryColor};margin-bottom:8px;">${priceLine}${period}</div>
+        ${features ? `<ul style="margin:0;padding-left:16px;font-size:9.5pt;line-height:1.4;">${features}</ul>` : ""}
+      </div>`;
+    }).join("");
+
+  const summary = snapshot.changeSummary
+    ? `<div style="margin-top:10px;padding:10px;background:#f9fafb;border-left:3px solid ${primaryColor};font-size:10pt;line-height:1.4;">
+         <strong>Latest change:</strong> ${escapeHtml(snapshot.changeSummary)}
+       </div>`
+    : "";
+
+  const meta = `
+    <div style="font-size:9pt;color:#6b7280;margin-bottom:10px;">
+      Captured ${formatDateSafe(snapshot.capturedAt)}${snapshot.pricingModel ? ` • ${escapeHtml(snapshot.pricingModel)}` : ""}${snapshot.currency ? ` • ${escapeHtml(snapshot.currency)}` : ""}${snapshot.hasFreeTier ? " • Free tier available" : ""}
+    </div>`;
+
+  return `
+  <div class="section">
+    <div class="section-title">Pricing Snapshot</div>
+    ${meta}
+    ${tierCards ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">${tierCards}</div>` : ""}
+    ${summary}
+  </div>`;
+}
 
 // Fetch external image URL and convert to base64 data URI
 async function fetchImageAsBase64(url: string): Promise<string | null> {
@@ -158,7 +219,8 @@ function generateBattlecardHtml(
   tenant?: Tenant | null,
   generatedAt?: Date | string | null,
   competitorLogoUrl?: string | null,
-  companyProfile?: CompanyProfile | null
+  companyProfile?: CompanyProfile | null,
+  pricingSnapshot?: CompetitorPricingSnapshot | null,
 ): string {
   const bc = battlecard as any;
   const primaryColor = tenant?.primaryColor || "#810FFB";
@@ -436,6 +498,8 @@ function generateBattlecardHtml(
   </div>
   ` : ''}
 
+  ${renderPricingSnapshotSection(pricingSnapshot, primaryColor)}
+
   <div class="footer">
     ${synozurLogo ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${synozurLogo}" alt="Synozur" style="height: 32px; width: auto;" /></div>` : ''}
     ${ORBIT_FOOTER}<br/>
@@ -456,6 +520,7 @@ export async function generateBattlecardPdf(
   competitorLogoUrl?: string | null,
   companyProfile?: CompanyProfile | null,
   reportProgress?: (patch: { phase?: string; percent?: number }) => void,
+  pricingSnapshot?: CompetitorPricingSnapshot | null,
 ): Promise<Buffer> {
   reportProgress?.({ phase: "Loading assets", percent: 10 });
   let logoBase64: string | null = null;
@@ -464,7 +529,7 @@ export async function generateBattlecardPdf(
   }
 
   reportProgress?.({ phase: "Rendering pages", percent: 35 });
-  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64, companyProfile);
+  const html = generateBattlecardHtml(battlecard, competitorName, companyName, tenant, generatedAt, logoBase64, companyProfile, pricingSnapshot);
 
   const startTime = Date.now();
   console.log(`[Battlecard PDF] Starting generation for ${competitorName} via PDF pool`);

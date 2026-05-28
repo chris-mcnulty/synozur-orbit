@@ -241,6 +241,7 @@ const FEATURE_REQUIRED_PLAN: Record<string, string> = {
   competitorAlerts: "Pro",
   personaBuilder: "Pro",
   autoBuild: "Enterprise",
+  pricingIntelligence: "Pro",
 };
 
 export function PageFeatureGate({ featureKey, label, description, children }: {

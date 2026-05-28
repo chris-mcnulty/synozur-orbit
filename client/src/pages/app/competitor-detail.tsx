@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompetitorDocuments from "@/components/CompetitorDocuments";
+import CompetitorPricing from "@/components/CompetitorPricing";
 import { useFeatureAccess } from "@/components/UpgradePrompt";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -996,6 +997,9 @@ export default function CompetitorDetail() {
             <TabsTrigger value="documents" data-testid="tab-documents">
               <FileText className="h-4 w-4 mr-1" /> Documents
             </TabsTrigger>
+            <TabsTrigger value="pricing" data-testid="tab-pricing">
+              <DollarSign className="h-4 w-4 mr-1" /> Pricing
+            </TabsTrigger>
             <TabsTrigger value="history">Crawl History</TabsTrigger>
           </TabsList>
 
@@ -1700,6 +1704,14 @@ export default function CompetitorDetail() {
                   scopeTag: string | null;
                 }> } | null)?.competitorDocSources || []
               }
+            />
+          </TabsContent>
+
+          <TabsContent value="pricing" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <CompetitorPricing
+              competitorId={id!}
+              competitorName={competitor.name}
+              initialPricingUrl={competitor.pricingPageUrl}
             />
           </TabsContent>
 

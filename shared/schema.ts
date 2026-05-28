@@ -458,6 +458,7 @@ export const competitors = pgTable("competitors", {
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
   facebookUrl: text("facebook_url"), // Facebook page URL
   blogUrl: text("blog_url"), // Blog or RSS feed URL
+  pricingPageUrl: text("pricing_page_url"), // Pricing/plans page URL for pricing intelligence tracker
   faviconUrl: text("favicon_url"), // URL to stored favicon/logo
   screenshotUrl: text("screenshot_url"), // URL to stored homepage screenshot
   lastCrawl: text("last_crawl"),
@@ -539,6 +540,38 @@ export const activity = pgTable("activity", {
 }, (table) => ({
   competitorAnalyzedIdx: index("activity_competitor_analyzed_idx").on(table.competitorId, table.analyzedAt),
   competitorCreatedIdx: index("activity_competitor_created_idx").on(table.competitorId, table.createdAt),
+}));
+
+// Pricing intelligence: structured snapshots of competitor pricing pages over time.
+// Each row captures the extracted tier structure plus the raw content used for diffing
+// the next run. Change summaries are AI-generated when significant changes are detected.
+export const competitorPricingSnapshots = pgTable("competitor_pricing_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  pricingUrl: text("pricing_url").notNull(),
+  // Extracted tiers: [{name, price, billingPeriod, currency, features[], cta, isHighlighted}]
+  tiers: jsonb("tiers").notNull(),
+  // Free-text fields extracted alongside tiers
+  pricingModel: text("pricing_model"), // e.g. "subscription", "usage-based", "perpetual", "freemium"
+  currency: text("currency"), // ISO 4217, e.g. "USD"
+  hasFreeTier: boolean("has_free_tier"),
+  rawContent: text("raw_content"), // Normalised page text used for diffing
+  changeScore: integer("change_score").notNull().default(0), // 0..100 from prior snapshot
+  changeSummary: text("change_summary"), // AI narrative of change vs. previous snapshot
+  // Structured change analysis: {changes: [{kind, description, significance}], categories[]}
+  changeAnalysis: jsonb("change_analysis"),
+  crawlMethod: text("crawl_method"), // "headless" | "http"
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  competitorCapturedIdx: index("competitor_pricing_snapshots_competitor_captured_idx").on(
+    table.competitorId, table.capturedAt
+  ),
+  tenantCapturedIdx: index("competitor_pricing_snapshots_tenant_captured_idx").on(
+    table.tenantDomain, table.capturedAt
+  ),
 }));
 
 export const recommendations = pgTable("recommendations", {
@@ -782,6 +815,10 @@ export const socialLinkSchemas = {
     /^https?:\/\/[^\s.]+\.[^\s]+/i,
     "Use a full URL like https://example.com/blog or https://example.com/feed.xml",
   ),
+  pricingPageUrl: optionalSocialUrl(
+    /^https?:\/\/[^\s.]+\.[^\s]+/i,
+    "Use a full URL like https://example.com/pricing",
+  ),
 } as const;
 
 // Partial schema for PATCH bodies — every field is optional so only
@@ -792,6 +829,7 @@ export const competitorSocialLinksUpdateSchema = z.object({
   instagramUrl: socialLinkSchemas.instagramUrl.optional().nullable(),
   facebookUrl: socialLinkSchemas.facebookUrl.optional().nullable(),
   blogUrl: socialLinkSchemas.blogUrl.optional().nullable(),
+  pricingPageUrl: socialLinkSchemas.pricingPageUrl.optional().nullable(),
 });
 
 export const insertCompetitorSchema = createInsertSchema(competitors)
@@ -806,6 +844,7 @@ export const insertCompetitorSchema = createInsertSchema(competitors)
     instagramUrl: socialLinkSchemas.instagramUrl.optional().nullable(),
     facebookUrl: socialLinkSchemas.facebookUrl.optional().nullable(),
     blogUrl: socialLinkSchemas.blogUrl.optional().nullable(),
+    pricingPageUrl: socialLinkSchemas.pricingPageUrl.optional().nullable(),
   });
 
 export const insertActivitySchema = createInsertSchema(activity).omit({
@@ -817,6 +856,47 @@ export const insertActivitySchema = createInsertSchema(activity).omit({
   analyzedAt: true,
   analyzerVersion: true,
 });
+
+export const PRICING_TIER_BILLING_PERIODS = [
+  "monthly",
+  "annual",
+  "quarterly",
+  "one-time",
+  "usage-based",
+  "custom",
+] as const;
+export type PricingTierBillingPeriod = (typeof PRICING_TIER_BILLING_PERIODS)[number];
+
+export const pricingTierSchema = z.object({
+  name: z.string(),
+  price: z.string().nullable().optional(), // Raw displayed price string, e.g. "$49/mo" or "Custom"
+  priceAmount: z.number().nullable().optional(), // Parsed numeric amount when extractable
+  billingPeriod: z.enum(PRICING_TIER_BILLING_PERIODS).nullable().optional(),
+  currency: z.string().nullable().optional(),
+  features: z.array(z.string()).default([]),
+  cta: z.string().nullable().optional(), // "Start free trial", "Contact sales", etc.
+  isHighlighted: z.boolean().default(false),
+  audience: z.string().nullable().optional(), // e.g. "For startups", "For enterprises"
+});
+export type PricingTier = z.infer<typeof pricingTierSchema>;
+
+export const pricingChangeAnalysisSchema = z.object({
+  changes: z.array(z.object({
+    kind: z.enum(["tier_added", "tier_removed", "price_changed", "features_changed", "model_changed", "other"]),
+    description: z.string(),
+    significance: z.enum(["high", "medium", "low"]),
+  })).default([]),
+  categories: z.array(z.string()).default([]),
+  narrative: z.string().default(""),
+});
+export type PricingChangeAnalysis = z.infer<typeof pricingChangeAnalysisSchema>;
+
+export const insertCompetitorPricingSnapshotSchema = createInsertSchema(competitorPricingSnapshots).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertCompetitorPricingSnapshot = z.infer<typeof insertCompetitorPricingSnapshotSchema>;
+export type CompetitorPricingSnapshot = typeof competitorPricingSnapshots.$inferSelect;
 
 export const insertRecommendationSchema = createInsertSchema(recommendations).omit({
   id: true,

@@ -47,6 +47,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "competitorDocuments", label: "Competitor Documents", description: "Upload per-competitor PDF/DOCX/TXT documents (datasheets, case studies, annual reports) to ground analyses, gap analysis, battlecards, and briefings", category: "intelligence" },
   { key: "collaboration", label: "Collaboration", description: "Threaded comments, @mentions, shared annotations and action item assignments across artifacts", category: "platform" },
   { key: "hubspotIntegration", label: "HubSpot CRM Sync", description: "Connect a HubSpot portal to enrich competitors with CRM data, surface deal context, and push battlecards / briefings / action items into HubSpot. Pro: inbound only. Enterprise/Unlimited: inbound + outbound + auto-push.", category: "platform" },
+  { key: "pricingIntelligence", label: "Pricing Intelligence", description: "Track competitor pricing pages with structured tier extraction, change history, and AI-summarised diffs surfaced in activity, battlecards, and the visualization dashboard.", category: "monitoring" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -109,6 +110,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorDocuments: false,
     collaboration: false,
     hubspotIntegration: false,
+    pricingIntelligence: false,
   },
   trial: {
     battlecards: true,
@@ -150,6 +152,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorDocuments: false,
     collaboration: false,
     hubspotIntegration: false,
+    pricingIntelligence: false,
   },
   pro: {
     battlecards: true,
@@ -191,6 +194,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorDocuments: true,
     collaboration: true,
     hubspotIntegration: true,
+    pricingIntelligence: true,
   },
   enterprise: {
     battlecards: true,
@@ -232,6 +236,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorDocuments: true,
     collaboration: true,
     hubspotIntegration: true,
+    pricingIntelligence: true,
   },
   unlimited: {
     battlecards: true,
@@ -273,6 +278,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     competitorDocuments: true,
     collaboration: true,
     hubspotIntegration: true,
+    pricingIntelligence: true,
   },
 };
 
@@ -590,7 +596,8 @@ export type ManualActionKey =
   | "aiEmailGen"
   | "aiPersonaGen"
   | "manualBriefingRebuild"
-  | "manualBattlecardRegen";
+  | "manualBattlecardRegen"
+  | "pricingRefresh";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   linkedinRefresh: "LinkedIn Refresh",
@@ -605,6 +612,7 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   aiPersonaGen: "AI Persona Generation",
   manualBriefingRebuild: "Manual Briefing Rebuild",
   manualBattlecardRegen: "Manual Battlecard Regeneration",
+  pricingRefresh: "Pricing Snapshot Refresh",
 };
 
 export const MANUAL_ACTION_KEYS: ManualActionKey[] = Object.keys(MANUAL_ACTION_LABELS) as ManualActionKey[];
@@ -623,6 +631,7 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   aiPersonaGen: "medium",
   manualBriefingRebuild: "high",
   manualBattlecardRegen: "medium",
+  pricingRefresh: "medium",
 };
 
 const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
@@ -639,6 +648,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     aiPersonaGen: 0,
     manualBriefingRebuild: 0,
     manualBattlecardRegen: 0,
+    pricingRefresh: 0,
   },
   trial: {
     linkedinRefresh: 5,
@@ -653,6 +663,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     aiPersonaGen: 5,
     manualBriefingRebuild: 3,
     manualBattlecardRegen: 5,
+    pricingRefresh: 0,
   },
   pro: {
     linkedinRefresh: 25,
@@ -667,6 +678,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     aiPersonaGen: 25,
     manualBriefingRebuild: 15,
     manualBattlecardRegen: 25,
+    pricingRefresh: 25,
   },
   enterprise: {
     linkedinRefresh: 100,
@@ -681,6 +693,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     aiPersonaGen: 100,
     manualBriefingRebuild: 50,
     manualBattlecardRegen: 100,
+    pricingRefresh: 100,
   },
   unlimited: {
     linkedinRefresh: -1,
@@ -695,6 +708,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     aiPersonaGen: -1,
     manualBriefingRebuild: -1,
     manualBattlecardRegen: -1,
+    pricingRefresh: -1,
   },
 };
 

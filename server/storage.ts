@@ -170,6 +170,9 @@ import {
   seoMetrics,
   type SeoMetric,
   type InsertSeoMetric,
+  competitorPricingSnapshots,
+  type CompetitorPricingSnapshot,
+  type InsertCompetitorPricingSnapshot,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
@@ -306,7 +309,14 @@ export interface IStorage {
   archiveCompetitorDocument(id: string): Promise<void>;
   unarchiveCompetitorDocument(id: string): Promise<void>;
   deleteCompetitorDocument(id: string): Promise<void>;
-  
+
+  // Pricing Intelligence: per-competitor pricing-page snapshots over time
+  createPricingSnapshot(snapshot: InsertCompetitorPricingSnapshot): Promise<CompetitorPricingSnapshot>;
+  getPricingSnapshot(id: string): Promise<CompetitorPricingSnapshot | undefined>;
+  getPricingSnapshotsForCompetitor(competitorId: string, limit?: number): Promise<CompetitorPricingSnapshot[]>;
+  getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined>;
+  deletePricingSnapshot(id: string): Promise<void>;
+
   // Global Grounding Document methods (application-wide AI context)
   getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
   getActiveGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
@@ -1287,6 +1297,37 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompetitorDocument(id: string): Promise<void> {
     await db.delete(competitorDocuments).where(eq(competitorDocuments.id, id));
+  }
+
+  // Pricing Intelligence: per-competitor pricing-page snapshots
+  async createPricingSnapshot(snapshot: InsertCompetitorPricingSnapshot): Promise<CompetitorPricingSnapshot> {
+    const [created] = await db.insert(competitorPricingSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  async getPricingSnapshot(id: string): Promise<CompetitorPricingSnapshot | undefined> {
+    const [row] = await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.id, id));
+    return row || undefined;
+  }
+
+  async getPricingSnapshotsForCompetitor(competitorId: string, limit = 50): Promise<CompetitorPricingSnapshot[]> {
+    return await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.competitorId, competitorId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(limit);
+  }
+
+  async getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined> {
+    const rows = await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.competitorId, competitorId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(1);
+    return rows[0] || undefined;
+  }
+
+  async deletePricingSnapshot(id: string): Promise<void> {
+    await db.delete(competitorPricingSnapshots).where(eq(competitorPricingSnapshots.id, id));
   }
 
   // Global Grounding Document methods (application-wide AI context)
