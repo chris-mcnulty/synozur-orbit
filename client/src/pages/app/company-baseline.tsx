@@ -200,7 +200,7 @@ export default function CompanyBaseline() {
               status: "failed",
               currentStep: "Build interrupted",
               stepsCompleted: 0,
-              totalSteps: 11,
+              totalSteps: 14,
               startedAt: new Date(),
               error: "This build was interrupted (the server restarted and lost the job state). You can re-trigger Auto Build to try again.",
               discoveredCompetitors: [],
@@ -1874,11 +1874,11 @@ export default function CompanyBaseline() {
                    autoBuildProgress?.currentStep || "Starting..."}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {autoBuildProgress?.stepsCompleted || 0} / {autoBuildProgress?.totalSteps || 11}
+                  {autoBuildProgress?.stepsCompleted || 0} / {autoBuildProgress?.totalSteps || 14}
                 </span>
               </div>
               <Progress
-                value={((autoBuildProgress?.stepsCompleted || 0) / (autoBuildProgress?.totalSteps || 11)) * 100}
+                value={((autoBuildProgress?.stepsCompleted || 0) / (autoBuildProgress?.totalSteps || 14)) * 100}
                 className="h-2"
                 data-testid="progress-auto-build"
               />
