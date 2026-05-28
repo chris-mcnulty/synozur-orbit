@@ -257,7 +257,7 @@ export interface IStorage {
   getWeeklyActivityByTenant(tenantDomain: string, marketId?: string): Promise<Activity[]>;
   getActivityByTenantForPeriod(tenantDomain: string, periodDays: number, marketId?: string): Promise<Activity[]>;
   getActivityByCompanyProfile(companyProfileId: string, limit?: number): Promise<Activity[]>;
-  getActivityByProduct(productId: string, limit?: number): Promise<Activity[]>;
+  getActivityByProduct(productId: string, ctx: ContextFilter, limit?: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   getUnanalyzedActivities(
     limit?: number,
@@ -987,12 +987,22 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async getActivityByProduct(productId: string, limit: number = 10): Promise<Activity[]> {
+  async getActivityByProduct(productId: string, ctx: ContextFilter, limit: number = 10): Promise<Activity[]> {
     // Product activity rows store productId inside `details` JSONB (set by
     // website-monitoring product crawls), not as a top-level column. Query the
-    // JSON field directly.
+    // JSON field directly. Scoped to tenant + market so a product UUID from one
+    // tenant can't surface another tenant's activity.
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
+      : eq(activity.marketId, ctx.marketId);
     return await db.select().from(activity)
-      .where(sql`${activity.details}->>'productId' = ${productId}`)
+      .where(
+        and(
+          eq(activity.tenantDomain, ctx.tenantDomain),
+          marketCondition!,
+          sql`${activity.details}->>'productId' = ${productId}`,
+        )
+      )
       .orderBy(desc(activity.createdAt))
       .limit(limit);
   }

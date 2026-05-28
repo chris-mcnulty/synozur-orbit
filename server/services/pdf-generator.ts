@@ -2250,14 +2250,20 @@ export async function generateIntelligenceBriefingPdf(
   }
 
   reportProgress?.({ phase: "Gathering source data", percent: 20 });
-  // briefing.marketId may be null for the tenant's default market; pass "" so the
-  // ContextFilter satisfies its `string` contract and storage methods treat it as the
-  // default-market case via their isDefaultMarket / null-marketId fallbacks.
+  // Resolve the effective marketId + isDefaultMarket the same way request-context
+  // resolution does (see server/context.ts): if the briefing lives on the tenant
+  // default market the marketId column may be NULL — we still need to pass the
+  // *real* default market id so storage methods that do `eq(marketId, ctx.marketId)`
+  // can match it, and set isDefaultMarket so they OR-in `isNull(marketId)` to
+  // include legacy NULL-marketId rows.
+  const defaultMarket = await storage.getDefaultMarket(tenant.id);
+  const effectiveMarketId = briefing.marketId || defaultMarket?.id || "";
+  const isDefaultMarket = !!defaultMarket && defaultMarket.id === effectiveMarketId;
   const briefingContext = {
     tenantId: tenant.id,
     tenantDomain,
-    marketId: briefing.marketId || "",
-    isDefaultMarket: !briefing.marketId,
+    marketId: effectiveMarketId,
+    isDefaultMarket,
   };
   const companyProfile = await storage.getCompanyProfileByContext(briefingContext);
 

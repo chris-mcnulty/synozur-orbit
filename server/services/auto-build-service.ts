@@ -107,11 +107,18 @@ async function runAutoBuildInBackground(
       throw new Error(`Tenant not found for domain: ${tenantDomain}`);
     }
 
+    // Resolve isDefaultMarket by comparing the requested marketId against the
+    // tenant's default market (matches the pattern in server/context.ts). Storage
+    // methods rely on this flag to OR-in `isNull(marketId)` for legacy NULL-market
+    // baseline rows; hardcoding false silently excludes them.
+    const defaultMarket = await storage.getDefaultMarket(tenant.id);
+    const isDefaultMarket = !!defaultMarket && defaultMarket.id === marketId;
+
     const profile = await storage.getCompanyProfileByContext({
       tenantId: tenant.id,
       tenantDomain,
       marketId,
-      isDefaultMarket: false,
+      isDefaultMarket,
     });
 
     if (!profile) {
@@ -542,11 +549,13 @@ Only return the JSON array, no other text.`;
   try {
     const tenant = await storage.getTenantByDomain(tenantDomain);
     if (!tenant) throw new Error("Tenant not found");
+    const defaultMarket = await storage.getDefaultMarket(tenant.id);
+    const isDefaultMarket = !!defaultMarket && defaultMarket.id === marketId;
     const allCompetitors = await storage.getCompetitorsByContext({
       tenantId: tenant.id,
       tenantDomain,
       marketId,
-      isDefaultMarket: false,
+      isDefaultMarket,
     });
     const analyzedCompetitors = allCompetitors.filter((c: any) => c.analysisData);
     if (analyzedCompetitors.length > 0) {
