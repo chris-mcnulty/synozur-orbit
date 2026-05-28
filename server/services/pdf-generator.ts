@@ -2257,10 +2257,10 @@ export async function generateIntelligenceBriefingPdf(
 
   const competitors = await storage.getCompetitorsByContext({ tenantDomain, marketId: briefing.marketId || undefined });
   const sourceDates: number[] = [];
-  if (companyProfile?.lastCrawledAt) sourceDates.push(new Date(companyProfile.lastCrawledAt).getTime());
+  if (companyProfile?.lastFullCrawl) sourceDates.push(new Date(companyProfile.lastFullCrawl).getTime());
   for (const c of competitors) {
-    if (c.lastCrawledAt) sourceDates.push(new Date(c.lastCrawledAt).getTime());
-    if ((c as any).socialLastFetchedAt) sourceDates.push(new Date((c as any).socialLastFetchedAt).getTime());
+    if (c.lastFullCrawl) sourceDates.push(new Date(c.lastFullCrawl).getTime());
+    if (c.lastSocialCrawl) sourceDates.push(new Date(c.lastSocialCrawl).getTime());
   }
   const dataAsOf = sourceDates.length > 0 ? new Date(Math.max(...sourceDates)) : undefined;
 

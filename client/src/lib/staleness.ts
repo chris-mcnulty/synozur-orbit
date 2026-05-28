@@ -100,8 +100,8 @@ export function getFullStalenessInfo(lastUpdated: string | Date | null | undefin
   const info = getStalenessInfo(level);
   const timeAgo = getTimeAgo(lastUpdated);
   
+  // `info` already carries `level` (set by getStalenessInfo), so we don't re-spread it.
   return {
-    level,
     ...info,
     timeAgo,
     lastUpdated,
