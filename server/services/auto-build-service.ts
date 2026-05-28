@@ -3,7 +3,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
-import { calculateScores } from "./scoring-service";
+import { calculateScores, getCurrentWeeklyPeriod } from "./scoring-service";
 import { generateBriefing } from "./intelligence-briefing-service";
 import { generateExecutiveSummary } from "./executive-summary-service";
 import { validateCompetitorUrl } from "../utils/url-validator";
@@ -42,7 +42,7 @@ export function getAutoBuildStatus(jobId: string, tenantDomain?: string): AutoBu
 }
 
 export function getActiveJobForMarket(tenantDomain: string, marketId: string): { jobId: string; progress: AutoBuildProgress } | null {
-  for (const [jobId, progress] of activeJobs.entries()) {
+  for (const [jobId, progress] of Array.from(activeJobs.entries())) {
     if (progress.tenantDomain === tenantDomain && progress.marketId === marketId && (progress.status === "running" || progress.status === "pending")) {
       return { jobId, progress };
     }
@@ -102,14 +102,20 @@ async function runAutoBuildInBackground(
   const maxCompetitors = options.competitorCount || 6;
 
   try {
+    const tenant = await storage.getTenantByDomain(tenantDomain);
+    if (!tenant) {
+      throw new Error(`Tenant not found for domain: ${tenantDomain}`);
+    }
+
     const profile = await storage.getCompanyProfileByContext({
+      tenantId: tenant.id,
       tenantDomain,
       marketId,
       isDefaultMarket: false,
     });
 
     if (!profile) {
-      const allProfiles = await storage.getCompanyProfilesByTenant(tenantDomain);
+      const allProfiles = await storage.getCompanyProfilesByTenantDomain(tenantDomain);
       const marketProfile = allProfiles.find((p: any) => p.marketId === marketId);
       if (!marketProfile) {
         throw new Error("No company profile found for this market. Please set up your company profile first.");
@@ -145,10 +151,11 @@ async function runAutoBuildWithProfile(
   updateStep("Step 1/12: Crawling baseline company website...");
   try {
     if (profile.websiteUrl) {
-      const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl, { maxPages: 15, timeout: 60000 });
+      const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
       if (crawlResult) {
         const combinedContent = getCombinedContent(crawlResult);
         const socialLinks = crawlResult.socialLinks || {};
+        const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
         const profileUpdates: any = {
           crawlData: crawlResult as any,
           lastCrawl: new Date().toISOString(),
@@ -156,7 +163,7 @@ async function runAutoBuildWithProfile(
           instagramUrl: profile.instagramUrl || socialLinks.instagram || null,
           twitterUrl: profile.twitterUrl || socialLinks.twitter || null,
           facebookUrl: profile.facebookUrl || socialLinks.facebook || null,
-          blogUrl: profile.blogUrl || socialLinks.blog || null,
+          blogUrl: profile.blogUrl || detectedBlogUrl,
         };
 
         if (!profile.organizationId) {
@@ -316,9 +323,10 @@ Only return the JSON array, no other text.`;
   updateStep("Step 5/12: Crawling competitor websites...");
   for (const competitor of createdCompetitors) {
     try {
-      const crawlResult = await crawlCompetitorWebsite(competitor.url, { maxPages: 10, timeout: 60000 });
+      const crawlResult = await crawlCompetitorWebsite(competitor.url);
       if (crawlResult) {
         const socialLinks = crawlResult.socialLinks || {};
+        const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
         await storage.updateCompetitor(competitor.id, {
           crawlData: crawlResult as any,
           lastCrawl: new Date().toISOString(),
@@ -326,7 +334,7 @@ Only return the JSON array, no other text.`;
           instagramUrl: socialLinks.instagram || null,
           twitterUrl: socialLinks.twitter || null,
           facebookUrl: socialLinks.facebook || null,
-          blogUrl: socialLinks.blog || null,
+          blogUrl: detectedBlogUrl,
           blogSnapshot: crawlResult.blogSnapshot || null,
         });
 
@@ -488,22 +496,41 @@ Only return the JSON array, no other text.`;
 
   updateStep("Step 9/12: Calculating competitive scores...");
   try {
+    // Scores live in score_history (one row per period per entity), not on the
+    // competitors table — the per-row score columns were removed when scoring
+    // moved to time-series. Mirrors full-regeneration-service.ts.
+    const market = marketId ? await storage.getMarket(marketId) : null;
+    const businessType = (market as any)?.businessType || "b2b";
+    const period = getCurrentWeeklyPeriod();
     for (const competitor of createdCompetitors) {
       const freshComp = await storage.getCompetitor(competitor.id);
       if (!freshComp) continue;
       const scores = calculateScores(
-        freshComp.analysisData || null,
-        freshComp.crawlData || null,
-        freshComp.linkedInEngagement as any || null,
-        freshComp.blogSnapshot as any || null
+        freshComp.analysisData as any,
+        freshComp.linkedInEngagement as any,
+        freshComp.instagramEngagement as any,
+        freshComp.crawlData as any,
+        freshComp.blogSnapshot as any,
+        freshComp.lastCrawl,
+        businessType,
       );
-      await storage.updateCompetitor(competitor.id, {
-        overallScore: Math.round(scores.overallScore),
-        innovationScore: Math.round(scores.innovationScore),
-        marketPresenceScore: Math.round(scores.marketPresenceScore),
-        contentScore: Math.round(scores.contentScore),
-        socialEngagementScore: Math.round(scores.socialEngagementScore),
-      });
+      const existingHistory = await storage.getScoreHistory("competitor", competitor.id, 1);
+      if (!existingHistory.length || existingHistory[0].period !== period) {
+        await storage.createScoreHistory({
+          entityType: "competitor",
+          entityId: competitor.id,
+          entityName: competitor.name,
+          tenantDomain,
+          marketId: marketId || competitor.marketId || undefined,
+          overallScore: Math.round(scores.overallScore),
+          innovationScore: Math.round(scores.innovationScore),
+          marketPresenceScore: Math.round(scores.marketPresenceScore),
+          contentActivityScore: Math.round(scores.contentActivityScore),
+          socialEngagementScore: Math.round(scores.socialEngagementScore),
+          scoreBreakdown: scores,
+          period,
+        });
+      }
     }
     progress.details.push("Competitive scores calculated");
   } catch (err: any) {
@@ -513,40 +540,44 @@ Only return the JSON array, no other text.`;
 
   updateStep("Step 10/12: Generating gap analysis & recommendations...");
   try {
-    const allCompetitors = await storage.getCompetitorsByContext({ tenantDomain, marketId, isDefaultMarket: false });
+    const tenant = await storage.getTenantByDomain(tenantDomain);
+    if (!tenant) throw new Error("Tenant not found");
+    const allCompetitors = await storage.getCompetitorsByContext({
+      tenantId: tenant.id,
+      tenantDomain,
+      marketId,
+      isDefaultMarket: false,
+    });
     const analyzedCompetitors = allCompetitors.filter((c: any) => c.analysisData);
     if (analyzedCompetitors.length > 0) {
       const refreshedProfile = await storage.getCompanyProfile(profile.id);
-      const baselineData = refreshedProfile?.analysisData || refreshedProfile?.crawlData || {};
-
-      const competitorAnalyses = analyzedCompetitors.map((c: any) => ({
-        name: c.name,
-        analysis: c.analysisData,
-      }));
+      const baselineAnalysis = refreshedProfile?.analysisData as any;
+      const ourPositioning = `${profile.companyName}: ${profile.description || "No description provided"}`;
+      const competitorAnalyses = analyzedCompetitors
+        .map((c: any) => c.analysisData)
+        .filter(Boolean);
 
       const gaps = await generateGapAnalysis(
-        profile.companyName,
-        baselineData as any,
-        competitorAnalyses as any
-      );
-      if (gaps) {
-        await storage.updateCompanyProfile(profile.id, {
-          gapAnalysis: gaps as any,
-        });
-      }
-
-      const recs = await generateRecommendations(
-        profile.companyName,
-        baselineData as any,
+        ourPositioning,
         competitorAnalyses as any,
-        gaps
+        baselineAnalysis,
       );
-      if (recs) {
-        await storage.updateCompanyProfile(profile.id, {
-          recommendations: recs as any,
+
+      // Recommendations are persisted per-row in the recommendations table, not as a
+      // JSONB blob on the company profile. Mirrors full-regeneration-service.ts.
+      const recs = await generateRecommendations(gaps, competitorAnalyses as any);
+      for (const rec of recs) {
+        await storage.createRecommendation({
+          title: rec.title,
+          description: rec.description,
+          area: rec.area,
+          impact: rec.impact,
+          userId,
+          tenantDomain,
+          marketId: marketId || null,
         });
       }
-      progress.details.push("Gap analysis and recommendations generated");
+      progress.details.push(`Gap analysis: ${gaps.length} gaps identified, ${recs.length} recommendations created`);
     }
   } catch (err: any) {
     progress.details.push(`Gap analysis warning: ${err.message}`);

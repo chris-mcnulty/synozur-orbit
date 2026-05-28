@@ -2250,12 +2250,18 @@ export async function generateIntelligenceBriefingPdf(
   }
 
   reportProgress?.({ phase: "Gathering source data", percent: 20 });
-  const companyProfile = await storage.getCompanyProfileByContext({
+  // briefing.marketId may be null for the tenant's default market; pass "" so the
+  // ContextFilter satisfies its `string` contract and storage methods treat it as the
+  // default-market case via their isDefaultMarket / null-marketId fallbacks.
+  const briefingContext = {
+    tenantId: tenant.id,
     tenantDomain,
-    marketId: briefing.marketId || undefined,
-  });
+    marketId: briefing.marketId || "",
+    isDefaultMarket: !briefing.marketId,
+  };
+  const companyProfile = await storage.getCompanyProfileByContext(briefingContext);
 
-  const competitors = await storage.getCompetitorsByContext({ tenantDomain, marketId: briefing.marketId || undefined });
+  const competitors = await storage.getCompetitorsByContext(briefingContext);
   const sourceDates: number[] = [];
   if (companyProfile?.lastFullCrawl) sourceDates.push(new Date(companyProfile.lastFullCrawl).getTime());
   for (const c of competitors) {

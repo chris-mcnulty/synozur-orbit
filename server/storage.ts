@@ -988,8 +988,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActivityByProduct(productId: string, limit: number = 10): Promise<Activity[]> {
+    // Product activity rows store productId inside `details` JSONB (set by
+    // website-monitoring product crawls), not as a top-level column. Query the
+    // JSON field directly.
     return await db.select().from(activity)
-      .where(eq(activity.productId, productId))
+      .where(sql`${activity.details}->>'productId' = ${productId}`)
       .orderBy(desc(activity.createdAt))
       .limit(limit);
   }
@@ -1750,7 +1753,7 @@ export class DatabaseStorage implements IStorage {
     if (tenantUserIds.length > 0) {
       // Delete user-owned records in batch using inArray
       await timedQuery("deleteTenant:batchDeleteUserRecords", async () => {
-        await db.delete(groundingDocuments).where(inArray(groundingDocuments.uploadedBy, tenantUserIds));
+        await db.delete(groundingDocuments).where(inArray(groundingDocuments.userId, tenantUserIds));
         await db.delete(globalGroundingDocuments).where(inArray(globalGroundingDocuments.uploadedBy, tenantUserIds));
         await db.delete(tenantInvites).where(inArray(tenantInvites.invitedBy, tenantUserIds));
         await db.delete(assessments).where(inArray(assessments.userId, tenantUserIds));
