@@ -3,6 +3,7 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
+import { monitorCompetitorPricing } from "./pricing-intelligence";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail, sendScheduledBriefingEmail, type BriefingDigestData } from "./email-service";
@@ -175,6 +176,7 @@ const jobStatus: Record<string, JobStatus> = {
   socialMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   websiteMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   productMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  pricingMonitor: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   trialReminder: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   weeklyDigest: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   seoRefresh: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
@@ -1111,6 +1113,108 @@ async function runWebsiteMonitorJob(): Promise<void> {
   }
 }
 
+// Pricing pages change infrequently (weeks/months between meaningful changes), so the
+// pricing monitor enforces a minimum 7-day interval per competitor regardless of the
+// tenant's general monitoringFrequency. This keeps LLM spend low while still catching
+// changes within a week of when they happen.
+const PRICING_MIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function runPricingMonitorJob(): Promise<void> {
+  if (jobStatus.pricingMonitor.isRunning) {
+    console.log("[Scheduled Job] Pricing monitor already running, skipping...");
+    return;
+  }
+
+  const abortController = new AbortController();
+  jobStatus.pricingMonitor.abortController = abortController;
+  jobStatus.pricingMonitor.isRunning = true;
+  console.log("[Scheduled Job] Starting pricing monitor job...");
+
+  const sweepMetrics = { totalChecked: 0, monitorsExecuted: 0, monitorsSkippedNoUrl: 0, monitorsSkippedFresh: 0, monitorsSkippedPlan: 0 };
+
+  try {
+    const tenants = await storage.getAllTenants();
+
+    for (const tenant of tenants) {
+      if (abortController.signal.aborted) {
+        console.log("[Scheduled Job] Pricing monitor job was cancelled");
+        break;
+      }
+      if (tenant.status !== "active") continue;
+
+      // Plan gate — pricing intelligence is Pro+. Skip free / trial tenants.
+      const planGate = await checkFeatureAccessAsync(tenant.plan, "pricingIntelligence");
+      if (!planGate.allowed) {
+        sweepMetrics.monitorsSkippedPlan++;
+        continue;
+      }
+
+      const frequency = tenant.monitoringFrequency || "weekly";
+      if (frequency === "disabled") continue;
+
+      const competitors = await storage.getCompetitorsByTenantDomain(tenant.domain);
+
+      for (const competitor of competitors) {
+        sweepMetrics.totalChecked++;
+
+        if (!competitor.pricingPageUrl) {
+          sweepMetrics.monitorsSkippedNoUrl++;
+          continue;
+        }
+        if (await isMarketArchived(competitor.marketId)) continue;
+        if (competitor.excludeFromCrawl) continue;
+
+        const lastCheck = competitor.lastPricingCheck
+          ? new Date(competitor.lastPricingCheck).getTime()
+          : 0;
+        const now = Date.now();
+        if (now - lastCheck < PRICING_MIN_INTERVAL_MS) {
+          sweepMetrics.monitorsSkippedFresh++;
+          continue;
+        }
+
+        sweepMetrics.monitorsExecuted++;
+        console.log(`[Scheduled Job] Queuing pricing monitor for ${competitor.name}...`);
+
+        enqueueMonitor(`pricing:${competitor.name}`, (signal) => trackJobRun(
+          "pricingMonitor",
+          tenant.domain,
+          competitor.id,
+          `Competitor: ${competitor.name}`,
+          async () => {
+            if (signal?.aborted) throw new Error("Pricing monitor aborted");
+            const result = await monitorCompetitorPricing(competitor.id, {
+              userId: competitor.userId,
+              tenantDomain: tenant.domain,
+              signal,
+            });
+            return {
+              status: result.status,
+              entityType: "competitor",
+              url: competitor.pricingPageUrl,
+              hasChanges: result.hasChanges,
+              changeScore: result.changeScore,
+            };
+          },
+        )).catch((err) => {
+          console.error(`[Scheduled Job] Queued pricing monitor failed for ${competitor.name}:`, err.message);
+        });
+      }
+    }
+  } catch (error) {
+    console.error("[Scheduled Job] Pricing monitor job failed:", error);
+  } finally {
+    jobStatus.pricingMonitor.isRunning = false;
+    jobStatus.pricingMonitor.abortController = null;
+    jobStatus.pricingMonitor.lastRun = new Date();
+    console.log(
+      `[Scheduled Job] Pricing monitor sweep completed — total checked: ${sweepMetrics.totalChecked}, ` +
+      `queued: ${sweepMetrics.monitorsExecuted}, no_url: ${sweepMetrics.monitorsSkippedNoUrl}, ` +
+      `fresh: ${sweepMetrics.monitorsSkippedFresh}, plan_blocked: ${sweepMetrics.monitorsSkippedPlan}`
+    );
+  }
+}
+
 async function runProductMonitorJob(): Promise<void> {
   if (jobStatus.productMonitor.isRunning) {
     console.log("[Scheduled Job] Product monitor already running, skipping...");
@@ -1684,6 +1788,7 @@ let websiteCrawlInterval: NodeJS.Timeout | null = null;
 let socialMonitorInterval: NodeJS.Timeout | null = null;
 let websiteMonitorInterval: NodeJS.Timeout | null = null;
 let productMonitorInterval: NodeJS.Timeout | null = null;
+let pricingMonitorInterval: NodeJS.Timeout | null = null;
 let trialReminderInterval: NodeJS.Timeout | null = null;
 let weeklyDigestInterval: NodeJS.Timeout | null = null;
 let scheduledBriefingInterval: NodeJS.Timeout | null = null;
@@ -2090,6 +2195,7 @@ export function startScheduledJobs(): void {
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
   if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
   if (productMonitorInterval) clearInterval(productMonitorInterval);
+  if (pricingMonitorInterval) clearInterval(pricingMonitorInterval);
   if (trialReminderInterval) clearInterval(trialReminderInterval);
   if (weeklyDigestInterval) clearInterval(weeklyDigestInterval);
   if (scheduledBriefingInterval) clearInterval(scheduledBriefingInterval);
@@ -2123,6 +2229,12 @@ export function startScheduledJobs(): void {
   productMonitorInterval = setInterval(() => {
     runProductMonitorJob();
   }, 60 * 60 * 1000);
+
+  // Pricing monitor: check every 6 hours, but each competitor is gated to a
+  // minimum 7-day interval inside the job (PRICING_MIN_INTERVAL_MS).
+  pricingMonitorInterval = setInterval(() => {
+    runPricingMonitorJob();
+  }, 6 * 60 * 60 * 1000);
 
   trialReminderInterval = setInterval(() => {
     runTrialReminderJob();
@@ -2266,6 +2378,11 @@ export function startScheduledJobs(): void {
     console.log("[Scheduled Jobs] Starting product monitor job sweep...");
     runProductMonitorJob();
   }, 90 * 1000);
+
+  setTimeout(() => {
+    console.log("[Scheduled Jobs] Starting pricing monitor job sweep...");
+    runPricingMonitorJob();
+  }, 120 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Starting trial reminder job sweep...");

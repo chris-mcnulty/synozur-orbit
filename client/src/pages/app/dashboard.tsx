@@ -854,10 +854,14 @@ export default function Dashboard() {
       </div>
 
       {(() => {
+        // Use the canonical schema fields. The earlier `lastCrawledAt` /
+        // `socialLastFetchedAt` names were typos that returned undefined at runtime,
+        // silently breaking the "Built from data as of" calculation.
         const sourceDateItems = [
           ...(companyProfile?.lastFullCrawl ? [{ label: "Baseline", date: companyProfile.lastFullCrawl }] : []),
           ...competitors.map((c: any) => ({ label: c.name + " (website)", date: c.lastFullCrawl })),
           ...competitors.filter((c: any) => c.linkedInUrl).map((c: any) => ({ label: c.name + " (social)", date: c.lastSocialCrawl })),
+          ...competitors.filter((c: any) => c.pricingPageUrl).map((c: any) => ({ label: c.name + " (pricing)", date: c.lastPricingCheck })),
         ];
         const allSourceDates = sourceDateItems.map(s => s.date).filter(Boolean);
         const artifactItems = [
