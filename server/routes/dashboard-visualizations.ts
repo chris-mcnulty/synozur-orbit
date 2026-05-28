@@ -11,7 +11,8 @@ function parseDate(value: unknown, fallback: Date): Date {
   return fallback;
 }
 
-function parseCompetitorIds(value: unknown): string[] | undefined {
+// Generic CSV-list parser used for both `competitorIds` and `platforms` query params.
+function parseCsvList(value: unknown): string[] | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   return value.split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -56,15 +57,15 @@ export function registerDashboardVisualizationRoutes(app: Express) {
       if (!(await guardFeature(req, res, "visualizationDashboard"))) return;
       const ctx = await getRequestContext(req);
       const { from, until } = defaultRange(req);
-      const platforms = parseCompetitorIds(req.query.platforms);
-      const competitorIds = parseCompetitorIds(req.query.competitorIds);
+      const platforms = parseCsvList(req.query.platforms);
+      const competitorIds = parseCsvList(req.query.competitorIds);
 
-      const snapshots = await storage.getEngagementSnapshotsForTenant(ctx.tenantDomain, {
+      const snapshots = await storage.getEngagementSnapshotsForTenant(toContextFilter(ctx), {
         since: from,
         until,
-        marketId: ctx.marketId,
         competitorIds,
         platforms,
+        lightweight: true,
       });
 
       const points = snapshots.map(s => ({
@@ -94,16 +95,14 @@ export function registerDashboardVisualizationRoutes(app: Express) {
       const { from, until } = defaultRange(req);
       const bucket = parseBucket(req.query.bucket);
 
-      const activities = await storage.getActivityByContext(toContextFilter(ctx));
-      const filtered = activities.filter(a => {
-        const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
-        if (created < from || created > until) return false;
-        if (!a.competitorId) return false;
-        return a.type === "blog_post" || a.type === "social_update";
+      const activities = await storage.getActivityForVisualization(toContextFilter(ctx), {
+        since: from,
+        until,
+        types: ["blog_post", "social_update"],
       });
 
       const counts = new Map<string, Map<string, number>>(); // bucket -> competitorId -> count
-      for (const a of filtered) {
+      for (const a of activities) {
         const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
         const key = bucketStart(created, bucket);
         const inner = counts.get(key) || new Map<string, number>();
@@ -135,18 +134,14 @@ export function registerDashboardVisualizationRoutes(app: Express) {
       const { from, until } = defaultRange(req);
       const bucket = parseBucket(req.query.bucket);
 
-      const activities = await storage.getActivityByContext(toContextFilter(ctx));
-      const filtered = activities.filter(a => {
-        if (a.sentimentScore === null || a.sentimentScore === undefined) return false;
-        if (!a.competitorId) return false;
-        const ts = a.analyzedAt
-          ? (a.analyzedAt instanceof Date ? a.analyzedAt : new Date(a.analyzedAt as any))
-          : (a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any));
-        return ts >= from && ts <= until;
+      const activities = await storage.getActivityForVisualization(toContextFilter(ctx), {
+        since: from,
+        until,
+        requireSentiment: true,
       });
 
       const totals = new Map<string, Map<string, { sum: number; count: number }>>();
-      for (const a of filtered) {
+      for (const a of activities) {
         const ts = a.analyzedAt
           ? (a.analyzedAt instanceof Date ? a.analyzedAt : new Date(a.analyzedAt as any))
           : (a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any));
@@ -188,15 +183,13 @@ export function registerDashboardVisualizationRoutes(app: Express) {
       const { from, until } = defaultRange(req);
       const bucket = parseBucket(req.query.bucket);
 
-      const activities = await storage.getActivityByContext(toContextFilter(ctx));
-      const filtered = activities.filter(a => {
-        if (!a.competitorId) return false;
-        const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
-        return created >= from && created <= until;
+      const activities = await storage.getActivityForVisualization(toContextFilter(ctx), {
+        since: from,
+        until,
       });
 
       const counts = new Map<string, Map<string, number>>();
-      for (const a of filtered) {
+      for (const a of activities) {
         const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
         const bucketKey = bucketStart(created, bucket);
         const inner = counts.get(bucketKey) || new Map<string, number>();
@@ -226,13 +219,13 @@ export function registerDashboardVisualizationRoutes(app: Express) {
       if (!(await guardFeature(req, res, "visualizationDashboard"))) return;
       const ctx = await getRequestContext(req);
       const { from, until } = defaultRange(req);
-      const competitorIds = parseCompetitorIds(req.query.competitorIds);
+      const competitorIds = parseCsvList(req.query.competitorIds);
 
-      const snapshots = await storage.getPricingSnapshotsForTenant(ctx.tenantDomain, {
+      const snapshots = await storage.getPricingSnapshotsForTenant(toContextFilter(ctx), {
         since: from,
         until,
-        marketId: ctx.marketId,
         competitorIds,
+        lightweight: true,
       });
 
       const points = snapshots.map(s => {

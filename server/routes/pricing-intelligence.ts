@@ -32,11 +32,16 @@ export function registerPricingIntelligenceRoutes(app: Express) {
       const limit = typeof limitRaw === "string" ? Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 200) : 50;
       const snapshots = await storage.getPricingSnapshotsForCompetitor(competitor.id, limit);
 
+      // Strip the heavy `rawContent` column from the list response — it can be up to ~100KB
+      // per row and the UI never reads it. Diff computation still uses the persisted value
+      // inside the pricing-intelligence service.
+      const lite = snapshots.map(({ rawContent, ...rest }) => rest);
+
       return res.json({
         pricingPageUrl: competitor.pricingPageUrl || null,
-        latestSnapshotAt: snapshots[0]?.capturedAt || null,
-        latest: snapshots[0] || null,
-        snapshots,
+        latestSnapshotAt: lite[0]?.capturedAt || null,
+        latest: lite[0] || null,
+        snapshots: lite,
       });
     } catch (error: any) {
       if (error instanceof ContextError) {

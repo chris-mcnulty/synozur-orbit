@@ -84,20 +84,26 @@ interface PricingPoint {
   currency: string | null;
 }
 
-// Pivot [{bucket, competitorId, value}] into wide-form [{bucket, competitor1: v, competitor2: v}]
+// Pivot [{bucket, competitorId, value}] into wide-form rows keyed by competitorId
+// (NOT name) so two competitors that share a display name don't collide in the
+// chart or CSV export. Series labels in the legend/tooltip come from the
+// competitorNames lookup passed to each `<Line/Bar/Area name={...} />`.
 function pivotByCompetitor<T extends { bucket: string; competitorId: string }>(
   rows: T[],
   valueKey: keyof T,
-  competitorNames: Map<string, string>,
 ) {
   const byBucket = new Map<string, Record<string, any>>();
+  const competitorIds = new Set<string>();
   for (const row of rows) {
-    const name = competitorNames.get(row.competitorId) || row.competitorId.slice(0, 8);
+    competitorIds.add(row.competitorId);
     const existing = byBucket.get(row.bucket) || { bucket: row.bucket };
-    existing[name] = row[valueKey];
+    existing[row.competitorId] = row[valueKey];
     byBucket.set(row.bucket, existing);
   }
-  return Array.from(byBucket.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
+  return {
+    data: Array.from(byBucket.values()).sort((a, b) => a.bucket.localeCompare(b.bucket)),
+    competitorIds: Array.from(competitorIds),
+  };
 }
 
 export default function InsightsVisualizationsPage() {
@@ -133,7 +139,6 @@ export default function InsightsVisualizationsPage() {
     competitors.forEach(c => m.set(c.id, c.name));
     return m;
   }, [competitors]);
-  const competitorNameList = useMemo(() => Array.from(competitorNames.values()), [competitorNames]);
 
   const engagement = useQuery<{ points: EngagementPoint[] }>({
     queryKey: ["/api/dashboard/visualizations/engagement-trends", params, platform],
@@ -182,12 +187,22 @@ export default function InsightsVisualizationsPage() {
     },
   });
 
-  // Engagement chart: bucket engagement snapshots into the selected bucket and pick the latest value per competitor per bucket
+  // Resolve a stable, unique label for a competitorId; falls back to a short id stub so
+  // collisions stay distinct in legends even when names are missing.
+  const labelFor = (competitorId: string): string => {
+    const name = competitorNames.get(competitorId);
+    return name ? `${name}` : competitorId.slice(0, 8);
+  };
+
+  // Engagement chart: bucket engagement snapshots into the selected bucket and pick the
+  // latest value per competitor per bucket. Wide-form data keyed by competitorId (not name).
   const engagementChart = useMemo(() => {
     const points = engagement.data?.points || [];
     const buckets = new Map<string, Record<string, any>>();
     const latestPerBucket = new Map<string, Map<string, EngagementPoint>>();
+    const competitorIds = new Set<string>();
     for (const p of points) {
+      competitorIds.add(p.competitorId);
       const d = new Date(p.snapshotAt);
       const bucketKey = (() => {
         d.setUTCHours(0, 0, 0, 0);
@@ -205,41 +220,47 @@ export default function InsightsVisualizationsPage() {
     latestPerBucket.forEach((byCompetitor, bucketKey) => {
       const row: Record<string, any> = { bucket: bucketKey };
       byCompetitor.forEach((point, competitorId) => {
-        const name = competitorNames.get(competitorId) || competitorId.slice(0, 8);
-        row[name] = point[engagementMetric];
+        row[competitorId] = point[engagementMetric];
       });
       buckets.set(bucketKey, row);
     });
-    return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
-  }, [engagement.data, engagementMetric, bucket, competitorNames]);
+    return {
+      data: Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket)),
+      competitorIds: Array.from(competitorIds),
+    };
+  }, [engagement.data, engagementMetric, bucket]);
 
   const postingChart = useMemo(() =>
-    pivotByCompetitor(postingFreq.data?.series || [], "count", competitorNames),
-  [postingFreq.data, competitorNames]);
+    pivotByCompetitor(postingFreq.data?.series || [], "count"),
+  [postingFreq.data]);
 
   const sentimentChart = useMemo(() =>
-    pivotByCompetitor(sentiment.data?.series || [], "avgSentiment", competitorNames),
-  [sentiment.data, competitorNames]);
+    pivotByCompetitor(sentiment.data?.series || [], "avgSentiment"),
+  [sentiment.data]);
 
   const activityChart = useMemo(() =>
-    pivotByCompetitor(activityByComp.data?.series || [], "count", competitorNames),
-  [activityByComp.data, competitorNames]);
+    pivotByCompetitor(activityByComp.data?.series || [], "count"),
+  [activityByComp.data]);
 
   const pricingChart = useMemo(() => {
     const buckets = new Map<string, Record<string, any>>();
+    const competitorIds = new Set<string>();
     for (const p of pricing.data?.points || []) {
+      competitorIds.add(p.competitorId);
       const d = new Date(p.snapshotAt);
       d.setUTCHours(0, 0, 0, 0);
       if (bucket === "week") d.setUTCDate(d.getUTCDate() - d.getUTCDay());
       if (bucket === "month") d.setUTCDate(1);
       const bucketKey = d.toISOString().split("T")[0];
       const row = buckets.get(bucketKey) || { bucket: bucketKey };
-      const name = competitorNames.get(p.competitorId) || p.competitorId.slice(0, 8);
-      if (p.cheapestTier) row[name] = p.cheapestTier.priceAmount;
+      if (p.cheapestTier) row[p.competitorId] = p.cheapestTier.priceAmount;
       buckets.set(bucketKey, row);
     }
-    return Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket));
-  }, [pricing.data, bucket, competitorNames]);
+    return {
+      data: Array.from(buckets.values()).sort((a, b) => a.bucket.localeCompare(b.bucket)),
+      competitorIds: Array.from(competitorIds),
+    };
+  }, [pricing.data, bucket]);
 
   return (
     <AppLayout>
@@ -332,18 +353,18 @@ export default function InsightsVisualizationsPage() {
             <CardContent>
               {engagement.isLoading ? (
                 <div className="flex items-center justify-center h-72"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : engagementChart.length === 0 ? (
+              ) : engagementChart.data.length === 0 ? (
                 <EmptyChart message="No engagement snapshots yet for this platform & range." />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={engagementChart}>
+                  <LineChart data={engagementChart.data}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="bucket" fontSize={11} />
                     <YAxis fontSize={11} />
                     <ReTooltip />
                     <Legend wrapperStyle={{ fontSize: "11px" }} />
-                    {competitorNameList.map((name, idx) => (
-                      <Line key={name} type="monotone" dataKey={name} stroke={colorFor(idx)} strokeWidth={2} dot={false} />
+                    {engagementChart.competitorIds.map((id, idx) => (
+                      <Line key={id} type="monotone" dataKey={id} name={labelFor(id)} stroke={colorFor(idx)} strokeWidth={2} dot={false} />
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
@@ -377,18 +398,18 @@ export default function InsightsVisualizationsPage() {
             <CardContent>
               {postingFreq.isLoading ? (
                 <div className="flex items-center justify-center h-72"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : postingChart.length === 0 ? (
+              ) : postingChart.data.length === 0 ? (
                 <EmptyChart message="No posting events tracked in this range." />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={postingChart}>
+                  <BarChart data={postingChart.data}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="bucket" fontSize={11} />
                     <YAxis fontSize={11} allowDecimals={false} />
                     <ReTooltip />
                     <Legend wrapperStyle={{ fontSize: "11px" }} />
-                    {competitorNameList.map((name, idx) => (
-                      <Bar key={name} dataKey={name} stackId="posts" fill={colorFor(idx)} />
+                    {postingChart.competitorIds.map((id, idx) => (
+                      <Bar key={id} dataKey={id} name={labelFor(id)} stackId="posts" fill={colorFor(idx)} />
                     ))}
                   </BarChart>
                 </ResponsiveContainer>
@@ -422,18 +443,18 @@ export default function InsightsVisualizationsPage() {
             <CardContent>
               {sentiment.isLoading ? (
                 <div className="flex items-center justify-center h-72"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : sentimentChart.length === 0 ? (
+              ) : sentimentChart.data.length === 0 ? (
                 <EmptyChart message="No sentiment-scored activity in this range." />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={sentimentChart}>
+                  <AreaChart data={sentimentChart.data}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="bucket" fontSize={11} />
                     <YAxis fontSize={11} domain={[-1, 1]} />
                     <ReTooltip />
                     <Legend wrapperStyle={{ fontSize: "11px" }} />
-                    {competitorNameList.map((name, idx) => (
-                      <Area key={name} type="monotone" dataKey={name} stroke={colorFor(idx)} fill={colorFor(idx)} fillOpacity={0.18} />
+                    {sentimentChart.competitorIds.map((id, idx) => (
+                      <Area key={id} type="monotone" dataKey={id} name={labelFor(id)} stroke={colorFor(idx)} fill={colorFor(idx)} fillOpacity={0.18} />
                     ))}
                   </AreaChart>
                 </ResponsiveContainer>
@@ -467,18 +488,18 @@ export default function InsightsVisualizationsPage() {
             <CardContent>
               {activityByComp.isLoading ? (
                 <div className="flex items-center justify-center h-72"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : activityChart.length === 0 ? (
+              ) : activityChart.data.length === 0 ? (
                 <EmptyChart message="No competitor activity in this range." />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={activityChart}>
+                  <BarChart data={activityChart.data}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="bucket" fontSize={11} />
                     <YAxis fontSize={11} allowDecimals={false} />
                     <ReTooltip />
                     <Legend wrapperStyle={{ fontSize: "11px" }} />
-                    {competitorNameList.map((name, idx) => (
-                      <Bar key={name} dataKey={name} stackId="activity" fill={colorFor(idx)} />
+                    {activityChart.competitorIds.map((id, idx) => (
+                      <Bar key={id} dataKey={id} name={labelFor(id)} stackId="activity" fill={colorFor(idx)} />
                     ))}
                   </BarChart>
                 </ResponsiveContainer>
@@ -513,18 +534,18 @@ export default function InsightsVisualizationsPage() {
             <CardContent>
               {pricing.isLoading ? (
                 <div className="flex items-center justify-center h-72"><Loader2 className="h-6 w-6 animate-spin" /></div>
-              ) : pricingChart.length === 0 ? (
+              ) : pricingChart.data.length === 0 ? (
                 <EmptyChart message="No pricing snapshots captured in this range yet." />
               ) : (
                 <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={pricingChart}>
+                  <LineChart data={pricingChart.data}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="bucket" fontSize={11} />
                     <YAxis fontSize={11} />
                     <ReTooltip />
                     <Legend wrapperStyle={{ fontSize: "11px" }} />
-                    {competitorNameList.map((name, idx) => (
-                      <Line key={name} type="stepAfter" dataKey={name} stroke={colorFor(idx)} strokeWidth={2} dot connectNulls />
+                    {pricingChart.competitorIds.map((id, idx) => (
+                      <Line key={id} type="stepAfter" dataKey={id} name={labelFor(id)} stroke={colorFor(idx)} strokeWidth={2} dot connectNulls />
                     ))}
                   </LineChart>
                 </ResponsiveContainer>

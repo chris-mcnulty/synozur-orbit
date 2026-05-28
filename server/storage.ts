@@ -319,11 +319,14 @@ export interface IStorage {
   getPricingSnapshotsForCompetitor(competitorId: string, limit?: number): Promise<CompetitorPricingSnapshot[]>;
   getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined>;
   deletePricingSnapshot(id: string): Promise<void>;
-  getPricingSnapshotsForTenant(tenantDomain: string, opts?: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[] }): Promise<CompetitorPricingSnapshot[]>;
+  getPricingSnapshotsForTenant(ctx: ContextFilter, opts?: { since?: Date; until?: Date; competitorIds?: string[]; lightweight?: boolean }): Promise<CompetitorPricingSnapshot[]>;
 
   // Engagement snapshots: time-series social metrics for the visualization dashboard
   createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot>;
-  getEngagementSnapshotsForTenant(tenantDomain: string, opts?: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[]; platforms?: string[] }): Promise<CompetitorEngagementSnapshot[]>;
+  getEngagementSnapshotsForTenant(ctx: ContextFilter, opts?: { since?: Date; until?: Date; competitorIds?: string[]; platforms?: string[]; lightweight?: boolean }): Promise<CompetitorEngagementSnapshot[]>;
+
+  // Activity (visualization dashboard): SQL-side filtering by date + type + sentiment requirement
+  getActivityForVisualization(ctx: ContextFilter, opts: { since: Date; until: Date; types?: string[]; requireSentiment?: boolean }): Promise<Activity[]>;
 
   // Global Grounding Document methods (application-wide AI context)
   getAllGlobalGroundingDocuments(): Promise<GlobalGroundingDocument[]>;
@@ -1339,15 +1342,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPricingSnapshotsForTenant(
-    tenantDomain: string,
-    opts: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[] } = {},
+    ctx: ContextFilter,
+    opts: { since?: Date; until?: Date; competitorIds?: string[]; lightweight?: boolean } = {},
   ): Promise<CompetitorPricingSnapshot[]> {
-    const conditions = [eq(competitorPricingSnapshots.tenantDomain, tenantDomain)];
+    // In a tenant's default market, snapshots written with marketId=null are still part of
+    // the active context — include them. In a non-default market, scope strictly.
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(competitorPricingSnapshots.marketId, ctx.marketId), isNull(competitorPricingSnapshots.marketId))
+      : eq(competitorPricingSnapshots.marketId, ctx.marketId);
+    const conditions = [
+      eq(competitorPricingSnapshots.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+    ];
     if (opts.since) conditions.push(gte(competitorPricingSnapshots.capturedAt, opts.since));
     if (opts.until) conditions.push(sql`${competitorPricingSnapshots.capturedAt} <= ${opts.until}`);
-    if (opts.marketId === null) conditions.push(isNull(competitorPricingSnapshots.marketId));
-    else if (opts.marketId) conditions.push(eq(competitorPricingSnapshots.marketId, opts.marketId));
     if (opts.competitorIds?.length) conditions.push(inArray(competitorPricingSnapshots.competitorId, opts.competitorIds));
+
+    // Lightweight selection skips the heavy `rawContent` column (up to ~100KB per row).
+    if (opts.lightweight) {
+      const rows = await db.select({
+        id: competitorPricingSnapshots.id,
+        tenantDomain: competitorPricingSnapshots.tenantDomain,
+        marketId: competitorPricingSnapshots.marketId,
+        competitorId: competitorPricingSnapshots.competitorId,
+        pricingUrl: competitorPricingSnapshots.pricingUrl,
+        tiers: competitorPricingSnapshots.tiers,
+        pricingModel: competitorPricingSnapshots.pricingModel,
+        currency: competitorPricingSnapshots.currency,
+        hasFreeTier: competitorPricingSnapshots.hasFreeTier,
+        changeScore: competitorPricingSnapshots.changeScore,
+        changeSummary: competitorPricingSnapshots.changeSummary,
+        changeAnalysis: competitorPricingSnapshots.changeAnalysis,
+        crawlMethod: competitorPricingSnapshots.crawlMethod,
+        capturedAt: competitorPricingSnapshots.capturedAt,
+        createdAt: competitorPricingSnapshots.createdAt,
+      })
+        .from(competitorPricingSnapshots)
+        .where(and(...conditions))
+        .orderBy(desc(competitorPricingSnapshots.capturedAt));
+      return rows.map(r => ({ ...r, rawContent: null })) as CompetitorPricingSnapshot[];
+    }
+
     return await db.select().from(competitorPricingSnapshots)
       .where(and(...conditions))
       .orderBy(desc(competitorPricingSnapshots.capturedAt));
@@ -1360,19 +1395,66 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEngagementSnapshotsForTenant(
-    tenantDomain: string,
-    opts: { since?: Date; until?: Date; marketId?: string | null; competitorIds?: string[]; platforms?: string[] } = {},
+    ctx: ContextFilter,
+    opts: { since?: Date; until?: Date; competitorIds?: string[]; platforms?: string[]; lightweight?: boolean } = {},
   ): Promise<CompetitorEngagementSnapshot[]> {
-    const conditions = [eq(competitorEngagementSnapshots.tenantDomain, tenantDomain)];
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(competitorEngagementSnapshots.marketId, ctx.marketId), isNull(competitorEngagementSnapshots.marketId))
+      : eq(competitorEngagementSnapshots.marketId, ctx.marketId);
+    const conditions = [
+      eq(competitorEngagementSnapshots.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+    ];
     if (opts.since) conditions.push(gte(competitorEngagementSnapshots.capturedAt, opts.since));
     if (opts.until) conditions.push(sql`${competitorEngagementSnapshots.capturedAt} <= ${opts.until}`);
-    if (opts.marketId === null) conditions.push(isNull(competitorEngagementSnapshots.marketId));
-    else if (opts.marketId) conditions.push(eq(competitorEngagementSnapshots.marketId, opts.marketId));
     if (opts.competitorIds?.length) conditions.push(inArray(competitorEngagementSnapshots.competitorId, opts.competitorIds));
     if (opts.platforms?.length) conditions.push(inArray(competitorEngagementSnapshots.platform, opts.platforms));
+
+    if (opts.lightweight) {
+      const rows = await db.select({
+        id: competitorEngagementSnapshots.id,
+        tenantDomain: competitorEngagementSnapshots.tenantDomain,
+        marketId: competitorEngagementSnapshots.marketId,
+        competitorId: competitorEngagementSnapshots.competitorId,
+        platform: competitorEngagementSnapshots.platform,
+        followers: competitorEngagementSnapshots.followers,
+        posts: competitorEngagementSnapshots.posts,
+        reactions: competitorEngagementSnapshots.reactions,
+        comments: competitorEngagementSnapshots.comments,
+        likes: competitorEngagementSnapshots.likes,
+        capturedAt: competitorEngagementSnapshots.capturedAt,
+        createdAt: competitorEngagementSnapshots.createdAt,
+      })
+        .from(competitorEngagementSnapshots)
+        .where(and(...conditions))
+        .orderBy(competitorEngagementSnapshots.capturedAt);
+      return rows.map(r => ({ ...r, raw: null })) as CompetitorEngagementSnapshot[];
+    }
+
     return await db.select().from(competitorEngagementSnapshots)
       .where(and(...conditions))
       .orderBy(competitorEngagementSnapshots.capturedAt);
+  }
+
+  async getActivityForVisualization(
+    ctx: ContextFilter,
+    opts: { since: Date; until: Date; types?: string[]; requireSentiment?: boolean },
+  ): Promise<Activity[]> {
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
+      : eq(activity.marketId, ctx.marketId);
+    const conditions = [
+      eq(activity.tenantDomain, ctx.tenantDomain),
+      marketCondition!,
+      isNotNull(activity.competitorId),
+      gte(activity.createdAt, opts.since),
+      sql`${activity.createdAt} <= ${opts.until}`,
+    ];
+    if (opts.types?.length) conditions.push(inArray(activity.type, opts.types));
+    if (opts.requireSentiment) conditions.push(isNotNull(activity.sentimentScore));
+    return await db.select().from(activity)
+      .where(and(...conditions))
+      .orderBy(activity.createdAt);
   }
 
   // Global Grounding Document methods (application-wide AI context)
