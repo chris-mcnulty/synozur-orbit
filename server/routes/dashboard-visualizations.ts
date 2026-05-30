@@ -101,12 +101,14 @@ export function registerDashboardVisualizationRoutes(app: Express) {
         types: ["blog_post", "social_update"],
       });
 
-      const counts = new Map<string, Map<string, number>>(); // bucket -> competitorId -> count
+      const counts = new Map<string, Map<string, number>>(); // bucket -> entityId -> count
       for (const a of activities) {
+        const entityId = a.competitorId || (a.companyProfileId ? `baseline:${a.companyProfileId}` : null);
+        if (!entityId) continue;
         const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
         const key = bucketStart(created, bucket);
         const inner = counts.get(key) || new Map<string, number>();
-        inner.set(a.competitorId!, (inner.get(a.competitorId!) || 0) + 1);
+        inner.set(entityId, (inner.get(entityId) || 0) + 1);
         counts.set(key, inner);
       }
 
@@ -142,15 +144,17 @@ export function registerDashboardVisualizationRoutes(app: Express) {
 
       const totals = new Map<string, Map<string, { sum: number; count: number }>>();
       for (const a of activities) {
+        const entityId = a.competitorId || (a.companyProfileId ? `baseline:${a.companyProfileId}` : null);
+        if (!entityId) continue;
         const ts = a.analyzedAt
           ? (a.analyzedAt instanceof Date ? a.analyzedAt : new Date(a.analyzedAt as any))
           : (a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any));
         const bucketKey = bucketStart(ts, bucket);
         const inner = totals.get(bucketKey) || new Map<string, { sum: number; count: number }>();
-        const prev = inner.get(a.competitorId!) || { sum: 0, count: 0 };
+        const prev = inner.get(entityId) || { sum: 0, count: 0 };
         prev.sum += a.sentimentScore as number;
         prev.count += 1;
-        inner.set(a.competitorId!, prev);
+        inner.set(entityId, prev);
         totals.set(bucketKey, inner);
       }
 
@@ -190,10 +194,12 @@ export function registerDashboardVisualizationRoutes(app: Express) {
 
       const counts = new Map<string, Map<string, number>>();
       for (const a of activities) {
+        const entityId = a.competitorId || (a.companyProfileId ? `baseline:${a.companyProfileId}` : null);
+        if (!entityId) continue;
         const created = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt as any);
         const bucketKey = bucketStart(created, bucket);
         const inner = counts.get(bucketKey) || new Map<string, number>();
-        inner.set(a.competitorId!, (inner.get(a.competitorId!) || 0) + 1);
+        inner.set(entityId, (inner.get(entityId) || 0) + 1);
         counts.set(bucketKey, inner);
       }
 
@@ -237,9 +243,10 @@ export function registerDashboardVisualizationRoutes(app: Express) {
         const dearest = numericTiers.length
           ? numericTiers.reduce((max, t) => (t.priceAmount > max.priceAmount ? t : max), numericTiers[0])
           : null;
+        const entityId = s.competitorId || (s.companyProfileId ? `baseline:${s.companyProfileId}` : "unknown");
         return {
           snapshotAt: s.capturedAt,
-          competitorId: s.competitorId,
+          competitorId: entityId,
           tierCount: tiers.length,
           cheapestTier: cheapest ? { name: cheapest.name, priceAmount: cheapest.priceAmount } : null,
           dearestTier: dearest ? { name: dearest.name, priceAmount: dearest.priceAmount } : null,

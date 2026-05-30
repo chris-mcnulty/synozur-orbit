@@ -140,6 +140,14 @@ export async function getCompetitorToneSummary(
   return summarizeRows(rows);
 }
 
+export async function getBaselineToneSummary(
+  companyProfileId: string,
+  sinceDays: number = 90,
+): Promise<ToneSummary> {
+  const rows = await storage.getAnalyzedActivitiesByCompanyProfile(companyProfileId, sinceDays);
+  return summarizeRows(rows);
+}
+
 /**
  * Build a markdown context block for AI prompts (briefings, battlecards).
  * Returns empty string when there's no analyzed data so it doesn't pollute

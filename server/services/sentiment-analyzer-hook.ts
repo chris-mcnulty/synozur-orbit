@@ -29,7 +29,7 @@ export function scheduleActivitySentimentAnalysis(act: Activity): void {
 }
 
 export async function analyzeAndStore(act: Activity): Promise<boolean> {
-  if (!act.competitorId) return false;
+  if (!act.competitorId && !act.companyProfileId) return false;
   if (act.analyzedAt) return false;
 
   const text = buildActivityAnalyzerText({
@@ -63,9 +63,9 @@ export async function analyzeAndStore(act: Activity): Promise<boolean> {
     analyzerVersion: result.analyzerVersion,
   });
 
-  // After scoring, opportunistically check for a tone shift on this
-  // competitor. Errors are swallowed inside the detector.
-  if (act.tenantDomain) {
+  // After scoring, opportunistically check for a tone shift.
+  // Errors are swallowed inside the detector.
+  if (act.tenantDomain && act.competitorId) {
     detectAndDispatchToneShift(act.competitorId, act.tenantDomain).catch((err) => {
       console.warn(
         `[sentiment] tone-shift detection failed for ${act.competitorId}:`,

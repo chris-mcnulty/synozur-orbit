@@ -134,11 +134,22 @@ export default function InsightsVisualizationsPage() {
       return Array.isArray(data) ? data : (data.items || []);
     },
   });
+  const { data: companyProfile } = useQuery<{ id: string; companyName: string } | null>({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/company-profile", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
   const competitorNames = useMemo(() => {
     const m = new Map<string, string>();
     competitors.forEach(c => m.set(c.id, c.name));
+    if (companyProfile) {
+      m.set(`baseline:${companyProfile.id}`, `${companyProfile.companyName} (You)`);
+    }
     return m;
-  }, [competitors]);
+  }, [competitors, companyProfile]);
 
   const engagement = useQuery<{ points: EngagementPoint[] }>({
     queryKey: ["/api/dashboard/visualizations/engagement-trends", params, platform],

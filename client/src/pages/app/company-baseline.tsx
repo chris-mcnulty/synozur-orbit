@@ -4,7 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, Facebook, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, Facebook, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal, MessageSquare, Lock, ArrowUp, ArrowDown, ArrowRight, Save, Clock } from "lucide-react";
+import { useFeatureAccess, UpgradePrompt } from "@/components/UpgradePrompt";
+import {
+  LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer,
+} from "recharts";
 import { ManualResearchDialog } from "@/components/ManualResearchDialog";
 import { AIResearchDialog } from "@/components/AIResearchDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1713,6 +1718,14 @@ export default function CompanyBaseline() {
               </Card>
 
               {companyProfile && (
+                <BaselineTonePanel companyProfileId={companyProfile.id} companyName={companyProfile.companyName} />
+              )}
+
+              {companyProfile && (
+                <BaselinePricingPanel companyProfileId={companyProfile.id} companyName={companyProfile.companyName} pricingPageUrl={companyProfile.pricingPageUrl} />
+              )}
+
+              {companyProfile && (
                 <RecentUpdatesCard
                   entityType="company-profile"
                   entityId={companyProfile.id}
@@ -2009,5 +2022,403 @@ export default function CompanyBaseline() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+// Sentiment helpers
+function formatSentiment(v: number | null): string {
+  if (v === null) return "—";
+  return v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2);
+}
+
+function sentimentColor(v: number): string {
+  if (v >= 0.3) return "hsl(142, 76%, 36%)";
+  if (v >= 0) return "hsl(142, 50%, 50%)";
+  if (v >= -0.3) return "hsl(25, 95%, 53%)";
+  return "hsl(0, 84%, 60%)";
+}
+
+interface ToneSummaryResponse {
+  totalAnalyzed: number;
+  meanSentiment: number | null;
+  meanSentiment30d: number | null;
+  meanSentiment90d: number | null;
+  recentMeanSentiment: number | null;
+  dominantTone: string | null;
+  toneCounts: Record<string, number>;
+  sparkline: { date: string; sentiment: number; toneLabel: string | null }[];
+  topNotes: { date: string; toneLabel: string | null; sentimentScore: number; note: string }[];
+  toneShifts: { date: string; fromTone: string | null; toTone: string }[];
+}
+
+function BaselineTonePanel({ companyProfileId, companyName }: { companyProfileId: string; companyName: string }) {
+  const { isAllowed, isLoading: planLoading } = useFeatureAccess("sentimentAnalysis");
+
+  const { data, isLoading } = useQuery<ToneSummaryResponse>({
+    queryKey: ["/api/company-profile/tone"],
+    enabled: isAllowed && !planLoading,
+    staleTime: 60_000,
+  });
+
+  if (planLoading) return null;
+
+  if (!isAllowed) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4" />
+            Tone & Sentiment
+            <Badge variant="outline" className="ml-2 gap-1"><Lock className="h-3 w-3" /> Pro</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Track how your company's tone shifts over time. Available on Pro and above.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+          <p className="text-sm text-muted-foreground mt-2">Analyzing tone…</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data || data.totalAnalyzed === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4" /> Tone & Sentiment
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            No analyzed content yet. As we capture website, social, and product activity for {companyName}, sentiment will be scored here for comparison against competitors.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const sparkline = data.sparkline.map((p) => ({
+    date: new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    sentiment: p.sentiment,
+  }));
+
+  const toneEntries = Object.entries(data.toneCounts).sort((a, b) => b[1] - a[1]);
+  const total = toneEntries.reduce((s, [, n]) => s + n, 0) || 1;
+
+  const recent = data.recentMeanSentiment;
+  const m30 = data.meanSentiment30d;
+  const m90 = data.meanSentiment90d;
+  const delta = recent !== null && m30 !== null ? recent - m30 : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4" /> Tone & Sentiment
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Last 90 days · {data.totalAnalyzed} analyzed item{data.totalAnalyzed === 1 ? "" : "s"}
+            </p>
+          </div>
+          {data.dominantTone && (
+            <Badge variant="secondary">{data.dominantTone}</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Last 7 days</p>
+            <p className="text-xl font-semibold flex items-center gap-1" style={{ color: recent !== null ? sentimentColor(recent) : undefined }}>
+              {formatSentiment(recent)}
+              {delta !== null && Math.abs(delta) >= 0.05 && (
+                delta > 0
+                  ? <ArrowUp className="h-3 w-3 text-emerald-500" />
+                  : <ArrowDown className="h-3 w-3 text-rose-500" />
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">30-day mean</p>
+            <p className="text-xl font-semibold" style={{ color: m30 !== null ? sentimentColor(m30) : undefined }}>
+              {formatSentiment(m30)}
+            </p>
+          </div>
+        </div>
+
+        {sparkline.length > 1 && (
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={sparkline} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis domain={[-1, 1]} tick={{ fontSize: 10 }} />
+                <ReTooltip formatter={(value: number) => [formatSentiment(value), "Sentiment"]} />
+                <Line type="monotone" dataKey="sentiment" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {toneEntries.length > 0 && (
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Tone distribution</p>
+            <div className="space-y-1">
+              {toneEntries.slice(0, 4).map(([tone, count]) => {
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <div key={tone} className="flex items-center gap-2 text-sm">
+                    <span className="capitalize w-24 shrink-0 text-xs">{tone}</span>
+                    <div className="flex-1 bg-muted rounded h-1.5 overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {data.toneShifts && data.toneShifts.length > 0 && (
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Recent tone shifts</p>
+            <ul className="space-y-1">
+              {data.toneShifts.slice(0, 3).map((s, i) => (
+                <li key={i} className="text-xs flex items-center gap-1.5">
+                  <Badge variant="outline" className="capitalize text-[10px]">{s.fromTone || "—"}</Badge>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <Badge variant="secondary" className="capitalize text-[10px]">{s.toTone}</Badge>
+                  <span className="text-muted-foreground">{new Date(s.date).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface PricingTier {
+  name: string;
+  price?: string | null;
+  priceAmount?: number | null;
+  billingPeriod?: string | null;
+  currency?: string | null;
+  features?: string[];
+}
+
+interface BaselinePricingSnapshot {
+  id: string;
+  pricingUrl: string;
+  tiers: PricingTier[];
+  pricingModel?: string | null;
+  currency?: string | null;
+  hasFreeTier?: boolean | null;
+  changeScore: number;
+  changeSummary?: string | null;
+  capturedAt: string;
+}
+
+interface BaselinePricingResponse {
+  pricingPageUrl: string | null;
+  latestSnapshotAt: string | null;
+  latest: BaselinePricingSnapshot | null;
+  snapshots: BaselinePricingSnapshot[];
+}
+
+function BaselinePricingPanel({ companyProfileId, companyName, pricingPageUrl: initialUrl }: { companyProfileId: string; companyName: string; pricingPageUrl?: string | null }) {
+  const { isAllowed, isLoading: featureLoading } = useFeatureAccess("pricingIntelligence");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [pricingUrlInput, setPricingUrlInput] = useState(initialUrl || "");
+
+  const { data, isLoading } = useQuery<BaselinePricingResponse>({
+    queryKey: ["/api/company-profile/pricing"],
+    queryFn: async () => {
+      const res = await fetch("/api/company-profile/pricing", { credentials: "include" });
+      if (res.status === 403) throw new Error("forbidden");
+      if (!res.ok) throw new Error("Failed to load pricing data");
+      return res.json();
+    },
+    enabled: isAllowed,
+  });
+
+  React.useEffect(() => {
+    if (data?.pricingPageUrl !== undefined && !editingUrl) {
+      setPricingUrlInput(data.pricingPageUrl || "");
+    }
+  }, [data?.pricingPageUrl, editingUrl]);
+
+  const saveUrlMutation = useMutation({
+    mutationFn: async (url: string | null) => {
+      const res = await fetch("/api/company-profile/pricing-url", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ pricingPageUrl: url }),
+      });
+      if (!res.ok) throw new Error("Failed to save pricing URL");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile/pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+      setEditingUrl(false);
+      toast({ title: "Pricing URL saved" });
+    },
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/company-profile/pricing/refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Refresh failed");
+      }
+      return res.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile/pricing"] });
+      toast({ title: result.hasChanges ? "Pricing changes detected!" : "Pricing snapshot captured" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (featureLoading) return null;
+
+  if (!isAllowed) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DollarSign className="h-4 w-4" />
+            Pricing History
+            <Badge variant="outline" className="ml-2 gap-1"><Lock className="h-3 w-3" /> Pro</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Track your own pricing page changes over time. Available on Pro and above.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DollarSign className="h-4 w-4" /> Pricing History
+          </CardTitle>
+          {data?.pricingPageUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 text-xs"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+            >
+              {refreshMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Refresh
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          {editingUrl ? (
+            <div className="flex-1 flex gap-1.5">
+              <Input
+                value={pricingUrlInput}
+                onChange={(e) => setPricingUrlInput(e.target.value)}
+                placeholder="https://example.com/pricing"
+                className="text-sm h-8"
+              />
+              <Button
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => saveUrlMutation.mutate(pricingUrlInput.trim() || null)}
+                disabled={saveUrlMutation.isPending}
+              >
+                <Save className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setEditingUrl(false); setPricingUrlInput(data?.pricingPageUrl || ""); }}>
+                <XCircle className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground flex-1 truncate">
+                {data?.pricingPageUrl ? (
+                  <a href={data.pricingPageUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {data.pricingPageUrl}
+                  </a>
+                ) : "No pricing URL configured"}
+              </p>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setEditingUrl(true)}>
+                <Edit2 className="h-3 w-3" />
+              </Button>
+            </>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="py-4 text-center">
+            <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+          </div>
+        ) : data?.snapshots && data.snapshots.length > 0 ? (
+          <div className="space-y-2">
+            {data.latest && (
+              <div className="text-sm">
+                <p className="font-medium">{data.latest.tiers.length} tier{data.latest.tiers.length !== 1 ? "s" : ""} detected</p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {data.latest.tiers.slice(0, 4).map((t, i) => (
+                    <Badge key={i} variant="secondary" className="text-[10px]">
+                      {t.name}{t.priceAmount != null ? ` · ${t.currency || "$"}${t.priceAmount}` : ""}
+                    </Badge>
+                  ))}
+                  {data.latest.tiers.length > 4 && (
+                    <Badge variant="outline" className="text-[10px]">+{data.latest.tiers.length - 4} more</Badge>
+                  )}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {data.snapshots.length} snapshot{data.snapshots.length !== 1 ? "s" : ""} · last captured {new Date(data.latestSnapshotAt!).toLocaleDateString()}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {data?.pricingPageUrl
+              ? "No snapshots captured yet. Click Refresh to take the first snapshot."
+              : "Add your pricing page URL to start tracking changes."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { UploadedFile } from "express-fileupload";
 import { storage, type ContextFilter } from "../storage";
 import { getRequestContext, ContextError, getActiveTenantId, getActiveMarketId } from "../context";
-import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction } from "./helpers";
+import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction, guardFeature } from "./helpers";
 import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
 import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
@@ -707,6 +707,102 @@ export function registerAdminRoutes(app: Express) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Baseline company tone & sentiment summary
+  app.get("/api/company-profile/tone", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) return res.status(404).json({ error: "No company profile found" });
+      if (!await guardFeature(req, res, "sentimentAnalysis")) return;
+
+      const sinceParam = req.query.sinceDays ? parseInt(String(req.query.sinceDays), 10) : 90;
+      const sinceDays = Number.isFinite(sinceParam) && sinceParam > 0 ? Math.min(sinceParam, 365) : 90;
+
+      const { getBaselineToneSummary } = await import("../services/sentiment-context");
+      const summary = await getBaselineToneSummary(profile.id, sinceDays);
+      res.json({ companyProfileId: profile.id, sinceDays, ...summary });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Baseline company pricing snapshots
+  app.get("/api/company-profile/pricing", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) return res.status(404).json({ error: "No company profile found" });
+      if (!await guardFeature(req, res, "pricingIntelligence")) return;
+
+      const limitRaw = req.query.limit;
+      const limit = typeof limitRaw === "string" ? Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 200) : 50;
+      const snapshots = await storage.getPricingSnapshotsForCompanyProfile(profile.id, limit);
+      const lite = snapshots.map(({ rawContent, ...rest }) => rest);
+
+      return res.json({
+        pricingPageUrl: profile.pricingPageUrl || null,
+        latestSnapshotAt: lite[0]?.capturedAt || null,
+        latest: lite[0] || null,
+        snapshots: lite,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update baseline company pricing URL
+  app.put("/api/company-profile/pricing-url", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) return res.status(404).json({ error: "No company profile found" });
+      if (!await guardFeature(req, res, "pricingIntelligence")) return;
+
+      const raw = req.body?.pricingPageUrl?.trim() || null;
+      if (raw) {
+        const validation = await validateCompetitorUrl(raw);
+        if (!validation.isValid) {
+          return res.status(400).json({ error: validation.error || "Invalid pricing page URL" });
+        }
+      }
+      const updated = await storage.updateCompanyProfile(profile.id, { pricingPageUrl: raw });
+      return res.json({ id: updated.id, pricingPageUrl: updated.pricingPageUrl });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Trigger a fresh baseline pricing snapshot
+  app.post("/api/company-profile/pricing/refresh", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) return res.status(404).json({ error: "No company profile found" });
+      if (!await guardFeature(req, res, "pricingIntelligence")) return;
+      if (!await guardManualAction(req, res, "pricingRefresh")) return;
+      if (!profile.pricingPageUrl) {
+        return res.status(400).json({
+          error: "No pricing page URL configured for your company",
+          code: "no_pricing_url",
+        });
+      }
+
+      const { monitorBaselinePricing } = await import("../services/pricing-intelligence");
+      const result = await monitorBaselinePricing(profile.id, {
+        userId: req.session.userId,
+        tenantDomain: ctx.tenantDomain,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
     }
   });

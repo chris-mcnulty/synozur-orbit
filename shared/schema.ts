@@ -580,7 +580,8 @@ export const competitorPricingSnapshots = pgTable("competitor_pricing_snapshots"
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
-  competitorId: varchar("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  competitorId: varchar("competitor_id").references(() => competitors.id, { onDelete: "cascade" }),
+  companyProfileId: varchar("company_profile_id").references(() => companyProfiles.id, { onDelete: "cascade" }),
   pricingUrl: text("pricing_url").notNull(),
   // Extracted tiers: [{name, price, billingPeriod, currency, features[], cta, isHighlighted}]
   tiers: jsonb("tiers").notNull(),
@@ -1326,6 +1327,8 @@ export const companyProfiles = pgTable("company_profiles", {
   twitterUrl: text("twitter_url"), // Twitter/X profile URL
   facebookUrl: text("facebook_url"), // Facebook page URL
   blogUrl: text("blog_url"), // Blog or RSS feed URL for baseline company
+  pricingPageUrl: text("pricing_page_url"), // Pricing page URL for baseline company
+  lastPricingCheck: timestamp("last_pricing_check"), // Last pricing snapshot capture
   description: text("description"),
   // Directory fields - stable columns for company information
   headquarters: text("headquarters"), // City, State/Country

@@ -3,7 +3,7 @@ import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
-import { monitorCompetitorPricing } from "./pricing-intelligence";
+import { monitorCompetitorPricing, monitorBaselinePricing } from "./pricing-intelligence";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail, sendScheduledBriefingEmail, type BriefingDigestData } from "./email-service";
@@ -1207,6 +1207,50 @@ async function runPricingMonitorJob(): Promise<void> {
           },
         )).catch((err) => {
           console.error(`[Scheduled Job] Queued pricing monitor failed for ${competitor.name}:`, err.message);
+        });
+      }
+
+      // Monitor baseline company pricing
+      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(tenant.domain);
+      for (const profile of companyProfiles) {
+        if (!profile.pricingPageUrl) continue;
+        if (await isMarketArchived(profile.marketId)) continue;
+
+        const lastCheck = profile.lastPricingCheck
+          ? new Date(profile.lastPricingCheck).getTime()
+          : 0;
+        const now = Date.now();
+        if (now - lastCheck < PRICING_MIN_INTERVAL_MS) continue;
+
+        sweepMetrics.monitorsExecuted++;
+        console.log(`[Scheduled Job] Queuing baseline pricing monitor for ${profile.companyName}...`);
+
+        enqueueMonitor(`pricing:baseline:${profile.companyName}`, (signal) => trackJobRun(
+          "pricingMonitor",
+          tenant.domain,
+          profile.id,
+          `Baseline: ${profile.companyName}`,
+          async () => {
+            if (signal?.aborted) throw new Error("Baseline pricing monitor aborted");
+            const result = await monitorBaselinePricing(profile.id, {
+              userId: profile.userId,
+              tenantDomain: tenant.domain,
+              signal,
+            });
+            if (result.status !== "success") {
+              await storage.updateCompanyProfile(profile.id, { lastPricingCheck: new Date() })
+                .catch((err) => console.error(`[Scheduled Job] lastPricingCheck stamp on ${result.status} failed for baseline ${profile.companyName}:`, err.message));
+            }
+            return {
+              status: result.status,
+              entityType: "baseline",
+              url: profile.pricingPageUrl,
+              hasChanges: result.hasChanges,
+              changeScore: result.changeScore,
+            };
+          },
+        )).catch((err) => {
+          console.error(`[Scheduled Job] Queued baseline pricing monitor failed for ${profile.companyName}:`, err.message);
         });
       }
     }

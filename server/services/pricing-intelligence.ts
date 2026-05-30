@@ -394,3 +394,162 @@ export async function monitorCompetitorPricing(
     changeAnalysis: changeAnalysis || undefined,
   };
 }
+
+export interface BaselinePricingMonitoringResult {
+  companyProfileId: string;
+  companyName: string;
+  status: "success" | "no_url" | "no_content" | "error";
+  hasChanges: boolean;
+  changeScore: number;
+  message?: string;
+  snapshot?: CompetitorPricingSnapshot;
+  summary?: string;
+  changeAnalysis?: PricingChangeAnalysis;
+}
+
+export async function monitorBaselinePricing(
+  companyProfileId: string,
+  options: { userId?: string; tenantDomain?: string; signal?: AbortSignal } = {},
+): Promise<BaselinePricingMonitoringResult> {
+  const profile = await storage.getCompanyProfile(companyProfileId);
+  if (!profile) {
+    throw new Error("Company profile not found");
+  }
+
+  const pricingUrl = profile.pricingPageUrl?.trim();
+  if (!pricingUrl) {
+    return {
+      companyProfileId: profile.id,
+      companyName: profile.companyName,
+      status: "no_url",
+      hasChanges: false,
+      changeScore: 0,
+      message: "Company profile has no pricing page URL configured",
+    };
+  }
+
+  const now = new Date();
+  let fetched;
+  try {
+    fetched = await crawlPricingPage(pricingUrl, { signal: options.signal });
+  } catch (err: any) {
+    console.error(`[PricingIntelligence] Baseline fetch failed for ${profile.companyName}:`, err);
+    return {
+      companyProfileId: profile.id,
+      companyName: profile.companyName,
+      status: "error",
+      hasChanges: false,
+      changeScore: 0,
+      message: err?.message || "Pricing page fetch failed",
+    };
+  }
+
+  if (!fetched) {
+    return {
+      companyProfileId: profile.id,
+      companyName: profile.companyName,
+      status: "no_content",
+      hasChanges: false,
+      changeScore: 0,
+      message: "Pricing page returned no content",
+    };
+  }
+
+  const extraction = await extractPricingTiers(profile.companyName, fetched.content);
+  const previousSnapshot = await storage.getLatestPricingSnapshotForCompanyProfile(profile.id);
+  const previousRaw = previousSnapshot?.rawContent || "";
+  const changeScore = calculateChangeScore(previousRaw, fetched.content);
+
+  let summary: string | undefined;
+  let changeAnalysis: PricingChangeAnalysis | null = null;
+  const hasPrior = Boolean(previousSnapshot);
+  const isSignificant = hasPrior && changeScore >= MIN_CHANGE_THRESHOLD;
+
+  if (isSignificant) {
+    const result = await analyzePricingChanges(
+      profile.companyName,
+      (previousSnapshot?.tiers as PricingTier[] | null) || [],
+      extraction.tiers,
+      changeScore,
+    );
+    summary = result.summary;
+    changeAnalysis = result.analysis;
+  }
+
+  const tenantDomain = options.tenantDomain || profile.tenantDomain || undefined;
+  if (!tenantDomain) {
+    return {
+      companyProfileId: profile.id,
+      companyName: profile.companyName,
+      status: "error",
+      hasChanges: false,
+      changeScore,
+      message: "Tenant context missing for pricing snapshot",
+    };
+  }
+
+  const snapshot = await storage.createPricingSnapshot({
+    tenantDomain,
+    marketId: profile.marketId || null,
+    competitorId: null,
+    companyProfileId: profile.id,
+    pricingUrl: fetched.finalUrl,
+    tiers: extraction.tiers,
+    pricingModel: extraction.pricingModel,
+    currency: extraction.currency,
+    hasFreeTier: extraction.hasFreeTier,
+    rawContent: fetched.content.substring(0, 100000),
+    changeScore,
+    changeSummary: summary || null,
+    changeAnalysis: changeAnalysis || null,
+    crawlMethod: fetched.crawlMethod,
+    capturedAt: now,
+  });
+
+  await storage.updateCompanyProfile(profile.id, { lastPricingCheck: now })
+    .catch(err => console.error(`[PricingIntelligence] lastPricingCheck update failed for baseline ${profile.id}:`, err));
+
+  const realChange = isSignificant && changeAnalysis !== null && changeAnalysis.changes.length > 0;
+  if (realChange && changeAnalysis && options.userId) {
+    const analysis = changeAnalysis;
+    const impact = (() => {
+      if (analysis.changes.some(c => c.significance === "high")) return "High";
+      if (analysis.changes.some(c => c.significance === "medium")) return "Medium";
+      return "Low";
+    })();
+
+    await storage.createActivity({
+      type: "pricing_update",
+      sourceType: "baseline",
+      competitorId: null,
+      companyProfileId: profile.id,
+      competitorName: profile.companyName,
+      description: `Your pricing page changed (${changeScore}% diff)`,
+      summary: summary || null,
+      details: {
+        pricingUrl: fetched.finalUrl,
+        changeScore,
+        snapshotId: snapshot.id,
+        changeAnalysis: analysis,
+        previousTierCount: (previousSnapshot?.tiers as PricingTier[] | null)?.length || 0,
+        currentTierCount: extraction.tiers.length,
+      },
+      date: now.toISOString().split("T")[0],
+      impact,
+      userId: options.userId,
+      tenantDomain,
+      marketId: profile.marketId || null,
+    });
+  }
+
+  return {
+    companyProfileId: profile.id,
+    companyName: profile.companyName,
+    status: "success",
+    hasChanges: realChange,
+    changeScore,
+    snapshot,
+    summary,
+    changeAnalysis: changeAnalysis || undefined,
+  };
+}
