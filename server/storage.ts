@@ -265,7 +265,8 @@ export interface IStorage {
   ): Promise<Activity[]>;
   updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
-  
+  getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays?: number): Promise<Activity[]>;
+
   // Weekly Digest methods
   getUsersWithDigestEnabled(): Promise<User[]>;
   
@@ -320,6 +321,8 @@ export interface IStorage {
   getLatestPricingSnapshotForCompetitor(competitorId: string): Promise<CompetitorPricingSnapshot | undefined>;
   deletePricingSnapshot(id: string): Promise<void>;
   getPricingSnapshotsForTenant(ctx: ContextFilter, opts?: { since?: Date; until?: Date; competitorIds?: string[]; lightweight?: boolean }): Promise<CompetitorPricingSnapshot[]>;
+  getPricingSnapshotsForCompanyProfile(companyProfileId: string, limit?: number): Promise<CompetitorPricingSnapshot[]>;
+  getLatestPricingSnapshotForCompanyProfile(companyProfileId: string): Promise<CompetitorPricingSnapshot | undefined>;
 
   // Engagement snapshots: time-series social metrics for the visualization dashboard
   createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot>;
@@ -1052,7 +1055,7 @@ export class DatabaseStorage implements IStorage {
 
     const conditions = [
       sql`${activity.analyzedAt} IS NULL`,
-      sql`${activity.competitorId} IS NOT NULL`,
+      sql`(${activity.competitorId} IS NOT NULL OR ${activity.companyProfileId} IS NOT NULL)`,
       sql`${activity.createdAt} >= ${since}`,
     ];
     if (opts?.tenantDomain) {
@@ -1098,6 +1101,20 @@ export class DatabaseStorage implements IStorage {
       .from(activity)
       .where(and(
         eq(activity.competitorId, competitorId),
+        sql`${activity.sentimentScore} IS NOT NULL`,
+        sql`${activity.createdAt} >= ${since}`,
+      ))
+      .orderBy(desc(activity.createdAt));
+  }
+
+  async getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays: number = 90): Promise<Activity[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - sinceDays);
+    return await db
+      .select()
+      .from(activity)
+      .where(and(
+        eq(activity.companyProfileId, companyProfileId),
         sql`${activity.sentimentScore} IS NOT NULL`,
         sql`${activity.createdAt} >= ${since}`,
       ))
@@ -1401,6 +1418,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(competitorPricingSnapshots.capturedAt));
   }
 
+  async getPricingSnapshotsForCompanyProfile(companyProfileId: string, limit: number = 50): Promise<CompetitorPricingSnapshot[]> {
+    return await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.companyProfileId, companyProfileId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(limit);
+  }
+
+  async getLatestPricingSnapshotForCompanyProfile(companyProfileId: string): Promise<CompetitorPricingSnapshot | undefined> {
+    const rows = await db.select().from(competitorPricingSnapshots)
+      .where(eq(competitorPricingSnapshots.companyProfileId, companyProfileId))
+      .orderBy(desc(competitorPricingSnapshots.capturedAt))
+      .limit(1);
+    return rows[0] || undefined;
+  }
+
   // Engagement snapshots
   async createEngagementSnapshot(snapshot: InsertCompetitorEngagementSnapshot): Promise<CompetitorEngagementSnapshot> {
     const [created] = await db.insert(competitorEngagementSnapshots).values(snapshot).returning();
@@ -1459,7 +1491,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [
       eq(activity.tenantDomain, ctx.tenantDomain),
       marketCondition!,
-      isNotNull(activity.competitorId),
+      or(isNotNull(activity.competitorId), isNotNull(activity.companyProfileId))!,
       gte(activity.createdAt, opts.since),
       sql`${activity.createdAt} <= ${opts.until}`,
     ];
