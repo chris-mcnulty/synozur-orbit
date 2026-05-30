@@ -6,6 +6,13 @@ ALTER TABLE "company_profiles" ADD COLUMN "last_pricing_check" timestamp;
 ALTER TABLE "competitor_pricing_snapshots" ALTER COLUMN "competitor_id" DROP NOT NULL;
 ALTER TABLE "competitor_pricing_snapshots" ADD COLUMN "company_profile_id" varchar REFERENCES "company_profiles"("id") ON DELETE CASCADE;
 
+-- Enforce exactly one owner per snapshot row
+ALTER TABLE "competitor_pricing_snapshots" ADD CONSTRAINT "pricing_snapshot_owner_check"
+  CHECK (
+    ("competitor_id" IS NOT NULL AND "company_profile_id" IS NULL)
+    OR ("competitor_id" IS NULL AND "company_profile_id" IS NOT NULL)
+  );
+
 -- Index for baseline pricing snapshot lookups
 CREATE INDEX "competitor_pricing_snapshots_company_profile_captured_idx"
   ON "competitor_pricing_snapshots" ("company_profile_id", "captured_at")

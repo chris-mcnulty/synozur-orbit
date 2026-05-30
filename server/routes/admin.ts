@@ -764,8 +764,14 @@ export function registerAdminRoutes(app: Express) {
       if (!profile) return res.status(404).json({ error: "No company profile found" });
       if (!await guardFeature(req, res, "pricingIntelligence")) return;
 
-      const url = req.body?.pricingPageUrl?.trim() || null;
-      const updated = await storage.updateCompanyProfile(profile.id, { pricingPageUrl: url });
+      const raw = req.body?.pricingPageUrl?.trim() || null;
+      if (raw) {
+        const validation = await validateCompetitorUrl(raw);
+        if (!validation.isValid) {
+          return res.status(400).json({ error: validation.error || "Invalid pricing page URL" });
+        }
+      }
+      const updated = await storage.updateCompanyProfile(profile.id, { pricingPageUrl: raw });
       return res.json({ id: updated.id, pricingPageUrl: updated.pricingPageUrl });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
