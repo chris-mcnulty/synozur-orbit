@@ -177,9 +177,55 @@ async function stampMigrations(
 }
 
 /**
+ * Postgres SQLSTATE codes meaning "this object already exists". These are
+ * treated as benign while applying a not-yet-recorded migration: Replit's
+ * Publish flow diffs the dev schema against production and applies the change
+ * out-of-band, so by the time the startup runner reaches that migration its
+ * objects may already be present. Re-running the DDL would otherwise throw and
+ * abort startup, so we skip the duplicate statement and still stamp the file.
+ */
+const DUPLICATE_OBJECT_CODES = new Set([
+  "42701", // duplicate_column
+  "42P07", // duplicate_table / duplicate_relation (also covers duplicate index)
+  "42710", // duplicate_object (e.g. constraint, type)
+  "42P06", // duplicate_schema
+  "42723", // duplicate_function
+]);
+
+/** Remove `-- …` line comments so semicolon splitting can't break mid-comment. */
+function stripLineComments(sql: string): string {
+  return sql.replace(/--[^\n]*/g, "");
+}
+
+// Matches the opening of a dollar-quoted string ($$ or $tag$), whose body may
+// contain semicolons that must not be split on.
+const DOLLAR_QUOTE = /\$[A-Za-z0-9_]*\$/;
+
+/**
+ * Break a breakpoint-delimited chunk into individual statements when it is safe
+ * to do so. Chunks containing a dollar-quoted block ($$ … $$ or $tag$ … $tag$)
+ * are kept whole because their inner semicolons must not be split on. Everything
+ * else is split on `;` so each DDL statement can be applied (and skipped)
+ * independently.
+ */
+function splitChunkSafely(chunk: string): string[] {
+  if (DOLLAR_QUOTE.test(chunk)) return [chunk.trim()].filter(Boolean);
+  return stripLineComments(chunk)
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
  * Apply a single migration file inside a transaction.
  * Records the result in the ledger on success.
- * Throws on any SQL error — caller should abort startup.
+ *
+ * Each statement runs inside its own SAVEPOINT. If a statement fails because
+ * the object it creates already exists (see DUPLICATE_OBJECT_CODES), the
+ * savepoint is rolled back and the statement skipped — this makes the runner
+ * idempotent against schema that Replit's Publish flow already applied to the
+ * production database. Any other error aborts the whole migration (rethrown so
+ * the caller can stop startup).
  */
 async function applyMigration(
   pool: pg.Pool,
@@ -188,13 +234,31 @@ async function applyMigration(
 ): Promise<void> {
   const filename = path.basename(filePath);
   const content = fs.readFileSync(filePath, "utf8");
-  const statements = splitStatements(content);
+  const statements = splitStatements(content).flatMap(splitChunkSafely);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    let i = 0;
     for (const stmt of statements) {
-      await client.query(stmt);
+      const savepoint = `mig_sp_${i++}`;
+      await client.query(`SAVEPOINT ${savepoint}`);
+      try {
+        await client.query(stmt);
+        await client.query(`RELEASE SAVEPOINT ${savepoint}`);
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        if (code && DUPLICATE_OBJECT_CODES.has(code)) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+          const preview = stmt.slice(0, 80).replace(/\s+/g, " ");
+          console.warn(
+            `[db-migrate] skipping already-applied statement in ${filename} ` +
+            `(SQLSTATE ${code}): ${preview}`
+          );
+        } else {
+          throw err;
+        }
+      }
     }
     await client.query(
       `INSERT INTO _migrations (filename, checksum) VALUES ($1, $2)`,

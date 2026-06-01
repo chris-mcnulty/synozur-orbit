@@ -1,1 +1,2 @@
-- [Saturn social campaign image variety](saturn-social-images.md) — posts pull images from a tiny static pool (no AI render); batch image-on-day variety must be enforced at the client distribute step, not via insertion order.
+- [Saturn social campaign image variety](saturn-social-images.md) — enforce per-day image variety at the client distribute step, not via insertion order.
+- [Startup migrations vs Publish-flow](db-migrate-publish-conflict.md) — deploy can fail at promote (clean exit 0, no "serving on port"); the startup migration runner must stay idempotent.
