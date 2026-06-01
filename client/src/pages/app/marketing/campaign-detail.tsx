@@ -577,14 +577,61 @@ export default function CampaignDetailPage() {
         postsByAccount.get(key)!.push(post);
       }
 
+      // Rotate posts so consecutive scheduled days cycle through the available
+      // images instead of repeating the same one day after day. Bucket each
+      // account's posts by their resolved image (rotating each bucket by its
+      // rank so the text copy also spreads out), then greedily emit from the
+      // bucket with the most posts left whose image differs from the one just
+      // placed. The greedy step guarantees no same-image on consecutive days
+      // whenever it is possible (no single image used for more than half the
+      // batch) and minimizes repeats otherwise.
+      const rotateByImage = (accountPosts: GeneratedPost[]): GeneratedPost[] => {
+        const buckets = new Map<string, GeneratedPost[]>();
+        for (const p of accountPosts) {
+          const key = getPostImage(p) ?? "__no_image__";
+          const bucket = buckets.get(key);
+          if (bucket) bucket.push(p);
+          else buckets.set(key, [p]);
+        }
+        if (buckets.size <= 1) return accountPosts;
+        const groups = Array.from(buckets.entries()).map(([key, items], rank) => {
+          const offset = items.length > 1 ? rank % items.length : 0;
+          return { key, items: offset ? [...items.slice(offset), ...items.slice(0, offset)] : items, idx: 0 };
+        });
+        const remaining = (g: typeof groups[number]) => g.items.length - g.idx;
+        const ordered: GeneratedPost[] = [];
+        let prevKey: string | null = null;
+        for (let n = 0; n < accountPosts.length; n++) {
+          let pick: typeof groups[number] | null = null;
+          // Prefer the largest bucket whose image differs from the last placed.
+          for (const g of groups) {
+            if (remaining(g) <= 0 || g.key === prevKey) continue;
+            if (!pick || remaining(g) > remaining(pick)) pick = g;
+          }
+          // Tail case: only the previous image's bucket has posts left.
+          if (!pick) {
+            for (const g of groups) {
+              if (remaining(g) <= 0) continue;
+              if (!pick || remaining(g) > remaining(pick)) pick = g;
+            }
+          }
+          if (!pick) break;
+          ordered.push(pick.items[pick.idx]);
+          pick.idx++;
+          prevKey = pick.key;
+        }
+        return ordered;
+      };
+
       const assignments: { postId: string; slot: string | null }[] = [];
       let overflowCount = 0;
       for (const [, accountPosts] of postsByAccount) {
-        for (let i = 0; i < accountPosts.length; i++) {
+        const rotated = rotateByImage(accountPosts);
+        for (let i = 0; i < rotated.length; i++) {
           if (i < slots.length) {
-            assignments.push({ postId: accountPosts[i].id, slot: slots[i] });
+            assignments.push({ postId: rotated[i].id, slot: slots[i] });
           } else {
-            assignments.push({ postId: accountPosts[i].id, slot: null });
+            assignments.push({ postId: rotated[i].id, slot: null });
             overflowCount++;
           }
         }

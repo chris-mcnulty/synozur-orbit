@@ -1,0 +1,1 @@
+- [Saturn social campaign image variety](saturn-social-images.md) — posts pull images from a tiny static pool (no AI render); batch image-on-day variety must be enforced at the client distribute step, not via insertion order.
