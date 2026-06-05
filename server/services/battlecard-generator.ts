@@ -52,17 +52,25 @@ Generate a battlecard with the following sections in valid JSON format:
   "weaknesses": ["Their weakness 1", "Their weakness 2", "Their weakness 3"],
   "ourAdvantages": ["Our advantage 1", "Our advantage 2", "Our advantage 3"],
   "objections": [
-    {"objection": "Common objection", "response": "How to respond"}
+    {"objection": "Common objection the prospect raises", "response": "How to respond and reframe"}
   ],
-  "talkTracks": ["Sales talk track 1", "Sales talk track 2"],
-  "quickStats": {"marketPosition": "Description", "targetMarket": "Description", "pricingModel": "Description"}
+  "talkTracks": [
+    {"scenario": "Prospect is currently evaluating this competitor", "script": "Full multi-sentence sales script a rep can use verbatim in this situation"},
+    {"scenario": "Prospect mentions a specific competitor strength", "script": "Full multi-sentence script addressing that strength and pivoting to our advantages"}
+  ],
+  "quickStats": {
+    "pricing": "Summary of their pricing model and typical price points",
+    "marketPosition": "How they position themselves in the market",
+    "targetAudience": "The customer segments and buyer personas they target",
+    "keyProducts": "Their main products or product lines"
+  }
 }
 
-Return ONLY valid JSON.`;
+Be specific and substantive — use real details from the competitor analysis where available. Each talk track script should be 2-4 sentences a salesperson can say directly. Return ONLY valid JSON.`;
 
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 2048,
+      max_tokens: 3000,
       messages: [{ role: "user", content: prompt }],
     });
 
