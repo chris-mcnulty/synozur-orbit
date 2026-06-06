@@ -9,6 +9,7 @@ import { registerSaturnMarketingRoutes } from "./routes/marketing-saturn";
 import { registerMarketingLinksRoutes } from "./routes/marketing-links";
 import { registerMarketingDeliveryPublicRoutes, registerMarketingDeliveryRoutes } from "./routes/marketing-delivery";
 import { registerMarketingPostsRoutes } from "./routes/marketing-posts";
+import { registerConferencePromotionRoutes } from "./routes/conference-promotion";
 import { registerPlannerWebhookPublicRoutes } from "./routes/planner-webhook";
 import { registerAuthRoutes } from "./routes/auth";
 import { registerCompetitorRoutes } from "./routes/competitors";
@@ -60,7 +61,9 @@ export async function registerRoutes(
   registerMarketingDeliveryRoutes(app);
   // Phase 2/3/4: rewrite, standalone post CRUD, calendar
   registerMarketingPostsRoutes(app);
-  
+  // Conference social promotion: conferences, sessions, image space, generation
+  registerConferencePromotionRoutes(app);
+
   app.get("/api/content/:filename", (req, res) => {
     const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];
     const filename = req.params.filename;

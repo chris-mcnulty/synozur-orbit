@@ -52,7 +52,7 @@ Orbit is an AI-driven platform that centralizes and enhances go-to-market strate
 
 - **Go-to-Market Intelligence**: Centralized competitive intelligence, marketing planning, and product management.
 - **AI-powered Insights**: Competitive website analysis, AI-guided recommendations, gap analysis, AI-synthesized briefings.
-- **Content & Campaign Management**: Marketing content library, brand library, UTM builder, social campaigns, email newsletters.
+- **Content & Campaign Management**: Marketing content library, brand library, UTM builder, social campaigns, email newsletters, conference social promotion (anchor + per-session posts with matched 1:1 graphics and an archivable conference image space).
 - **Advanced Reporting**: Branded PDF reports, CSV exports, intelligence briefings, relationship reports.
 - **User & Access Management**: Role-based access control, multi-tenant architecture, Microsoft Entra ID integration.
 - **Product Management Tools**: Feature catalog, roadmap view, AI-powered roadmap recommendations, customer feedback and voting.

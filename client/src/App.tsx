@@ -54,6 +54,8 @@ import ContentLibraryPage from "@/pages/app/marketing/content-library";
 import BrandLibraryPage from "@/pages/app/marketing/brand-library";
 import SolutionAreasPage from "@/pages/app/marketing/solution-areas";
 import CampaignsPage from "@/pages/app/marketing/campaigns";
+import ConferencePromotionPage from "@/pages/app/marketing/conference-promotion";
+import ConferenceDetailPage from "@/pages/app/marketing/conference-detail";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import PlatformCredentialsPage from "@/pages/app/marketing/platform-credentials";
@@ -162,6 +164,8 @@ function Router() {
       <Route path="/app/marketing/solution-areas" component={SolutionAreasPage} />
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
+      <Route path="/app/marketing/conferences">{() => <PageFeatureGate featureKey="conferencePromotion" label="Conference Social Promotion" description="Drive coordinated social promotion for a conference: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferencePromotionPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/conferences/:id">{() => <PageFeatureGate featureKey="conferencePromotion" label="Conference Social Promotion" description="Drive coordinated social promotion for a conference: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferenceDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
       <Route path="/app/marketing/platform-credentials" component={PlatformCredentialsPage} />
       <Route path="/app/marketing/composer" component={ComposerPage} />
