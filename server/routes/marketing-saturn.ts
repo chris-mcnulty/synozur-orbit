@@ -2580,12 +2580,15 @@ Return ONLY a valid JSON object (no markdown fences) with:
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);
 
+    const proto = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
     const csv = await buildPostsCsv({
       posts,
       tenantDomain: ctx.tenantDomain,
       format: csvFormat,
       tzOffset: clientTzOffset,
       fallbackAccountIds: campaignAccountLinks.map(l => l.socialAccountId),
+      imageBaseUrl: host ? `${proto}://${host}` : undefined,
     });
 
     res.setHeader("Content-Type", "text/csv");

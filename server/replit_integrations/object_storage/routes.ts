@@ -162,6 +162,38 @@ export function registerObjectStorageRoutes(app: Express): void {
   });
 
   /**
+   * Serve PUBLIC objects with no authentication.
+   *
+   * Used for assets that must be fetchable by anonymous third parties — e.g.
+   * conference/event promotion graphics whose URL is handed to external social
+   * schedulers (SocialPilot, Hootsuite, Sprout). The underlying GCS bucket is
+   * not anonymously readable, so those tools fetch through this Orbit route
+   * instead of a raw storage.googleapis.com URL.
+   *
+   * Only objects that live under the configured PUBLIC search paths are served;
+   * path traversal is rejected so the private space can't be reached.
+   *
+   * GET /public-objects/:objectPath(*)
+   */
+  app.get("/public-objects/:objectPath(*)", async (req, res) => {
+    const filePath = req.params.objectPath;
+    if (!filePath || filePath.includes("..")) {
+      return res.status(400).json({ error: "Invalid path" });
+    }
+    try {
+      const file = await objectStorageService.searchPublicObject(filePath);
+      if (!file) {
+        return res.status(404).json({ error: "Object not found" });
+      }
+      // Public assets — allow shared/long caching.
+      await objectStorageService.downloadObject(file, res, 86400);
+    } catch (error) {
+      console.error("Error serving public object:", error);
+      return res.status(500).json({ error: "Failed to serve object" });
+    }
+  });
+
+  /**
    * Serve uploaded objects.
    * Requires authentication for private objects.
    *

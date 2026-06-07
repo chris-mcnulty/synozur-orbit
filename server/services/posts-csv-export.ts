@@ -26,6 +26,14 @@ export interface BuildPostsCsvOptions {
    * Order matters: the first account per platform wins.
    */
   fallbackAccountIds?: string[];
+  /**
+   * Absolute base URL (e.g. `https://orbit.example.com`, no trailing slash) used
+   * to turn relative image paths like `/public-objects/...` into absolute URLs.
+   * External schedulers can't fetch a relative path, so callers should pass the
+   * host the export request came in on. When omitted, relative paths are left
+   * as-is.
+   */
+  imageBaseUrl?: string;
 }
 
 export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string> {
@@ -158,21 +166,30 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
   };
 
+  // Turn a relative public Orbit path (`/public-objects/...`) into an absolute
+  // URL so external schedulers can fetch it. Only `/public-objects/...` is
+  // anonymously fetchable — auth-gated `/objects/...` paths are left untouched
+  // (absolutizing them would just produce an absolute URL that still 401s), and
+  // already-absolute URLs pass through unchanged.
+  const imageBaseUrl = (opts.imageBaseUrl || "").replace(/\/$/, "");
+  const absolutize = (url: string): string =>
+    url.startsWith("/public-objects/") && imageBaseUrl ? `${imageBaseUrl}${url}` : url;
+
   const getPostImageUrl = (post: any): string => {
-    if (post.overrideImageUrl) return post.overrideImageUrl;
+    if (post.overrideImageUrl) return absolutize(post.overrideImageUrl);
     if (post.overrideBrandAssetId) {
       const ba = brandMap.get(post.overrideBrandAssetId);
-      if (ba?.fileUrl) return ba.fileUrl;
-      if (ba?.url) return ba.url;
+      if (ba?.fileUrl) return absolutize(ba.fileUrl);
+      if (ba?.url) return absolutize(ba.url);
     }
     if (post.sourceAssetId) {
       const ca = contentAssetById.get(post.sourceAssetId);
-      if (ca?.leadImageUrl) return ca.leadImageUrl;
-      if (ca?.fileUrl && typeof ca.fileType === "string" && ca.fileType.startsWith("image/")) return ca.fileUrl;
+      if (ca?.leadImageUrl) return absolutize(ca.leadImageUrl);
+      if (ca?.fileUrl && typeof ca.fileType === "string" && ca.fileType.startsWith("image/")) return absolutize(ca.fileUrl);
     }
     if (post.sourceUrl) {
       const ca = contentAssetByUrl.get(post.sourceUrl);
-      if (ca?.leadImageUrl) return ca.leadImageUrl;
+      if (ca?.leadImageUrl) return absolutize(ca.leadImageUrl);
     }
     return "";
   };

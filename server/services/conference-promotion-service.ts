@@ -52,6 +52,34 @@ const objectStorageService = new ObjectStorageService();
 
 const IMAGE_PREFIX = "conference-images";
 
+// Conference graphics are served back through Orbit's own unauthenticated route
+// (`/public-objects/...`) rather than the raw `storage.googleapis.com` URL. The
+// GCS bucket is NOT anonymously readable, so a direct storage.googleapis.com URL
+// returns 403 to external schedulers (SocialPilot/Hootsuite/Sprout); an Orbit URL
+// is publicly fetchable.
+const PUBLIC_SERVE_PREFIX = "/public-objects/";
+
+/** The bucket backing the public object-storage search path. */
+function publicBucketName(): string {
+  return splitObjectPath(objectStorageService.getPublicObjectSearchPaths()[0]).bucketName;
+}
+
+/** Parse a `https://storage.googleapis.com/<bucket>/<object>` URL, else null. */
+function parseGcsUrl(url: string): { bucketName: string; objectName: string } | null {
+  const m = url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
+  return m ? { bucketName: m[1], objectName: decodeURIComponent(m[2]) } : null;
+}
+
+/**
+ * True once a URL is a stored Orbit-served public image — a RELATIVE
+ * `/public-objects/...` path with a valid extension. Absolute URLs (raw GCS or
+ * an environment-specific host) are NOT considered served, so they get healed
+ * into a relative path on the next render.
+ */
+function isServedPublicImage(url: string): boolean {
+  return url.startsWith(PUBLIC_SERVE_PREFIX) && hasValidImageExt(url);
+}
+
 type ReportProgress = (p: {
   phase: string;
   percent: number;
@@ -91,8 +119,13 @@ export async function saveConferenceImageBuffer(
     .bucket(bucketName)
     .file(objectName)
     .save(buffer, { metadata: { contentType } });
+  // Return a RELATIVE Orbit path. The GCS bucket is not anonymously readable, so
+  // external schedulers must fetch via Orbit's `/public-objects/` route rather
+  // than storage.googleapis.com. We store the path (not an absolute URL) so it is
+  // never tied to the environment it was generated in — the CSV export turns it
+  // into an absolute URL using the host the user is exporting from.
   return {
-    fileUrl: `https://storage.googleapis.com/${bucketName}/${objectName}`,
+    fileUrl: `${PUBLIC_SERVE_PREFIX}${IMAGE_PREFIX}/${objectId}`,
     fileSize: buffer.length,
   };
 }
@@ -102,6 +135,24 @@ async function loadImageBytes(fileUrl: string): Promise<Buffer> {
   if (fileUrl.startsWith("/objects/")) {
     const file = await objectStorageService.getObjectEntityFile(fileUrl);
     const [buf] = await file.download();
+    return buf;
+  }
+  // An Orbit `/public-objects/...` path (relative, or absolute with any host)
+  // maps to a file in the public search path; read it straight from storage so
+  // we never depend on the serving host being reachable.
+  const publicIdx = fileUrl.indexOf(PUBLIC_SERVE_PREFIX);
+  if (publicIdx !== -1) {
+    const objectPath = fileUrl.slice(publicIdx + PUBLIC_SERVE_PREFIX.length);
+    const file = await objectStorageService.searchPublicObject(objectPath);
+    if (!file) throw new Error(`Public object not found: ${objectPath}`);
+    const [buf] = await file.download();
+    return buf;
+  }
+  // A raw GCS URL into our own bucket is not anonymously fetchable (HTTP 403);
+  // read it straight from object storage instead. Used to heal legacy URLs.
+  const gcs = parseGcsUrl(fileUrl);
+  if (gcs && gcs.bucketName === publicBucketName()) {
+    const [buf] = await objectStorageClient.bucket(gcs.bucketName).file(gcs.objectName).download();
     return buf;
   }
   const res = await fetch(fileUrl);
@@ -258,6 +309,34 @@ function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null
 }
 
 /**
+ * Read the bytes behind an image's existing (non-Orbit) URL and re-publish them
+ * through Orbit's public route, updating the row. Used to heal private uploads
+ * and legacy raw-GCS URLs without regenerating the graphic.
+ */
+async function republishViaOrbit(image: ConferenceImage, current: string): Promise<string> {
+  let bytes: Buffer;
+  let contentType: string;
+  if (current.startsWith("/objects/")) {
+    // Private object path has no extension — derive the type from its metadata
+    // (falling back to the recorded fileType).
+    const file = await objectStorageService.getObjectEntityFile(current);
+    const [metadata] = await file.getMetadata();
+    [bytes] = await file.download();
+    contentType = (metadata?.contentType as string | undefined) || image.fileType || "image/png";
+  } else {
+    bytes = await loadImageBytes(current);
+    contentType = image.fileType || "image/png";
+  }
+  const ext = extFromContentType(contentType);
+  const saved = await saveConferenceImageBuffer(bytes, contentType, ext);
+  await db
+    .update(conferenceImages)
+    .set({ fileUrl: saved.fileUrl, fileSize: saved.fileSize, updatedAt: new Date() })
+    .where(eq(conferenceImages.id, image.id));
+  return saved.fileUrl;
+}
+
+/**
  * Render the bytes for a conference image record according to its source, store
  * them, and update the row with fileUrl/fileSize. No-op for uploaded images
  * (the caller already supplied a fileUrl). Returns the resolved fileUrl.
@@ -267,47 +346,27 @@ export async function renderConferenceImage(
   conf: Conference,
   session?: ConferenceSession | null,
 ): Promise<string | null> {
-  if (image.source === "uploaded") {
-    // Uploaded graphics land in the private bucket (`/objects/uploads/...`),
-    // which requires an auth session to fetch — external schedulers can't read
-    // them. Re-publish to the public bucket so the exported CSV carries a URL
-    // anyone can fetch. Already-public URLs are left untouched.
-    const current = image.fileUrl ?? null;
-    if (!current) return current;
-    const isPrivate = current.startsWith("/objects/");
-    // Repair earlier uploads that were republished with a broken extension
-    // (the scheduler rejects a media URL that doesn't end in .png/.jpg/etc).
-    const isMangledPublic =
-      current.startsWith("https://storage.googleapis.com/") && !hasValidImageExt(current);
-    if (!isPrivate && !isMangledPublic) {
-      return current;
-    }
+  const current = image.fileUrl ?? null;
+
+  // Self-heal: any image that already has bytes but lives at a URL external
+  // schedulers can't fetch — a private `/objects/...` upload OR a legacy raw
+  // `storage.googleapis.com` URL (which 403s anonymously) — is re-published
+  // through Orbit's public route. This applies to ALL sources so previously
+  // generated/composited graphics are preserved rather than regenerated.
+  if (current && !isServedPublicImage(current)) {
     try {
-      let bytes: Buffer;
-      let contentType: string;
-      if (isPrivate) {
-        // The private object path has no file extension, so derive the type from
-        // the stored file's metadata (falling back to the recorded fileType).
-        const file = await objectStorageService.getObjectEntityFile(current);
-        const [metadata] = await file.getMetadata();
-        [bytes] = await file.download();
-        contentType = (metadata?.contentType as string | undefined) || image.fileType || "image/png";
-      } else {
-        // Re-fetch from the badly-named public URL and republish correctly.
-        bytes = await loadImageBytes(current);
-        contentType = image.fileType || "image/png";
-      }
-      const ext = extFromContentType(contentType);
-      const saved = await saveConferenceImageBuffer(bytes, contentType, ext);
-      await db
-        .update(conferenceImages)
-        .set({ fileUrl: saved.fileUrl, fileSize: saved.fileSize, updatedAt: new Date() })
-        .where(eq(conferenceImages.id, image.id));
-      return saved.fileUrl;
+      return await republishViaOrbit(image, current);
     } catch (err: any) {
-      console.error("[Conference] Failed to publish uploaded image:", err?.message);
-      return current;
+      console.error("[Conference] Failed to re-publish image:", err?.message);
+      // Uploaded images have no other way to be produced — keep the current URL.
+      // Generated/composite images fall through and are regenerated below.
+      if (image.source === "uploaded") return current;
     }
+  }
+
+  if (image.source === "uploaded") {
+    // Uploaded image with no bytes (or already served) — nothing to render.
+    return current;
   }
 
   let saved: { fileUrl: string; fileSize: number };
@@ -497,6 +556,7 @@ CONTEXT:
 ${contextLines.filter(Boolean).join("\n")}
 
 RULES:
+- Write from the ORGANIZATION's point of view, not an individual's. This is a company/brand page, so use "we"/"our team"/"our" (or name the company). Never use singular first person like "I", "I'm", "I'll be", or "I'm going to" — a company does not attend an event as "I".
 - Each variation must take a clearly different angle (e.g. a question, a bold statement, a benefit-led hook, a "don't miss this" urgency angle).
 - Do NOT include hashtags inline — they are added separately.
 - Do not number the variations inside the text.
@@ -673,15 +733,12 @@ async function runGeneration(
 
   // Render any image that still needs bytes.
   if (generateImages) {
-    // Render images that have no bytes yet, plus uploaded images still sitting
-    // at a private `/objects/...` URL (renderConferenceImage re-publishes those
-    // to the public bucket so external schedulers can fetch them).
+    // Render fresh when there are no bytes yet, and re-publish (heal) any image
+    // whose URL isn't an Orbit-served public image — private `/objects/` uploads
+    // and legacy raw-GCS URLs that external schedulers can't fetch. Applies to
+    // every source so old generated/composited graphics get healed too.
     const needsRender = (img: ConferenceImage): boolean =>
-      !img.fileUrl ||
-      img.fileUrl.startsWith("/objects/") ||
-      (img.source === "uploaded" &&
-        img.fileUrl.startsWith("https://storage.googleapis.com/") &&
-        !hasValidImageExt(img.fileUrl));
+      !img.fileUrl || !isServedPublicImage(img.fileUrl);
     const toRender: Array<{ img: ConferenceImage; session?: ConferenceSession | null }> = [];
     if (anchorImage && needsRender(anchorImage)) toRender.push({ img: anchorImage });
     for (const session of sessions) {
