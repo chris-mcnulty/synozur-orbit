@@ -42,6 +42,7 @@ import { registerPartnerApiRoutes } from "./routes/partner-api";
 import { registerAdminOAuthClientRoutes } from "./routes/admin-oauth-clients";
 import { registerBillingRoutes } from "./routes/billing";
 import { registerTenantFontRoutes } from "./routes/tenant-fonts";
+import { registerMarketingContextRoutes } from "./routes/marketing-context";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -120,6 +121,7 @@ export async function registerRoutes(
   registerAdminOAuthClientRoutes(app);
   registerBillingRoutes(app);
   registerTenantFontRoutes(app);
+  registerMarketingContextRoutes(app);
 
   return httpServer;
 }

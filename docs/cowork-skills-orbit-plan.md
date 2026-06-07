@@ -77,7 +77,7 @@ Orbit already holds every `variables.md` field as live, multi-tenant, multi-mark
 | `{tone}` (verbal voice) | **`social_account_voice_profiles`** (tone attributes, preferred/forbidden phrases, sample snippets) | `server/routes/marketing-saturn.ts` |
 | `{channels}` | `campaigns`, `social_accounts`, marketing-plan activity groups | `server/routes/analytics-data.ts` |
 | `{time_zones}` | `markets` / tenant config | `shared/schema.ts` |
-| **Brand identity** *(visual voice)* | **Today:** per-tenant brand **colors** + visual asset library (`brand_assets` / `brand_asset_categories`); SYNOZUR **font set** (app-UX only). **In-flight:** expose per-tenant **fonts + logos to content generation** | `server/routes/marketing-saturn.ts`; brand work (TBD) |
+| **Brand identity** *(visual voice)* | **Colors:** `tenants.primaryColor/secondaryColor/accentColor/neutralColor` + `tenants.logoUrl`. **Logos:** `brand_assets` (`assetType='logo'`, `logoVariant`). **Fonts:** `tenant_fonts` (usage = heading/body/accent/display/mono) + font-typed `brand_assets`. **Verbal voice:** covered by messaging-framework "Tone of Voice" + `social_account_voice_profiles` | `shared/schema.ts`, `server/routes/tenant-fonts.ts`, `server/routes/marketing-saturn.ts` |
 | `{sharepoint_root}` | SharePoint Embedded storage | `server/services/sharepoint-*.ts` |
 
 **Consequence:** Orbit needs **no `install-marketing-skills` interview**. Extend `strategic-context.ts` to emit a complete intrinsic-data bundle — verbal voice (`social_account_voice_profiles`) **plus** visual brand identity (existing colors/assets + the in-flight content-facing fonts/logos) — and surface a **readiness check** that flags thin fields (no ICP persona, no messaging framework, no brand kit) instead of asking questions.
@@ -104,10 +104,11 @@ Orbit already holds every `variables.md` field as live, multi-tenant, multi-mark
 
 All AI generation reuses existing infrastructure: `completeForFeature()` (`ai-provider.ts`) for caching/retry/multi-provider, the extended `StrategicContext` for grounding, `job-queue.ts` for async 202 + polling, and `plan-policy.ts` `FEATURE_REGISTRY` for gating. Each feature is a real route/service/UI surface in the existing Marketing area — **not** a markdown skill.
 
-### Pillar 0 — Brand & context grounding (foundation)
+### Pillar 0 — Brand & context grounding (foundation) ✅ *in progress*
 
-- **Marketing context assembler + readiness check.** Extend `strategic-context.ts` to bundle verbal voice and **visual brand identity** (colors, fonts, logos, approved assets). Add `GET /api/marketing/context-readiness` returning per-field status + fix links. *Depends on the brand work landing.*
-- **Brand-aware generation.** Every generator below consumes the brand kit so copy matches verbal voice and any rendered/visual output (images, PDFs, templated graphics via `sharp`) uses tenant fonts/logos/colors.
+- **Marketing context assembler.** Extend `strategic-context.ts` with a `brandIdentity` section bundling colors (`tenants.*Color`), logos (`brand_assets` by `logoVariant`), and fonts (`tenant_fonts` by usage). Verbal tone is already covered by the messaging-framework loader. **Done:** `loadBrandIdentity()` + `formatStrategicContextForPrompt()` now emit a brand-identity block.
+- **Readiness check.** `GET /api/marketing/context-readiness` reports per-field status (`ready`/`thin`/`missing`) + fix hints for: company profile, ICP persona, messaging framework (MPF), GTM plan, products, competitors, and brand kit (colors/logo/fonts). Backed by a pure `deriveReadiness()` core so it's unit-testable.
+- **Brand-aware generation.** Downstream generators consume the brand kit so copy matches verbal voice and any rendered/visual output (images, PDFs, templated graphics via `sharp`) uses tenant fonts/logos/colors.
 
 ### Pillar 1 — Content development *(priority)*
 

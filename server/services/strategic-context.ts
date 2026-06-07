@@ -13,6 +13,9 @@
  */
 
 import { storage, type ContextFilter } from "../storage";
+import { db } from "../db";
+import { brandAssets, tenantFonts } from "@shared/schema";
+import { and, asc, eq, ne } from "drizzle-orm";
 
 export interface StrategicContext {
   messagingFramework: string;
@@ -21,7 +24,13 @@ export interface StrategicContext {
   briefingActionItems: string;
   recommendations: string;
   personas: string;
+  brandIdentity: string;
 }
+
+// Default SYNOZUR palette baked into the tenants table; if a tenant still
+// carries these, treat the colour field as "not customised" for readiness.
+const DEFAULT_PRIMARY = "#810FFB";
+const DEFAULT_SECONDARY = "#E60CB3";
 
 /**
  * Loads the messaging framework for a tenant context.
@@ -220,6 +229,73 @@ async function loadPersonas(ctx: ContextFilter): Promise<string> {
 }
 
 /**
+ * Loads the tenant's visual brand identity: colours, logos, and custom fonts.
+ *
+ * Verbal voice/tone is intentionally NOT duplicated here — it is already
+ * carried by the messaging framework's "Tone of Voice" section and by
+ * per-account voice profiles. This section grounds *visual* generation
+ * (image prompts, templated graphics, PDFs) and reminds copy generators of
+ * the brand's stylistic character.
+ */
+async function loadBrandIdentity(
+  ctx: ContextFilter,
+  tenantDomain: string,
+): Promise<string> {
+  const parts: string[] = [];
+
+  // Colours + primary logo live on the tenant row.
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (tenant) {
+    const colours: string[] = [];
+    if (tenant.primaryColor) colours.push(`primary ${tenant.primaryColor}`);
+    if (tenant.secondaryColor) colours.push(`secondary ${tenant.secondaryColor}`);
+    if (tenant.accentColor) colours.push(`accent ${tenant.accentColor}`);
+    if (tenant.neutralColor) colours.push(`neutral ${tenant.neutralColor}`);
+    if (colours.length) parts.push(`Brand Colours: ${colours.join(", ")}`);
+    if (tenant.logoUrl) parts.push(`Primary Logo: ${tenant.logoUrl}`);
+  }
+
+  // Logo variants stored as brand assets (color/white/black × orientation).
+  const logoRows = await db
+    .select({ name: brandAssets.name, variant: brandAssets.logoVariant })
+    .from(brandAssets)
+    .where(
+      and(
+        eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
+        eq(brandAssets.assetType, "logo"),
+        ne(brandAssets.status, "archived"),
+      ),
+    );
+  const variants = logoRows
+    .map((l) => l.variant)
+    .filter((v): v is string => Boolean(v));
+  if (variants.length) {
+    parts.push(`Available Logo Variants: ${Array.from(new Set(variants)).join(", ")}`);
+  }
+
+  // Tenant-wide custom fonts by usage (heading/body/accent/display/mono).
+  const fontRows = await db
+    .select({
+      name: tenantFonts.name,
+      family: tenantFonts.fontFamily,
+      usage: tenantFonts.fontUsage,
+    })
+    .from(tenantFonts)
+    .where(eq(tenantFonts.tenantDomain, ctx.tenantDomain))
+    .orderBy(asc(tenantFonts.sortOrder), asc(tenantFonts.createdAt));
+  if (fontRows.length) {
+    const fontLines = fontRows.map((f) => {
+      const family = f.family ? ` (${f.family})` : "";
+      return `${f.usage}: ${f.name}${family}`;
+    });
+    parts.push(`Brand Fonts: ${fontLines.join("; ")}`);
+  }
+
+  return parts.join("\n");
+}
+
+/**
  * Main entry point: assemble the full strategic context for a tenant+market.
  * Each section is loaded independently; missing data is simply omitted.
  */
@@ -246,6 +322,7 @@ export async function loadStrategicContext(
     loadBriefingActionItems(tenantDomain, marketId),
     loadRecommendations(ctx),
     loadPersonas(ctx),
+    loadBrandIdentity(ctx, tenantDomain),
   ]);
 
   const messagingFramework =
@@ -260,7 +337,9 @@ export async function loadStrategicContext(
     results[4].status === "fulfilled" ? results[4].value : "";
   const personasContext =
     results[5].status === "fulfilled" ? results[5].value : "";
-  return { messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations, personas: personasContext };
+  const brandIdentity =
+    results[6].status === "fulfilled" ? results[6].value : "";
+  return { messagingFramework, competitiveIntelligence, gtmPlanSummary, briefingActionItems, recommendations, personas: personasContext, brandIdentity };
 }
 
 /**
@@ -292,6 +371,10 @@ export function formatStrategicContextForPrompt(sc: StrategicContext): string {
 
   if (sc.personas) {
     sections.push(`## Target Buyer Personas\nTailor content to resonate with these defined buyer personas. Address their pain points, goals, and preferred communication style:\n${sc.personas}`);
+  }
+
+  if (sc.brandIdentity) {
+    sections.push(`## Brand Identity\nKeep content on-brand. Reflect the brand's visual identity in any imagery, graphics, or design direction you propose, and match the stylistic character implied below:\n${sc.brandIdentity}`);
   }
 
   return sections.join("\n\n");
