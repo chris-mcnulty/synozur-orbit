@@ -2766,6 +2766,17 @@ export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
 export const CONFERENCE_IMAGE_ROLES = ["anchor", "session"] as const;
 export type ConferenceImageRole = (typeof CONFERENCE_IMAGE_ROLES)[number];
 
+// Optional categorisation of a session. The subsystem is presented as "Event
+// Promotion" in the UI (it's used for conferences, webinars, receptions, etc.).
+export const CONFERENCE_SESSION_TYPES = ["BREAKOUT", "WORKSHOP", "KEYNOTE", "MEETUP"] as const;
+export type ConferenceSessionType = (typeof CONFERENCE_SESSION_TYPES)[number];
+
+// A session speaker. isStaff flags our own people (not all speakers are staff).
+export interface ConferenceSpeaker {
+  name: string;
+  isStaff: boolean;
+}
+
 export const conferences = pgTable("conferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
@@ -2790,6 +2801,8 @@ export const conferences = pgTable("conferences", {
   variantsPerPost: integer("variants_per_post").notNull().default(3),
   // Theming/context fed to AI copy + image generation
   thematicBrief: text("thematic_brief"),
+  // Optional registration offer woven into copy, e.g. "Save $200 with registration code SYNOZUR200".
+  discountStatement: text("discount_statement"),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
   productIds: text("product_ids").array(),
   status: text("status").notNull().default("active"), // active, archived, deleted
@@ -2813,7 +2826,12 @@ export const conferenceSessions = pgTable("conference_sessions", {
   conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   title: text("title").notNull(),
+  // Legacy single-speaker display string, kept in sync with `speakers` (joined names).
   speaker: text("speaker"),
+  // Structured multi-speaker list; each may be flagged as our own staff.
+  speakers: jsonb("speakers").$type<ConferenceSpeaker[]>().default([]),
+  // Optional: BREAKOUT | WORKSHOP | KEYNOTE | MEETUP
+  sessionType: text("session_type"),
   track: text("track"),
   room: text("room"),
   sessionStart: timestamp("session_start"),

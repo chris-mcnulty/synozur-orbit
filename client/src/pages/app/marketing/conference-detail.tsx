@@ -12,18 +12,133 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download } from "lucide-react";
 
+interface Speaker {
+  name: string;
+  isStaff: boolean;
+}
 interface Session {
   id: string;
   title: string;
   speaker?: string | null;
+  speakers?: Speaker[] | null;
+  sessionType?: string | null;
   track?: string | null;
   room?: string | null;
   sessionStart?: string | null;
   abstract?: string | null;
   url?: string | null;
   sortOrder: number;
+}
+
+const SESSION_TYPE_OPTIONS = ["BREAKOUT", "WORKSHOP", "KEYNOTE", "MEETUP"];
+
+function titleCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// Session times are floating wall-clock values stored as UTC. Always render in
+// UTC so the time shows exactly as it was entered, regardless of viewer timezone.
+function formatSessionDateTime(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    timeZone: "UTC",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+// "YYYY-MM-DDTHH:mm" in UTC — used for CSV export and datetime-local editing so
+// the wall-clock round-trips without timezone shifting.
+function toWallClock(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+function speakersDisplay(s: Session): string {
+  if (s.speakers && s.speakers.length) {
+    return s.speakers.map((sp) => (sp.isStaff ? `${sp.name} (staff)` : sp.name)).join(", ");
+  }
+  return s.speaker ?? "";
+}
+
+// ─── CSV helpers (export round-trips with the bulk importer) ──────────────────
+function csvEscape(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+function speakersToCell(speakers?: Speaker[] | null, legacy?: string | null): string {
+  if (speakers && speakers.length) {
+    return speakers.map((s) => (s.isStaff ? `${s.name} *` : s.name)).join("; ");
+  }
+  return legacy ?? "";
+}
+function parseSpeakersCell(cell: string): Speaker[] {
+  return cell
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const isStaff = /\*\s*$/.test(s);
+      return { name: s.replace(/\*\s*$/, "").trim(), isStaff };
+    })
+    .filter((s) => s.name);
+}
+function splitCsvLine(line: string, delim: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else inQ = false;
+      } else cur += ch;
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === delim) {
+      out.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((c) => c.trim());
+}
+function exportSessionsCsv(eventName: string, sessions: Session[]): void {
+  const header = ["Title", "Type", "Speakers", "Track", "Room", "Start", "URL"];
+  const lines = [header.join(",")];
+  for (const s of sessions) {
+    lines.push(
+      [
+        s.title ?? "",
+        s.sessionType ?? "",
+        speakersToCell(s.speakers, s.speaker),
+        s.track ?? "",
+        s.room ?? "",
+        toWallClock(s.sessionStart),
+        s.url ?? "",
+      ]
+        .map((v) => csvEscape(String(v)))
+        .join(","),
+    );
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(eventName || "event").replace(/[^\w.-]+/g, "_")}-sessions.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 interface ConfImage {
   id: string;
@@ -130,7 +245,7 @@ export default function ConferenceDetailPage() {
   if (!conf) {
     return (
       <AppLayout>
-        <div className="p-6 max-w-6xl mx-auto">Conference not found.</div>
+        <div className="p-6 max-w-6xl mx-auto">Event not found.</div>
       </AppLayout>
     );
   }
@@ -169,7 +284,7 @@ export default function ConferenceDetailPage() {
           </TabsList>
 
           <TabsContent value="sessions" className="pt-4">
-            <SessionsTab conferenceId={conf.id} sessions={conf.sessions} onChange={refresh} />
+            <SessionsTab conferenceId={conf.id} eventName={conf.name} sessions={conf.sessions} onChange={refresh} />
           </TabsContent>
 
           <TabsContent value="graphics" className="pt-4">
@@ -193,10 +308,21 @@ export default function ConferenceDetailPage() {
 
 // ─── Sessions ──────────────────────────────────────────────────────────────────
 
-function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: string; sessions: Session[]; onChange: () => void }) {
+function SessionsTab({
+  conferenceId,
+  eventName,
+  sessions,
+  onChange,
+}: {
+  conferenceId: string;
+  eventName: string;
+  sessions: Session[];
+  onChange: () => void;
+}) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
-  const [speaker, setSpeaker] = useState("");
+  const [sessionType, setSessionType] = useState("");
+  const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [sessionStart, setSessionStart] = useState("");
   const [bulkText, setBulkText] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -209,7 +335,8 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
         credentials: "include",
         body: JSON.stringify({
           title,
-          speaker,
+          sessionType: sessionType || undefined,
+          speakers: speakers.filter((s) => s.name.trim()),
           sessionStart: sessionStart || undefined,
         }),
       });
@@ -218,7 +345,8 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
     },
     onSuccess: () => {
       setTitle("");
-      setSpeaker("");
+      setSessionType("");
+      setSpeakers([]);
       setSessionStart("");
       onChange();
       toast({ title: "Session added" });
@@ -228,17 +356,22 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
 
   const bulkImport = useMutation({
     mutationFn: async () => {
-      // Parse pasted rows: title, speaker, track, room, start(ISO/date), url — tab or comma separated.
-      const rows = bulkText
+      // Parse pasted rows: title, type, speakers, track, room, start(ISO/date), url.
+      // Tab or comma separated, with quote support so it round-trips with export.
+      const lines = bulkText
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const cols = line.includes("\t") ? line.split("\t") : line.split(",");
-          const [title, speaker, track, room, start, url] = cols.map((c) => (c || "").trim());
+        .filter(Boolean);
+      const delim = lines[0]?.includes("\t") ? "\t" : ",";
+      const rows = lines
+        .map((line) => splitCsvLine(line, delim))
+        .filter((cols, idx) => !(idx === 0 && (cols[0] || "").toLowerCase() === "title")) // skip header row
+        .map((cols) => {
+          const [t, type, speakersCell, track, room, start, url] = cols.map((c) => (c || "").trim());
           return {
-            title,
-            speaker: speaker || undefined,
+            title: t,
+            sessionType: type || undefined,
+            speakers: parseSpeakersCell(speakersCell || ""),
             track: track || undefined,
             room: room || undefined,
             // Send the raw string; the server validates/parses it (invalid
@@ -280,7 +413,7 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between">
             Add a session
-            <Button variant="outline" size="sm" onClick={() => setBulkOpen((v) => !v)}>
+            <Button variant="outline" size="sm" onClick={() => setBulkOpen((v) => !v)} data-testid="button-toggle-bulk">
               {bulkOpen ? "Single entry" : "Bulk paste / CSV"}
             </Button>
           </CardTitle>
@@ -290,13 +423,16 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
                 One session per line. Columns (tab or comma separated):{" "}
-                <code>title, speaker, track, room, start, url</code>. Only title is required.
+                <code>title, type, speakers, track, room, start, url</code>. Only title is required. List multiple
+                speakers separated by <code>;</code> and add <code>*</code> after a name to mark them as your staff
+                (e.g. <code>Jane Doe *; John External</code>). A header row is optional. Use Export CSV to get a
+                ready-to-edit template.
               </p>
               <Textarea
                 rows={6}
                 value={bulkText}
                 onChange={(e) => setBulkText(e.target.value)}
-                placeholder={"Building Agents with Claude, Jane Doe, AI Track, Room 101, 2026-09-15 14:00, https://…"}
+                placeholder={"Building Agents with Claude, KEYNOTE, Jane Doe *; John External, AI Track, Room 101, 2026-09-15 14:00, https://…"}
                 data-testid="textarea-bulk-sessions"
               />
               <Button onClick={() => bulkImport.mutate()} disabled={!bulkText.trim() || bulkImport.isPending}>
@@ -304,22 +440,84 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
               </Button>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-[2fr,1fr,1fr,auto] items-end">
-              <div className="grid gap-1">
-                <Label>Title *</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-session-title" />
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-[2fr,1fr,1fr] items-end">
+                <div className="grid gap-1">
+                  <Label>Title *</Label>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-session-title" />
+                </div>
+                <div className="grid gap-1">
+                  <Label>Type</Label>
+                  <Select value={sessionType || "none"} onValueChange={(v) => setSessionType(v === "none" ? "" : v)}>
+                    <SelectTrigger data-testid="select-session-type">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {SESSION_TYPE_OPTIONS.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {titleCase(t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1">
+                  <Label>Start</Label>
+                  <Input type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Enter the time as it appears in the event's local schedule. It displays exactly as typed.</p>
+                </div>
               </div>
+
               <div className="grid gap-1">
-                <Label>Speaker</Label>
-                <Input value={speaker} onChange={(e) => setSpeaker(e.target.value)} />
+                <Label>Speakers</Label>
+                <div className="space-y-2">
+                  {speakers.map((sp, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        value={sp.name}
+                        placeholder="Speaker name"
+                        onChange={(e) =>
+                          setSpeakers((arr) => arr.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+                        }
+                        data-testid={`input-speaker-name-${i}`}
+                      />
+                      <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                        <Switch
+                          checked={sp.isStaff}
+                          onCheckedChange={(v) =>
+                            setSpeakers((arr) => arr.map((x, j) => (j === i ? { ...x, isStaff: v } : x)))
+                          }
+                          data-testid={`switch-speaker-staff-${i}`}
+                        />
+                        Our staff
+                      </label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSpeakers((arr) => arr.filter((_, j) => j !== i))}
+                        data-testid={`button-remove-speaker-${i}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSpeakers((arr) => [...arr, { name: "", isStaff: false }])}
+                    data-testid="button-add-speaker"
+                  >
+                    <Plus className="w-4 h-4 mr-1" /> Add speaker
+                  </Button>
+                </div>
               </div>
-              <div className="grid gap-1">
-                <Label>Start</Label>
-                <Input type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
+
+              <div className="flex justify-end">
+                <Button onClick={() => add.mutate()} disabled={!title.trim() || add.isPending} data-testid="button-add-session">
+                  <Plus className="w-4 h-4 mr-1" /> Add session
+                </Button>
               </div>
-              <Button onClick={() => add.mutate()} disabled={!title.trim() || add.isPending}>
-                <Plus className="w-4 h-4 mr-1" /> Add
-              </Button>
             </div>
           )}
         </CardContent>
@@ -327,28 +525,47 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Sessions ({sessions.length})</CardTitle>
+          <CardTitle className="text-base flex items-center justify-between gap-2">
+            Sessions ({sessions.length})
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportSessionsCsv(eventName, sessions)}
+              disabled={sessions.length === 0}
+              data-testid="button-export-sessions"
+            >
+              <Download className="w-4 h-4 mr-1" /> Export CSV
+            </Button>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sessions yet.</p>
           ) : (
             <ul className="divide-y">
-              {sessions.map((s) => (
-                <li key={s.id} className="py-2 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{s.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {[s.speaker, s.track, s.sessionStart ? new Date(s.sessionStart).toLocaleString() : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => remove.mutate(s.id)}>
-                    <Trash2 className="w-4 h-4 text-destructive" />
-                  </Button>
-                </li>
-              ))}
+              {sessions.map((s) => {
+                const meta = [speakersDisplay(s) || null, s.track, formatSessionDateTime(s.sessionStart) || null]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <li key={s.id} className="py-2 flex items-center justify-between gap-3" data-testid={`row-session-${s.id}`}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium truncate">{s.title}</p>
+                        {s.sessionType && (
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            {titleCase(s.sessionType)}
+                          </Badge>
+                        )}
+                      </div>
+                      {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => remove.mutate(s.id)}>
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>

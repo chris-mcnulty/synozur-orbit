@@ -21,8 +21,10 @@ import {
   scheduledJobRuns,
   CONFERENCE_IMAGE_SOURCES,
   CONFERENCE_IMAGE_ROLES,
+  CONFERENCE_SESSION_TYPES,
   type ConferenceImageSource,
   type ConferenceImageRole,
+  type ConferenceSpeaker,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { guardFeature, guardManualAction } from "./helpers";
@@ -36,13 +38,52 @@ const FEATURE = "conferencePromotion";
 
 function toDateOrNull(v: unknown): Date | null {
   if (!v || typeof v !== "string") return null;
-  const d = new Date(v);
+  // Event/session times are floating wall-clock values (no timezone). Normalize
+  // a timezone-less datetime ("2026-09-18T16:00" or "2026-09-18 16:00") to UTC so
+  // the typed wall-clock is stored and displayed identically regardless of the
+  // server or viewer timezone.
+  let s = v.trim();
+  const tzless = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
+  if (tzless.test(s)) {
+    s = s.replace(" ", "T");
+    if (!/:\d{2}$/.test(s.slice(11))) s += ":00";
+    s += "Z";
+  }
+  const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
 
 function cleanStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
+}
+
+// Normalise a speakers payload (array of strings or { name, isStaff }) into
+// structured ConferenceSpeaker[]. Empty names are dropped.
+function cleanSpeakers(v: unknown): ConferenceSpeaker[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((s): ConferenceSpeaker => {
+      if (typeof s === "string") return { name: s.trim(), isStaff: false };
+      if (s && typeof s === "object" && typeof (s as any).name === "string") {
+        return { name: (s as any).name.trim(), isStaff: !!(s as any).isStaff };
+      }
+      return { name: "", isStaff: false };
+    })
+    .filter((s) => s.name);
+}
+
+// Derive the legacy single-speaker display string from the structured list,
+// falling back to a provided legacy value when no structured speakers exist.
+function speakerDisplay(speakers: ConferenceSpeaker[], fallback?: string | null): string | null {
+  if (speakers.length) return speakers.map((s) => s.name).join(", ");
+  return fallback ?? null;
+}
+
+function cleanSessionType(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const up = v.trim().toUpperCase();
+  return (CONFERENCE_SESSION_TYPES as readonly string[]).includes(up) ? up : null;
 }
 
 export function registerConferencePromotionRoutes(app: Express) {
@@ -111,6 +152,7 @@ export function registerConferencePromotionRoutes(app: Express) {
         anchorPostCount: Number.isFinite(b.anchorPostCount) ? Math.min(2, Math.max(1, Math.trunc(b.anchorPostCount))) : 2,
         variantsPerPost: Number.isFinite(b.variantsPerPost) ? Math.min(3, Math.max(2, Math.trunc(b.variantsPerPost))) : 3,
         thematicBrief: typeof b.thematicBrief === "string" ? b.thematicBrief : null,
+        discountStatement: typeof b.discountStatement === "string" ? b.discountStatement : null,
         alwaysHashtags: cleanStringArray(b.alwaysHashtags),
         productIds: cleanStringArray(b.productIds),
         createdBy: ctx.userId,
@@ -145,6 +187,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (Number.isFinite(b.anchorPostCount)) patch.anchorPostCount = Math.min(2, Math.max(1, Math.trunc(b.anchorPostCount)));
     if (Number.isFinite(b.variantsPerPost)) patch.variantsPerPost = Math.min(3, Math.max(2, Math.trunc(b.variantsPerPost)));
     if ("thematicBrief" in b) patch.thematicBrief = b.thematicBrief ?? null;
+    if ("discountStatement" in b) patch.discountStatement = b.discountStatement ?? null;
     if ("alwaysHashtags" in b) patch.alwaysHashtags = cleanStringArray(b.alwaysHashtags);
     if ("productIds" in b) patch.productIds = cleanStringArray(b.productIds);
 
@@ -223,12 +266,15 @@ export function registerConferencePromotionRoutes(app: Express) {
   });
 
   function buildSessionValues(conferenceId: string, tenantDomain: string, s: any, sortOrder: number) {
+    const speakers = cleanSpeakers(s.speakers);
     return {
       id: randomUUID(),
       conferenceId,
       tenantDomain,
       title: String(s.title).trim(),
-      speaker: typeof s.speaker === "string" ? s.speaker.trim() : null,
+      speakers,
+      speaker: speakerDisplay(speakers, typeof s.speaker === "string" ? s.speaker.trim() : null),
+      sessionType: cleanSessionType(s.sessionType),
       track: typeof s.track === "string" ? s.track.trim() : null,
       room: typeof s.room === "string" ? s.room.trim() : null,
       sessionStart: toDateOrNull(s.sessionStart),
@@ -287,7 +333,14 @@ export function registerConferencePromotionRoutes(app: Express) {
     const b = req.body ?? {};
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
-    if ("speaker" in b) patch.speaker = b.speaker ?? null;
+    if ("speakers" in b) {
+      const sp = cleanSpeakers(b.speakers);
+      patch.speakers = sp;
+      patch.speaker = speakerDisplay(sp, null);
+    } else if ("speaker" in b) {
+      patch.speaker = b.speaker ?? null;
+    }
+    if ("sessionType" in b) patch.sessionType = cleanSessionType(b.sessionType);
     if ("track" in b) patch.track = b.track ?? null;
     if ("room" in b) patch.room = b.room ?? null;
     if ("sessionStart" in b) patch.sessionStart = toDateOrNull(b.sessionStart);

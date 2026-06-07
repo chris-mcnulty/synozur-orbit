@@ -13,6 +13,15 @@ import { Link } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange } from "lucide-react";
 
+// Event dates are floating wall-clock dates stored at UTC midnight. Render in
+// UTC so they show exactly as entered, independent of the viewer's timezone.
+function formatEventDate(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { timeZone: "UTC", dateStyle: "medium" });
+}
+
 interface Conference {
   id: string;
   name: string;
@@ -20,6 +29,7 @@ interface Conference {
   location?: string | null;
   website?: string | null;
   eventHashtag?: string | null;
+  discountStatement?: string | null;
   startDate?: string | null;
   endDate?: string | null;
   promoStartDate?: string | null;
@@ -36,6 +46,7 @@ const EMPTY_FORM = {
   location: "",
   website: "",
   eventHashtag: "",
+  discountStatement: "",
   startDate: "",
   endDate: "",
   promoStartDate: "",
@@ -82,14 +93,14 @@ export default function ConferencePromotionPage() {
         credentials: "include",
         body: JSON.stringify(body),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to create conference");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to create event");
       return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/conferences"] });
       setOpen(false);
       setForm({ ...EMPTY_FORM });
-      toast({ title: "Conference created" });
+      toast({ title: "Event created" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -105,7 +116,7 @@ export default function ConferencePromotionPage() {
     },
     onSuccess: (_d, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/conferences"] });
-      toast({ title: vars.archive ? "Conference archived" : "Conference restored" });
+      toast({ title: vars.archive ? "Event archived" : "Event restored" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -119,7 +130,7 @@ export default function ConferencePromotionPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Ticket className="w-6 h-6" /> Conference Social Promotion
+              <Ticket className="w-6 h-6" /> Event Promotion
             </h1>
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
               Set up anchor posts for your overall presence plus a matched post and graphic for every session you deliver.
@@ -129,16 +140,16 @@ export default function ConferencePromotionPage() {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button data-testid="button-new-conference">
-                <Plus className="w-4 h-4 mr-1" /> New Conference
+                <Plus className="w-4 h-4 mr-1" /> New Event
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>New Conference</DialogTitle>
+                <DialogTitle>New Event</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="grid gap-2">
-                  <Label>Conference name *</Label>
+                  <Label>Event name *</Label>
                   <Input
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -159,6 +170,15 @@ export default function ConferencePromotionPage() {
                 <div className="grid gap-2">
                   <Label>Website</Label>
                   <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://…" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Registration offer / discount code</Label>
+                  <Input
+                    value={form.discountStatement}
+                    onChange={(e) => setForm((f) => ({ ...f, discountStatement: e.target.value }))}
+                    placeholder="e.g. Save $200 with registration code SYNOZUR200"
+                    data-testid="input-discount-statement"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
@@ -263,7 +283,7 @@ export default function ConferencePromotionPage() {
         ) : conferences.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              No conferences yet. Create one to start promoting your sessions.
+              No events yet. Create one to start promoting your sessions.
             </CardContent>
           </Card>
         ) : (
@@ -309,9 +329,9 @@ function ConferenceCard({
 }) {
   const dates =
     conf.startDate && conf.endDate
-      ? `${new Date(conf.startDate).toLocaleDateString()} – ${new Date(conf.endDate).toLocaleDateString()}`
+      ? `${formatEventDate(conf.startDate)} – ${formatEventDate(conf.endDate)}`
       : conf.startDate
-      ? new Date(conf.startDate).toLocaleDateString()
+      ? formatEventDate(conf.startDate)
       : "Dates TBD";
   return (
     <Card className={archived ? "opacity-70" : ""}>

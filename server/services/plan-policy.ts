@@ -28,7 +28,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "contentLibrary", label: "Content Library", description: "Manage marketing content assets, categories, and product tags", category: "marketing" },
   { key: "brandLibrary", label: "Brand Library", description: "Manage brand-approved visual assets and templates", category: "marketing" },
   { key: "campaigns", label: "Campaigns", description: "Campaign management with asset and social account coordination", category: "marketing" },
-  { key: "conferencePromotion", label: "Conference Social Promotion", description: "Drive coordinated social promotion for a conference: anchor posts plus a matched post + graphic for every session, with archivable conference image space", category: "marketing" },
+  { key: "conferencePromotion", label: "Event Promotion", description: "Drive coordinated social promotion for an event: anchor posts plus a matched post + graphic for every session, with archivable event image space", category: "marketing" },
   { key: "socialAccounts", label: "Social Accounts", description: "Connect and manage social media accounts for publishing", category: "marketing" },
   { key: "saturnCapture", label: "Saturn Capture Extension", description: "Browser extension for capturing web content into the content library", category: "marketing" },
   { key: "intelligenceBriefings", label: "Intelligence Briefings", description: "AI-synthesized periodic market intelligence reports with executive summaries", category: "intelligence" },

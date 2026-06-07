@@ -199,10 +199,35 @@ export async function compositeSessionGraphic(opts: {
     .toBuffer();
 }
 
+/** Display string for a session's speakers — prefers the structured list, falls back to the legacy field. */
+function sessionSpeakerText(session?: ConferenceSession | null): string | null {
+  if (!session) return null;
+  const speakers = session.speakers ?? [];
+  if (speakers.length) return speakers.map((s) => s.name).join(", ");
+  return session.speaker ?? null;
+}
+
+// Event/session times are floating wall-clock values stored as UTC. Render in
+// UTC so the entered time appears verbatim, independent of server timezone.
+function formatUtcDateTime(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatUtcDate(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { timeZone: "UTC", dateStyle: "medium" });
+}
+
 function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null): string {
   if (session) {
+    const speaker = sessionSpeakerText(session);
     return `Professional, on-brand conference session promotion graphic for "${session.title}"${
-      session.speaker ? ` featuring ${session.speaker}` : ""
+      speaker ? ` featuring ${speaker}` : ""
     } at ${conf.name}. Modern, clean, corporate marketing style with abstract tech background. No text.`;
   }
   return `Eye-catching conference presence announcement graphic for ${conf.name}${
@@ -246,14 +271,14 @@ export async function renderConferenceImage(
     }
     const detail = [
       session?.room,
-      session?.sessionStart ? new Date(session.sessionStart).toLocaleString() : null,
+      formatUtcDateTime(session?.sessionStart),
     ]
       .filter(Boolean)
       .join(" · ");
     const buffer = await compositeSessionGraphic({
       templateBytes,
       title: session?.title || conf.name,
-      speaker: session?.speaker,
+      speaker: sessionSpeakerText(session),
       detail: detail || conf.eventHashtag || null,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
@@ -361,21 +386,27 @@ async function generateCopyVariants(opts: {
   }
 
   const contextLines: string[] = [
-    `Conference: ${conf.name}`,
+    `Event: ${conf.name}`,
     conf.location ? `Location: ${conf.location}` : "",
-    conf.startDate ? `Dates: ${new Date(conf.startDate).toLocaleDateString()}${conf.endDate ? ` – ${new Date(conf.endDate).toLocaleDateString()}` : ""}` : "",
+    conf.startDate ? `Dates: ${formatUtcDate(conf.startDate)}${conf.endDate ? ` – ${formatUtcDate(conf.endDate)}` : ""}` : "",
     conf.website ? `Link: ${conf.website}` : "",
     conf.thematicBrief ? `Theme/brief: ${conf.thematicBrief}` : "",
+    conf.discountStatement ? `Registration offer (mention verbatim in at least one variation if it fits naturally): ${conf.discountStatement}` : "",
   ].filter(Boolean);
 
   if (session) {
+    const speakers = session.speakers ?? [];
+    const speakerLine = speakers.length
+      ? speakers.map((s) => (s.isStaff ? `${s.name} (our team)` : s.name)).join(", ")
+      : session.speaker;
     contextLines.push(
       `This post promotes a specific session we are delivering:`,
       `  Title: ${session.title}`,
-      session.speaker ? `  Speaker(s): ${session.speaker}` : "",
+      session.sessionType ? `  Session type: ${session.sessionType}` : "",
+      speakerLine ? `  Speaker(s): ${speakerLine}` : "",
       session.track ? `  Track: ${session.track}` : "",
       session.room ? `  Room: ${session.room}` : "",
-      session.sessionStart ? `  When: ${new Date(session.sessionStart).toLocaleString()}` : "",
+      session.sessionStart ? `  When: ${formatUtcDateTime(session.sessionStart)}` : "",
       session.abstract ? `  Abstract: ${session.abstract}` : "",
       session.url ? `  Session link: ${session.url}` : "",
     );
