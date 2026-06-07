@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, real, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -2651,9 +2651,9 @@ export const generatedPosts = pgTable("generated_posts", {
   // Conference social promotion linkage (nullable: most posts aren't conference posts).
   // conferenceSessionId gives the 1:1 session→post relationship; conferenceImageId is
   // the matched graphic. postRole distinguishes anchor (overall presence) vs session posts.
-  conferenceId: varchar("conference_id").references((): any => conferences.id, { onDelete: "cascade" }),
-  conferenceSessionId: varchar("conference_session_id").references((): any => conferenceSessions.id, { onDelete: "cascade" }),
-  conferenceImageId: varchar("conference_image_id").references((): any => conferenceImages.id, { onDelete: "set null" }),
+  conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "cascade" }),
+  conferenceSessionId: varchar("conference_session_id").references((): AnyPgColumn => conferenceSessions.id, { onDelete: "cascade" }),
+  conferenceImageId: varchar("conference_image_id").references((): AnyPgColumn => conferenceImages.id, { onDelete: "set null" }),
   postRole: text("post_role"), // anchor | session
   scheduledDate: timestamp("scheduled_date"),
   status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected, published, publish_failed

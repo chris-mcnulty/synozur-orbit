@@ -22,7 +22,7 @@
 
 import sharp from "sharp";
 import { randomUUID } from "crypto";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, ne } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -283,8 +283,11 @@ export function buildScheduleSlots(opts: {
   count: number;
 }): Date[] {
   const slots: Date[] = [];
-  const perDay = Math.max(1, opts.postsPerDay);
   const hours = [9, 11, 13, 15, 17];
+  // Never place more than one post per distinct hour slot in a day — overflow
+  // rolls to the next *eligible* day instead of spilling into an ineligible
+  // (e.g. weekend) calendar day.
+  const perDay = Math.min(Math.max(1, opts.postsPerDay), hours.length);
   const cursor = new Date(opts.promoStart);
   cursor.setHours(0, 0, 0, 0);
   let guard = 0;
@@ -295,10 +298,7 @@ export function buildScheduleSlots(opts: {
     if (eligible) {
       for (let i = 0; i < perDay && slots.length < opts.count; i++) {
         const slot = new Date(cursor);
-        const hour = hours[i % hours.length];
-        const extraDays = Math.floor(i / hours.length); // overflow within a day rolls forward
-        slot.setDate(slot.getDate() + extraDays);
-        slot.setHours(hour, 0, 0, 0);
+        slot.setHours(hours[i], 0, 0, 0);
         slots.push(slot);
       }
     }
@@ -347,9 +347,12 @@ async function generateCopyVariants(opts: {
   let systemPrompt: string | undefined;
   if (opts.socialAccountId) {
     try {
-      const [account] = await db.select().from(socialAccounts).where(eq(socialAccounts.id, opts.socialAccountId));
-      const profile = await fetchVoiceProfile(opts.socialAccountId);
+      const [account] = await db
+        .select()
+        .from(socialAccounts)
+        .where(and(eq(socialAccounts.id, opts.socialAccountId), eq(socialAccounts.tenantDomain, opts.tenantDomain)));
       if (account) {
+        const profile = await fetchVoiceProfile(opts.socialAccountId);
         systemPrompt = buildSystemPrompt({ account, profile, persona: null, frameworks: [], platform });
       }
     } catch {
@@ -466,7 +469,10 @@ async function runGeneration(
 
   const accountIds = options.socialAccountIds.filter(Boolean);
   const accounts = accountIds.length
-    ? await db.select().from(socialAccounts).where(inArray(socialAccounts.id, accountIds))
+    ? await db
+        .select()
+        .from(socialAccounts)
+        .where(and(inArray(socialAccounts.id, accountIds), eq(socialAccounts.tenantDomain, tenantDomain)))
     : [];
   if (accounts.length === 0) throw new Error("No social accounts selected");
 
@@ -474,10 +480,17 @@ async function runGeneration(
   const anchorCount = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 2);
   const generateImages = options.generateImages !== false;
 
-  // Clear prior unpublished conference posts so regeneration is clean.
+  // Clear prior conference posts (everything except already-published ones) so
+  // regeneration doesn't leave behind stale variant groups. Tenant-scoped.
   await db
     .delete(generatedPosts)
-    .where(and(eq(generatedPosts.conferenceId, conferenceId), inArray(generatedPosts.status, ["draft", "rejected", "deleted"])));
+    .where(
+      and(
+        eq(generatedPosts.conferenceId, conferenceId),
+        eq(generatedPosts.tenantDomain, tenantDomain),
+        ne(generatedPosts.status, "published"),
+      ),
+    );
 
   // Resolve / render images. One anchor image (shared by anchor posts) + one per session.
   reportProgress?.({ phase: "Preparing graphics", percent: 15 });

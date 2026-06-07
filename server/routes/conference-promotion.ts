@@ -53,8 +53,12 @@ export function registerConferencePromotionRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const where = status
-      ? and(eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.status, status))
-      : and(eq(conferences.tenantDomain, ctx.tenantDomain), inArray(conferences.status, ["active", "archived"]));
+      ? and(eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId), eq(conferences.status, status))
+      : and(
+          eq(conferences.tenantDomain, ctx.tenantDomain),
+          eq(conferences.marketId, ctx.marketId),
+          inArray(conferences.status, ["active", "archived"]),
+        );
     const rows = await db.select().from(conferences).where(where).orderBy(desc(conferences.createdAt));
     res.json(rows);
   });
@@ -65,7 +69,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const [conf] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain)));
+      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const sessions = await db
       .select()
@@ -121,7 +125,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const [existing] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain)));
+      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!existing) return res.status(404).json({ error: "Conference not found" });
 
     const b = req.body ?? {};
@@ -154,7 +158,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const [existing] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain)));
+      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!existing) return res.status(404).json({ error: "Conference not found" });
     await db.update(conferences).set({ status: "deleted", updatedAt: new Date() }).where(eq(conferences.id, existing.id));
     res.json({ ok: true });
@@ -167,7 +171,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const [existing] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain)));
+      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!existing) return res.status(404).json({ error: "Conference not found" });
     const now = new Date();
     await db.update(conferences).set({ status: "archived", archivedAt: now, updatedAt: now }).where(eq(conferences.id, existing.id));
@@ -184,7 +188,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const [existing] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain)));
+      .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!existing) return res.status(404).json({ error: "Conference not found" });
     const now = new Date();
     await db.update(conferences).set({ status: "active", archivedAt: null, updatedAt: now }).where(eq(conferences.id, existing.id));
@@ -197,18 +201,18 @@ export function registerConferencePromotionRoutes(app: Express) {
 
   // ── Sessions ─────────────────────────────────────────────────────────────────
 
-  async function loadConference(reqId: string, tenantDomain: string) {
+  async function loadConference(reqId: string, tenantDomain: string, marketId: string) {
     const [conf] = await db
       .select()
       .from(conferences)
-      .where(and(eq(conferences.id, reqId), eq(conferences.tenantDomain, tenantDomain)));
+      .where(and(eq(conferences.id, reqId), eq(conferences.tenantDomain, tenantDomain), eq(conferences.marketId, marketId)));
     return conf;
   }
 
   app.get("/api/conferences/:id/sessions", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const rows = await db
       .select()
@@ -238,7 +242,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.post("/api/conferences/:id/sessions", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const b = req.body ?? {};
     if (!b.title || typeof b.title !== "string" || !b.title.trim()) {
@@ -256,7 +260,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.post("/api/conferences/:id/sessions/bulk", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const incoming = Array.isArray(req.body?.sessions) ? req.body.sessions : [];
     const valid = incoming.filter((s: any) => s && typeof s.title === "string" && s.title.trim());
@@ -315,7 +319,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.get("/api/conferences/:id/images", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const includeArchived = req.query.includeArchived === "true";
     const where = includeArchived
@@ -328,7 +332,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.post("/api/conferences/:id/images", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const b = req.body ?? {};
     const source: ConferenceImageSource = CONFERENCE_IMAGE_SOURCES.includes(b.source) ? b.source : "ai_generated";
@@ -449,7 +453,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (!(await guardManualAction(req, res, "aiPostGen"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const conf = await loadConference(req.params.id, ctx.tenantDomain);
+      const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!conf) return res.status(404).json({ error: "Conference not found" });
 
       const socialAccountIds = cleanStringArray(req.body?.socialAccountIds);
@@ -496,7 +500,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.get("/api/conferences/:id/generate-posts-status", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     if (!conf.postGenerationJobId) return res.json({ status: "idle" });
     const [job] = await db.select().from(scheduledJobRuns).where(eq(scheduledJobRuns.id, conf.postGenerationJobId));
@@ -507,7 +511,7 @@ export function registerConferencePromotionRoutes(app: Express) {
   app.get("/api/conferences/:id/posts", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
     const ctx = await getRequestContext(req);
-    const conf = await loadConference(req.params.id, ctx.tenantDomain);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const rows = await db
       .select()

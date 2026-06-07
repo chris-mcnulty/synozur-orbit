@@ -210,7 +210,7 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
         body: JSON.stringify({
           title,
           speaker,
-          sessionStart: sessionStart ? new Date(sessionStart).toISOString() : undefined,
+          sessionStart: sessionStart || undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed");
@@ -241,7 +241,9 @@ function SessionsTab({ conferenceId, sessions, onChange }: { conferenceId: strin
             speaker: speaker || undefined,
             track: track || undefined,
             room: room || undefined,
-            sessionStart: start ? new Date(start).toISOString() : undefined,
+            // Send the raw string; the server validates/parses it (invalid
+            // timestamps become null rather than crashing the import here).
+            sessionStart: start || undefined,
             url: url || undefined,
           };
         })
