@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, real, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -2648,6 +2648,13 @@ export const generatedPosts = pgTable("generated_posts", {
   overrideImageUrl: text("override_image_url"),
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),
+  // Conference social promotion linkage (nullable: most posts aren't conference posts).
+  // conferenceSessionId gives the 1:1 session→post relationship; conferenceImageId is
+  // the matched graphic. postRole distinguishes anchor (overall presence) vs session posts.
+  conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "cascade" }),
+  conferenceSessionId: varchar("conference_session_id").references((): AnyPgColumn => conferenceSessions.id, { onDelete: "cascade" }),
+  conferenceImageId: varchar("conference_image_id").references((): AnyPgColumn => conferenceImages.id, { onDelete: "set null" }),
+  postRole: text("post_role"), // anchor | session
   scheduledDate: timestamp("scheduled_date"),
   status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected, published, publish_failed
   editedContent: text("edited_content"), // User-edited version of the post
@@ -2740,6 +2747,155 @@ export const insertGeneratedEmailSchema = createInsertSchema(generatedEmails).om
 export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
+
+// ---------------------------------------------------------------------------
+// Conference Social Promotion
+//
+// Drives coordinated social promotion for a single conference: 1-2 anchor posts
+// for overall presence plus one post per delivered session, each with a matched
+// 1:1 graphic. Conference images live in their own dedicated space (not the main
+// brand library) so they never clutter it, and the whole conference can be
+// archived with one click after the event. The actual posts reuse the existing
+// generatedPosts table (via conferenceId/conferenceSessionId) so they flow
+// through the same scheduling, calendar, and publishing machinery.
+// ---------------------------------------------------------------------------
+
+export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded"] as const;
+export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
+
+export const CONFERENCE_IMAGE_ROLES = ["anchor", "session"] as const;
+export type ConferenceImageRole = (typeof CONFERENCE_IMAGE_ROLES)[number];
+
+export const conferences = pgTable("conferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  location: text("location"),
+  website: text("website"),
+  eventHashtag: text("event_hashtag"), // official conference hashtag, e.g. "#MSIgnite"
+  // Conference dates (when the event runs)
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  // Promotion window + cadence (the "time range" and "posts per day" the user configures)
+  promoStartDate: timestamp("promo_start_date"),
+  promoEndDate: timestamp("promo_end_date"),
+  postsPerDay: integer("posts_per_day").notNull().default(2),
+  includeSaturday: boolean("include_saturday").notNull().default(false),
+  includeSunday: boolean("include_sunday").notNull().default(false),
+  // Number of anchor (overall presence) posts: typically 1-2
+  anchorPostCount: integer("anchor_post_count").notNull().default(2),
+  // How many copy variations to generate per post (2-3)
+  variantsPerPost: integer("variants_per_post").notNull().default(3),
+  // Theming/context fed to AI copy + image generation
+  thematicBrief: text("thematic_brief"),
+  alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
+  productIds: text("product_ids").array(),
+  status: text("status").notNull().default("active"), // active, archived, deleted
+  archivedAt: timestamp("archived_at"),
+  postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertConferenceSchema = createInsertSchema(conferences).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type Conference = typeof conferences.$inferSelect;
+export type InsertConference = z.infer<typeof insertConferenceSchema>;
+
+// One row per delivered session. Each session gets a 1:1 matched graphic
+// (conferenceImages.sessionId) and a dedicated post (generatedPosts.conferenceSessionId).
+export const conferenceSessions = pgTable("conference_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  title: text("title").notNull(),
+  speaker: text("speaker"),
+  track: text("track"),
+  room: text("room"),
+  sessionStart: timestamp("session_start"),
+  sessionEnd: timestamp("session_end"),
+  abstract: text("abstract"),
+  url: text("url"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  status: text("status").notNull().default("active"), // active, deleted
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertConferenceSessionSchema = createInsertSchema(conferenceSessions).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type ConferenceSession = typeof conferenceSessions.$inferSelect;
+export type InsertConferenceSession = z.infer<typeof insertConferenceSessionSchema>;
+
+// Dedicated image space for conference graphics. Kept separate from brandAssets
+// so the main brand library stays uncluttered. sessionId is set for the 1:1
+// session graphic; null for anchor images.
+export const conferenceImages = pgTable("conference_images", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
+  sessionId: varchar("session_id").references(() => conferenceSessions.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  role: text("role").notNull().default("session"), // anchor | session
+  source: text("source").notNull().default("ai_generated"), // ai_generated | template_composite | uploaded
+  name: text("name"),
+  imagePrompt: text("image_prompt"), // used for ai_generated and as overlay seed
+  templateAssetId: varchar("template_asset_id").references(() => brandAssets.id, { onDelete: "set null" }), // background for template_composite
+  fileUrl: text("file_url"), // object-storage path, e.g. /objects/...
+  fileType: text("file_type"),
+  fileSize: integer("file_size"),
+  status: text("status").notNull().default("active"), // active, archived
+  archivedAt: timestamp("archived_at"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  // Enforce 1:1 — at most one image per session.
+  sessionUnique: uniqueIndex("conference_images_session_unique").on(t.sessionId),
+}));
+
+export const insertConferenceImageSchema = createInsertSchema(conferenceImages).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type ConferenceImage = typeof conferenceImages.$inferSelect;
+export type InsertConferenceImage = z.infer<typeof insertConferenceImageSchema>;
+
+export const conferencesRelations = relations(conferences, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [conferences.createdBy],
+    references: [users.id],
+  }),
+  sessions: many(conferenceSessions),
+  images: many(conferenceImages),
+  posts: many(generatedPosts),
+}));
+
+export const conferenceSessionsRelations = relations(conferenceSessions, ({ one, many }) => ({
+  conference: one(conferences, {
+    fields: [conferenceSessions.conferenceId],
+    references: [conferences.id],
+  }),
+  images: many(conferenceImages),
+}));
+
+export const conferenceImagesRelations = relations(conferenceImages, ({ one }) => ({
+  conference: one(conferences, {
+    fields: [conferenceImages.conferenceId],
+    references: [conferences.id],
+  }),
+  session: one(conferenceSessions, {
+    fields: [conferenceImages.sessionId],
+    references: [conferenceSessions.id],
+  }),
+  templateAsset: one(brandAssets, {
+    fields: [conferenceImages.templateAssetId],
+    references: [brandAssets.id],
+  }),
+}));
 
 // Marketing Links — UTM-tagged short links with click tracking. Slug is
 // globally unique so the redirect handler can resolve a slug to a destination
