@@ -729,7 +729,7 @@ async function generateCopyVariants(opts: {
     contextLines.push(
       `This post promotes a specific session we are delivering:`,
       `  Title: ${session.title}`,
-      session.sessionType ? `  Session type: ${session.sessionType}` : "",
+      session.sessionType ? `  Session type: ${session.sessionType.toLowerCase()}` : "",
       speakerLine ? `  Speaker(s): ${speakerLine}` : "",
       session.track ? `  Track: ${session.track}` : "",
       session.room ? `  Room: ${session.room}` : "",
