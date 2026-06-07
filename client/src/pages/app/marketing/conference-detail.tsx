@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil } from "lucide-react";
 
 interface Speaker {
   name: string;
@@ -59,6 +60,15 @@ function toWallClock(iso?: string | null): string {
   if (isNaN(d.getTime())) return "";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+// "YYYY-MM-DD" in UTC for <input type="date"> round-tripping without tz shift.
+function toDateInput(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
 
 function speakersDisplay(s: Session): string {
@@ -154,8 +164,19 @@ interface ConfImage {
 interface Conference {
   id: string;
   name: string;
+  description?: string | null;
   location?: string | null;
+  website?: string | null;
   eventHashtag?: string | null;
+  discountStatement?: string | null;
+  thematicBrief?: string | null;
+  alwaysHashtags?: string[] | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  promoStartDate?: string | null;
+  promoEndDate?: string | null;
+  includeSaturday?: boolean;
+  includeSunday?: boolean;
   postsPerDay: number;
   anchorPostCount: number;
   variantsPerPost: number;
@@ -277,6 +298,9 @@ export default function ConferenceDetailPage() {
             </p>
           </div>
           {conf.status === "archived" && <Badge variant="secondary">Archived</Badge>}
+          <div className="ml-auto">
+            <EditEventDialog conf={conf} onSaved={refresh} />
+          </div>
         </div>
 
         <Tabs defaultValue="sessions">
@@ -307,6 +331,186 @@ export default function ConferenceDetailPage() {
       </div>
     </AppLayout>
   );
+}
+
+// ─── Edit event details ──────────────────────────────────────────────────────────
+
+function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(() => buildEventForm(conf));
+
+  // Re-seed the form whenever the dialog is opened so it reflects the latest data.
+  useEffect(() => {
+    if (open) setForm(buildEventForm(conf));
+  }, [open, conf]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const body = {
+        name: form.name.trim(),
+        description: form.description || null,
+        location: form.location || null,
+        website: form.website || null,
+        eventHashtag: form.eventHashtag || null,
+        discountStatement: form.discountStatement || null,
+        thematicBrief: form.thematicBrief || null,
+        alwaysHashtags: form.alwaysHashtags.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean),
+        startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
+        endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
+        promoStartDate: form.promoStartDate ? new Date(form.promoStartDate).toISOString() : null,
+        promoEndDate: form.promoEndDate ? new Date(form.promoEndDate).toISOString() : null,
+        postsPerDay: form.postsPerDay,
+        anchorPostCount: form.anchorPostCount,
+        variantsPerPost: form.variantsPerPost,
+        includeSaturday: form.includeSaturday,
+        includeSunday: form.includeSunday,
+      };
+      const r = await fetch(`/api/conferences/${conf.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save");
+      return r.json();
+    },
+    onSuccess: () => {
+      setOpen(false);
+      onSaved();
+      toast({ title: "Event updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" data-testid="button-edit-event">
+          <Pencil className="w-4 h-4 mr-1" /> Edit event
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit event</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="grid gap-2">
+            <Label>Event name *</Label>
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} data-testid="input-edit-event-name" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Location</Label>
+              <Input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Chicago, IL" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Event hashtag</Label>
+              <Input value={form.eventHashtag} onChange={(e) => setForm((f) => ({ ...f, eventHashtag: e.target.value }))} placeholder="#MSIgnite" />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>Website</Label>
+            <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://…" />
+          </div>
+          <div className="grid gap-2">
+            <Label>Registration offer / discount code</Label>
+            <Input
+              value={form.discountStatement}
+              onChange={(e) => setForm((f) => ({ ...f, discountStatement: e.target.value }))}
+              placeholder="e.g. Save $200 with registration code SYNOZUR200"
+              data-testid="input-edit-discount-statement"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Event start</Label>
+              <Input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Event end</Label>
+              <Input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="rounded-md border p-3 space-y-4">
+            <div className="text-sm font-medium">Promotion window & cadence</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Promotion start</Label>
+                <Input type="date" value={form.promoStartDate} onChange={(e) => setForm((f) => ({ ...f, promoStartDate: e.target.value }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Promotion end</Label>
+                <Input type="date" value={form.promoEndDate} onChange={(e) => setForm((f) => ({ ...f, promoEndDate: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label>Posts per day</Label>
+                <Input type="number" min={1} max={12} value={form.postsPerDay} onChange={(e) => setForm((f) => ({ ...f, postsPerDay: Number(e.target.value) }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Anchor posts</Label>
+                <Input type="number" min={1} max={2} value={form.anchorPostCount} onChange={(e) => setForm((f) => ({ ...f, anchorPostCount: Number(e.target.value) }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Copy variations</Label>
+                <Input type="number" min={2} max={3} value={form.variantsPerPost} onChange={(e) => setForm((f) => ({ ...f, variantsPerPost: Number(e.target.value) }))} />
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={form.includeSaturday} onCheckedChange={(v) => setForm((f) => ({ ...f, includeSaturday: v }))} />
+                Post Saturdays
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={form.includeSunday} onCheckedChange={(v) => setForm((f) => ({ ...f, includeSunday: v }))} />
+                Post Sundays
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Always-on hashtags</Label>
+            <Input value={form.alwaysHashtags} onChange={(e) => setForm((f) => ({ ...f, alwaysHashtags: e.target.value }))} placeholder="comma or space separated" />
+          </div>
+          <div className="grid gap-2">
+            <Label>Theme / brief (guides AI copy & graphics)</Label>
+            <Textarea rows={3} value={form.thematicBrief} onChange={(e) => setForm((f) => ({ ...f, thematicBrief: e.target.value }))} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={!form.name.trim() || save.isPending} data-testid="button-save-event">
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function buildEventForm(conf: Conference) {
+  return {
+    name: conf.name ?? "",
+    description: conf.description ?? "",
+    location: conf.location ?? "",
+    website: conf.website ?? "",
+    eventHashtag: conf.eventHashtag ?? "",
+    discountStatement: conf.discountStatement ?? "",
+    thematicBrief: conf.thematicBrief ?? "",
+    alwaysHashtags: (conf.alwaysHashtags ?? []).join(" "),
+    startDate: toDateInput(conf.startDate),
+    endDate: toDateInput(conf.endDate),
+    promoStartDate: toDateInput(conf.promoStartDate),
+    promoEndDate: toDateInput(conf.promoEndDate),
+    postsPerDay: conf.postsPerDay ?? 2,
+    anchorPostCount: conf.anchorPostCount ?? 2,
+    variantsPerPost: conf.variantsPerPost ?? 3,
+    includeSaturday: !!conf.includeSaturday,
+    includeSunday: !!conf.includeSunday,
+  };
 }
 
 // ─── Sessions ──────────────────────────────────────────────────────────────────
@@ -563,9 +767,12 @@ function SessionsTab({
                       </div>
                       {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => remove.mutate(s.id)}>
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <EditSessionDialog session={s} onSaved={onChange} />
+                      <Button variant="ghost" size="sm" onClick={() => remove.mutate(s.id)} data-testid={`button-delete-session-${s.id}`}>
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
                   </li>
                 );
               })}
@@ -574,6 +781,165 @@ function SessionsTab({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function EditSessionDialog({ session, onSaved }: { session: Session; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(session.title);
+  const [sessionType, setSessionType] = useState(session.sessionType ?? "");
+  const [track, setTrack] = useState(session.track ?? "");
+  const [room, setRoom] = useState(session.room ?? "");
+  const [url, setUrl] = useState(session.url ?? "");
+  const [sessionStart, setSessionStart] = useState(toWallClock(session.sessionStart));
+  const [speakers, setSpeakers] = useState<Speaker[]>(
+    session.speakers && session.speakers.length
+      ? session.speakers
+      : session.speaker
+        ? [{ name: session.speaker, isStaff: false }]
+        : [],
+  );
+
+  // Re-seed all fields from the latest session data when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    setTitle(session.title);
+    setSessionType(session.sessionType ?? "");
+    setTrack(session.track ?? "");
+    setRoom(session.room ?? "");
+    setUrl(session.url ?? "");
+    setSessionStart(toWallClock(session.sessionStart));
+    setSpeakers(
+      session.speakers && session.speakers.length
+        ? session.speakers
+        : session.speaker
+          ? [{ name: session.speaker, isStaff: false }]
+          : [],
+    );
+  }, [open, session]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/conference-sessions/${session.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title,
+          sessionType: sessionType || null,
+          track: track || null,
+          room: room || null,
+          url: url || null,
+          sessionStart: sessionStart || null,
+          speakers: speakers.filter((s) => s.name.trim()),
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save");
+      return r.json();
+    },
+    onSuccess: () => {
+      setOpen(false);
+      onSaved();
+      toast({ title: "Session updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" data-testid={`button-edit-session-${session.id}`}>
+          <Pencil className="w-4 h-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit session</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="grid gap-1">
+            <Label>Title *</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="input-edit-session-title" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>Type</Label>
+              <Select value={sessionType || "none"} onValueChange={(v) => setSessionType(v === "none" ? "" : v)}>
+                <SelectTrigger data-testid="select-edit-session-type">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {SESSION_TYPE_OPTIONS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {titleCase(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1">
+              <Label>Start</Label>
+              <Input type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>Track</Label>
+              <Input value={track} onChange={(e) => setTrack(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>Room</Label>
+              <Input value={room} onChange={(e) => setRoom(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <Label>Session URL</Label>
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+          </div>
+          <div className="grid gap-1">
+            <Label>Speakers</Label>
+            <div className="space-y-2">
+              {speakers.map((sp, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={sp.name}
+                    placeholder="Speaker name"
+                    onChange={(e) => setSpeakers((arr) => arr.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                    data-testid={`input-edit-speaker-name-${i}`}
+                  />
+                  <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                    <Switch
+                      checked={sp.isStaff}
+                      onCheckedChange={(v) => setSpeakers((arr) => arr.map((x, j) => (j === i ? { ...x, isStaff: v } : x)))}
+                    />
+                    Our staff
+                  </label>
+                  <Button variant="ghost" size="sm" onClick={() => setSpeakers((arr) => arr.filter((_, j) => j !== i))}>
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSpeakers((arr) => [...arr, { name: "", isStaff: false }])}
+                data-testid="button-edit-add-speaker"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Add speaker
+              </Button>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={!title.trim() || save.isPending} data-testid="button-save-session">
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
