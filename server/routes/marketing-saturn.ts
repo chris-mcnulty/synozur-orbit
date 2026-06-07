@@ -1014,7 +1014,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "brandLibrary")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, url, categoryId, productTagIds, productIds, tags, fileType, assetType, solutionAreaIds } = req.body;
+      const { name, description, url, categoryId, productTagIds, productIds, tags, fileType, fileUrl, fileSize, assetType, solutionAreaIds, logoVariant, fontFamily, fontWeight, fontStyle, fontUsage } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
       const safeAssetType = typeof assetType === "string" && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)
         ? (assetType as ContentAssetType)
@@ -1026,11 +1026,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
         name: name.trim(),
         description: description || null,
         url: url || null,
+        fileUrl: fileUrl || null,
+        fileSize: fileSize ? Number(fileSize) : null,
         categoryId: categoryId || null,
         assetType: safeAssetType,
         fileType: fileType || null,
         productIds: productIds?.length ? productIds : null,
         tags: tags || null,
+        logoVariant: logoVariant || null,
+        fontFamily: fontFamily || null,
+        fontWeight: fontWeight || null,
+        fontStyle: fontStyle || null,
+        fontUsage: fontUsage || null,
         createdBy: ctx.userId,
       } as InsertBrandAsset).returning();
       if (productTagIds?.length) {
@@ -1054,13 +1061,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/brand-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { name, description, url, fileUrl, fileType, categoryId, status, productTagIds, productIds, tags, assetType, solutionAreaIds } = req.body;
+    const { name, description, url, fileUrl, fileType, fileSize, categoryId, status, productTagIds, productIds, tags, assetType, solutionAreaIds, logoVariant, fontFamily, fontWeight, fontStyle, fontUsage } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (url !== undefined) updates.url = url;
     if (fileUrl !== undefined) updates.fileUrl = fileUrl;
     if (fileType !== undefined) updates.fileType = fileType;
+    if (fileSize !== undefined) updates.fileSize = fileSize ? Number(fileSize) : null;
     if (categoryId !== undefined) updates.categoryId = categoryId;
     if (status !== undefined) updates.status = status;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
@@ -1068,6 +1076,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
       updates.assetType = assetType;
     }
+    if (logoVariant !== undefined) updates.logoVariant = logoVariant || null;
+    if (fontFamily !== undefined) updates.fontFamily = fontFamily || null;
+    if (fontWeight !== undefined) updates.fontWeight = fontWeight || null;
+    if (fontStyle !== undefined) updates.fontStyle = fontStyle || null;
+    if (fontUsage !== undefined) updates.fontUsage = fontUsage || null;
 
     const [row] = await db.update(brandAssets)
       .set(updates)

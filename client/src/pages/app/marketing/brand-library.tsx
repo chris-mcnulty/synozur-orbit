@@ -10,7 +10,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
   ImageIcon, Plus, Search, ExternalLink, Trash2, Lock, Settings, ChevronDown, X, Tag, Filter,
-  Download, Upload, LayoutGrid, List, Archive, RotateCcw
+  Download, Upload, LayoutGrid, List, Archive, RotateCcw, Type
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -43,6 +43,11 @@ interface BrandAsset {
   solutionAreaIds?: string[];
   tags?: { seasons?: string[]; locations?: string[]; topics?: string[] };
   sourceContentAssetId?: string;
+  logoVariant?: string;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  fontUsage?: string;
   status: string;
   createdAt: string;
 }
@@ -77,6 +82,7 @@ const SEASON_OPTIONS = [
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   logo: "Logo",
+  font: "Font",
   workshop: "Workshop",
   case_study: "Case Study",
   app: "App",
@@ -85,6 +91,26 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
   whitepaper: "Whitepaper",
   video: "Video",
   other: "Other",
+};
+
+const FONT_WEIGHT_OPTIONS = [
+  { value: "100", label: "100 — Thin" },
+  { value: "200", label: "200 — Extra Light" },
+  { value: "300", label: "300 — Light" },
+  { value: "400", label: "400 — Regular" },
+  { value: "500", label: "500 — Medium" },
+  { value: "600", label: "600 — Semi Bold" },
+  { value: "700", label: "700 — Bold" },
+  { value: "800", label: "800 — Extra Bold" },
+  { value: "900", label: "900 — Black" },
+];
+
+const FONT_USAGE_LABELS: Record<string, string> = {
+  heading: "Heading",
+  body: "Body",
+  accent: "Accent",
+  display: "Display",
+  mono: "Monospace",
 };
 
 const LOGO_VARIANT_LABELS: Record<string, string> = {
@@ -120,18 +146,21 @@ export default function BrandLibraryPage() {
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
     assetType: "other", solutionAreaIds: [] as string[], logoVariant: "",
+    fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
   });
   const [form, setForm] = useState({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
     assetType: "other", solutionAreaIds: [] as string[], logoVariant: "",
+    fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
   });
 
   const resetForm = () => setForm({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [], tags: { seasons: [], topics: [] },
     assetType: "other", solutionAreaIds: [], logoVariant: "",
+    fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
   });
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -235,6 +264,10 @@ export default function BrandLibraryPage() {
           assetType: data.assetType || "other",
           solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
           logoVariant: data.logoVariant || null,
+          fontFamily: data.fontFamily || null,
+          fontWeight: data.fontWeight || null,
+          fontStyle: data.fontStyle || null,
+          fontUsage: data.fontUsage || null,
         }),
       });
       if (!r.ok) {
@@ -350,6 +383,10 @@ export default function BrandLibraryPage() {
           assetType: data.assetType || "other",
           solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
           logoVariant: data.logoVariant || null,
+          fontFamily: data.fontFamily || null,
+          fontWeight: data.fontWeight || null,
+          fontStyle: data.fontStyle || null,
+          fontUsage: data.fontUsage || null,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -382,7 +419,10 @@ export default function BrandLibraryPage() {
       const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       if (!uploadRes.ok) throw new Error("File upload failed");
 
-      setEditForm(f => ({ ...f, fileUrl: objectPath, fileType: file.type.startsWith("image/") ? "image" : "document" }));
+      const isFontFile = file.type.startsWith("font/") || /\.(ttf|otf|woff|woff2)$/i.test(file.name);
+      const derivedFileType = isFontFile ? file.name.split(".").pop()?.toLowerCase() || "font"
+        : file.type.startsWith("image/") ? "image" : "document";
+      setEditForm(f => ({ ...f, fileUrl: objectPath, fileType: derivedFileType }));
       toast({ title: "File uploaded successfully" });
     } catch (err) {
       toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
@@ -406,7 +446,11 @@ export default function BrandLibraryPage() {
       },
       assetType: asset.assetType || "other",
       solutionAreaIds: asset.solutionAreaIds || [],
-      logoVariant: (asset as any).logoVariant || "",
+      logoVariant: asset.logoVariant || "",
+      fontFamily: asset.fontFamily || "",
+      fontWeight: asset.fontWeight || "",
+      fontStyle: asset.fontStyle || "normal",
+      fontUsage: asset.fontUsage || "",
     });
     setEditAsset(asset);
     setEditOpen(true);
@@ -547,6 +591,41 @@ export default function BrandLibraryPage() {
         const isImage = ft === "image" || ft === "png" || ft === "jpg" || ft === "jpeg" || ft === "svg" || ft === "webp" || ft === "gif"
           || ft.startsWith("image/")
           || (!!imgSrc && /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|$)/i.test(imgSrc));
+        const isFont = asset.assetType === "font";
+        if (isFont) {
+          const fontId = `font-preview-${asset.id}`;
+          const fontSrc = asset.fileUrl;
+          return (
+            <div className="aspect-video overflow-hidden rounded-lg bg-gradient-to-br from-muted to-muted/60 relative mb-2 flex flex-col items-center justify-center gap-1 px-3">
+              {fontSrc && (
+                <style>{`@font-face { font-family: "${fontId}"; src: url("${fontSrc}"); font-weight: ${asset.fontWeight || "400"}; font-style: ${asset.fontStyle || "normal"}; }`}</style>
+              )}
+              <span
+                className="text-4xl font-medium select-none"
+                style={fontSrc ? { fontFamily: `"${fontId}", serif`, fontWeight: asset.fontWeight || "400", fontStyle: asset.fontStyle || "normal" } : {}}
+                data-testid={`text-font-preview-${asset.id}`}
+              >
+                Aa
+              </span>
+              <span
+                className="text-[11px] text-muted-foreground select-none"
+                style={fontSrc ? { fontFamily: `"${fontId}", serif` } : {}}
+              >
+                {asset.fontFamily || asset.name}
+              </span>
+              {asset.fontUsage && (
+                <span className="absolute top-2 left-2 bg-primary/10 text-primary text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded">
+                  {FONT_USAGE_LABELS[asset.fontUsage] ?? asset.fontUsage}
+                </span>
+              )}
+              {categoryName(asset.categoryId) && (
+                <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                  {categoryName(asset.categoryId)}
+                </span>
+              )}
+            </div>
+          );
+        }
         return imgSrc && isImage ? (
             <OptimizedThumbnail
               src={imgSrc}
@@ -761,6 +840,53 @@ export default function BrandLibraryPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    )}
+
+                    {form.assetType === "font" && (
+                      <div className="space-y-3 rounded-lg border border-border/60 p-3 bg-muted/30">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Font Metadata</p>
+                        <div>
+                          <Label>Font Family Name</Label>
+                          <Input
+                            value={form.fontFamily}
+                            onChange={e => setForm(f => ({ ...f, fontFamily: e.target.value }))}
+                            placeholder="e.g. Inter"
+                            data-testid="input-brand-font-family"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label>Weight</Label>
+                            <Select value={form.fontWeight || "none"} onValueChange={v => setForm(f => ({ ...f, fontWeight: v === "none" ? "" : v }))}>
+                              <SelectTrigger data-testid="select-brand-font-weight"><SelectValue placeholder="Select weight" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Not specified</SelectItem>
+                                {FONT_WEIGHT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Style</Label>
+                            <Select value={form.fontStyle || "normal"} onValueChange={v => setForm(f => ({ ...f, fontStyle: v }))}>
+                              <SelectTrigger data-testid="select-brand-font-style"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="normal">Normal</SelectItem>
+                                <SelectItem value="italic">Italic</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Usage Slot *</Label>
+                          <Select value={form.fontUsage || "none"} onValueChange={v => setForm(f => ({ ...f, fontUsage: v === "none" ? "" : v }))}>
+                            <SelectTrigger data-testid="select-brand-font-usage"><SelectValue placeholder="Select slot" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Not specified</SelectItem>
+                              {Object.entries(FONT_USAGE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                     )}
 
@@ -1037,7 +1163,7 @@ export default function BrandLibraryPage() {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept="image/*,.pdf,.docx,.doc,.txt"
+                        accept="image/*,.pdf,.docx,.doc,.txt,.ttf,.otf,.woff,.woff2"
                         className="hidden"
                         onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }}
                       />
@@ -1093,6 +1219,52 @@ export default function BrandLibraryPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+                  {editForm.assetType === "font" && (
+                    <div className="space-y-3 rounded-lg border border-border/60 p-3 bg-muted/30">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Font Metadata</p>
+                      <div>
+                        <Label>Font Family Name</Label>
+                        <Input
+                          value={editForm.fontFamily}
+                          onChange={e => setEditForm(f => ({ ...f, fontFamily: e.target.value }))}
+                          placeholder="e.g. Inter"
+                          data-testid="input-edit-brand-font-family"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Weight</Label>
+                          <Select value={editForm.fontWeight || "none"} onValueChange={v => setEditForm(f => ({ ...f, fontWeight: v === "none" ? "" : v }))}>
+                            <SelectTrigger data-testid="select-edit-brand-font-weight"><SelectValue placeholder="Select weight" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Not specified</SelectItem>
+                              {FONT_WEIGHT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Style</Label>
+                          <Select value={editForm.fontStyle || "normal"} onValueChange={v => setEditForm(f => ({ ...f, fontStyle: v }))}>
+                            <SelectTrigger data-testid="select-edit-brand-font-style"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">Normal</SelectItem>
+                              <SelectItem value="italic">Italic</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Usage Slot</Label>
+                        <Select value={editForm.fontUsage || "none"} onValueChange={v => setEditForm(f => ({ ...f, fontUsage: v === "none" ? "" : v }))}>
+                          <SelectTrigger data-testid="select-edit-brand-font-usage"><SelectValue placeholder="Select slot" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not specified</SelectItem>
+                            {Object.entries(FONT_USAGE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   )}
                   <div>

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap, Webhook, Plus, Edit, MessageSquare, Plug } from "lucide-react";
+import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, UserCog, Bell, Send, Zap, Webhook, Plus, Edit, MessageSquare, Plug, Type, Upload, X } from "lucide-react";
 import { Ga4IntegrationCard } from "@/components/Ga4IntegrationCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -65,6 +65,41 @@ interface ConsultantGrant {
   consultantName?: string;
   grantedByName?: string;
 }
+
+interface TenantFont {
+  id: string;
+  tenantDomain: string;
+  name: string;
+  fontFamily: string | null;
+  fontWeight: string | null;
+  fontStyle: string | null;
+  fontUsage: string;
+  fileUrl: string;
+  fileType: string | null;
+  fileSize: number | null;
+  sortOrder: number;
+  createdAt: string;
+}
+
+const FONT_USAGE_LABELS: Record<string, string> = {
+  heading: "Heading",
+  body: "Body",
+  accent: "Accent",
+  display: "Display",
+  mono: "Monospace",
+};
+
+const FONT_WEIGHT_OPTIONS = [
+  { value: "100", label: "100 — Thin" },
+  { value: "200", label: "200 — Extra Light" },
+  { value: "300", label: "300 — Light" },
+  { value: "400", label: "400 — Regular" },
+  { value: "500", label: "500 — Medium" },
+  { value: "600", label: "600 — Semi Bold" },
+  { value: "700", label: "700 — Bold" },
+  { value: "800", label: "800 — Extra Bold" },
+  { value: "900", label: "900 — Black" },
+];
 
 // Billing actions inside the Plan & Usage card.
 // Domain Admin can launch Stripe Checkout (Pro upgrade) or Customer Portal.
@@ -346,6 +381,18 @@ export default function Settings() {
   const [allowGoogle, setAllowGoogle] = useState(true);
   const [allowPassword, setAllowPassword] = useState(true);
 
+  // Typography / font management
+  const [fontAddOpen, setFontAddOpen] = useState(false);
+  const [fontAddName, setFontAddName] = useState("");
+  const [fontAddFamily, setFontAddFamily] = useState("");
+  const [fontAddWeight, setFontAddWeight] = useState("400");
+  const [fontAddStyle, setFontAddStyle] = useState("normal");
+  const [fontAddUsage, setFontAddUsage] = useState("heading");
+  const [fontUploading, setFontUploading] = useState(false);
+  const [fontFileUrl, setFontFileUrl] = useState("");
+  const [fontFileType, setFontFileType] = useState("");
+  const fontFileInputRef = React.useRef<HTMLInputElement>(null);
+
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
     enabled: !!user,
@@ -370,6 +417,71 @@ export default function Settings() {
     },
     enabled: isAdmin,
   });
+
+  const { data: tenantFonts = [], refetch: refetchFonts } = useQuery<TenantFont[]>({
+    queryKey: ["/api/tenant/fonts"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/fonts", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: isAdmin,
+  });
+
+  const addFontMutation = useMutation({
+    mutationFn: async (data: { name: string; fontFamily: string; fontWeight: string; fontStyle: string; fontUsage: string; fileUrl: string; fileType: string }) => {
+      const r = await fetch("/api/tenant/fonts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || "Failed to add font");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/fonts"] });
+      setFontAddOpen(false);
+      setFontAddName(""); setFontAddFamily(""); setFontAddWeight("400"); setFontAddStyle("normal"); setFontAddUsage("heading"); setFontFileUrl(""); setFontFileType("");
+      toast.success("Font added");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteFontMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/tenant/fonts/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json()).error || "Failed to delete font");
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/tenant/fonts"] }); toast.success("Font removed"); },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleFontFileUpload = async (file: File) => {
+    setFontUploading(true);
+    try {
+      const reqRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+      });
+      if (!reqRes.ok) throw new Error((await reqRes.json()).error);
+      const { uploadURL, objectPath } = await reqRes.json();
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      if (!uploadRes.ok) throw new Error("File upload failed");
+      const ext = file.name.split(".").pop()?.toLowerCase() || "font";
+      setFontFileUrl(objectPath);
+      setFontFileType(ext);
+      if (!fontAddName) setFontAddName(file.name.replace(/\.[^.]+$/, ""));
+      toast.success("Font file uploaded");
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setFontUploading(false);
+    }
+  };
 
   const revokeConsultantAccessMutation = useMutation({
     mutationFn: async (grantId: string) => {
@@ -1027,6 +1139,174 @@ export default function Settings() {
                 Save Changes
               </Button>
             </CardFooter>
+          </Card>
+        )}
+
+        {isAdmin && (
+          <Card data-testid="card-typography">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Type className="h-5 w-5" />
+                    Typography
+                  </CardTitle>
+                  <CardDescription>Upload and manage custom typefaces for your brand reports and content.</CardDescription>
+                </div>
+                <Dialog open={fontAddOpen} onOpenChange={v => { setFontAddOpen(v); if (!v) { setFontAddName(""); setFontAddFamily(""); setFontAddWeight("400"); setFontAddStyle("normal"); setFontAddUsage("heading"); setFontFileUrl(""); setFontFileType(""); } }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-add-tenant-font">
+                      <Plus className="h-4 w-4 mr-1" /> Add Font
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Add Tenant Font</DialogTitle>
+                      <DialogDescription>Upload a custom typeface (.ttf, .otf, .woff, .woff2) and assign it a usage slot.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Font File *</Label>
+                        <div className="flex gap-2 items-center mt-1">
+                          <input
+                            ref={fontFileInputRef}
+                            type="file"
+                            accept=".ttf,.otf,.woff,.woff2"
+                            className="hidden"
+                            onChange={e => { if (e.target.files?.[0]) handleFontFileUpload(e.target.files[0]); }}
+                            data-testid="input-font-file"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={fontUploading}
+                            onClick={() => fontFileInputRef.current?.click()}
+                            data-testid="button-upload-font-file"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            {fontUploading ? "Uploading…" : fontFileUrl ? "Replace File" : "Choose File"}
+                          </Button>
+                          {fontFileUrl && <span className="text-xs text-muted-foreground">✓ File ready</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Display Name *</Label>
+                        <Input
+                          value={fontAddName}
+                          onChange={e => setFontAddName(e.target.value)}
+                          placeholder="e.g. Inter Regular"
+                          data-testid="input-font-name"
+                        />
+                      </div>
+                      <div>
+                        <Label>Font Family</Label>
+                        <Input
+                          value={fontAddFamily}
+                          onChange={e => setFontAddFamily(e.target.value)}
+                          placeholder="e.g. Inter"
+                          data-testid="input-font-family"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Weight</Label>
+                          <Select value={fontAddWeight} onValueChange={setFontAddWeight}>
+                            <SelectTrigger data-testid="select-font-weight"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {FONT_WEIGHT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Style</Label>
+                          <Select value={fontAddStyle} onValueChange={setFontAddStyle}>
+                            <SelectTrigger data-testid="select-font-style"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">Normal</SelectItem>
+                              <SelectItem value="italic">Italic</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Usage Slot *</Label>
+                        <Select value={fontAddUsage} onValueChange={setFontAddUsage}>
+                          <SelectTrigger data-testid="select-font-usage"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(FONT_USAGE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">Determines where this font is applied in generated documents.</p>
+                      </div>
+                    </div>
+                    <DialogFooter className="mt-4">
+                      <Button
+                        disabled={!fontAddName.trim() || !fontFileUrl || addFontMutation.isPending}
+                        onClick={() => addFontMutation.mutate({ name: fontAddName, fontFamily: fontAddFamily, fontWeight: fontAddWeight, fontStyle: fontAddStyle, fontUsage: fontAddUsage, fileUrl: fontFileUrl, fileType: fontFileType })}
+                        data-testid="button-save-font"
+                      >
+                        {addFontMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        Add Font
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {tenantFonts.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6 border border-dashed rounded-lg" data-testid="text-no-fonts">
+                  No custom fonts yet. Add a font to override the default typeface in reports.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(FONT_USAGE_LABELS).map(([slot, slotLabel]) => {
+                    const slotFonts = tenantFonts.filter(f => f.fontUsage === slot);
+                    if (slotFonts.length === 0) return null;
+                    return (
+                      <div key={slot}>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{slotLabel}</p>
+                        <div className="space-y-1">
+                          {slotFonts.map(font => {
+                            const fontId = `settings-font-${font.id}`;
+                            return (
+                              <div key={font.id} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-border/60 bg-muted/20" data-testid={`row-font-${font.id}`}>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <style>{`@font-face { font-family: "${fontId}"; src: url("${font.fileUrl}"); font-weight: ${font.fontWeight || "400"}; font-style: ${font.fontStyle || "normal"}; }`}</style>
+                                  <span
+                                    className="text-2xl leading-none select-none w-10 text-center shrink-0"
+                                    style={{ fontFamily: `"${fontId}", serif`, fontWeight: font.fontWeight || "400", fontStyle: font.fontStyle || "normal" }}
+                                  >
+                                    Aa
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium truncate">{font.name}</p>
+                                    <p className="text-xs text-muted-foreground truncate">
+                                      {[font.fontFamily, font.fontWeight && `w${font.fontWeight}`, font.fontStyle !== "normal" && font.fontStyle].filter(Boolean).join(" · ")}
+                                    </p>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                                  onClick={() => { if (window.confirm(`Remove "${font.name}"?`)) deleteFontMutation.mutate(font.id); }}
+                                  data-testid={`button-delete-font-${font.id}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
           </Card>
         )}
 

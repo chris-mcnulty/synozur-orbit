@@ -2154,6 +2154,8 @@ export const CONTENT_ASSET_TYPES = [
   "blog_post",
   "whitepaper",
   "video",
+  "logo",
+  "font",
   "other",
 ] as const;
 export type ContentAssetType = (typeof CONTENT_ASSET_TYPES)[number];
@@ -2269,6 +2271,11 @@ export const brandAssets = pgTable("brand_assets", {
   //         white_horizontal | white_vertical | white_square |
   //         black_horizontal | black_vertical | black_square
   logoVariant: text("logo_variant"),
+  // For font assets: metadata used to load/preview the typeface
+  fontFamily: text("font_family"),       // CSS font-family name, e.g. "Inter"
+  fontWeight: text("font_weight"),       // 100–900 or named (regular, bold, …)
+  fontStyle: text("font_style"),         // normal | italic | oblique
+  fontUsage: text("font_usage"),         // heading | body | accent | display | mono
   productIds: text("product_ids").array(),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   sourceContentAssetId: varchar("source_content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
@@ -2310,6 +2317,29 @@ export const brandAssetSolutionAreas = pgTable("brand_asset_solution_areas", {
 }, (t) => ({
   pk: primaryKey({ columns: [t.assetId, t.solutionAreaId] }),
 }));
+
+// Tenant Fonts — tenant-wide custom typefaces (heading / body / accent defaults)
+export const tenantFonts = pgTable("tenant_fonts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),           // Display name, e.g. "Brand Heading"
+  fontFamily: text("font_family"),         // CSS font-family value
+  fontWeight: text("font_weight"),         // 400, 700, etc.
+  fontStyle: text("font_style"),           // normal | italic
+  fontUsage: text("font_usage").notNull(), // heading | body | accent | display | mono
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type"),             // font/ttf, font/otf, font/woff2, etc.
+  fileSize: integer("file_size"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTenantFontSchema = createInsertSchema(tenantFonts).omit({
+  id: true, createdAt: true,
+});
+export type TenantFont = typeof tenantFonts.$inferSelect;
+export type InsertTenantFont = z.infer<typeof insertTenantFontSchema>;
 
 // Social Accounts — connected social media accounts for publishing
 export const socialAccounts = pgTable("social_accounts", {
