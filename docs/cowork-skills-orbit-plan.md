@@ -7,7 +7,7 @@
 
 > **Scope note (revised):** This plan covers the **marketing** capabilities only. The Cowork `sales-harness-bundle` (business-development / outbound) is **deferred — out of scope for now**. The goal is **in-product Orbit capabilities**, not more markdown skill files: primarily **content development**, then **scheduling**, and — once the right MCP tool sets are connected — **distribution**.
 >
-> **Dependency:** A parallel effort is expanding Orbit's per-tenant **brand definitions** (brand colors, font files, logos) which, together with the existing visual asset library, makes content generation far more brand-aligned. This plan treats brand identity as a first-class generation input. **Rebase this branch onto `main` once that brand work lands**, then reconcile the brand-identity references in §3 and §5 against the real schema.
+> **Dependency:** Orbit *already* supports per-tenant brand **colors**, and ships the full SYNOZUR **font set** — but those fonts are bound to the **application UX**, not to generated content. A parallel effort is extending per-tenant brand definitions so that **font files and logos are available to *content generation*** (including tenant-supplied fonts/logos, not just SYNOZUR's), which together with the existing visual asset library makes generated output far more brand-aligned. This plan treats that brand-for-content layer as a first-class generation input. **Rebase this branch onto `main` once that brand work lands**, then reconcile the brand-identity references in §3 and §5 against the real schema.
 
 ---
 
@@ -15,7 +15,7 @@
 
 The Cowork marketing skills are a closed loop for Microsoft 365 Copilot: positioning → content strategy → copywriting → repurposing → SEO/AEO → distribution → performance, all grounded in a hand-authored `variables.md` of company intrinsic data (company, products, **ICP**, value prop, **positioning/messaging framework (MPF)**, category, competitors, proof points, tone, channels).
 
-**The insight for Orbit:** Orbit already stores, as live first-class data, almost everything Cowork makes users type into `variables.md` — and once the in-flight brand work lands, it will also hold the **visual brand identity** (colors, fonts, logos, approved assets). So Orbit can deliver these as **in-product capabilities that are brand- and data-grounded by default**, with no onboarding interview.
+**The insight for Orbit:** Orbit already stores, as live first-class data, almost everything Cowork makes users type into `variables.md` — including per-tenant brand **colors** and approved **visual assets**. Once the in-flight brand work lands, it will also expose **fonts and logos to content generation** (not just to the app UX), completing the **visual brand identity** layer. So Orbit can deliver these as **in-product capabilities that are brand- and data-grounded by default**, with no onboarding interview.
 
 This revision pivots the deliverable away from authoring `.agents/skills/*.md` files and toward **product features** organized under three pillars:
 
@@ -77,10 +77,10 @@ Orbit already holds every `variables.md` field as live, multi-tenant, multi-mark
 | `{tone}` (verbal voice) | **`social_account_voice_profiles`** (tone attributes, preferred/forbidden phrases, sample snippets) | `server/routes/marketing-saturn.ts` |
 | `{channels}` | `campaigns`, `social_accounts`, marketing-plan activity groups | `server/routes/analytics-data.ts` |
 | `{time_zones}` | `markets` / tenant config | `shared/schema.ts` |
-| **Brand identity** *(new — visual voice)* | **In-flight brand work**: per-tenant brand colors, **font files**, **logos** + existing `brand_assets` / `brand_asset_categories` (visual asset library) | `server/routes/marketing-saturn.ts`, brand work (TBD) |
+| **Brand identity** *(visual voice)* | **Today:** per-tenant brand **colors** + visual asset library (`brand_assets` / `brand_asset_categories`); SYNOZUR **font set** (app-UX only). **In-flight:** expose per-tenant **fonts + logos to content generation** | `server/routes/marketing-saturn.ts`; brand work (TBD) |
 | `{sharepoint_root}` | SharePoint Embedded storage | `server/services/sharepoint-*.ts` |
 
-**Consequence:** Orbit needs **no `install-marketing-skills` interview**. Extend `strategic-context.ts` to emit a complete intrinsic-data bundle — verbal voice (`social_account_voice_profiles`) **plus** visual brand identity (brand colors/fonts/logos/assets) — and surface a **readiness check** that flags thin fields (no ICP persona, no messaging framework, no brand kit) instead of asking questions.
+**Consequence:** Orbit needs **no `install-marketing-skills` interview**. Extend `strategic-context.ts` to emit a complete intrinsic-data bundle — verbal voice (`social_account_voice_profiles`) **plus** visual brand identity (existing colors/assets + the in-flight content-facing fonts/logos) — and surface a **readiness check** that flags thin fields (no ICP persona, no messaging framework, no brand kit) instead of asking questions.
 
 ---
 
@@ -160,7 +160,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 ## 7. Dependencies, risks & open questions
 
-- **Brand work (blocking for Phase 0).** Colors, font files, logos land via the parallel agent. **Rebase this branch onto `main` once merged**, then reconcile §3/§5 brand references against the real schema (table/column names for brand kit and font/logo storage).
+- **Brand work (blocking for Phase 0).** Per-tenant colors already exist; the SYNOZUR font set is app-UX only. The parallel agent is making **fonts + logos available to content generation** (incl. tenant-supplied). **Rebase this branch onto `main` once merged**, then reconcile §3/§5 brand references against the real schema (table/column names for the content-facing font/logo storage).
 - **MCP for distribution.** Phase 3 depends on which MCP tool sets get connected; sequence it after those land. Until then, distribution rides existing direct publishers.
 - **External VoC mining.** positioning-researcher's G2/Reddit quote mining needs outbound web access + raises ToS/quality concerns — internal-data-first, external as an optional sourced, plan-gated add-on.
 - **AEO scope.** Ship structural guardrails (TL;DR, answer blocks, FAQ, entity reinforcement); treat AI-citation tracking as a separate measurement effort.
