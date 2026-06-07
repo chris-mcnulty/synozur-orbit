@@ -1122,6 +1122,13 @@ export function registerTenantAdminRoutes(app: Express) {
       if (secondaryColor && hexColorRegex.test(secondaryColor)) {
         updateData.secondaryColor = secondaryColor;
       }
+      const { accentColor, neutralColor } = req.body;
+      if (accentColor && hexColorRegex.test(accentColor)) {
+        updateData.accentColor = accentColor;
+      }
+      if (neutralColor && hexColorRegex.test(neutralColor)) {
+        updateData.neutralColor = neutralColor;
+      }
       if (monitoringFrequency && validFrequencies.includes(monitoringFrequency)) {
         updateData.monitoringFrequency = monitoringFrequency;
       }

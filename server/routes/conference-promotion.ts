@@ -17,6 +17,7 @@ import {
   conferences,
   conferenceSessions,
   conferenceImages,
+  conferenceBackgrounds,
   generatedPosts,
   scheduledJobRuns,
   CONFERENCE_IMAGE_SOURCES,
@@ -191,6 +192,8 @@ export function registerConferencePromotionRoutes(app: Express) {
     if ("discountStatement" in b) patch.discountStatement = b.discountStatement ?? null;
     if ("alwaysHashtags" in b) patch.alwaysHashtags = cleanStringArray(b.alwaysHashtags);
     if ("productIds" in b) patch.productIds = cleanStringArray(b.productIds);
+    if ("eventLogoFileUrl" in b) patch.eventLogoFileUrl = b.eventLogoFileUrl ?? null;
+    if ("eventLogoFileType" in b) patch.eventLogoFileType = b.eventLogoFileType ?? null;
 
     const [row] = await db.update(conferences).set(patch).where(eq(conferences.id, existing.id)).returning();
     res.json(row);
@@ -419,6 +422,7 @@ export function registerConferencePromotionRoutes(app: Express) {
         name: typeof b.name === "string" ? b.name : null,
         imagePrompt: typeof b.imagePrompt === "string" ? b.imagePrompt : null,
         templateAssetId: typeof b.templateAssetId === "string" && b.templateAssetId ? b.templateAssetId : null,
+        backgroundId: typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null,
         fileUrl: source === "uploaded" ? b.fileUrl : null,
         fileType: source === "uploaded" && typeof b.fileType === "string" ? b.fileType : null,
         createdBy: ctx.userId,
@@ -465,6 +469,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if ("name" in b) patch.name = b.name ?? null;
     if ("imagePrompt" in b) patch.imagePrompt = b.imagePrompt ?? null;
     if ("templateAssetId" in b) patch.templateAssetId = b.templateAssetId ?? null;
+    if ("backgroundId" in b) patch.backgroundId = b.backgroundId ?? null;
     if (typeof b.source === "string" && CONFERENCE_IMAGE_SOURCES.includes(b.source)) patch.source = b.source;
     if (b.source === "uploaded" && typeof b.fileUrl === "string") patch.fileUrl = b.fileUrl;
     if (b.source === "uploaded" && typeof b.fileType === "string") patch.fileType = b.fileType;
@@ -498,6 +503,78 @@ export function registerConferencePromotionRoutes(app: Express) {
       .where(and(eq(conferenceImages.id, req.params.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain)));
     if (!img) return res.status(404).json({ error: "Image not found" });
     await db.delete(conferenceImages).where(eq(conferenceImages.id, img.id));
+    res.json({ ok: true });
+  });
+
+  // ── Conference Backgrounds (location photos for logo_composite) ───────────────
+
+  app.get("/api/conferences/:id/backgrounds", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    const ctx = await getRequestContext(req);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
+    if (!conf) return res.status(404).json({ error: "Conference not found" });
+    const rows = await db
+      .select()
+      .from(conferenceBackgrounds)
+      .where(eq(conferenceBackgrounds.conferenceId, conf.id))
+      .orderBy(conferenceBackgrounds.sortOrder, conferenceBackgrounds.createdAt);
+    res.json(rows);
+  });
+
+  app.post("/api/conferences/:id/backgrounds", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    const ctx = await getRequestContext(req);
+    const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
+    if (!conf) return res.status(404).json({ error: "Conference not found" });
+    const b = req.body ?? {};
+    if (!b.fileUrl || typeof b.fileUrl !== "string") {
+      return res.status(400).json({ error: "fileUrl is required" });
+    }
+    const existing = await db
+      .select()
+      .from(conferenceBackgrounds)
+      .where(eq(conferenceBackgrounds.conferenceId, conf.id));
+    const [row] = await db
+      .insert(conferenceBackgrounds)
+      .values({
+        id: randomUUID(),
+        conferenceId: conf.id,
+        tenantDomain: ctx.tenantDomain,
+        name: typeof b.name === "string" && b.name.trim() ? b.name.trim() : null,
+        fileUrl: b.fileUrl,
+        fileType: typeof b.fileType === "string" ? b.fileType : null,
+        fileSize: Number.isFinite(b.fileSize) ? b.fileSize : null,
+        sortOrder: existing.length,
+      })
+      .returning();
+    res.status(201).json(row);
+  });
+
+  app.patch("/api/conference-backgrounds/:id", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    const ctx = await getRequestContext(req);
+    const [bg] = await db
+      .select()
+      .from(conferenceBackgrounds)
+      .where(and(eq(conferenceBackgrounds.id, req.params.id), eq(conferenceBackgrounds.tenantDomain, ctx.tenantDomain)));
+    if (!bg) return res.status(404).json({ error: "Background not found" });
+    const b = req.body ?? {};
+    const patch: Record<string, unknown> = {};
+    if (typeof b.name === "string") patch.name = b.name.trim() || null;
+    if (Number.isFinite(b.sortOrder)) patch.sortOrder = b.sortOrder;
+    const [row] = await db.update(conferenceBackgrounds).set(patch).where(eq(conferenceBackgrounds.id, bg.id)).returning();
+    res.json(row);
+  });
+
+  app.delete("/api/conference-backgrounds/:id", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    const ctx = await getRequestContext(req);
+    const [bg] = await db
+      .select()
+      .from(conferenceBackgrounds)
+      .where(and(eq(conferenceBackgrounds.id, req.params.id), eq(conferenceBackgrounds.tenantDomain, ctx.tenantDomain)));
+    if (!bg) return res.status(404).json({ error: "Background not found" });
+    await db.delete(conferenceBackgrounds).where(eq(conferenceBackgrounds.id, bg.id));
     res.json({ ok: true });
   });
 

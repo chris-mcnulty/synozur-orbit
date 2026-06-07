@@ -97,6 +97,9 @@ export const tenants = pgTable("tenants", {
   faviconUrl: text("favicon_url"),
   primaryColor: text("primary_color").default("#810FFB"),
   secondaryColor: text("secondary_color").default("#E60CB3"),
+  // Extended brand palette for graphics generation
+  accentColor: text("accent_color"), // tertiary accent (e.g. chart highlights, CTA)
+  neutralColor: text("neutral_color"), // background/neutral tint (e.g. off-white, light grey)
   // Tenant-level Entra ID configuration (Domain Admin editable)
   entraClientId: text("entra_client_id"), // Azure AD App Registration Client ID
   entraTenantId: text("entra_tenant_id"), // Azure AD Tenant ID
@@ -2261,6 +2264,11 @@ export const brandAssets = pgTable("brand_assets", {
   fileSize: integer("file_size"),
   categoryId: varchar("category_id").references(() => brandAssetCategories.id, { onDelete: "set null" }),
   assetType: text("asset_type").notNull().default("other"),
+  // For logo assets: which colour/orientation variant this file represents.
+  // Values: color_horizontal | color_vertical | color_square |
+  //         white_horizontal | white_vertical | white_square |
+  //         black_horizontal | black_vertical | black_square
+  logoVariant: text("logo_variant"),
   productIds: text("product_ids").array(),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   sourceContentAssetId: varchar("source_content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
@@ -2760,7 +2768,7 @@ export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
 // through the same scheduling, calendar, and publishing machinery.
 // ---------------------------------------------------------------------------
 
-export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded"] as const;
+export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded", "logo_composite"] as const;
 export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
 
 export const CONFERENCE_IMAGE_ROLES = ["anchor", "session"] as const;
@@ -2805,6 +2813,9 @@ export const conferences = pgTable("conferences", {
   discountStatement: text("discount_statement"),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
   productIds: text("product_ids").array(),
+  // Event media for hero image composition (logo_composite source)
+  eventLogoFileUrl: text("event_logo_file_url"),  // uploaded event/conference logo
+  eventLogoFileType: text("event_logo_file_type"),
   status: text("status").notNull().default("active"), // active, archived, deleted
   archivedAt: timestamp("archived_at"),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
@@ -2850,6 +2861,26 @@ export const insertConferenceSessionSchema = createInsertSchema(conferenceSessio
 export type ConferenceSession = typeof conferenceSessions.$inferSelect;
 export type InsertConferenceSession = z.infer<typeof insertConferenceSessionSchema>;
 
+// Location/background photos uploaded for a conference; used by the
+// logo_composite hero-image compositor as background layers.
+export const conferenceBackgrounds = pgTable("conference_backgrounds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name"),
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type"),
+  fileSize: integer("file_size"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertConferenceBackgroundSchema = createInsertSchema(conferenceBackgrounds).omit({
+  id: true, createdAt: true,
+});
+export type ConferenceBackground = typeof conferenceBackgrounds.$inferSelect;
+export type InsertConferenceBackground = z.infer<typeof insertConferenceBackgroundSchema>;
+
 // Dedicated image space for conference graphics. Kept separate from brandAssets
 // so the main brand library stays uncluttered. sessionId is set for the 1:1
 // session graphic; null for anchor images.
@@ -2859,10 +2890,12 @@ export const conferenceImages = pgTable("conference_images", {
   sessionId: varchar("session_id").references(() => conferenceSessions.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   role: text("role").notNull().default("session"), // anchor | session
-  source: text("source").notNull().default("ai_generated"), // ai_generated | template_composite | uploaded
+  source: text("source").notNull().default("ai_generated"), // ai_generated | template_composite | uploaded | logo_composite
   name: text("name"),
   imagePrompt: text("image_prompt"), // used for ai_generated and as overlay seed
   templateAssetId: varchar("template_asset_id").references(() => brandAssets.id, { onDelete: "set null" }), // background for template_composite
+  // For logo_composite: which background photo to use (null = brand-colour gradient)
+  backgroundId: varchar("background_id").references(() => conferenceBackgrounds.id, { onDelete: "set null" }),
   fileUrl: text("file_url"), // object-storage path, e.g. /objects/...
   fileType: text("file_type"),
   fileSize: integer("file_size"),
@@ -2889,6 +2922,7 @@ export const conferencesRelations = relations(conferences, ({ one, many }) => ({
   }),
   sessions: many(conferenceSessions),
   images: many(conferenceImages),
+  backgrounds: many(conferenceBackgrounds),
   posts: many(generatedPosts),
 }));
 
@@ -2898,6 +2932,13 @@ export const conferenceSessionsRelations = relations(conferenceSessions, ({ one,
     references: [conferences.id],
   }),
   images: many(conferenceImages),
+}));
+
+export const conferenceBackgroundsRelations = relations(conferenceBackgrounds, ({ one }) => ({
+  conference: one(conferences, {
+    fields: [conferenceBackgrounds.conferenceId],
+    references: [conferences.id],
+  }),
 }));
 
 export const conferenceImagesRelations = relations(conferenceImages, ({ one }) => ({
@@ -2912,6 +2953,10 @@ export const conferenceImagesRelations = relations(conferenceImages, ({ one }) =
   templateAsset: one(brandAssets, {
     fields: [conferenceImages.templateAssetId],
     references: [brandAssets.id],
+  }),
+  background: one(conferenceBackgrounds, {
+    fields: [conferenceImages.backgroundId],
+    references: [conferenceBackgrounds.id],
   }),
 }));
 

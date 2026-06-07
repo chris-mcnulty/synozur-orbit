@@ -99,6 +99,13 @@
       "when": 1779500100000,
       "tag": "0013_persistent_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780869531406,
+      "tag": "0014_majestic_fenris",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@
  */
 
 import sharp from "sharp";
+import * as path from "path";
 import { randomUUID } from "crypto";
 import { eq, and, inArray, ne } from "drizzle-orm";
 import { db } from "../db";
@@ -28,9 +29,12 @@ import {
   conferences,
   conferenceSessions,
   conferenceImages,
+  conferenceBackgrounds,
   generatedPosts,
   socialAccounts,
   scheduledJobRuns,
+  tenants,
+  brandAssets,
   type Conference,
   type ConferenceSession,
   type ConferenceImage,
@@ -296,6 +300,146 @@ function formatUtcDate(value: Date | string | null | undefined): string | null {
   return d.toLocaleDateString("en-US", { timeZone: "UTC", dateStyle: "medium" });
 }
 
+// Absolute path to the Avenir Next LT Pro font files (served from the client
+// public/fonts directory, co-located with the app). Sharp's SVG renderer uses
+// these to embed the font at compositing time so the final PNG carries the brand
+// typeface rather than a generic system fallback.
+const FONTS_DIR = path.resolve(process.cwd(), "client/public/fonts");
+
+function avenirFontFaces(): string {
+  const faces = [
+    { weight: 300, file: "AvenirNextLTPro-Light.ttf" },
+    { weight: 400, file: "AvenirNextLTPro-Regular.ttf" },
+    { weight: 500, file: "AvenirNextLTPro-Medium.ttf" },
+    { weight: 700, file: "AvenirNextLTPro-Bold.ttf" },
+  ];
+  return faces
+    .map(
+      (f) =>
+        `@font-face { font-family: 'Avenir Next LT Pro'; font-weight: ${f.weight}; src: url('${path.join(FONTS_DIR, f.file)}') format('truetype'); }`,
+    )
+    .join(" ");
+}
+
+/**
+ * Compose a hero/anchor image from brand assets:
+ *   1. Background: a location photo or a branded gradient.
+ *   2. A translucent brand-colour scrim for readability.
+ *   3. Conference/event name as large headline text (Avenir Next LT Pro Bold).
+ *   4. Event logo centered (if provided).
+ *   5. Company logo in the bottom-right corner (white variant preferred on dark bg).
+ */
+export async function compositeHeroImage(opts: {
+  backgroundBytes?: Buffer | null;
+  eventLogoBytes?: Buffer | null;
+  companyLogoBytes?: Buffer | null;
+  conferenceName: string;
+  location?: string | null;
+  primaryColor?: string | null;
+}): Promise<Buffer> {
+  const W = 1200;
+  const H = 675;
+  const primary = opts.primaryColor || "#810FFB";
+
+  const fontFaces = avenirFontFaces();
+  const titleLines = wrapText(opts.conferenceName, 28, 3);
+  const subtitleText = opts.location ? escapeXml(opts.location) : "";
+
+  const titleStartY = opts.eventLogoBytes ? 380 : 300;
+  const titleSvgParts = titleLines.map(
+    (l, i) =>
+      `<text x="${W / 2}" y="${titleStartY + i * 72}" text-anchor="middle" font-family="'Avenir Next LT Pro', Arial, sans-serif" font-size="64" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
+  );
+  const locationSvg = subtitleText
+    ? `<text x="${W / 2}" y="${titleStartY + titleLines.length * 72 + 36}" text-anchor="middle" font-family="'Avenir Next LT Pro', Arial, sans-serif" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
+    : "";
+
+  // Hex → rgba for the scrim tint
+  const hex = primary.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16) || 129;
+  const g = parseInt(hex.slice(2, 4), 16) || 15;
+  const b = parseInt(hex.slice(4, 6), 16) || 251;
+
+  const scrimSvg = Buffer.from(
+    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>${fontFaces}</style>
+        <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(${r},${g},${b},0.18)"/>
+          <stop offset="45%" stop-color="rgba(15,23,42,0.55)"/>
+          <stop offset="100%" stop-color="rgba(15,23,42,0.92)"/>
+        </linearGradient>
+      </defs>
+      <rect width="${W}" height="${H}" fill="url(#scrim)"/>
+      ${titleSvgParts.join("\n      ")}
+      ${locationSvg}
+    </svg>`,
+  );
+
+  let base: sharp.Sharp;
+  if (opts.backgroundBytes) {
+    base = sharp(opts.backgroundBytes).resize(W, H, { fit: "cover" });
+  } else {
+    const hex2 = primary.replace("#", "");
+    const r2 = parseInt(hex2.slice(0, 2), 16) || 129;
+    const g2 = parseInt(hex2.slice(2, 4), 16) || 15;
+    const b2 = parseInt(hex2.slice(4, 6), 16) || 251;
+    const darkened = `rgb(${Math.round(r2 * 0.4)},${Math.round(g2 * 0.4)},${Math.round(b2 * 0.4)})`;
+    const bgSvg = Buffer.from(
+      `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${primary}"/><stop offset="100%" stop-color="${darkened}"/>
+        </linearGradient></defs>
+        <rect width="${W}" height="${H}" fill="url(#bg)"/>
+      </svg>`,
+    );
+    base = sharp(bgSvg);
+  }
+
+  const layers: sharp.OverlayOptions[] = [{ input: scrimSvg, top: 0, left: 0 }];
+
+  // Event logo — centered horizontally, above the title block
+  if (opts.eventLogoBytes) {
+    const MAX_LOGO_W = 420;
+    const MAX_LOGO_H = 140;
+    const logoResized = await sharp(opts.eventLogoBytes)
+      .resize(MAX_LOGO_W, MAX_LOGO_H, { fit: "inside", withoutEnlargement: true, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(logoResized).metadata();
+    const logoW = meta.width || MAX_LOGO_W;
+    const logoH = meta.height || MAX_LOGO_H;
+    layers.push({
+      input: logoResized,
+      top: Math.round((titleStartY - logoH) / 2 + (opts.backgroundBytes ? 60 : 80)),
+      left: Math.round((W - logoW) / 2),
+    });
+  }
+
+  // Company logo — bottom-right corner
+  if (opts.companyLogoBytes) {
+    const MAX_CO_W = 200;
+    const MAX_CO_H = 56;
+    const coResized = await sharp(opts.companyLogoBytes)
+      .resize(MAX_CO_W, MAX_CO_H, { fit: "inside", withoutEnlargement: true, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(coResized).metadata();
+    const coW = meta.width || MAX_CO_W;
+    const coH = meta.height || MAX_CO_H;
+    layers.push({
+      input: coResized,
+      top: H - coH - 32,
+      left: W - coW - 40,
+    });
+  }
+
+  return base
+    .composite(layers)
+    .png()
+    .toBuffer();
+}
+
 function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null): string {
   if (session) {
     const speaker = sessionSpeakerText(session);
@@ -375,11 +519,60 @@ export async function renderConferenceImage(
     const prompt = (image.imagePrompt && image.imagePrompt.trim()) || defaultImagePrompt(conf, session);
     const buffer = await generateImageBuffer(prompt, "1024x1024");
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
+  } else if (image.source === "logo_composite") {
+    // Hero anchor image: background photo + brand scrim + event logo + company logo + conf name
+    let backgroundBytes: Buffer | null = null;
+    if (image.backgroundId) {
+      const [bg] = await db
+        .select()
+        .from(conferenceBackgrounds)
+        .where(eq(conferenceBackgrounds.id, image.backgroundId));
+      if (bg?.fileUrl) {
+        try { backgroundBytes = await loadImageBytes(bg.fileUrl); } catch { /* fall back to gradient */ }
+      }
+    }
+
+    let eventLogoBytes: Buffer | null = null;
+    if (conf.eventLogoFileUrl) {
+      try { eventLogoBytes = await loadImageBytes(conf.eventLogoFileUrl); } catch { /* skip */ }
+    }
+
+    // Prefer the white_horizontal logo variant for dark backgrounds; fall back
+    // to any logo asset in the brand library for this tenant.
+    let companyLogoBytes: Buffer | null = null;
+    const logoAssets = await db
+      .select()
+      .from(brandAssets)
+      .where(and(eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active")));
+    const whLogoAsset =
+      logoAssets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
+      logoAssets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
+      logoAssets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
+      logoAssets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
+      logoAssets.find((a) => a.logoVariant && a.fileUrl);
+    if (whLogoAsset?.fileUrl) {
+      try { companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl); } catch { /* skip */ }
+    }
+
+    // Fetch tenant brand colors for the scrim / gradient fallback
+    const [tenantRow] = await db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.domain, conf.tenantDomain));
+
+    const buffer = await compositeHeroImage({
+      backgroundBytes,
+      eventLogoBytes,
+      companyLogoBytes,
+      conferenceName: conf.name,
+      location: conf.location,
+      primaryColor: tenantRow?.primaryColor ?? null,
+    });
+    saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   } else {
     // template_composite
     let templateBytes: Buffer | null = null;
     if (image.templateAssetId) {
-      const { brandAssets } = await import("@shared/schema");
       const [tpl] = await db.select().from(brandAssets).where(eq(brandAssets.id, image.templateAssetId));
       if (tpl?.fileUrl) {
         try {

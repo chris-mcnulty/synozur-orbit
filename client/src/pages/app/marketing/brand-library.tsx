@@ -76,6 +76,7 @@ const SEASON_OPTIONS = [
 ];
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
+  logo: "Logo",
   workshop: "Workshop",
   case_study: "Case Study",
   app: "App",
@@ -84,6 +85,18 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
   whitepaper: "Whitepaper",
   video: "Video",
   other: "Other",
+};
+
+const LOGO_VARIANT_LABELS: Record<string, string> = {
+  color_horizontal: "Color — Horizontal",
+  color_vertical: "Color — Vertical",
+  color_square: "Color — Square",
+  white_horizontal: "White — Horizontal",
+  white_vertical: "White — Vertical",
+  white_square: "White — Square",
+  black_horizontal: "Black — Horizontal",
+  black_vertical: "Black — Vertical",
+  black_square: "Black — Square",
 };
 
 export default function BrandLibraryPage() {
@@ -106,19 +119,19 @@ export default function BrandLibraryPage() {
     name: "", description: "", url: "", fileUrl: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
-    assetType: "other", solutionAreaIds: [] as string[],
+    assetType: "other", solutionAreaIds: [] as string[], logoVariant: "",
   });
   const [form, setForm] = useState({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
-    assetType: "other", solutionAreaIds: [] as string[],
+    assetType: "other", solutionAreaIds: [] as string[], logoVariant: "",
   });
 
   const resetForm = () => setForm({
     name: "", description: "", url: "", categoryId: "", fileType: "",
     productIds: [], tags: { seasons: [], topics: [] },
-    assetType: "other", solutionAreaIds: [],
+    assetType: "other", solutionAreaIds: [], logoVariant: "",
   });
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -221,6 +234,7 @@ export default function BrandLibraryPage() {
           productIds: data.productIds.length ? data.productIds : null,
           assetType: data.assetType || "other",
           solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
+          logoVariant: data.logoVariant || null,
         }),
       });
       if (!r.ok) {
@@ -335,6 +349,7 @@ export default function BrandLibraryPage() {
           tags: (data.tags.seasons.length || data.tags.topics.length) ? data.tags : null,
           assetType: data.assetType || "other",
           solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
+          logoVariant: data.logoVariant || null,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -391,6 +406,7 @@ export default function BrandLibraryPage() {
       },
       assetType: asset.assetType || "other",
       solutionAreaIds: asset.solutionAreaIds || [],
+      logoVariant: (asset as any).logoVariant || "",
     });
     setEditAsset(asset);
     setEditOpen(true);
@@ -609,6 +625,9 @@ export default function BrandLibraryPage() {
         {asset.assetType && asset.assetType !== "other" && (
           <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">{ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType}</Badge>
         )}
+        {(asset as any).logoVariant && (
+          <Badge variant="secondary" className="text-[10px]">{LOGO_VARIANT_LABELS[(asset as any).logoVariant] ?? (asset as any).logoVariant}</Badge>
+        )}
         {asset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
         {asset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
       </div>
@@ -720,7 +739,7 @@ export default function BrandLibraryPage() {
 
                     <div>
                       <Label>Asset Type</Label>
-                      <Select value={form.assetType} onValueChange={v => setForm(f => ({ ...f, assetType: v }))}>
+                      <Select value={form.assetType} onValueChange={v => setForm(f => ({ ...f, assetType: v, logoVariant: v === "logo" ? f.logoVariant : "" }))}>
                         <SelectTrigger data-testid="select-brand-asset-type"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
@@ -729,6 +748,21 @@ export default function BrandLibraryPage() {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {form.assetType === "logo" && (
+                      <div>
+                        <Label>Logo Variant</Label>
+                        <Select value={form.logoVariant || "none"} onValueChange={v => setForm(f => ({ ...f, logoVariant: v === "none" ? "" : v }))}>
+                          <SelectTrigger data-testid="select-brand-logo-variant"><SelectValue placeholder="Select variant" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not specified</SelectItem>
+                            {Object.entries(LOGO_VARIANT_LABELS).map(([v, l]) => (
+                              <SelectItem key={v} value={v}>{l}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
 
                     <div>
                       <Label>Products</Label>
@@ -1037,7 +1071,7 @@ export default function BrandLibraryPage() {
                     </div>
                     <div>
                       <Label>Asset Type</Label>
-                      <Select value={editForm.assetType} onValueChange={v => setEditForm(f => ({ ...f, assetType: v }))}>
+                      <Select value={editForm.assetType} onValueChange={v => setEditForm(f => ({ ...f, assetType: v, logoVariant: v === "logo" ? f.logoVariant : "" }))}>
                         <SelectTrigger data-testid="select-edit-brand-asset-type"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {Object.entries(ASSET_TYPE_LABELS).map(([v, l]) => (
@@ -1047,6 +1081,20 @@ export default function BrandLibraryPage() {
                       </Select>
                     </div>
                   </div>
+                  {editForm.assetType === "logo" && (
+                    <div>
+                      <Label>Logo Variant</Label>
+                      <Select value={editForm.logoVariant || "none"} onValueChange={v => setEditForm(f => ({ ...f, logoVariant: v === "none" ? "" : v }))}>
+                        <SelectTrigger data-testid="select-edit-brand-logo-variant"><SelectValue placeholder="Select variant" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not specified</SelectItem>
+                          {Object.entries(LOGO_VARIANT_LABELS).map(([v, l]) => (
+                            <SelectItem key={v} value={v}>{l}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div>
                     <Label>Products</Label>
                     <DropdownMenu>

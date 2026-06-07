@@ -322,6 +322,8 @@ export default function Settings() {
   const [brandingName, setBrandingName] = useState("");
   const [brandingPrimary, setBrandingPrimary] = useState("");
   const [brandingSecondary, setBrandingSecondary] = useState("");
+  const [brandingAccent, setBrandingAccent] = useState("");
+  const [brandingNeutral, setBrandingNeutral] = useState("");
   const [monitoringFreq, setMonitoringFreq] = useState("");
   
   const [currentPassword, setCurrentPassword] = useState("");
@@ -395,6 +397,8 @@ export default function Settings() {
       setBrandingName(tenant.name || "");
       setBrandingPrimary(tenant.primaryColor || "#810FFB");
       setBrandingSecondary(tenant.secondaryColor || "#E60CB3");
+      setBrandingAccent((tenant as any).accentColor || "#F59E0B");
+      setBrandingNeutral((tenant as any).neutralColor || "#6B7280");
       setMonitoringFreq(tenant.monitoringFrequency || "weekly");
       setEntraEnabled(tenant.entraEnabled || false);
       const allowed = tenant.allowedAuthProviders && tenant.allowedAuthProviders.length > 0
@@ -557,6 +561,8 @@ export default function Settings() {
           name: brandingName,
           primaryColor: brandingPrimary,
           secondaryColor: brandingSecondary,
+          accentColor: brandingAccent,
+          neutralColor: brandingNeutral,
           monitoringFrequency: monitoringFreq,
         }),
       });
@@ -955,6 +961,40 @@ export default function Settings() {
                     <Input
                       value={brandingSecondary}
                       onChange={(e) => setBrandingSecondary(e.target.value)}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Accent Color</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandingAccent}
+                      onChange={(e) => setBrandingAccent(e.target.value)}
+                      className="w-10 h-10 rounded border cursor-pointer"
+                      data-testid="input-accent-color"
+                    />
+                    <Input
+                      value={brandingAccent}
+                      onChange={(e) => setBrandingAccent(e.target.value)}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Neutral Color</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandingNeutral}
+                      onChange={(e) => setBrandingNeutral(e.target.value)}
+                      className="w-10 h-10 rounded border cursor-pointer"
+                      data-testid="input-neutral-color"
+                    />
+                    <Input
+                      value={brandingNeutral}
+                      onChange={(e) => setBrandingNeutral(e.target.value)}
                       className="flex-1"
                     />
                   </div>

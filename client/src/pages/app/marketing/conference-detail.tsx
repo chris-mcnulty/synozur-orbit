@@ -158,8 +158,15 @@ interface ConfImage {
   name?: string | null;
   imagePrompt?: string | null;
   templateAssetId?: string | null;
+  backgroundId?: string | null;
   fileUrl?: string | null;
   status: string;
+}
+interface ConferenceBackground {
+  id: string;
+  name?: string | null;
+  fileUrl: string;
+  fileType?: string | null;
 }
 interface Conference {
   id: string;
@@ -183,6 +190,8 @@ interface Conference {
   status: string;
   sessions: Session[];
   images: ConfImage[];
+  eventLogoFileUrl?: string | null;
+  eventLogoFileType?: string | null;
 }
 interface Post {
   id: string;
@@ -256,7 +265,19 @@ export default function ConferenceDetailPage() {
     },
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: confKey });
+  const { data: backgrounds = [], refetch: refetchBackgrounds } = useQuery<ConferenceBackground[]>({
+    queryKey: ["/api/conferences", id, "backgrounds"],
+    queryFn: async () => {
+      const r = await fetch(`/api/conferences/${id}/backgrounds`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: !!id,
+  });
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: confKey });
+    refetchBackgrounds();
+  };
   const imageTemplates = brandAssets.filter((a) => (a.fileType || "").startsWith("image/"));
 
   if (isLoading) {
@@ -320,6 +341,7 @@ export default function ConferenceDetailPage() {
               anchorImage={anchorImage}
               imageBySession={imageBySession}
               templates={imageTemplates}
+              backgrounds={backgrounds}
               onChange={refresh}
             />
           </TabsContent>
@@ -950,16 +972,131 @@ function GraphicsTab({
   anchorImage,
   imageBySession,
   templates,
+  backgrounds,
   onChange,
 }: {
   conf: Conference;
   anchorImage?: ConfImage;
   imageBySession: Map<string, ConfImage>;
   templates: BrandAsset[];
+  backgrounds: ConferenceBackground[];
   onChange: () => void;
 }) {
+  const { toast } = useToast();
+
+  const uploadEventLogo = async (file: File) => {
+    try {
+      const objectPath = await uploadFile(file);
+      const r = await fetch(`/api/conferences/${conf.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ eventLogoFileUrl: objectPath, eventLogoFileType: file.type }),
+      });
+      if (!r.ok) throw new Error("Failed to save event logo");
+      onChange();
+      toast({ title: "Event logo uploaded" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const uploadBackground = async (file: File) => {
+    try {
+      const objectPath = await uploadFile(file);
+      const r = await fetch(`/api/conferences/${conf.id}/backgrounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ fileUrl: objectPath, fileType: file.type, name: file.name, fileSize: file.size }),
+      });
+      if (!r.ok) throw new Error("Failed to save background");
+      onChange();
+      toast({ title: "Location photo added" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const deleteBackground = async (bgId: string) => {
+    try {
+      await fetch(`/api/conference-backgrounds/${bgId}`, { method: "DELETE", credentials: "include" });
+      onChange();
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className="space-y-4">
+      {/* ── Conference Media ─────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Conference media</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Event logo */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Event / conference logo</p>
+            <p className="text-xs text-muted-foreground">Used as the centred event mark in hero composites.</p>
+            <div className="flex items-center gap-3">
+              {conf.eventLogoFileUrl && (
+                <div className="h-14 w-28 rounded border bg-muted/40 flex items-center justify-center overflow-hidden">
+                  <img src={conf.eventLogoFileUrl} alt="Event logo" className="max-h-full max-w-full object-contain" />
+                </div>
+              )}
+              <label className="inline-flex">
+                <input
+                  type="file"
+                  accept="image/*,.svg"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && uploadEventLogo(e.target.files[0])}
+                  data-testid="input-upload-event-logo"
+                />
+                <Button asChild variant="outline" size="sm">
+                  <span><Upload className="w-3.5 h-3.5 mr-1" /> {conf.eventLogoFileUrl ? "Replace" : "Upload logo"}</span>
+                </Button>
+              </label>
+            </div>
+          </div>
+
+          {/* Location background photos */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Location / venue photos</p>
+            <p className="text-xs text-muted-foreground">Background images for the hero composite. Upload one or more; pick one per image slot.</p>
+            <div className="flex flex-wrap gap-2">
+              {backgrounds.map((bg) => (
+                <div key={bg.id} className="relative group rounded border overflow-hidden bg-muted/40 w-28 h-16 flex items-center justify-center">
+                  <img src={bg.fileUrl} alt={bg.name || "background"} className="w-full h-full object-cover" />
+                  <button
+                    className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full p-0.5 text-destructive"
+                    onClick={() => deleteBackground(bg.id)}
+                    data-testid={`button-delete-bg-${bg.id}`}
+                    title="Remove"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <label className="inline-flex">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && uploadBackground(e.target.files[0])}
+                  data-testid="input-upload-background"
+                />
+                <Button asChild variant="outline" size="sm" className="h-16 w-28 flex-col gap-1">
+                  <span>
+                    <Plus className="w-4 h-4" />
+                    <span className="text-xs">Add photo</span>
+                  </span>
+                </Button>
+              </label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Anchor graphic ───────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Anchor graphic (overall presence)</CardTitle>
@@ -971,11 +1108,14 @@ function GraphicsTab({
             sessionId={null}
             image={anchorImage}
             templates={templates}
+            backgrounds={backgrounds}
+            isAnchor={true}
             onChange={onChange}
           />
         </CardContent>
       </Card>
 
+      {/* ── Session graphics ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Session graphics — one per session (1:1)</CardTitle>
@@ -993,6 +1133,8 @@ function GraphicsTab({
                   sessionId={s.id}
                   image={imageBySession.get(s.id)}
                   templates={templates}
+                  backgrounds={backgrounds}
+                  isAnchor={false}
                   onChange={onChange}
                 />
               </div>
@@ -1010,6 +1152,8 @@ function ImageSlot({
   sessionId,
   image,
   templates,
+  backgrounds,
+  isAnchor,
   onChange,
 }: {
   conferenceId: string;
@@ -1017,22 +1161,32 @@ function ImageSlot({
   sessionId: string | null;
   image?: ConfImage;
   templates: BrandAsset[];
+  backgrounds: ConferenceBackground[];
+  isAnchor: boolean;
   onChange: () => void;
 }) {
   const { toast } = useToast();
   const [source, setSource] = useState<string>(image?.source || "ai_generated");
   const [prompt, setPrompt] = useState(image?.imagePrompt || "");
   const [templateId, setTemplateId] = useState(image?.templateAssetId || "");
+  const [backgroundId, setBackgroundId] = useState(image?.backgroundId || "");
   const [busy, setBusy] = useState(false);
 
   const ensureImage = async (overrides: Partial<ConfImage> & { fileUrl?: string }) => {
-    // Create the image row if it doesn't exist, else patch it.
     if (!image) {
       const r = await fetch(`/api/conferences/${conferenceId}/images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ role, sessionId, source, imagePrompt: prompt, templateAssetId: templateId || undefined, ...overrides }),
+        body: JSON.stringify({
+          role,
+          sessionId,
+          source,
+          imagePrompt: prompt,
+          templateAssetId: templateId || undefined,
+          backgroundId: backgroundId || undefined,
+          ...overrides,
+        }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to create image");
       return (await r.json()) as ConfImage;
@@ -1041,7 +1195,13 @@ function ImageSlot({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ source, imagePrompt: prompt, templateAssetId: templateId || null, ...overrides }),
+      body: JSON.stringify({
+        source,
+        imagePrompt: prompt,
+        templateAssetId: templateId || null,
+        backgroundId: backgroundId || null,
+        ...overrides,
+      }),
     });
     if (!r.ok) throw new Error("Failed to update image");
     return (await r.json()) as ConfImage;
@@ -1080,7 +1240,6 @@ function ImageSlot({
     <div className="grid gap-3 md:grid-cols-[160px,1fr] items-start">
       <div className="aspect-video rounded-md border bg-muted/40 flex items-center justify-center overflow-hidden">
         {image?.fileUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={image.fileUrl} alt={image.name || "graphic"} className="w-full h-full object-cover" />
         ) : (
           <ImageIcon className="w-6 h-6 text-muted-foreground" />
@@ -1094,6 +1253,9 @@ function ImageSlot({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {isAnchor && (
+                <SelectItem value="logo_composite">Hero composite (brand + event logo)</SelectItem>
+              )}
               <SelectItem value="ai_generated">AI-generated</SelectItem>
               <SelectItem value="template_composite">Composite on template</SelectItem>
               <SelectItem value="uploaded">Upload my own</SelectItem>
@@ -1122,6 +1284,25 @@ function ImageSlot({
                 {templates.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {source === "logo_composite" && (
+          <div className="grid gap-1">
+            <Label className="text-xs">Background photo (from Conference Media)</Label>
+            <Select value={backgroundId || "__none"} onValueChange={v => setBackgroundId(v === "__none" ? "" : v)}>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="None (branded gradient)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">None (branded gradient)</SelectItem>
+                {backgrounds.map((bg) => (
+                  <SelectItem key={bg.id} value={bg.id}>
+                    {bg.name || bg.fileUrl.split("/").pop() || bg.id}
                   </SelectItem>
                 ))}
               </SelectContent>

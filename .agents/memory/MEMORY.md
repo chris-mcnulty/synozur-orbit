@@ -1,3 +1,3 @@
-- [Event Promotion account scoping](event-promotion-account-scoping.md) — conference social-account list must stay market(client)-scoped, never tenant-wide; empty list = event in wrong market, fix data not query.
-- [External scheduler graphics](external-scheduler-graphics.md) — scheduler images must serve via app's /public-objects route (raw GCS 403s, /objects 401s); store relative paths, absolutize at export from request host.
-- [Variant parsing conventions](variant-parsing-conventions.md) — copy-variant prompt format must match its parser; JSON-array output fed to the ---VARIANT--- splitter stores the whole array as one post.
+- [Hero compositor font paths](hero-compositor-fonts.md) — Avenir Next LT Pro TTFs must use absolute path via path.resolve(cwd, "client/public/fonts/") for Sharp/librsvg to embed them.
+- [Conference backgrounds CRUD](conference-backgrounds.md) — conferenceBackgrounds table + routes added; backgroundId FK on conferenceImages links hero composites to location photos.
+- [logo_composite render chain](logo-composite-render.md) — logo_composite branch in renderConferenceImage: bg photo → scrim → event logo → white_horizontal company logo → conf name. Falls back to brand-gradient if no backgroundBytes.
