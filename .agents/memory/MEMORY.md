@@ -1,2 +1,1 @@
-- [Saturn social campaign image variety](saturn-social-images.md) — enforce per-day image variety at the client distribute step, not via insertion order.
-- [Startup migrations vs Publish-flow](db-migrate-publish-conflict.md) — deploy can fail at promote (clean exit 0, no "serving on port"); the startup migration runner must stay idempotent.
+- [Event Promotion account scoping](event-promotion-account-scoping.md) — conference social-account list must stay market(client)-scoped, never tenant-wide; empty list = event in wrong market, fix data not query.

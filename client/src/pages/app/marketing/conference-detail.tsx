@@ -216,12 +216,13 @@ export default function ConferenceDetailPage() {
     },
   });
 
-  // Event Promotion is tenant-level: publish to any connected account across
-  // markets, not just the active market's accounts.
+  // Accounts are scoped to the event's own market (the active context always
+  // matches the conference's market, since the page 404s otherwise). This keeps
+  // each client/market's social accounts isolated — never shared across markets.
   const { data: accounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts", "tenant"],
+    queryKey: ["/api/social-accounts"],
     queryFn: async () => {
-      const r = await fetch("/api/social-accounts?scope=tenant", { credentials: "include" });
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
