@@ -515,6 +515,8 @@ export function registerConferencePromotionRoutes(app: Express) {
         return res.status(400).json({ error: "Select at least one social account" });
       }
       const generateImages = req.body?.generateImages !== false;
+      const rawTzOffset = Number(req.body?.tzOffset);
+      const tzOffsetMinutes = Number.isFinite(rawTzOffset) ? rawTzOffset : undefined;
 
       const [job] = await db
         .insert(scheduledJobRuns)
@@ -538,7 +540,7 @@ export function registerConferencePromotionRoutes(app: Express) {
             conf.id,
             ctx.tenantDomain,
             job.id,
-            { socialAccountIds, ownerUserId: ctx.userId, generateImages },
+            { socialAccountIds, ownerUserId: ctx.userId, generateImages, tzOffsetMinutes },
             reportProgress,
           ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: conf.id, targetName: conf.name } },

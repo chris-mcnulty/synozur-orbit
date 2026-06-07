@@ -1,1 +1,3 @@
 - [Event Promotion account scoping](event-promotion-account-scoping.md) — conference social-account list must stay market(client)-scoped, never tenant-wide; empty list = event in wrong market, fix data not query.
+- [External scheduler graphics](external-scheduler-graphics.md) — social-post images for SocialPilot/Hootsuite/Sprout must be public-bucket hosted; the private /objects route 401s server-to-server fetches.
+- [Variant parsing conventions](variant-parsing-conventions.md) — copy-variant prompt format must match its parser; JSON-array output fed to the ---VARIANT--- splitter stores the whole array as one post.

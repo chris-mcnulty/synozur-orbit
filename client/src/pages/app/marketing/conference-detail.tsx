@@ -845,7 +845,7 @@ function GenerateTab({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ socialAccountIds: selected, generateImages }),
+        body: JSON.stringify({ socialAccountIds: selected, generateImages, tzOffset: new Date().getTimezoneOffset() }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to start");
       return r.json();

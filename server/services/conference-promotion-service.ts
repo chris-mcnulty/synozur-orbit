@@ -69,25 +69,32 @@ function splitObjectPath(fullPath: string): { bucketName: string; objectName: st
 
 /**
  * Persist a generated/processed image buffer into the conference-images prefix
- * and return the servable `/objects/...` path plus its size.
+ * of the PUBLIC bucket and return its fully-qualified public URL plus its size.
  */
 export async function saveConferenceImageBuffer(
   buffer: Buffer,
   contentType: string,
   ext: string,
 ): Promise<{ fileUrl: string; fileSize: number }> {
-  const privateDir = process.env.PRIVATE_OBJECT_DIR;
-  if (!privateDir) {
-    throw new Error("PRIVATE_OBJECT_DIR not set — cannot store conference image");
-  }
+  // Conference graphics are stored in the PUBLIC bucket path and returned as a
+  // fully-qualified storage.googleapis.com URL. These images are meant to be
+  // posted publicly on social media, and external schedulers (SocialPilot,
+  // Hootsuite, Sprout) must be able to fetch the graphic by URL without a
+  // logged-in session — the private `/objects/...` route requires auth and
+  // returns 401 to those tools, so the graphic never makes it into the post.
+  const publicPaths = objectStorageService.getPublicObjectSearchPaths();
+  // Format: /<bucket_name>/<prefix...> (e.g. /replit-objstore-xxx/public)
+  const { bucketName, objectName: publicPrefix } = splitObjectPath(publicPaths[0]);
   const objectId = `${randomUUID()}.${ext}`;
-  const fullPath = `${privateDir.replace(/\/$/, "")}/${IMAGE_PREFIX}/${objectId}`;
-  const { bucketName, objectName } = splitObjectPath(fullPath);
+  const objectName = `${publicPrefix.replace(/\/$/, "")}/${IMAGE_PREFIX}/${objectId}`;
   await objectStorageClient
     .bucket(bucketName)
     .file(objectName)
     .save(buffer, { metadata: { contentType } });
-  return { fileUrl: `/objects/${IMAGE_PREFIX}/${objectId}`, fileSize: buffer.length };
+  return {
+    fileUrl: `https://storage.googleapis.com/${bucketName}/${objectName}`,
+    fileSize: buffer.length,
+  };
 }
 
 /** Read the bytes of a brand template, whether stored in object storage or at an external URL. */
@@ -246,7 +253,28 @@ export async function renderConferenceImage(
   session?: ConferenceSession | null,
 ): Promise<string | null> {
   if (image.source === "uploaded") {
-    return image.fileUrl ?? null;
+    // Uploaded graphics land in the private bucket (`/objects/uploads/...`),
+    // which requires an auth session to fetch — external schedulers can't read
+    // them. Re-publish to the public bucket so the exported CSV carries a URL
+    // anyone can fetch. Already-public URLs are left untouched.
+    const current = image.fileUrl ?? null;
+    if (!current || !current.startsWith("/objects/")) {
+      return current;
+    }
+    try {
+      const bytes = await loadImageBytes(current);
+      const ext = (current.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+      const contentType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif" : "image/png";
+      const saved = await saveConferenceImageBuffer(bytes, contentType, ext);
+      await db
+        .update(conferenceImages)
+        .set({ fileUrl: saved.fileUrl, fileSize: saved.fileSize, updatedAt: new Date() })
+        .where(eq(conferenceImages.id, image.id));
+      return saved.fileUrl;
+    } catch (err: any) {
+      console.error("[Conference] Failed to publish uploaded image:", err?.message);
+      return current;
+    }
   }
 
   let saved: { fileUrl: string; fileSize: number };
@@ -306,28 +334,42 @@ export function buildScheduleSlots(opts: {
   includeSaturday: boolean;
   includeSunday: boolean;
   count: number;
+  /**
+   * Client timezone offset in minutes, as returned by `Date.getTimezoneOffset()`
+   * (i.e. minutes to ADD to local time to get UTC; positive west of UTC). When
+   * provided, posting hours land at 9am–5pm in the *user's* timezone instead of
+   * the server's (UTC on Replit), which otherwise pushes posts into the middle
+   * of the night for the user.
+   */
+  tzOffsetMinutes?: number;
 }): Date[] {
+  const tz = Number.isFinite(opts.tzOffsetMinutes as number) ? (opts.tzOffsetMinutes as number) : 0;
   const slots: Date[] = [];
   const hours = [9, 11, 13, 15, 17];
   // Never place more than one post per distinct hour slot in a day — overflow
   // rolls to the next *eligible* day instead of spilling into an ineligible
   // (e.g. weekend) calendar day.
   const perDay = Math.min(Math.max(1, opts.postsPerDay), hours.length);
+  // Work in the user's local calendar day. We add the tz offset to the promo
+  // start so that day-boundary and weekday checks reflect the user's timezone.
   const cursor = new Date(opts.promoStart);
-  cursor.setHours(0, 0, 0, 0);
+  cursor.setUTCHours(0, 0, 0, 0);
   let guard = 0;
   while (slots.length < opts.count && guard < 3650) {
     guard++;
-    const day = cursor.getDay(); // 0 Sun … 6 Sat
+    const day = cursor.getUTCDay(); // 0 Sun … 6 Sat (user-local day)
     const eligible = (day !== 0 || opts.includeSunday) && (day !== 6 || opts.includeSaturday);
     if (eligible) {
       for (let i = 0; i < perDay && slots.length < opts.count; i++) {
+        // Desired wall-clock hour (hours[i]) in the user's timezone, converted
+        // to the equivalent UTC instant: UTC = local + tzOffsetMinutes.
         const slot = new Date(cursor);
-        slot.setHours(hours[i], 0, 0, 0);
+        slot.setUTCHours(hours[i], 0, 0, 0);
+        slot.setUTCMinutes(slot.getUTCMinutes() + tz);
         slots.push(slot);
       }
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return slots;
 }
@@ -436,8 +478,43 @@ Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post tex
     tenantDomain: opts.tenantDomain,
   });
 
-  const variants = parseVariants(result.text, variantCount);
+  const variants = parseCopyVariants(result.text, variantCount);
   return variants.length > 0 ? variants.slice(0, variantCount) : [result.text.trim()];
+}
+
+/**
+ * Parse copy variants from the model output. The conference prompt asks for a
+ * JSON array of strings, so try that first; fall back to the `---VARIANT---`
+ * separator format and finally to the raw text. Without this, a JSON array
+ * response would be stored verbatim as a single post's content (brackets,
+ * quotes, escaped newlines and all).
+ */
+function parseCopyVariants(text: string, expected: number): string[] {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  // Try a top-level JSON array of strings.
+  try {
+    const start = cleaned.indexOf("[");
+    const end = cleaned.lastIndexOf("]");
+    if (start !== -1 && end > start) {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      if (Array.isArray(parsed)) {
+        const strings = parsed
+          .filter((v) => typeof v === "string")
+          .map((v) => (v as string).trim())
+          .filter(Boolean);
+        if (strings.length > 0) return strings.slice(0, expected);
+      }
+    }
+  } catch {
+    // fall through to separator parsing
+  }
+
+  return parseVariants(cleaned, expected);
 }
 
 // ─── orchestration ────────────────────────────────────────────────────────────
@@ -446,6 +523,7 @@ export interface GenerateConferencePostsOptions {
   socialAccountIds: string[];
   ownerUserId: string;
   generateImages?: boolean; // render AI/composite graphics during generation (default true)
+  tzOffsetMinutes?: number; // client Date.getTimezoneOffset(); schedules posts in the user's timezone
 }
 
 /**
@@ -560,11 +638,16 @@ async function runGeneration(
 
   // Render any image that still needs bytes.
   if (generateImages) {
+    // Render images that have no bytes yet, plus uploaded images still sitting
+    // at a private `/objects/...` URL (renderConferenceImage re-publishes those
+    // to the public bucket so external schedulers can fetch them).
+    const needsRender = (img: ConferenceImage): boolean =>
+      !img.fileUrl || img.fileUrl.startsWith("/objects/");
     const toRender: Array<{ img: ConferenceImage; session?: ConferenceSession | null }> = [];
-    if (anchorImage && !anchorImage.fileUrl) toRender.push({ img: anchorImage });
+    if (anchorImage && needsRender(anchorImage)) toRender.push({ img: anchorImage });
     for (const session of sessions) {
       const img = sessionImageBySession.get(session.id);
-      if (img && !img.fileUrl) toRender.push({ img, session });
+      if (img && needsRender(img)) toRender.push({ img, session });
     }
     let rendered = 0;
     for (const { img, session } of toRender) {
@@ -593,6 +676,7 @@ async function runGeneration(
     includeSaturday: conf.includeSaturday,
     includeSunday: conf.includeSunday,
     count: targetCount,
+    tzOffsetMinutes: options.tzOffsetMinutes,
   });
 
   const baseHashtags = resolveHashtags(conf);
