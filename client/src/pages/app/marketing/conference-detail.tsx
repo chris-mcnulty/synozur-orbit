@@ -1170,6 +1170,7 @@ function GenerateTab({
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [generateImages, setGenerateImages] = useState(true);
+  const [includePublished, setIncludePublished] = useState(false);
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [polling, setPolling] = useState(false);
 
@@ -1211,7 +1212,7 @@ function GenerateTab({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ socialAccountIds: selected, generateImages, tzOffset: new Date().getTimezoneOffset() }),
+        body: JSON.stringify({ socialAccountIds: selected, generateImages, includePublished, tzOffset: new Date().getTimezoneOffset() }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to start");
       return r.json();
@@ -1284,13 +1285,27 @@ function GenerateTab({
             Auto-render graphics that don't have an image yet
           </label>
 
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={includePublished} onCheckedChange={setIncludePublished} data-testid="switch-include-published" />
+            Also replace posts I've already published
+          </label>
+
           <p className="text-xs text-muted-foreground">
             Generates {sessions.length} session posts + anchor posts, each with multiple copy variations, scheduled across
-            your promotion window. Re-running replaces unpublished drafts.
+            your promotion window. Re-running replaces all unpublished drafts
+            {includePublished ? " and your already-published posts" : " (published posts are kept)"}.
           </p>
 
           <Button
-            onClick={() => generate.mutate()}
+            onClick={() => {
+              if (
+                includePublished &&
+                !window.confirm("This will delete and replace your already-published posts too. This can't be undone. Continue?")
+              ) {
+                return;
+              }
+              generate.mutate();
+            }}
             disabled={selected.length === 0 || generate.isPending || polling}
           >
             <RefreshCw className={`w-4 h-4 mr-1 ${polling ? "animate-spin" : ""}`} />

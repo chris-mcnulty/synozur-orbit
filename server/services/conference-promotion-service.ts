@@ -524,6 +524,7 @@ export interface GenerateConferencePostsOptions {
   ownerUserId: string;
   generateImages?: boolean; // render AI/composite graphics during generation (default true)
   tzOffsetMinutes?: number; // client Date.getTimezoneOffset(); schedules posts in the user's timezone
+  includePublished?: boolean; // also wipe already-published posts before regenerating (default false)
 }
 
 /**
@@ -589,15 +590,16 @@ async function runGeneration(
   const anchorCount = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 2);
   const generateImages = options.generateImages !== false;
 
-  // Clear prior conference posts (everything except already-published ones) so
-  // regeneration doesn't leave behind stale variant groups. Tenant-scoped.
+  // Clear prior conference posts so regeneration doesn't leave behind stale
+  // variant groups. By default we keep already-published posts; when
+  // includePublished is set we wipe those too. Tenant-scoped.
   await db
     .delete(generatedPosts)
     .where(
       and(
         eq(generatedPosts.conferenceId, conferenceId),
         eq(generatedPosts.tenantDomain, tenantDomain),
-        ne(generatedPosts.status, "published"),
+        ...(options.includePublished ? [] : [ne(generatedPosts.status, "published")]),
       ),
     );
 
