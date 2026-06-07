@@ -11,7 +11,7 @@
 
 import type { Express } from "express";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -33,6 +33,7 @@ import {
   generateConferencePostsAsync,
   renderConferenceImage,
 } from "../services/conference-promotion-service";
+import { buildPostsCsv } from "../services/posts-csv-export";
 
 const FEATURE = "conferencePromotion";
 
@@ -572,5 +573,49 @@ export function registerConferencePromotionRoutes(app: Express) {
       .where(and(eq(generatedPosts.conferenceId, conf.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
       .orderBy(generatedPosts.scheduledDate);
     res.json(rows);
+  });
+
+  // Export generated conference posts as CSV, reusing the same scheduler
+  // formats (generic / socialpilot / hootsuite / sproutsocial) as campaigns.
+  app.post("/api/conferences/:id/export-csv", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
+      if (!conf) return res.status(404).json({ error: "Conference not found" });
+
+      const excludeUndated = req.query.excludeUndated !== "false";
+
+      const allPosts = await db
+        .select()
+        .from(generatedPosts)
+        .where(and(
+          eq(generatedPosts.conferenceId, conf.id),
+          eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+          notInArray(generatedPosts.status, ["deleted", "rejected"]),
+        ));
+
+      const nowFilter = new Date();
+      const posts = excludeUndated
+        ? allPosts.filter((p) => p.scheduledDate && new Date(p.scheduledDate) >= nowFilter)
+        : allPosts;
+
+      const csvFormat = ((req.query.format as string) || "socialpilot").toLowerCase();
+      const clientTzOffset = parseInt((req.query.tzOffset as string) || "0", 10);
+
+      const csv = await buildPostsCsv({
+        posts,
+        tenantDomain: ctx.tenantDomain,
+        format: csvFormat,
+        tzOffset: clientTzOffset,
+      });
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="event-${conf.id}-${csvFormat}.csv"`);
+      res.send(csv);
+    } catch (err: any) {
+      console.error("[Conference Export CSV Error]", err?.message);
+      res.status(500).json({ error: "Failed to export event CSV" });
+    }
   });
 }

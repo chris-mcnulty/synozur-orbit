@@ -804,6 +804,7 @@ function GenerateTab({
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [generateImages, setGenerateImages] = useState(true);
+  const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [polling, setPolling] = useState(false);
 
   const { data: status } = useQuery<{ status: string; errorMessage?: string | null }>({
@@ -854,6 +855,25 @@ function GenerateTab({
       toast({ title: "Generating posts…", description: "This runs in the background." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const exportCsv = useMutation({
+    mutationFn: async () => {
+      const tzOffset = new Date().getTimezoneOffset();
+      const r = await fetch(
+        `/api/conferences/${conferenceId}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}&excludeUndated=false`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!r.ok) throw new Error("Export failed");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `event-posts-${csvFormat}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
   });
 
   const groups = useMemo(() => groupPosts(posts), [posts]);
@@ -915,7 +935,33 @@ function GenerateTab({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Review ({groups.length} posts, {posts.length} variations)</CardTitle>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base">Review ({groups.length} posts, {posts.length} variations)</CardTitle>
+            {posts.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={csvFormat} onValueChange={setCsvFormat}>
+                  <SelectTrigger className="w-40" data-testid="select-csv-format-event">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="generic">Generic (Copy/Paste)</SelectItem>
+                    <SelectItem value="socialpilot">SocialPilot</SelectItem>
+                    <SelectItem value="hootsuite">Hootsuite</SelectItem>
+                    <SelectItem value="sproutsocial">Sprout Social</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => exportCsv.mutate()}
+                  disabled={exportCsv.isPending}
+                  data-testid="button-export-csv-event"
+                >
+                  <Download className="w-4 h-4" />Export CSV
+                </Button>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {groups.length === 0 ? (
