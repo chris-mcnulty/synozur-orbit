@@ -1125,6 +1125,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.get("/api/social-accounts", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
+    // `scope=tenant` returns every active account across the tenant's markets.
+    // Tenant-level features (e.g. Event Promotion) publish to any connected
+    // account regardless of the active market; the default remains market-scoped.
+    const tenantScope = req.query.scope === "tenant";
     // Project only the fields the UI needs — never return encrypted token
     // material. Connection state is exposed as a derived `isConnected`
     // boolean. Token expiry / scope strings are also stripped.
@@ -1146,7 +1150,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }).from(socialAccounts)
       .where(and(
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
-        eq(socialAccounts.marketId, ctx.marketId),
+        ...(tenantScope ? [] : [eq(socialAccounts.marketId, ctx.marketId)]),
         eq(socialAccounts.status, "active"),
       ))
       .orderBy(socialAccounts.platform, socialAccounts.accountName);
