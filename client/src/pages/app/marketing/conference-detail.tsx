@@ -1066,7 +1066,7 @@ function ImageSlot({
     setBusy(true);
     try {
       const objectPath = await uploadFile(file);
-      await ensureImage({ source: "uploaded", fileUrl: objectPath } as any);
+      await ensureImage({ source: "uploaded", fileUrl: objectPath, fileType: file.type } as any);
       onChange();
       toast({ title: "Image uploaded" });
     } catch (e: any) {

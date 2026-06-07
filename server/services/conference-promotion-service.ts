@@ -109,6 +109,21 @@ async function loadImageBytes(fileUrl: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+/** Map an image content type to a safe file extension (defaults to png). */
+function extFromContentType(contentType?: string | null): string {
+  const c = (contentType || "").toLowerCase();
+  if (c.includes("jpeg") || c.includes("jpg")) return "jpg";
+  if (c.includes("webp")) return "webp";
+  if (c.includes("gif")) return "gif";
+  if (c.includes("png")) return "png";
+  return "png";
+}
+
+/** True when a URL ends in a recognizable image extension (schedulers need this). */
+function hasValidImageExt(url: string): boolean {
+  return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+}
+
 // ─── image generation ────────────────────────────────────────────────────────
 
 function escapeXml(s: string): string {
@@ -258,13 +273,31 @@ export async function renderConferenceImage(
     // them. Re-publish to the public bucket so the exported CSV carries a URL
     // anyone can fetch. Already-public URLs are left untouched.
     const current = image.fileUrl ?? null;
-    if (!current || !current.startsWith("/objects/")) {
+    if (!current) return current;
+    const isPrivate = current.startsWith("/objects/");
+    // Repair earlier uploads that were republished with a broken extension
+    // (the scheduler rejects a media URL that doesn't end in .png/.jpg/etc).
+    const isMangledPublic =
+      current.startsWith("https://storage.googleapis.com/") && !hasValidImageExt(current);
+    if (!isPrivate && !isMangledPublic) {
       return current;
     }
     try {
-      const bytes = await loadImageBytes(current);
-      const ext = (current.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-      const contentType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif" : "image/png";
+      let bytes: Buffer;
+      let contentType: string;
+      if (isPrivate) {
+        // The private object path has no file extension, so derive the type from
+        // the stored file's metadata (falling back to the recorded fileType).
+        const file = await objectStorageService.getObjectEntityFile(current);
+        const [metadata] = await file.getMetadata();
+        [bytes] = await file.download();
+        contentType = (metadata?.contentType as string | undefined) || image.fileType || "image/png";
+      } else {
+        // Re-fetch from the badly-named public URL and republish correctly.
+        bytes = await loadImageBytes(current);
+        contentType = image.fileType || "image/png";
+      }
+      const ext = extFromContentType(contentType);
       const saved = await saveConferenceImageBuffer(bytes, contentType, ext);
       await db
         .update(conferenceImages)
@@ -644,7 +677,11 @@ async function runGeneration(
     // at a private `/objects/...` URL (renderConferenceImage re-publishes those
     // to the public bucket so external schedulers can fetch them).
     const needsRender = (img: ConferenceImage): boolean =>
-      !img.fileUrl || img.fileUrl.startsWith("/objects/");
+      !img.fileUrl ||
+      img.fileUrl.startsWith("/objects/") ||
+      (img.source === "uploaded" &&
+        img.fileUrl.startsWith("https://storage.googleapis.com/") &&
+        !hasValidImageExt(img.fileUrl));
     const toRender: Array<{ img: ConferenceImage; session?: ConferenceSession | null }> = [];
     if (anchorImage && needsRender(anchorImage)) toRender.push({ img: anchorImage });
     for (const session of sessions) {

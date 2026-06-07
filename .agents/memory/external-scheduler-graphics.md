@@ -21,3 +21,15 @@ entry points: freshly generated/composited images AND user-*uploaded* images
 (those land at private `/objects/uploads/...` via the presigned-upload flow and
 must be re-published to public before export). The in-app `<img>` and the
 compositing `loadImageBytes()` both already handle absolute https URLs.
+
+## Pitfall: extension-less private paths
+Uploaded objects sit at `/objects/uploads/<uuid>` with **no file extension**, so
+deriving the ext via `path.split('.').pop()` returns the whole path and yields a
+mangled public filename (`<uuid>.objectsuploads<id>`). Schedulers validate media
+by extension, so a URL not ending in `.png/.jpg/.webp/.gif` is rejected
+("Media URL provided is invalid") and the in-app preview breaks too. Derive the
+type from the stored GCS file's `getMetadata().contentType` (fallback to a
+recorded `fileType`, then `image/png`) and map MIME→ext. Make republish self-heal:
+detect a public URL lacking a valid image extension, re-fetch + re-save once
+(idempotent — skip thereafter). NOTE: SharePoint Embedded (SPE) is a separate,
+usually-unconfigured store and is intentionally NOT used for these public graphics.

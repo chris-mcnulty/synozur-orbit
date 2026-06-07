@@ -467,6 +467,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if ("templateAssetId" in b) patch.templateAssetId = b.templateAssetId ?? null;
     if (typeof b.source === "string" && CONFERENCE_IMAGE_SOURCES.includes(b.source)) patch.source = b.source;
     if (b.source === "uploaded" && typeof b.fileUrl === "string") patch.fileUrl = b.fileUrl;
+    if (b.source === "uploaded" && typeof b.fileType === "string") patch.fileType = b.fileType;
     const [row] = await db.update(conferenceImages).set(patch).where(eq(conferenceImages.id, img.id)).returning();
     res.json(row);
   });
