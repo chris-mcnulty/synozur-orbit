@@ -79,6 +79,7 @@ export function registerMarketingPerformanceRoutes(app: Express) {
   // List reports for the active tenant/market.
   app.get("/api/marketing/performance-reports", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "marketingPerformance"))) return;
       const ctx = await getRequestContext(req);
       const rows = await db
         .select()

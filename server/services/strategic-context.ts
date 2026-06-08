@@ -27,11 +27,6 @@ export interface StrategicContext {
   brandIdentity: string;
 }
 
-// Default SYNOZUR palette baked into the tenants table; if a tenant still
-// carries these, treat the colour field as "not customised" for readiness.
-const DEFAULT_PRIMARY = "#810FFB";
-const DEFAULT_SECONDARY = "#E60CB3";
-
 /**
  * Loads the messaging framework for a tenant context.
  * Checks baseline company profile first (most common), falls back to project-level.

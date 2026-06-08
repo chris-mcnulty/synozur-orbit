@@ -116,7 +116,7 @@ export function deriveReadiness(input: ReadinessInputs): ReadinessReport {
       ? "GTM plan generated."
       : "No GTM plan yet (recommended for strategy grounding).",
     fixHint: "Generate a GTM plan to ground content strategy and channel choices.",
-    fixPath: "/app/marketing/messaging-framework",
+    fixPath: "/app/marketing/gtm-plan",
   });
 
   // Products

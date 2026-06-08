@@ -23,7 +23,7 @@ import {
   contentAssets,
   type MarketingPerformanceMetrics,
 } from "@shared/schema";
-import { and, eq, gte, lte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, lt, lte, inArray, isNull, or, sql } from "drizzle-orm";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
 import {
@@ -78,6 +78,9 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
   const marketId = params.marketId || "";
 
   // ── Posts in period (grouped in JS by campaign + source asset) ────────────
+  // generated_posts has no marketId, so scope to the active market via the
+  // post's campaign. Standalone posts (no campaign — e.g. repurposed variants)
+  // have no market and are kept (they belong to the tenant, not a market).
   const posts = await db
     .select({
       id: generatedPosts.id,
@@ -85,11 +88,13 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
       sourceAssetId: generatedPosts.sourceAssetId,
     })
     .from(generatedPosts)
+    .leftJoin(campaigns, eq(generatedPosts.campaignId, campaigns.id))
     .where(
       and(
         eq(generatedPosts.tenantDomain, tenantDomain),
         gte(generatedPosts.createdAt, periodStart),
         lte(generatedPosts.createdAt, periodEnd),
+        or(eq(campaigns.marketId, marketId), isNull(generatedPosts.campaignId)),
       ),
     );
 
@@ -217,6 +222,9 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
 
   const baseClickRows = await clicksByCampaign(tenantDomain, marketId, baseStart, baseEnd);
   const baseClicks = baseClickRows.reduce((s, r) => s + r.clicks, 0);
+  // analytics_daily is keyed by whole UTC days. Use an exclusive upper bound at
+  // the period's start day so the baseline window can't overlap the current
+  // period by a day when periodStart isn't aligned to UTC midnight.
   const baseConvRows = await db
     .select({ conversions: analyticsDaily.conversions })
     .from(analyticsDaily)
@@ -225,7 +233,7 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
         eq(analyticsDaily.tenantDomain, tenantDomain),
         eq(analyticsDaily.marketId, marketId),
         gte(analyticsDaily.date, dayStr(baseStart)),
-        lte(analyticsDaily.date, dayStr(baseEnd)),
+        lt(analyticsDaily.date, dayStr(periodStart)),
       ),
     );
   const baseConversions = baseConvRows.reduce((s, r) => s + r.conversions, 0);

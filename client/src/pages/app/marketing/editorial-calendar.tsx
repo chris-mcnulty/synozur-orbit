@@ -126,7 +126,7 @@ const FUNNEL_BADGE: Record<string, string> = {
   decision: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
 };
 
-const STATUS_OPTIONS = ["suggested", "accepted", "in_progress", "scheduled", "removed"];
+const STATUS_OPTIONS = ["suggested", "accepted", "in_progress", "drafted", "scheduled", "published", "removed"];
 
 async function getJson(url: string) {
   const res = await fetch(url, { credentials: "include" });

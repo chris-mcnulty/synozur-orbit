@@ -101,6 +101,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
   // List calendars for the active tenant/market.
   app.get("/api/editorial-calendars", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
       const rows = await db
         .select()
@@ -122,6 +123,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
   // Get a single calendar with its briefs.
   app.get("/api/editorial-calendars/:id", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
       const [calendar] = await db
         .select()
@@ -130,6 +132,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           and(
             eq(editorialCalendars.id, req.params.id),
             eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            eq(editorialCalendars.marketId, ctx.marketId),
           ),
         );
       if (!calendar) return res.status(404).json({ error: "Not found" });
@@ -137,7 +140,12 @@ export function registerEditorialCalendarRoutes(app: Express) {
       const briefs = await db
         .select()
         .from(contentBriefs)
-        .where(eq(contentBriefs.calendarId, calendar.id))
+        .where(
+          and(
+            eq(contentBriefs.calendarId, calendar.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+          ),
+        )
         .orderBy(asc(contentBriefs.sortOrder), asc(contentBriefs.createdAt));
 
       res.json({ calendar, briefs });
@@ -150,6 +158,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
   // Update a single content brief (status changes, edits).
   app.patch("/api/content-briefs/:id", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
       const updates: Record<string, any> = {};
       for (const field of EDITABLE_BRIEF_FIELDS) {
@@ -167,6 +176,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           and(
             eq(contentBriefs.id, req.params.id),
             eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
           ),
         )
         .returning();
@@ -193,6 +203,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           and(
             eq(contentBriefs.id, req.params.id),
             eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
           ),
         );
       if (!brief) return res.status(404).json({ error: "Not found" });
@@ -226,7 +237,13 @@ export function registerEditorialCalendarRoutes(app: Express) {
         const [updatedBrief] = await tx
           .update(contentBriefs)
           .set({ contentAssetId: asset.id, status: "drafted", updatedAt: new Date() })
-          .where(eq(contentBriefs.id, brief.id))
+          .where(
+            and(
+              eq(contentBriefs.id, brief.id),
+              eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+              eq(contentBriefs.marketId, ctx.marketId),
+            ),
+          )
           .returning();
 
         return { asset, brief: updatedBrief };
@@ -252,6 +269,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
   // Delete a calendar (briefs cascade).
   app.delete("/api/editorial-calendars/:id", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
       const [deleted] = await db
         .delete(editorialCalendars)
@@ -259,6 +277,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           and(
             eq(editorialCalendars.id, req.params.id),
             eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            eq(editorialCalendars.marketId, ctx.marketId),
           ),
         )
         .returning({ id: editorialCalendars.id });
