@@ -1924,6 +1924,106 @@ export const insertMarketingTaskSchema = createInsertSchema(marketingTasks).omit
 export type MarketingTask = typeof marketingTasks.$inferSelect;
 export type InsertMarketingTask = z.infer<typeof insertMarketingTaskSchema>;
 
+// Editorial Calendars — a planning container for a batch of content briefs.
+// The Orbit parallel to the Cowork content-strategist's 30-day calendar.
+// Consumes the messaging framework (voice/positioning), competitive gaps,
+// personas, and SEO demand; the MPF stays the canonical positioning source.
+export const CONTENT_BRIEF_FORMATS = [
+  "blog_post",
+  "linkedin_post",
+  "x_post",
+  "newsletter",
+  "landing_page",
+  "video_script",
+  "case_study",
+  "whitepaper",
+  "other",
+] as const;
+export type ContentBriefFormat = (typeof CONTENT_BRIEF_FORMATS)[number];
+
+export const FUNNEL_STAGES = ["awareness", "consideration", "decision"] as const;
+export type FunnelStage = (typeof FUNNEL_STAGES)[number];
+
+export const editorialCalendars = pgTable("editorial_calendars", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  // Target funnel mix the calendar was generated against (defaults 40/35/25).
+  funnelTargets: jsonb("funnel_targets").$type<{ awareness: number; consideration: number; decision: number }>(),
+  // The focus/custom guidance the user supplied at generation time.
+  focus: text("focus"),
+  status: text("status").notNull().default("active"), // active, archived
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEditorialCalendarSchema = createInsertSchema(editorialCalendars).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type EditorialCalendar = typeof editorialCalendars.$inferSelect;
+export type InsertEditorialCalendar = z.infer<typeof insertEditorialCalendarSchema>;
+
+// Content Briefs — individual, schedulable content pieces within a calendar.
+// Distinct from marketing_tasks (fiscal-year activity planning): a brief is a
+// single content asset to produce, with demand evidence and a funnel stage.
+export const contentBriefs = pgTable("content_briefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  calendarId: varchar("calendar_id").notNull().references(() => editorialCalendars.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  format: text("format").notNull().default("blog_post"), // ContentBriefFormat
+  targetKeyword: text("target_keyword"),
+  // Evidence that people care (keyword volume, recurring question, gap, trend).
+  demandSignal: text("demand_signal"),
+  funnelStage: text("funnel_stage").notNull().default("awareness"), // FunnelStage
+  // What makes our take different from the top existing pieces.
+  differentiationAngle: text("differentiation_angle"),
+  // The one specific reader this is for (free text), plus optional persona link.
+  targetReader: text("target_reader"),
+  targetPersonaId: varchar("target_persona_id").references(() => personas.id, { onDelete: "set null" }),
+  cta: text("cta"),
+  channels: text("channels").array(),
+  estimatedHours: real("estimated_hours"),
+  status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, drafted, scheduled, published, removed
+  aiGenerated: boolean("ai_generated").notNull().default(true),
+  // Link to a produced draft once the copywriter runs (Phase 1, step 2).
+  contentAssetId: varchar("content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const editorialCalendarsRelations = relations(editorialCalendars, ({ many }) => ({
+  briefs: many(contentBriefs),
+}));
+
+export const contentBriefsRelations = relations(contentBriefs, ({ one }) => ({
+  calendar: one(editorialCalendars, {
+    fields: [contentBriefs.calendarId],
+    references: [editorialCalendars.id],
+  }),
+  persona: one(personas, {
+    fields: [contentBriefs.targetPersonaId],
+    references: [personas.id],
+  }),
+}));
+
+export const insertContentBriefSchema = createInsertSchema(contentBriefs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type ContentBrief = typeof contentBriefs.$inferSelect;
+export type InsertContentBrief = z.infer<typeof insertContentBriefSchema>;
+
 // Per-category bucket mappings — Phase 2 enables routing each marketing
 // activity category to its own Planner bucket. Backwards compatible with
 // the single `plannerBucketId` on marketing_plans, which is used as the

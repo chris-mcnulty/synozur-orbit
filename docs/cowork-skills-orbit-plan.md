@@ -112,11 +112,12 @@ All AI generation reuses existing infrastructure: `completeForFeature()` (`ai-pr
 
 ### Pillar 1 — Content development *(priority)*
 
-1. **Positioning dossier** (parallel to positioning-researcher). New `positioning_dossiers` table + `POST /api/baseline/positioning-dossier/generate` (async). Grounds in `personas.painPoints`, `competitors`/`analysis.gaps`, `competitor_scores`, `battlecards`, news. Optional external VoC mining via `web-crawler` (sourced, ≤125-char quotes), degrading to internal-only.
-2. **Editorial calendar + content briefs** (content-strategist). Extend `marketing_tasks` (or add `content_briefs`) with demand signal, funnel stage, differentiation angle, target persona, CTA, est. hours; enforce demand-signal + funnel-mix guardrails. Demand from `tracked_keywords`/`seo_metrics`; angles from dossier `content_battlegrounds`.
-3. **Multi-format copywriter** (copywriter). Extend the existing post/email generators to consume a brief and add **blog** and **landing-page** formats; bind brand assets + voice profile; reuse `AIRewritePanel` + rewrite lineage.
-4. **Repurposing engine.** `POST /api/content-assets/:id/repurpose` (async) → 8–10 brand-aligned variants written into the existing posts/campaign pipeline.
-5. **SEO/AEO optimizer** *(largest net-new capability)*. New `content_optimizations` table + `POST /api/content/optimize` producing SEO metadata + AEO answer blocks/FAQ + internal-link suggestions + content-gap analysis, with Cowork guardrails (title ≤60c, meta ≤155c, answer blocks 2-3 sentences). Internal-link validation uses the `content_assets` inventory.
+> **Design decision (locked):** The **MPF (`messaging_framework`) is the canonical positioning + voice source** and `analysis` already holds competitive gaps — so Phase 1 does **not** build a standalone positioning dossier (that would duplicate MPF + analysis). Instead it builds the **content engine** that the MPF deliberately doesn't cover: a demand-scored editorial calendar of structured, schedulable briefs that *consumes* MPF/analysis/personas/SEO. Voice-of-customer evidence and gap→topic "battleground" derivation are done **inline** where the calendar needs them, not as a separate artifact.
+
+1. **Editorial calendar + content briefs** (content-strategist) — *the priority build*. Demand-scored briefs grounded in MPF (voice/positioning), `analysis.gaps` (where to win), `personas.painPoints` (for whom), and `tracked_keywords`/`seo_metrics` (demand). Each brief: topic, format, target keyword, **demand signal**, **funnel stage**, **differentiation angle**, **target persona**, CTA, est. hours. Enforce demand-signal + funnel-mix (40/35/25) guardrails. Output is **structured, dated, status-tracked rows** (extend `marketing_tasks` or add `content_briefs`) so they flow into the existing scheduler / Planner sync — not prose buried in the MPF.
+2. **Multi-format copywriter** (copywriter). Extend the existing post/email generators to consume a brief and add **blog** and **landing-page** formats; bind brand assets + voice profile; reuse `AIRewritePanel` + rewrite lineage.
+3. **Repurposing engine.** `POST /api/content-assets/:id/repurpose` (async) → 8–10 brand-aligned variants written into the existing posts/campaign pipeline.
+4. **SEO/AEO optimizer** *(largest net-new capability)*. New `content_optimizations` table + `POST /api/content/optimize` producing SEO metadata + AEO answer blocks/FAQ + internal-link suggestions + content-gap analysis, with Cowork guardrails (title ≤60c, meta ≤155c, answer blocks 2-3 sentences). Internal-link validation uses the `content_assets` inventory.
 
 ### Pillar 2 — Scheduling
 
@@ -136,8 +137,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 | Feature key | Category | Suggested tiers |
 |---|---|---|
-| `positioningDossier` | intelligence | pro, enterprise, unlimited |
-| `editorialCalendar` | marketing | pro, enterprise, unlimited |
+| `editorialCalendar` | marketing | enterprise, unlimited (matches `campaigns`/`marketingPlanner`) |
 | `contentRepurposing` | marketing | enterprise, unlimited |
 | `seoAeoOptimizer` | marketing | enterprise, unlimited |
 | `distributionPlanner` | marketing | pro, enterprise, unlimited |
@@ -147,9 +147,9 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 ## 6. Roadmap
 
-**Phase 0 — Grounding (after brand work merges).** Rebase onto `main`; extend `StrategicContext` with verbal voice + visual brand identity; ship context-readiness. Unblocks brand-aligned generation everywhere.
+**Phase 0 — Grounding.** ✅ *Done.* Rebased onto `main`; extended `StrategicContext` with visual brand identity; shipped context-readiness. Unblocks brand-aligned generation everywhere.
 
-**Phase 1 — Content development (priority).** Positioning dossier → demand-scored editorial calendar/briefs → multi-format copywriter. Reconstructs the front half of the Cowork chain.
+**Phase 1 — Content development (priority).** Demand-scored editorial calendar/briefs (consuming MPF + analysis + personas + SEO) → multi-format copywriter. The MPF stays the canonical positioning/voice source; no separate positioning dossier.
 
 **Phase 2 — Production depth + scheduling.** SEO/AEO optimizer (biggest net-new), repurposing engine, distribution/editorial planner on the existing scheduler.
 
