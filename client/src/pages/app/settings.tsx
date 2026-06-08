@@ -1202,7 +1202,16 @@ export default function Settings() {
                             <Upload className="w-3.5 h-3.5" />
                             {fontUploading ? "Uploading…" : fontFileUrl ? "Replace File" : "Choose File"}
                           </Button>
-                          {fontFileUrl && <span className="text-xs text-muted-foreground">✓ File ready</span>}
+                          {fontFileUrl && (
+                            <>
+                              <style>{`@font-face { font-family: "dial-prev"; src: url("${fontFileUrl}"); font-weight: ${fontAddWeight}; font-style: ${fontAddStyle}; }`}</style>
+                              <span
+                                className="text-3xl select-none leading-none ml-1"
+                                style={{ fontFamily: `"dial-prev", serif`, fontWeight: fontAddWeight, fontStyle: fontAddStyle as any }}
+                                title="Live font preview"
+                              >Aa</span>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div>

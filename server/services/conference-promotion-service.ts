@@ -655,7 +655,11 @@ export async function renderConferenceImage(
     return sm === em ? `${sm} ${sd}–${ed}` : `${sm} ${sd} – ${em} ${ed}`;
   })();
 
-  // Company logo — market-scoped first, then tenant-wide (white variant preferred)
+  // Tenant row — fetched here so both the logo block and brand-color block can use it.
+  const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, conf.tenantDomain));
+
+  // Company logo — market-scoped brand asset first, then tenant-wide brand asset,
+  // then finally the tenant's own logoUrl as a last resort.
   let companyLogoBytes: Buffer | null = null;
   if (image.source !== "ai_generated") {
     const pickLogo = (assets: typeof brandAssets.$inferSelect[]) =>
@@ -683,6 +687,10 @@ export async function renderConferenceImage(
     if (whLogoAsset?.fileUrl) {
       try { companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl); } catch { /* skip */ }
     }
+    // Last resort: use the tenant's own logoUrl (set in Tenant Settings)
+    if (!companyLogoBytes && tenantRow?.logoUrl) {
+      try { companyLogoBytes = await loadImageBytes(tenantRow.logoUrl); } catch { /* skip */ }
+    }
   }
 
   if (image.source === "ai_generated") {
@@ -705,7 +713,6 @@ export async function renderConferenceImage(
     }
 
     // Brand colors: prefer market-level override, fall back to tenant default.
-    const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, conf.tenantDomain));
     let primaryColor: string | null = null;
     if (conf.marketId) {
       const [marketRow] = await db.select().from(markets).where(eq(markets.id, conf.marketId));

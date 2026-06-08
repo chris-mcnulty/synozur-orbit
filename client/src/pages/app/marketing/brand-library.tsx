@@ -404,22 +404,31 @@ export default function BrandLibraryPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  function fontMimeFromExtension(filename: string): string {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    const map: Record<string, string> = { ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2" };
+    return map[ext ?? ""] || "application/octet-stream";
+  }
+
   const handleFileUpload = async (file: File) => {
     setUploadingFile(true);
     try {
+      const isFontFile = file.type.startsWith("font/") || /\.(ttf|otf|woff|woff2)$/i.test(file.name);
+      const contentType = (file.type && file.type !== "application/octet-stream")
+        ? file.type
+        : isFontFile ? fontMimeFromExtension(file.name) : "application/octet-stream";
       const reqRes = await fetch("/api/uploads/request-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+        body: JSON.stringify({ name: file.name, size: file.size, contentType }),
       });
       if (!reqRes.ok) throw new Error((await reqRes.json()).error);
       const { uploadURL, objectPath } = await reqRes.json();
 
-      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": contentType } });
       if (!uploadRes.ok) throw new Error("File upload failed");
 
-      const isFontFile = file.type.startsWith("font/") || /\.(ttf|otf|woff|woff2)$/i.test(file.name);
       const derivedFileType = isFontFile ? file.name.split(".").pop()?.toLowerCase() || "font"
         : file.type.startsWith("image/") ? "image" : "document";
       setEditForm(f => ({ ...f, fileUrl: objectPath, fileType: derivedFileType }));

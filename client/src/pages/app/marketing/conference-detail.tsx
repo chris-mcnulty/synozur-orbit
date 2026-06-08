@@ -1319,7 +1319,7 @@ function ImageSlot({
                 <SelectItem value="logo_composite">Hero composite (brand + event logo)</SelectItem>
               )}
               <SelectItem value="ai_generated">AI-generated</SelectItem>
-              <SelectItem value="template_composite">Composite on template</SelectItem>
+              <SelectItem value="template_composite">Brand image + text overlay</SelectItem>
               <SelectItem value="uploaded">Upload my own</SelectItem>
             </SelectContent>
           </Select>
