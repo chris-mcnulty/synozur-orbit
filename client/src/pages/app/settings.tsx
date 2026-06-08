@@ -458,18 +458,32 @@ export default function Settings() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  function fontMimeFromExtension(filename: string): string {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    const map: Record<string, string> = {
+      ttf: "font/ttf",
+      otf: "font/otf",
+      woff: "font/woff",
+      woff2: "font/woff2",
+    };
+    return map[ext ?? ""] || "application/octet-stream";
+  }
+
   const handleFontFileUpload = async (file: File) => {
     setFontUploading(true);
     try {
+      const contentType = file.type && file.type !== "application/octet-stream"
+        ? file.type
+        : fontMimeFromExtension(file.name);
       const reqRes = await fetch("/api/uploads/request-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+        body: JSON.stringify({ name: file.name, size: file.size, contentType }),
       });
       if (!reqRes.ok) throw new Error((await reqRes.json()).error);
       const { uploadURL, objectPath } = await reqRes.json();
-      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": contentType } });
       if (!uploadRes.ok) throw new Error("File upload failed");
       const ext = file.name.split(".").pop()?.toLowerCase() || "font";
       setFontFileUrl(objectPath);

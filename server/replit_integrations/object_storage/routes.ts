@@ -17,7 +17,19 @@ const ALLOWED_IMAGE_TYPES = [
   "image/svg+xml",
 ];
 
-const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_TYPES];
+const ALLOWED_FONT_TYPES = [
+  "font/ttf",
+  "font/otf",
+  "font/woff",
+  "font/woff2",
+  "application/font-woff",
+  "application/font-woff2",
+  "application/x-font-ttf",
+  "application/x-font-otf",
+  "application/octet-stream", // browsers often report font files with this generic type
+];
+
+const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_TYPES, ...ALLOWED_FONT_TYPES];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
