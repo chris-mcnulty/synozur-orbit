@@ -118,21 +118,14 @@
       "idx": 16,
       "version": "7",
       "when": 1780934310942,
-      "tag": "0016_tired_jack_flag",
+      "tag": "0030_market_brand_colors",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1780916419981,
-      "tag": "0030_content_optimizations",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1780926574501,
-      "tag": "0031_marketing_performance_reports",
+      "when": 1780944578944,
+      "tag": "0031_marketing_content_workflow",
       "breakpoints": true
     }
   ]

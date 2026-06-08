@@ -22,6 +22,25 @@ CREATE TABLE "content_briefs" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "content_optimizations" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_domain" text NOT NULL,
+	"market_id" varchar,
+	"content_asset_id" varchar,
+	"source_title" text NOT NULL,
+	"seo_title" text,
+	"meta_description" text,
+	"slug" text,
+	"target_keyword" text,
+	"keywords" text[],
+	"answer_blocks" jsonb,
+	"faq" jsonb,
+	"internal_links" jsonb,
+	"content_gaps" jsonb,
+	"created_by" varchar NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "editorial_calendars" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_domain" text NOT NULL,
@@ -38,9 +57,27 @@ CREATE TABLE "editorial_calendars" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "marketing_performance_reports" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_domain" text NOT NULL,
+	"market_id" varchar,
+	"period_start" timestamp NOT NULL,
+	"period_end" timestamp NOT NULL,
+	"summary" text,
+	"metrics" jsonb,
+	"recommendations_emitted" integer DEFAULT 0 NOT NULL,
+	"created_by" varchar NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "content_briefs" ADD CONSTRAINT "content_briefs_calendar_id_editorial_calendars_id_fk" FOREIGN KEY ("calendar_id") REFERENCES "public"."editorial_calendars"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "content_briefs" ADD CONSTRAINT "content_briefs_market_id_markets_id_fk" FOREIGN KEY ("market_id") REFERENCES "public"."markets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "content_briefs" ADD CONSTRAINT "content_briefs_target_persona_id_personas_id_fk" FOREIGN KEY ("target_persona_id") REFERENCES "public"."personas"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "content_briefs" ADD CONSTRAINT "content_briefs_content_asset_id_content_assets_id_fk" FOREIGN KEY ("content_asset_id") REFERENCES "public"."content_assets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "content_optimizations" ADD CONSTRAINT "content_optimizations_market_id_markets_id_fk" FOREIGN KEY ("market_id") REFERENCES "public"."markets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "content_optimizations" ADD CONSTRAINT "content_optimizations_content_asset_id_content_assets_id_fk" FOREIGN KEY ("content_asset_id") REFERENCES "public"."content_assets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "content_optimizations" ADD CONSTRAINT "content_optimizations_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "editorial_calendars" ADD CONSTRAINT "editorial_calendars_market_id_markets_id_fk" FOREIGN KEY ("market_id") REFERENCES "public"."markets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "editorial_calendars" ADD CONSTRAINT "editorial_calendars_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "editorial_calendars" ADD CONSTRAINT "editorial_calendars_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "marketing_performance_reports" ADD CONSTRAINT "marketing_performance_reports_market_id_markets_id_fk" FOREIGN KEY ("market_id") REFERENCES "public"."markets"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "marketing_performance_reports" ADD CONSTRAINT "marketing_performance_reports_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

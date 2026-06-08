@@ -1,6 +1,6 @@
 {
-  "id": "7d94e034-7765-420d-aa76-c5941d8676a5",
-  "prevId": "125da6ad-c77e-4e88-9f91-d71caf962f65",
+  "id": "3b40e027-581c-4105-b381-3c0bce552603",
+  "prevId": "965d2a01-db1d-4cd1-a325-133d5362fc86",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9870,6 +9870,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
+        },
+        "primary_color": {
+          "name": "primary_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "secondary_color": {
+          "name": "secondary_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_by": {
           "name": "created_by",
