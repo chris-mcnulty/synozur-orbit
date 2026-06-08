@@ -2024,6 +2024,49 @@ export const insertContentBriefSchema = createInsertSchema(contentBriefs).omit({
 export type ContentBrief = typeof contentBriefs.$inferSelect;
 export type InsertContentBrief = z.infer<typeof insertContentBriefSchema>;
 
+// Content Optimizations — SEO + AEO (answer-engine) analysis for a piece of
+// content. Produces search metadata, answer blocks / FAQ for AI answer
+// engines, validated internal-link suggestions, and content-gap notes.
+export interface OptimizationQA {
+  question: string;
+  answer: string;
+}
+export interface InternalLinkSuggestion {
+  anchorText: string;
+  targetAssetId: string;
+  targetTitle: string;
+  reason: string;
+}
+
+export const contentOptimizations = pgTable("content_optimizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  contentAssetId: varchar("content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+  sourceTitle: text("source_title").notNull(),
+  // Search metadata (guardrailed: seoTitle ≤60c, metaDescription ≤155c).
+  seoTitle: text("seo_title"),
+  metaDescription: text("meta_description"),
+  slug: text("slug"),
+  targetKeyword: text("target_keyword"),
+  keywords: text("keywords").array(),
+  // Answer-engine optimization: concise Q&A blocks + FAQ schema source.
+  answerBlocks: jsonb("answer_blocks").$type<OptimizationQA[]>(),
+  faq: jsonb("faq").$type<OptimizationQA[]>(),
+  // Internal links validated against the tenant's content_assets inventory.
+  internalLinks: jsonb("internal_links").$type<InternalLinkSuggestion[]>(),
+  contentGaps: jsonb("content_gaps").$type<string[]>(),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertContentOptimizationSchema = createInsertSchema(contentOptimizations).omit({
+  id: true,
+  createdAt: true,
+});
+export type ContentOptimization = typeof contentOptimizations.$inferSelect;
+export type InsertContentOptimization = z.infer<typeof insertContentOptimizationSchema>;
+
 // Per-category bucket mappings — Phase 2 enables routing each marketing
 // activity category to its own Planner bucket. Backwards compatible with
 // the single `plannerBucketId` on marketing_plans, which is used as the

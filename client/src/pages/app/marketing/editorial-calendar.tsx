@@ -29,6 +29,8 @@ import {
   Trash2,
   Copy,
   AlertTriangle,
+  Share2,
+  Search,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -64,6 +66,24 @@ interface DraftResult {
   body: string;
   meta: string | null;
   format: string;
+}
+
+interface RepurposeVariantResult {
+  platform: string;
+  content: string;
+  hashtags: string[];
+}
+
+interface OptimizationResult {
+  seoTitle: string | null;
+  metaDescription: string | null;
+  slug: string | null;
+  targetKeyword: string | null;
+  keywords: string[] | null;
+  answerBlocks: { question: string; answer: string }[] | null;
+  faq: { question: string; answer: string }[] | null;
+  internalLinks: { anchorText: string; targetTitle: string; reason: string }[] | null;
+  contentGaps: string[] | null;
 }
 
 const FORMAT_LABELS: Record<string, string> = {
@@ -105,12 +125,16 @@ export default function EditorialCalendarPage() {
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
   const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
+  const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
 
   const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
     queryFn: () => getJson("/api/tenant/info"),
   });
   const allowed = tenant?.features?.editorialCalendar !== false;
+  const repurposeAllowed = tenant?.features?.contentRepurposing !== false;
+  const optimizeAllowed = tenant?.features?.seoAeoOptimizer !== false;
 
   const { data: calendars, isLoading: calendarsLoading } = useQuery<EditorialCalendar[]>({
     queryKey: ["/api/editorial-calendars"],
@@ -182,6 +206,42 @@ export default function EditorialCalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       setDraft(data.draft);
       toast.success("Draft created and saved to the content library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const repurposeAsset = useMutation({
+    mutationFn: async (assetId: string) => {
+      const res = await fetch(`/api/content-assets/${assetId}/repurpose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
+      return res.json();
+    },
+    onSuccess: (data: { posts: RepurposeVariantResult[]; count: number }) => {
+      setRepurpose(data.posts);
+      toast.success(`Created ${data.count} social drafts in the posts pipeline`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const optimizeAsset = useMutation({
+    mutationFn: async (assetId: string) => {
+      const res = await fetch(`/api/content/optimize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ contentAssetId: assetId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to optimize");
+      return res.json();
+    },
+    onSuccess: (data: { optimization: OptimizationResult }) => {
+      setOptimization(data.optimization);
+      toast.success("SEO/AEO analysis ready");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -366,6 +426,38 @@ export default function EditorialCalendarPage() {
                           )}
                           {b.contentAssetId ? "Re-draft" : "Draft"}
                         </Button>
+                        {b.contentAssetId && repurposeAllowed && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={repurposeAsset.isPending}
+                            onClick={() => repurposeAsset.mutate(b.contentAssetId!)}
+                            data-testid={`repurpose-${b.id}`}
+                          >
+                            {repurposeAsset.isPending && repurposeAsset.variables === b.contentAssetId ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Share2 className="mr-1 h-4 w-4" />
+                            )}
+                            Repurpose
+                          </Button>
+                        )}
+                        {b.contentAssetId && optimizeAllowed && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={optimizeAsset.isPending}
+                            onClick={() => optimizeAsset.mutate(b.contentAssetId!)}
+                            data-testid={`optimize-${b.id}`}
+                          >
+                            {optimizeAsset.isPending && optimizeAsset.variables === b.contentAssetId ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Search className="mr-1 h-4 w-4" />
+                            )}
+                            SEO/AEO
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -484,6 +576,140 @@ export default function EditorialCalendarPage() {
                 Copy
               </Button>
               <Button onClick={() => setDraft(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Repurpose results */}
+        <Dialog open={!!repurpose} onOpenChange={(o) => !o && setRepurpose(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Social variants</DialogTitle>
+              <DialogDescription>
+                Saved as drafts in the posts pipeline — review and schedule them from the composer/campaigns.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {(repurpose ?? []).map((v, i) => (
+                <div key={i} className="rounded-md border p-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    <Badge variant="secondary">{v.platform}</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          v.content + (v.hashtags?.length ? "\n\n" + v.hashtags.map((h) => `#${h}`).join(" ") : ""),
+                        );
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm">{v.content}</p>
+                  {v.hashtags?.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">{v.hashtags.map((h) => `#${h}`).join(" ")}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setRepurpose(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* SEO/AEO results */}
+        <Dialog open={!!optimization} onOpenChange={(o) => !o && setOptimization(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>SEO / AEO optimization</DialogTitle>
+            </DialogHeader>
+            {optimization && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">SEO title</p>
+                  <p>{optimization.seoTitle ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Meta description</p>
+                  <p>{optimization.metaDescription ?? "—"}</p>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  {optimization.slug && (
+                    <span>
+                      <span className="text-muted-foreground">Slug:</span> /{optimization.slug}
+                    </span>
+                  )}
+                  {optimization.targetKeyword && (
+                    <span>
+                      <span className="text-muted-foreground">Keyword:</span> {optimization.targetKeyword}
+                    </span>
+                  )}
+                </div>
+                {optimization.keywords && optimization.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {optimization.keywords.map((k, i) => (
+                      <Badge key={i} variant="secondary">
+                        {k}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {optimization.answerBlocks && optimization.answerBlocks.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Answer blocks (AEO)</p>
+                    <div className="space-y-2">
+                      {optimization.answerBlocks.map((qa, i) => (
+                        <div key={i}>
+                          <p className="font-medium">{qa.question}</p>
+                          <p className="text-muted-foreground">{qa.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {optimization.faq && optimization.faq.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">FAQ</p>
+                    <div className="space-y-2">
+                      {optimization.faq.map((qa, i) => (
+                        <div key={i}>
+                          <p className="font-medium">{qa.question}</p>
+                          <p className="text-muted-foreground">{qa.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {optimization.internalLinks && optimization.internalLinks.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Internal links</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {optimization.internalLinks.map((l, i) => (
+                        <li key={i}>
+                          <span className="font-medium">{l.anchorText}</span> → {l.targetTitle}
+                          {l.reason && <span className="text-muted-foreground"> ({l.reason})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {optimization.contentGaps && optimization.contentGaps.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Content gaps</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {optimization.contentGaps.map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setOptimization(null)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

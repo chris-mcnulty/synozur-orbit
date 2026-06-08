@@ -149,7 +149,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 **Phase 0 — Grounding.** ✅ *Done.* Rebased onto `main`; extended `StrategicContext` with visual brand identity; shipped context-readiness. Unblocks brand-aligned generation everywhere.
 
-**Phase 1 — Content development (priority).** Demand-scored editorial calendar/briefs (consuming MPF + analysis + personas + SEO) → multi-format copywriter. The MPF stays the canonical positioning/voice source; no separate positioning dossier.
+**Phase 1 — Content development (priority).** ✅ *Done.* Demand-scored editorial calendar/briefs (consuming MPF + analysis + personas + SEO) → multi-format copywriter → repurposing engine → SEO/AEO optimizer, all surfaced in the Editorial Calendar UI. The MPF stays the canonical positioning/voice source; no separate positioning dossier.
 
 **Phase 2 — Production depth + scheduling.** SEO/AEO optimizer (biggest net-new), repurposing engine, distribution/editorial planner on the existing scheduler.
 
