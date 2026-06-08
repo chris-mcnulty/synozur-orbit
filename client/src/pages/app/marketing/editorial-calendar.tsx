@@ -1,0 +1,936 @@
+import { useState } from "react";
+import AppLayout from "@/components/layout/AppLayout";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CalendarDays,
+  Loader2,
+  Sparkles,
+  PenLine,
+  Trash2,
+  Copy,
+  AlertTriangle,
+  Share2,
+  Search,
+  CalendarClock,
+} from "lucide-react";
+import { FeatureGate } from "@/components/UpgradePrompt";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+interface ContentBrief {
+  id: string;
+  calendarId: string;
+  title: string;
+  format: string;
+  targetKeyword: string | null;
+  demandSignal: string | null;
+  funnelStage: string;
+  differentiationAngle: string | null;
+  targetReader: string | null;
+  cta: string | null;
+  channels: string[] | null;
+  estimatedHours: number | null;
+  status: string;
+  contentAssetId: string | null;
+}
+
+interface EditorialCalendar {
+  id: string;
+  name: string;
+  focus: string | null;
+  status: string;
+  createdAt: string;
+}
+
+interface DraftResult {
+  title: string | null;
+  body: string;
+  meta: string | null;
+  format: string;
+}
+
+interface RepurposeVariantResult {
+  platform: string;
+  content: string;
+  hashtags: string[];
+}
+
+interface MarketingPlan {
+  id: string;
+  name: string;
+  fiscalYear?: string;
+}
+
+interface ScheduleRow {
+  briefId: string;
+  title: string;
+  format: string;
+  channel: string;
+  scheduledAt: string;
+  timeframe: string;
+}
+
+interface OptimizationResult {
+  seoTitle: string | null;
+  metaDescription: string | null;
+  slug: string | null;
+  targetKeyword: string | null;
+  keywords: string[] | null;
+  answerBlocks: { question: string; answer: string }[] | null;
+  faq: { question: string; answer: string }[] | null;
+  internalLinks: { anchorText: string; targetTitle: string; reason: string }[] | null;
+  contentGaps: string[] | null;
+}
+
+const FORMAT_LABELS: Record<string, string> = {
+  blog_post: "Blog",
+  landing_page: "Landing page",
+  linkedin_post: "LinkedIn",
+  x_post: "X / Twitter",
+  newsletter: "Newsletter",
+  video_script: "Video script",
+  case_study: "Case study",
+  whitepaper: "Whitepaper",
+  other: "Other",
+};
+
+const FUNNEL_LABELS: Record<string, string> = {
+  awareness: "Awareness",
+  consideration: "Consideration",
+  decision: "Decision",
+};
+
+const FUNNEL_BADGE: Record<string, string> = {
+  awareness: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
+  consideration: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  decision: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+};
+
+const STATUS_OPTIONS = ["suggested", "accepted", "in_progress", "drafted", "scheduled", "published", "removed"];
+
+async function getJson(url: string) {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export default function EditorialCalendarPage() {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [focus, setFocus] = useState("");
+  const [count, setCount] = useState(15);
+  const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
+  const [rewriteInstr, setRewriteInstr] = useState("");
+  const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
+  const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
+  const [distOpen, setDistOpen] = useState(false);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const in30Iso = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const [distStart, setDistStart] = useState(todayIso);
+  const [distEnd, setDistEnd] = useState(in30Iso);
+  const [distSkipWeekends, setDistSkipWeekends] = useState(true);
+  const [distPlanId, setDistPlanId] = useState<string>("");
+  const [schedule, setSchedule] = useState<ScheduleRow[] | null>(null);
+
+  const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: () => getJson("/api/tenant/info"),
+  });
+  const allowed = tenant?.features?.editorialCalendar !== false;
+  const repurposeAllowed = tenant?.features?.contentRepurposing !== false;
+  const optimizeAllowed = tenant?.features?.seoAeoOptimizer !== false;
+  const distributionAllowed = tenant?.features?.distributionPlanner !== false;
+
+  const { data: marketingPlans } = useQuery<MarketingPlan[]>({
+    queryKey: ["/api/marketing-plans"],
+    queryFn: async () => (await getJson("/api/marketing-plans")) ?? [],
+    enabled: distOpen,
+  });
+
+  const { data: calendars, isLoading: calendarsLoading } = useQuery<EditorialCalendar[]>({
+    queryKey: ["/api/editorial-calendars"],
+    queryFn: async () => (await getJson("/api/editorial-calendars")) ?? [],
+  });
+
+  const activeId = selectedId ?? calendars?.[0]?.id ?? null;
+
+  const { data: detail, isLoading: detailLoading } = useQuery<{
+    calendar: EditorialCalendar;
+    briefs: ContentBrief[];
+  } | null>({
+    queryKey: ["/api/editorial-calendars", activeId],
+    queryFn: () => (activeId ? getJson(`/api/editorial-calendars/${activeId}`) : null),
+    enabled: !!activeId,
+  });
+
+  const briefs = detail?.briefs ?? [];
+
+  const generate = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/editorial-calendars/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ focus: focus.trim() || undefined, count }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to generate calendar");
+      return res.json();
+    },
+    onSuccess: (data: { calendar: EditorialCalendar; warnings?: string[] }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
+      setSelectedId(data.calendar.id);
+      setGenerateOpen(false);
+      setFocus("");
+      toast.success(`Generated "${data.calendar.name}"`);
+      (data.warnings ?? []).forEach((w) => toast.warning(w));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateBrief = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<ContentBrief> }) => {
+      const res = await fetch(`/api/content-briefs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to update brief");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const draftBrief = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content-briefs/${id}/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to draft content");
+      return res.json();
+    },
+    onSuccess: (data: { draft: DraftResult; asset?: { id: string } }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      setDraft(data.draft);
+      setDraftAssetId(data.asset?.id ?? null);
+      setRewriteInstr("");
+      toast.success("Draft created and saved to the content library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const rewriteDraft = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content-assets/${draftAssetId}/rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instructions: rewriteInstr }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to rewrite");
+      return res.json();
+    },
+    onSuccess: (data: { body: string }) => {
+      setDraft((d) => (d ? { ...d, body: data.body } : d));
+      setRewriteInstr("");
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      toast.success("Draft rewritten");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const repurposeAsset = useMutation({
+    mutationFn: async (assetId: string) => {
+      const res = await fetch(`/api/content-assets/${assetId}/repurpose`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
+      return res.json();
+    },
+    onSuccess: (data: { posts: RepurposeVariantResult[]; count: number }) => {
+      setRepurpose(data.posts);
+      toast.success(`Created ${data.count} social drafts in the posts pipeline`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const optimizeAsset = useMutation({
+    mutationFn: async (assetId: string) => {
+      const res = await fetch(`/api/content/optimize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ contentAssetId: assetId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to optimize");
+      return res.json();
+    },
+    onSuccess: (data: { optimization: OptimizationResult }) => {
+      setOptimization(data.optimization);
+      toast.success("SEO/AEO analysis ready");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const planDistribution = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/editorial-calendars/${activeId}/distribution-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          periodStart: distStart,
+          periodEnd: distEnd,
+          skipWeekends: distSkipWeekends,
+          planId: distPlanId || undefined,
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to plan distribution");
+      return res.json();
+    },
+    onSuccess: (data: { schedule: ScheduleRow[]; committed: boolean; tasksCreated?: number; plan?: { name: string } }) => {
+      setSchedule(data.schedule);
+      if (data.committed) {
+        toast.success(`Added ${data.tasksCreated} tasks to "${data.plan?.name}" — sync to Microsoft Planner from the planner.`);
+      } else {
+        toast.success(`Scheduled ${data.schedule.length} briefs (preview)`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteCalendar = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/editorial-calendars/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to delete calendar");
+      return res.json();
+    },
+    onSuccess: () => {
+      setSelectedId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
+      toast.success("Calendar deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Funnel breakdown computed from the current briefs.
+  const funnelCounts = briefs.reduce<Record<string, number>>((acc, b) => {
+    acc[b.funnelStage] = (acc[b.funnelStage] ?? 0) + 1;
+    return acc;
+  }, {});
+  const pct = (n: number) => (briefs.length ? Math.round((n / briefs.length) * 100) : 0);
+
+  return (
+    <AppLayout>
+      <FeatureGate
+        feature="Editorial Calendar"
+        requiredPlan="Enterprise"
+        isAllowed={allowed}
+        description="Generate demand-scored content briefs grounded in your messaging framework, competitive gaps, personas, and SEO demand. Upgrade to unlock the Editorial Calendar."
+      >
+        <div className="space-y-6 p-1">
+          {/* Header */}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="flex items-center gap-2 text-2xl font-semibold">
+                <CalendarDays className="h-6 w-6 text-primary" />
+                Editorial Calendar
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Demand-scored content briefs grounded in your messaging framework, gaps, personas, and SEO demand.
+              </p>
+            </div>
+            <Button onClick={() => setGenerateOpen(true)} data-testid="button-generate-calendar">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate calendar
+            </Button>
+          </div>
+
+          {/* Calendar selector */}
+          {calendarsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading calendars…</p>
+          ) : calendars && calendars.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={activeId ?? undefined} onValueChange={setSelectedId}>
+                <SelectTrigger className="w-[320px]" data-testid="select-calendar">
+                  <SelectValue placeholder="Select a calendar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {calendars.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {activeId && distributionAllowed && briefs.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSchedule(null);
+                    setDistOpen(true);
+                  }}
+                  data-testid="button-plan-distribution"
+                >
+                  <CalendarClock className="mr-1 h-4 w-4" />
+                  Plan distribution
+                </Button>
+              )}
+              {activeId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  disabled={deleteCalendar.isPending}
+                  onClick={() => {
+                    if (confirm("Delete this calendar and all its briefs?")) deleteCalendar.mutate(activeId);
+                  }}
+                  data-testid="button-delete-calendar"
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Delete
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <CalendarDays className="h-10 w-10 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No calendars yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Generate your first demand-scored content calendar to get started.
+                  </p>
+                </div>
+                <Button onClick={() => setGenerateOpen(true)}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate calendar
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Funnel summary */}
+          {briefs.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">
+                  {briefs.length} briefs · funnel mix
+                </CardTitle>
+                <CardDescription>Target balance: 40% awareness · 35% consideration · 25% decision</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-4">
+                {(["awareness", "consideration", "decision"] as const).map((stage) => (
+                  <div key={stage} className="flex items-center gap-2">
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${FUNNEL_BADGE[stage]}`}>
+                      {FUNNEL_LABELS[stage]}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {funnelCounts[stage] ?? 0} ({pct(funnelCounts[stage] ?? 0)}%)
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Briefs */}
+          {detailLoading ? (
+            <p className="text-sm text-muted-foreground">Loading briefs…</p>
+          ) : (
+            <div className="grid gap-3">
+              {briefs.map((b) => (
+                <Card key={b.id} data-testid={`brief-${b.id}`}>
+                  <CardContent className="space-y-3 pt-5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded px-2 py-0.5 text-xs font-medium ${FUNNEL_BADGE[b.funnelStage] ?? ""}`}>
+                            {FUNNEL_LABELS[b.funnelStage] ?? b.funnelStage}
+                          </span>
+                          <Badge variant="secondary">{FORMAT_LABELS[b.format] ?? b.format}</Badge>
+                          {b.status === "drafted" && <Badge>Drafted</Badge>}
+                          {b.targetKeyword && (
+                            <span className="text-xs text-muted-foreground">🔑 {b.targetKeyword}</span>
+                          )}
+                          {b.estimatedHours != null && (
+                            <span className="text-xs text-muted-foreground">~{b.estimatedHours}h</span>
+                          )}
+                        </div>
+                        <p className="font-medium">{b.title}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={STATUS_OPTIONS.includes(b.status) ? b.status : undefined}
+                          onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { status: v } })}
+                        >
+                          <SelectTrigger className="h-8 w-[130px]" data-testid={`status-${b.id}`}>
+                            <SelectValue placeholder={b.status} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s.replace("_", " ")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={draftBrief.isPending}
+                          onClick={() => draftBrief.mutate(b.id)}
+                          data-testid={`draft-${b.id}`}
+                        >
+                          {draftBrief.isPending && draftBrief.variables === b.id ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <PenLine className="mr-1 h-4 w-4" />
+                          )}
+                          {b.contentAssetId ? "Re-draft" : "Draft"}
+                        </Button>
+                        {b.contentAssetId && repurposeAllowed && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={repurposeAsset.isPending}
+                            onClick={() => repurposeAsset.mutate(b.contentAssetId!)}
+                            data-testid={`repurpose-${b.id}`}
+                          >
+                            {repurposeAsset.isPending && repurposeAsset.variables === b.contentAssetId ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Share2 className="mr-1 h-4 w-4" />
+                            )}
+                            Repurpose
+                          </Button>
+                        )}
+                        {b.contentAssetId && optimizeAllowed && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={optimizeAsset.isPending}
+                            onClick={() => optimizeAsset.mutate(b.contentAssetId!)}
+                            data-testid={`optimize-${b.id}`}
+                          >
+                            {optimizeAsset.isPending && optimizeAsset.variables === b.contentAssetId ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Search className="mr-1 h-4 w-4" />
+                            )}
+                            SEO/AEO
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                      {b.demandSignal && (
+                        <div>
+                          <dt className="text-xs font-medium uppercase text-muted-foreground">Demand signal</dt>
+                          <dd>{b.demandSignal}</dd>
+                        </div>
+                      )}
+                      {b.differentiationAngle && (
+                        <div>
+                          <dt className="text-xs font-medium uppercase text-muted-foreground">Differentiation</dt>
+                          <dd>{b.differentiationAngle}</dd>
+                        </div>
+                      )}
+                      {b.targetReader && (
+                        <div>
+                          <dt className="text-xs font-medium uppercase text-muted-foreground">Target reader</dt>
+                          <dd>{b.targetReader}</dd>
+                        </div>
+                      )}
+                      {b.cta && (
+                        <div>
+                          <dt className="text-xs font-medium uppercase text-muted-foreground">CTA</dt>
+                          <dd>{b.cta}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Generate dialog */}
+        <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Generate editorial calendar</DialogTitle>
+              <DialogDescription>
+                Briefs are grounded in your messaging framework, competitive gaps, personas, and tracked SEO keywords.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="count">Number of briefs</Label>
+                <Input
+                  id="count"
+                  type="number"
+                  min={5}
+                  max={30}
+                  value={count}
+                  onChange={(e) => setCount(Math.min(30, Math.max(5, Number(e.target.value) || 15)))}
+                  data-testid="input-count"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="focus">Focus / guidance (optional)</Label>
+                <Textarea
+                  id="focus"
+                  placeholder="e.g. Emphasize the new analytics module and target RevOps leaders"
+                  value={focus}
+                  onChange={(e) => setFocus(e.target.value)}
+                  data-testid="input-focus"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setGenerateOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => generate.mutate()} disabled={generate.isPending} data-testid="button-confirm-generate">
+                {generate.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Draft viewer */}
+        <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{draft?.title}</DialogTitle>
+              {draft?.meta && <DialogDescription>{draft.meta}</DialogDescription>}
+            </DialogHeader>
+            <div className="rounded-md bg-muted/40 p-4">
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm">{draft?.body}</pre>
+            </div>
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>AI-generated draft. Saved to your content library — review and edit before publishing.</span>
+            </div>
+            {draftAssetId && (
+              <div className="space-y-2 rounded-md border p-3">
+                <Label htmlFor="rewrite-instr" className="text-sm font-medium">
+                  AI rewrite
+                </Label>
+                <Textarea
+                  id="rewrite-instr"
+                  placeholder="e.g. Make it punchier, add a stat-led intro, cut to ~600 words"
+                  value={rewriteInstr}
+                  onChange={(e) => setRewriteInstr(e.target.value)}
+                  data-testid="input-rewrite"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
+                  onClick={() => rewriteDraft.mutate()}
+                  data-testid="button-rewrite"
+                >
+                  {rewriteDraft.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <PenLine className="mr-2 h-4 w-4" />
+                  )}
+                  Rewrite draft
+                </Button>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (draft) {
+                    navigator.clipboard.writeText(draft.body);
+                    toast.success("Copied to clipboard");
+                  }
+                }}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy
+              </Button>
+              <Button onClick={() => setDraft(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Repurpose results */}
+        <Dialog open={!!repurpose} onOpenChange={(o) => !o && setRepurpose(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Social variants</DialogTitle>
+              <DialogDescription>
+                Saved as drafts in the posts pipeline — review and schedule them from the composer/campaigns.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {(repurpose ?? []).map((v, i) => (
+                <div key={i} className="rounded-md border p-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    <Badge variant="secondary">{v.platform}</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          v.content + (v.hashtags?.length ? "\n\n" + v.hashtags.map((h) => `#${h}`).join(" ") : ""),
+                        );
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm">{v.content}</p>
+                  {v.hashtags?.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">{v.hashtags.map((h) => `#${h}`).join(" ")}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setRepurpose(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* SEO/AEO results */}
+        <Dialog open={!!optimization} onOpenChange={(o) => !o && setOptimization(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>SEO / AEO optimization</DialogTitle>
+            </DialogHeader>
+            {optimization && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">SEO title</p>
+                  <p>{optimization.seoTitle ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Meta description</p>
+                  <p>{optimization.metaDescription ?? "—"}</p>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  {optimization.slug && (
+                    <span>
+                      <span className="text-muted-foreground">Slug:</span> /{optimization.slug}
+                    </span>
+                  )}
+                  {optimization.targetKeyword && (
+                    <span>
+                      <span className="text-muted-foreground">Keyword:</span> {optimization.targetKeyword}
+                    </span>
+                  )}
+                </div>
+                {optimization.keywords && optimization.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {optimization.keywords.map((k, i) => (
+                      <Badge key={i} variant="secondary">
+                        {k}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {optimization.answerBlocks && optimization.answerBlocks.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Answer blocks (AEO)</p>
+                    <div className="space-y-2">
+                      {optimization.answerBlocks.map((qa, i) => (
+                        <div key={i}>
+                          <p className="font-medium">{qa.question}</p>
+                          <p className="text-muted-foreground">{qa.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {optimization.faq && optimization.faq.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">FAQ</p>
+                    <div className="space-y-2">
+                      {optimization.faq.map((qa, i) => (
+                        <div key={i}>
+                          <p className="font-medium">{qa.question}</p>
+                          <p className="text-muted-foreground">{qa.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {optimization.internalLinks && optimization.internalLinks.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Internal links</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {optimization.internalLinks.map((l, i) => (
+                        <li key={i}>
+                          <span className="font-medium">{l.anchorText}</span> → {l.targetTitle}
+                          {l.reason && <span className="text-muted-foreground"> ({l.reason})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {optimization.contentGaps && optimization.contentGaps.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Content gaps</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {optimization.contentGaps.map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setOptimization(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Distribution planner */}
+        <Dialog open={distOpen} onOpenChange={setDistOpen}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Plan distribution</DialogTitle>
+              <DialogDescription>
+                Spread this calendar's briefs across channels and posting windows. Optionally push the schedule into a
+                marketing plan, where it rides the existing Microsoft Planner sync.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="dist-start">Start</Label>
+                  <Input id="dist-start" type="date" value={distStart} onChange={(e) => setDistStart(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dist-end">End</Label>
+                  <Input id="dist-end" type="date" value={distEnd} onChange={(e) => setDistEnd(e.target.value)} />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={distSkipWeekends}
+                  onChange={(e) => setDistSkipWeekends(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Skip weekends
+              </label>
+              <div className="space-y-2">
+                <Label>Add to marketing plan (optional)</Label>
+                <Select value={distPlanId || "__none__"} onValueChange={(v) => setDistPlanId(v === "__none__" ? "" : v)}>
+                  <SelectTrigger data-testid="select-dist-plan">
+                    <SelectValue placeholder="Preview only — don't push to planner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Preview only — don't push to planner</SelectItem>
+                    {(marketingPlans ?? []).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                        {p.fiscalYear ? ` (FY${p.fiscalYear})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {schedule && schedule.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">
+                    Schedule ({schedule.length})
+                  </p>
+                  <div className="divide-y rounded-md border">
+                    {schedule.map((s) => (
+                      <div key={s.briefId} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                        <span className="truncate">{s.title}</span>
+                        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="secondary">{s.channel}</Badge>
+                          {new Date(s.scheduledAt).toLocaleDateString()} · {s.timeframe}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDistOpen(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => planDistribution.mutate()}
+                disabled={planDistribution.isPending}
+                data-testid="button-run-distribution"
+              >
+                {planDistribution.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Planning…
+                  </>
+                ) : (
+                  <>
+                    <CalendarClock className="mr-2 h-4 w-4" />
+                    {distPlanId ? "Plan & push to planner" : "Preview schedule"}
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </FeatureGate>
+    </AppLayout>
+  );
+}
