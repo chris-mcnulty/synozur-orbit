@@ -1141,18 +1141,16 @@ function GraphicsTab({
             <div key={img.id} className="rounded-md border p-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium">Anchor {idx + 1}</p>
-                {anchorImages.length > 1 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => deleteAnchorImage(img.id)}
-                    data-testid={`button-delete-anchor-${img.id}`}
-                    title="Remove anchor slot"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => deleteAnchorImage(img.id)}
+                  data-testid={`button-delete-anchor-${img.id}`}
+                  title="Remove anchor image"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                </Button>
               </div>
               <ImageSlot
                 conferenceId={conf.id}
