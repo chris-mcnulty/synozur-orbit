@@ -773,9 +773,10 @@ export async function renderConferenceImage(
 
 /**
  * Build `count` scheduled slots starting at promoStart, placing `postsPerDay`
- * posts per eligible day (skipping weekends unless included), spread evenly
- * across a 6am–6pm window in the user's timezone. Extends past promoEnd only
- * if the window is too small.
+ * posts distributed evenly across the full promoStart–promoEnd window
+ * (skipping weekends unless included), with random times in the 6am–6pm
+ * window per day. Extends past promoEnd only if the window is too small to
+ * fit all posts at postsPerDay.
  */
 export function buildScheduleSlots(opts: {
   promoStart: Date;
@@ -792,43 +793,103 @@ export function buildScheduleSlots(opts: {
    */
   tzOffsetMinutes?: number;
 }): Date[] {
-  const tz = Number.isFinite(opts.tzOffsetMinutes as number) ? (opts.tzOffsetMinutes as number) : 0;
-  const slots: Date[] = [];
+  if (opts.count <= 0) return [];
 
-  // Spread posts evenly across a 6am–6pm window (720 min) in the user's timezone.
-  // Each slot lands at the centre of its equal-width segment of the window.
+  const tz = Number.isFinite(opts.tzOffsetMinutes as number) ? (opts.tzOffsetMinutes as number) : 0;
   const DAY_START_MIN = 6 * 60;   // 360 — 6:00 AM
   const DAY_END_MIN   = 18 * 60;  // 1080 — 6:00 PM
-  const windowMin = DAY_END_MIN - DAY_START_MIN; // 720 minutes
-  const perDay = Math.min(Math.max(1, opts.postsPerDay), 8);
-  // e.g. perDay=2 → 9:00, 15:00 | perDay=4 → 7:30, 10:30, 13:30, 16:30
-  const slotMinutes = Array.from({ length: perDay }, (_, i) =>
-    Math.round(DAY_START_MIN + (i + 0.5) * (windowMin / perDay)),
-  );
+  const windowMin     = DAY_END_MIN - DAY_START_MIN; // 720 minutes
+  const perDayCap     = Math.min(Math.max(1, opts.postsPerDay), 8);
 
-  // Work in the user's local calendar day. We add the tz offset to the promo
-  // start so that day-boundary and weekday checks reflect the user's timezone.
-  const cursor = new Date(opts.promoStart);
-  cursor.setUTCHours(0, 0, 0, 0);
-  let guard = 0;
-  while (slots.length < opts.count && guard < 3650) {
-    guard++;
-    const day = cursor.getUTCDay(); // 0 Sun … 6 Sat (user-local day)
-    const eligible = (day !== 0 || opts.includeSunday) && (day !== 6 || opts.includeSaturday);
-    if (eligible) {
-      for (let i = 0; i < perDay && slots.length < opts.count; i++) {
-        // Convert the user-local minute-of-day to a UTC Date instant.
-        const slot = new Date(cursor);
-        const h = Math.floor(slotMinutes[i] / 60);
-        const m = slotMinutes[i] % 60;
-        slot.setUTCHours(h, m, 0, 0);
-        slot.setUTCMinutes(slot.getUTCMinutes() + tz);
-        slots.push(slot);
+  const isEligible = (d: Date) => {
+    const dow = d.getUTCDay();
+    return (dow !== 0 || opts.includeSunday) && (dow !== 6 || opts.includeSaturday);
+  };
+
+  // ── Step 1: collect every eligible day within [promoStart, promoEnd] ──────
+  const eligibleDays: Date[] = [];
+  const scan = new Date(opts.promoStart);
+  scan.setUTCHours(0, 0, 0, 0);
+  // Include the promoEnd day itself (23:59 boundary)
+  const endBoundary = opts.promoEnd
+    ? (() => { const d = new Date(opts.promoEnd); d.setUTCHours(23, 59, 59, 999); return d; })()
+    : null;
+  for (let g = 0; g < 3650; g++) {
+    if (endBoundary && scan > endBoundary) break;
+    if (isEligible(scan)) eligibleDays.push(new Date(scan));
+    scan.setUTCDate(scan.getUTCDate() + 1);
+    // If no promoEnd, stop once we have enough days to fit all posts
+    if (!endBoundary && eligibleDays.length * perDayCap >= opts.count) break;
+  }
+
+  // ── Step 2: decide posts-per-day to spread evenly across the window ───────
+  // optimalPerDay = smallest integer that fits count across eligibleDays,
+  // but never more than perDayCap. If the window is too short we extend below.
+  const postsPerDayActual = eligibleDays.length > 0
+    ? Math.max(1, Math.min(perDayCap, Math.ceil(opts.count / eligibleDays.length)))
+    : perDayCap;
+
+  // ── Step 3: build day-assignment list ────────────────────────────────────
+  // Distribute `count` posts across eligibleDays as evenly as possible,
+  // putting at most postsPerDayActual on each day.
+  type DayBucket = { day: Date; posts: number };
+  const buckets: DayBucket[] = [];
+
+  if (eligibleDays.length > 0 && opts.count <= eligibleDays.length * postsPerDayActual) {
+    const base  = Math.floor(opts.count / eligibleDays.length);
+    const extra = opts.count - base * eligibleDays.length;
+    for (let i = 0; i < eligibleDays.length; i++) {
+      // Bresenham-style: spread the `extra` posts evenly across days
+      const postsThisDay = base +
+        (Math.floor((i + 1) * extra / eligibleDays.length) >
+         Math.floor(i       * extra / eligibleDays.length) ? 1 : 0);
+      if (postsThisDay > 0) buckets.push({ day: eligibleDays[i], posts: postsThisDay });
+    }
+  } else {
+    // Fill all eligible days at postsPerDayActual, then extend beyond promoEnd
+    let remaining = opts.count;
+    for (const day of eligibleDays) {
+      const p = Math.min(postsPerDayActual, remaining);
+      buckets.push({ day, posts: p });
+      remaining -= p;
+      if (remaining <= 0) break;
+    }
+    if (remaining > 0) {
+      const ext = new Date(eligibleDays.length > 0
+        ? eligibleDays[eligibleDays.length - 1]
+        : opts.promoStart);
+      ext.setUTCDate(ext.getUTCDate() + 1);
+      for (let g = 0; g < 3650 && remaining > 0; g++) {
+        if (isEligible(ext)) {
+          const p = Math.min(postsPerDayActual, remaining);
+          buckets.push({ day: new Date(ext), posts: p });
+          remaining -= p;
+        }
+        ext.setUTCDate(ext.getUTCDate() + 1);
       }
     }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-  return slots;
+
+  // ── Step 4: for each day pick random times spread across 6am–6pm ─────────
+  // Divide the window into k equal segments, pick one random minute per segment.
+  // This gives human-feeling spread without robotic fixed clock times.
+  const slots: Date[] = [];
+  for (const { day, posts: k } of buckets) {
+    const segSize = windowMin / k;
+    for (let i = 0; i < k; i++) {
+      const segStart = DAY_START_MIN + i * segSize;
+      // Random within the middle 80% of the segment to avoid edge clustering
+      const margin   = segSize * 0.1;
+      const randomMin = Math.round(segStart + margin + Math.random() * (segSize - margin * 2));
+      const clamped   = Math.max(DAY_START_MIN, Math.min(DAY_END_MIN - 1, randomMin));
+      const slot = new Date(day);
+      slot.setUTCHours(Math.floor(clamped / 60), clamped % 60, 0, 0);
+      slot.setUTCMinutes(slot.getUTCMinutes() + tz);
+      slots.push(slot);
+    }
+  }
+
+  return slots.slice(0, opts.count);
 }
 
 // ─── copy generation ────────────────────────────────────────────────────────────
@@ -1153,14 +1214,13 @@ async function runGeneration(
   const nSessions = sessions.length;
 
   if (nAnchors > 0 && nSessions > 0) {
-    // Interleave: nAnchors anchor slots + 1 session slot per group
-    const groupSize = nAnchors + 1;
-    totalSlots = nSessions * groupSize;
+    // One slot per anchor image + one slot per session (flat list, shuffled below)
+    totalSlots = nAnchors + nSessions;
+    for (let a = 0; a < nAnchors; a++) {
+      anchorSlots.push({ img: anchorImages[a], slotIdx: a });
+    }
     for (let s = 0; s < nSessions; s++) {
-      for (let a = 0; a < nAnchors; a++) {
-        anchorSlots.push({ img: anchorImages[a], slotIdx: s * groupSize + a });
-      }
-      sessionSlots.push({ session: sessions[s], slotIdx: s * groupSize + nAnchors });
+      sessionSlots.push({ session: sessions[s], slotIdx: nAnchors + s });
     }
   } else if (nAnchors > 0) {
     // No sessions — one slot per anchor image
@@ -1178,6 +1238,29 @@ async function runGeneration(
     for (let s = 0; s < nSessions; s++) {
       sessionSlots.push({ session: sessions[s], slotIdx: legacyAnchorCount + s });
     }
+  }
+
+  // Shuffle anchor and session items together so they're spread randomly
+  // across the schedule instead of clustering (anchor, session, anchor, session…).
+  {
+    type SlotItem =
+      | { kind: 'anchor'; img: ConferenceImage }
+      | { kind: 'session'; session: ConferenceSession };
+    const items: SlotItem[] = [
+      ...anchorSlots.map(a => ({ kind: 'anchor' as const, img: a.img })),
+      ...sessionSlots.map(s => ({ kind: 'session' as const, session: s.session })),
+    ];
+    // Fisher-Yates shuffle
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    anchorSlots.length = 0;
+    sessionSlots.length = 0;
+    items.forEach((item, idx) => {
+      if (item.kind === 'anchor') anchorSlots.push({ img: item.img, slotIdx: idx });
+      else sessionSlots.push({ session: item.session, slotIdx: idx });
+    });
   }
 
   const slots = buildScheduleSlots({
