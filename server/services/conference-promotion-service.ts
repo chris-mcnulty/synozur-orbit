@@ -609,8 +609,9 @@ export async function renderConferenceImage(
 
 /**
  * Build `count` scheduled slots starting at promoStart, placing `postsPerDay`
- * posts per eligible day (skipping weekends unless included), spread across
- * business hours. Extends past promoEnd only if the window is too small.
+ * posts per eligible day (skipping weekends unless included), spread evenly
+ * across a 6am–6pm window in the user's timezone. Extends past promoEnd only
+ * if the window is too small.
  */
 export function buildScheduleSlots(opts: {
   promoStart: Date;
@@ -622,19 +623,25 @@ export function buildScheduleSlots(opts: {
   /**
    * Client timezone offset in minutes, as returned by `Date.getTimezoneOffset()`
    * (i.e. minutes to ADD to local time to get UTC; positive west of UTC). When
-   * provided, posting hours land at 9am–5pm in the *user's* timezone instead of
-   * the server's (UTC on Replit), which otherwise pushes posts into the middle
-   * of the night for the user.
+   * provided, posting times land in the 6am–6pm window in the *user's* timezone
+   * instead of the server's (UTC on Replit).
    */
   tzOffsetMinutes?: number;
 }): Date[] {
   const tz = Number.isFinite(opts.tzOffsetMinutes as number) ? (opts.tzOffsetMinutes as number) : 0;
   const slots: Date[] = [];
-  const hours = [9, 11, 13, 15, 17];
-  // Never place more than one post per distinct hour slot in a day — overflow
-  // rolls to the next *eligible* day instead of spilling into an ineligible
-  // (e.g. weekend) calendar day.
-  const perDay = Math.min(Math.max(1, opts.postsPerDay), hours.length);
+
+  // Spread posts evenly across a 6am–6pm window (720 min) in the user's timezone.
+  // Each slot lands at the centre of its equal-width segment of the window.
+  const DAY_START_MIN = 6 * 60;   // 360 — 6:00 AM
+  const DAY_END_MIN   = 18 * 60;  // 1080 — 6:00 PM
+  const windowMin = DAY_END_MIN - DAY_START_MIN; // 720 minutes
+  const perDay = Math.min(Math.max(1, opts.postsPerDay), 8);
+  // e.g. perDay=2 → 9:00, 15:00 | perDay=4 → 7:30, 10:30, 13:30, 16:30
+  const slotMinutes = Array.from({ length: perDay }, (_, i) =>
+    Math.round(DAY_START_MIN + (i + 0.5) * (windowMin / perDay)),
+  );
+
   // Work in the user's local calendar day. We add the tz offset to the promo
   // start so that day-boundary and weekday checks reflect the user's timezone.
   const cursor = new Date(opts.promoStart);
@@ -646,10 +653,11 @@ export function buildScheduleSlots(opts: {
     const eligible = (day !== 0 || opts.includeSunday) && (day !== 6 || opts.includeSaturday);
     if (eligible) {
       for (let i = 0; i < perDay && slots.length < opts.count; i++) {
-        // Desired wall-clock hour (hours[i]) in the user's timezone, converted
-        // to the equivalent UTC instant: UTC = local + tzOffsetMinutes.
+        // Convert the user-local minute-of-day to a UTC Date instant.
         const slot = new Date(cursor);
-        slot.setUTCHours(hours[i], 0, 0, 0);
+        const h = Math.floor(slotMinutes[i] / 60);
+        const m = slotMinutes[i] % 60;
+        slot.setUTCHours(h, m, 0, 0);
         slot.setUTCMinutes(slot.getUTCMinutes() + tz);
         slots.push(slot);
       }
