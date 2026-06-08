@@ -25,6 +25,7 @@ export function registerDistributionPlannerRoutes(app: Express) {
           and(
             eq(editorialCalendars.id, req.params.id),
             eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            eq(editorialCalendars.marketId, ctx.marketId),
           ),
         );
       if (!calendar) return res.status(404).json({ error: "Calendar not found" });

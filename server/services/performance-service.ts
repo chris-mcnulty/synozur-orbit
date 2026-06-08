@@ -56,7 +56,13 @@ export interface PerformanceResult {
 
 const dayStr = (d: Date) => d.toISOString().slice(0, 10);
 
-async function clicksByCampaign(tenantDomain: string, marketId: string, from: Date, to: Date) {
+async function clicksByCampaign(
+  tenantDomain: string,
+  marketId: string,
+  isDefaultMarket: boolean,
+  from: Date,
+  to: Date,
+) {
   return db
     .select({ campaignId: marketingLinks.campaignId, clicks: sql<number>`count(*)::int` })
     .from(marketingLinkClicks)
@@ -65,7 +71,9 @@ async function clicksByCampaign(tenantDomain: string, marketId: string, from: Da
       and(
         eq(marketingLinkClicks.tenantDomain, tenantDomain),
         eq(marketingLinkClicks.isBot, false),
-        eq(marketingLinks.marketId, marketId),
+        isDefaultMarket
+          ? or(eq(marketingLinks.marketId, marketId), isNull(marketingLinks.marketId))
+          : eq(marketingLinks.marketId, marketId),
         gte(marketingLinkClicks.clickedAt, from),
         lte(marketingLinkClicks.clickedAt, to),
       ),
@@ -76,6 +84,12 @@ async function clicksByCampaign(tenantDomain: string, marketId: string, from: Da
 export async function computePerformanceReport(params: PerformanceParams): Promise<PerformanceResult> {
   const { tenantDomain, periodStart, periodEnd } = params;
   const marketId = params.marketId || "";
+  const isDefaultMarket = !!params.isDefaultMarket;
+  // analytics_daily / marketing_links store NULL marketId for the default
+  // market (see ga-client), so match both the id and NULL for default markets.
+  const analyticsMarketScope = isDefaultMarket
+    ? or(eq(analyticsDaily.marketId, marketId), isNull(analyticsDaily.marketId))
+    : eq(analyticsDaily.marketId, marketId);
 
   // ── Posts in period (grouped in JS by campaign + source asset) ────────────
   // generated_posts has no marketId, so scope to the active market via the
@@ -112,7 +126,7 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
   }
 
   // ── Clicks (current + baseline) ───────────────────────────────────────────
-  const clickRows = await clicksByCampaign(tenantDomain, marketId, periodStart, periodEnd);
+  const clickRows = await clicksByCampaign(tenantDomain, marketId, isDefaultMarket, periodStart, periodEnd);
   const clicksByCampaignId = new Map<string, number>();
   let totalClicks = 0;
   for (const r of clickRows) {
@@ -132,7 +146,7 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
     .where(
       and(
         eq(analyticsDaily.tenantDomain, tenantDomain),
-        eq(analyticsDaily.marketId, marketId),
+        analyticsMarketScope,
         gte(analyticsDaily.date, dayStr(periodStart)),
         lte(analyticsDaily.date, dayStr(periodEnd)),
       ),
@@ -220,7 +234,7 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
   const baseStart = new Date(periodStart.getTime() - durMs);
   const baseEnd = new Date(periodStart.getTime() - 1);
 
-  const baseClickRows = await clicksByCampaign(tenantDomain, marketId, baseStart, baseEnd);
+  const baseClickRows = await clicksByCampaign(tenantDomain, marketId, isDefaultMarket, baseStart, baseEnd);
   const baseClicks = baseClickRows.reduce((s, r) => s + r.clicks, 0);
   // analytics_daily is keyed by whole UTC days. Use an exclusive upper bound at
   // the period's start day so the baseline window can't overlap the current
@@ -231,7 +245,7 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
     .where(
       and(
         eq(analyticsDaily.tenantDomain, tenantDomain),
-        eq(analyticsDaily.marketId, marketId),
+        analyticsMarketScope,
         gte(analyticsDaily.date, dayStr(baseStart)),
         lt(analyticsDaily.date, dayStr(periodStart)),
       ),

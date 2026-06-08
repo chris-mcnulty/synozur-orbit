@@ -11,8 +11,8 @@
  */
 
 import { db } from "../db";
-import { trackedKeywords, recommendations } from "@shared/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { recommendations } from "@shared/schema";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { storage, type ContextFilter } from "../storage";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
@@ -87,18 +87,10 @@ export async function generateContentBriefs(
   const strategicCtx = await loadStrategicContext(tenantDomain, marketId, isDefaultMarket);
   const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
 
-  // Demand pool: tracked SEO keywords for this tenant/market.
-  const keywordRows = await db
-    .select({ keyword: trackedKeywords.keyword })
-    .from(trackedKeywords)
-    .where(
-      and(
-        eq(trackedKeywords.tenantDomain, tenantDomain),
-        eq(trackedKeywords.marketId, ctx.marketId),
-      ),
-    )
-    .limit(100);
-  const keywords = keywordRows.map((k) => k.keyword).filter(Boolean);
+  // Demand pool: tracked SEO keywords for this tenant/market. Use the storage
+  // helper so default-market semantics (marketId IS NULL) match the SEO routes.
+  const keywordRows = await storage.getTrackedKeywordsByContext(ctx);
+  const keywords = keywordRows.map((k) => k.keyword).filter(Boolean).slice(0, 100);
   const keywordBlock = keywords.length
     ? `## Tracked SEO Keywords (demand pool)\nPrefer mapping topics to these tracked keywords where relevant:\n${keywords.join(", ")}`
     : "";
@@ -109,6 +101,9 @@ export async function generateContentBriefs(
 
   // Closed loop: recent open marketing recommendations (e.g. from the
   // performance report) steer what the next calendar emphasizes.
+  const recMarketCond = ctx.isDefaultMarket
+    ? or(eq(recommendations.marketId, ctx.marketId), isNull(recommendations.marketId))
+    : eq(recommendations.marketId, ctx.marketId);
   const recRows = await db
     .select({ title: recommendations.title, description: recommendations.description })
     .from(recommendations)
@@ -117,6 +112,7 @@ export async function generateContentBriefs(
         eq(recommendations.tenantDomain, tenantDomain),
         eq(recommendations.area, "Marketing"),
         eq(recommendations.status, "pending"),
+        recMarketCond,
       ),
     )
     .orderBy(desc(recommendations.createdAt))

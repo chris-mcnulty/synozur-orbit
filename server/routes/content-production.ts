@@ -1,13 +1,23 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { contentAssets, contentOptimizations, generatedPosts } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
+import type { RequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { optimizeContent } from "../services/seo-aeo-service";
 import { repurposeAsset } from "../services/repurpose-service";
 import { rewriteLongFormContent } from "../services/copywriter-service";
+
+// Canonical market scope for shared content_assets rows: default-market data
+// may be stored with the default market id OR NULL (cross-feature convention),
+// so match both for the default market.
+function assetMarketScope(ctx: RequestContext) {
+  return ctx.isDefaultMarket
+    ? or(eq(contentAssets.marketId, ctx.marketId), isNull(contentAssets.marketId))
+    : eq(contentAssets.marketId, ctx.marketId);
+}
 
 export function registerContentProductionRoutes(app: Express) {
   // SEO/AEO optimize — accepts a contentAssetId or a raw { title, content }.
@@ -25,7 +35,7 @@ export function registerContentProductionRoutes(app: Express) {
         const [asset] = await db
           .select()
           .from(contentAssets)
-          .where(and(eq(contentAssets.id, contentAssetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+          .where(and(eq(contentAssets.id, contentAssetId), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
         if (!asset) return res.status(404).json({ error: "Content asset not found" });
         title = title || asset.title;
         content = content || asset.content || asset.aiSummary || asset.description || "";
@@ -85,7 +95,7 @@ export function registerContentProductionRoutes(app: Express) {
       const [asset] = await db
         .select()
         .from(contentAssets)
-        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
       if (!asset) return res.status(404).json({ error: "Content asset not found" });
       if (!asset.content?.trim()) return res.status(409).json({ error: "This asset has no content to rewrite." });
 
@@ -106,7 +116,7 @@ export function registerContentProductionRoutes(app: Express) {
       await db
         .update(contentAssets)
         .set({ content: rw.body, updatedAt: new Date() })
-        .where(eq(contentAssets.id, asset.id));
+        .where(and(eq(contentAssets.id, asset.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
 
       res.json({ body: rw.body, usage: rw.usage, model: rw.model });
     } catch (err: any) {
@@ -125,7 +135,7 @@ export function registerContentProductionRoutes(app: Express) {
       const [asset] = await db
         .select()
         .from(contentAssets)
-        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
       if (!asset) return res.status(404).json({ error: "Content asset not found" });
 
       const platforms = Array.isArray(req.body?.platforms) ? req.body.platforms : undefined;
