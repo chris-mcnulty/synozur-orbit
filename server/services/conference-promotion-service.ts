@@ -36,6 +36,7 @@ import {
   tenants,
   markets,
   brandAssets,
+  tenantFonts,
   type Conference,
   type ConferenceSession,
   type ConferenceImage,
@@ -222,27 +223,34 @@ export async function compositeSessionGraphic(opts: {
   title: string;
   speaker?: string | null;
   detail?: string | null;
+  customFont?: { fontFaces: string; fontFamily: string } | null;
 }): Promise<Buffer> {
   const W = 1200;
   const H = 675;
+
+  const customFontCss = opts.customFont?.fontFaces ?? "";
+  const headingFamily = opts.customFont?.fontFamily
+    ? `'${opts.customFont.fontFamily}', Arial, Helvetica, sans-serif`
+    : "Arial, Helvetica, sans-serif";
 
   const titleLines = wrapText(opts.title, 34, 3);
   const titleSvg = titleLines
     .map(
       (l, i) =>
-        `<text x="64" y="${300 + i * 64}" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="700" fill="#ffffff">${escapeXml(l)}</text>`,
+        `<text x="64" y="${300 + i * 64}" font-family="${headingFamily}" font-size="56" font-weight="700" fill="#ffffff">${escapeXml(l)}</text>`,
     )
     .join("");
   const speakerSvg = opts.speaker
-    ? `<text x="64" y="${300 + titleLines.length * 64 + 36}" font-family="Arial, Helvetica, sans-serif" font-size="34" fill="#e2e8f0">${escapeXml(opts.speaker)}</text>`
+    ? `<text x="64" y="${300 + titleLines.length * 64 + 36}" font-family="${headingFamily}" font-size="34" fill="#e2e8f0">${escapeXml(opts.speaker)}</text>`
     : "";
   const detailSvg = opts.detail
-    ? `<text x="64" y="620" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#cbd5e1">${escapeXml(opts.detail)}</text>`
+    ? `<text x="64" y="620" font-family="${headingFamily}" font-size="28" fill="#cbd5e1">${escapeXml(opts.detail)}</text>`
     : "";
 
   const overlay = Buffer.from(
     `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
+        ${customFontCss ? `<style>${customFontCss}</style>` : ""}
         <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="rgba(15,23,42,0.25)"/>
           <stop offset="55%" stop-color="rgba(15,23,42,0.55)"/>
@@ -323,6 +331,63 @@ function avenirFontFaces(): string {
 }
 
 /**
+ * Resolve the custom brand font for image compositing.
+ * Priority: market-scoped font brand asset (heading) → tenant font (heading) → null (use Avenir).
+ * On success returns a ready-to-embed @font-face CSS block plus the font-family name.
+ */
+async function resolveCompositorFont(
+  tenantDomain: string,
+  marketId?: string | null,
+): Promise<{ fontFaces: string; fontFamily: string } | null> {
+  async function buildFromAsset(
+    fileUrl: string | null | undefined,
+    fontFamily: string | null | undefined,
+    fontWeight: string | null | undefined,
+    fileType: string | null | undefined,
+  ): Promise<{ fontFaces: string; fontFamily: string } | null> {
+    if (!fileUrl || !fontFamily) return null;
+    try {
+      const bytes = await loadImageBytes(fileUrl);
+      const b64 = bytes.toString("base64");
+      const mime = fileType?.startsWith("font/") ? fileType : "font/ttf";
+      const fmt = mime.includes("woff2") ? "woff2" : mime.includes("woff") ? "woff" : mime.includes("otf") ? "opentype" : "truetype";
+      const w = fontWeight || "400";
+      return {
+        fontFaces: `@font-face { font-family: '${fontFamily}'; font-weight: ${w}; src: url('data:${mime};base64,${b64}') format('${fmt}'); }`,
+        fontFamily,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // 1. Market-scoped font brand asset
+  if (marketId) {
+    const assets = await db.select().from(brandAssets).where(
+      and(
+        eq(brandAssets.tenantDomain, tenantDomain),
+        eq(brandAssets.status, "active"),
+        eq(brandAssets.marketId, marketId),
+        eq(brandAssets.assetType, "font"),
+      ),
+    );
+    const pick = assets.find((a) => a.fontUsage === "heading") ?? assets[0];
+    const result = await buildFromAsset(pick?.fileUrl, pick?.fontFamily, pick?.fontWeight, pick?.fileType);
+    if (result) return result;
+  }
+
+  // 2. Tenant-wide font (heading usage preferred)
+  const tenantFontRows = await db.select().from(tenantFonts).where(eq(tenantFonts.tenantDomain, tenantDomain));
+  const tenantPick = tenantFontRows.find((f) => f.fontUsage === "heading") ?? tenantFontRows[0];
+  if (tenantPick) {
+    const result = await buildFromAsset(tenantPick.fileUrl, tenantPick.fontFamily, tenantPick.fontWeight, tenantPick.fileType);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
  * Compose a hero/anchor image from brand assets:
  *   1. Background: a location photo or a branded gradient.
  *   2. A translucent brand-colour scrim for readability.
@@ -337,22 +402,29 @@ export async function compositeHeroImage(opts: {
   conferenceName: string;
   location?: string | null;
   primaryColor?: string | null;
+  customFont?: { fontFaces: string; fontFamily: string } | null;
 }): Promise<Buffer> {
   const W = 1200;
   const H = 675;
   const primary = opts.primaryColor || "#810FFB";
 
-  const fontFaces = avenirFontFaces();
+  const avenirFaces = avenirFontFaces();
+  const customFontCss = opts.customFont?.fontFaces ?? "";
+  const allFontFaces = customFontCss ? `${customFontCss} ${avenirFaces}` : avenirFaces;
+  const headingFamily = opts.customFont?.fontFamily
+    ? `'${opts.customFont.fontFamily}', 'Avenir Next LT Pro', Arial, sans-serif`
+    : "'Avenir Next LT Pro', Arial, sans-serif";
+
   const titleLines = wrapText(opts.conferenceName, 28, 3);
   const subtitleText = opts.location ? escapeXml(opts.location) : "";
 
   const titleStartY = opts.eventLogoBytes ? 380 : 300;
   const titleSvgParts = titleLines.map(
     (l, i) =>
-      `<text x="${W / 2}" y="${titleStartY + i * 72}" text-anchor="middle" font-family="'Avenir Next LT Pro', Arial, sans-serif" font-size="64" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
+      `<text x="${W / 2}" y="${titleStartY + i * 72}" text-anchor="middle" font-family="${headingFamily}" font-size="64" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
   );
   const locationSvg = subtitleText
-    ? `<text x="${W / 2}" y="${titleStartY + titleLines.length * 72 + 36}" text-anchor="middle" font-family="'Avenir Next LT Pro', Arial, sans-serif" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
+    ? `<text x="${W / 2}" y="${titleStartY + titleLines.length * 72 + 36}" text-anchor="middle" font-family="${headingFamily}" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
     : "";
 
   // Hex → rgba for the scrim tint
@@ -364,7 +436,7 @@ export async function compositeHeroImage(opts: {
   const scrimSvg = Buffer.from(
     `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <style>${fontFaces}</style>
+        <style>${allFontFaces}</style>
         <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="rgba(${r},${g},${b},0.18)"/>
           <stop offset="45%" stop-color="rgba(15,23,42,0.55)"/>
@@ -583,6 +655,7 @@ export async function renderConferenceImage(
     }
     if (!primaryColor) primaryColor = tenantRow?.primaryColor ?? null;
 
+    const customFont = await resolveCompositorFont(conf.tenantDomain, conf.marketId);
     const buffer = await compositeHeroImage({
       backgroundBytes,
       eventLogoBytes,
@@ -590,6 +663,7 @@ export async function renderConferenceImage(
       conferenceName: conf.name,
       location: conf.location,
       primaryColor,
+      customFont,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   } else {
@@ -611,11 +685,13 @@ export async function renderConferenceImage(
     ]
       .filter(Boolean)
       .join(" · ");
+    const customFont = await resolveCompositorFont(conf.tenantDomain, conf.marketId);
     const buffer = await compositeSessionGraphic({
       templateBytes,
       title: session?.title || conf.name,
       speaker: sessionSpeakerText(session),
       detail: detail || conf.eventHashtag || null,
+      customFont,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   }
@@ -904,7 +980,6 @@ async function runGeneration(
   if (accounts.length === 0) throw new Error("No social accounts selected");
 
   const variantCount = Math.min(Math.max(conf.variantsPerPost ?? 3, 2), 3);
-  const anchorCount = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 2);
   const generateImages = options.generateImages !== false;
 
   // Clear prior conference posts so regeneration doesn't leave behind stale
@@ -929,11 +1004,13 @@ async function runGeneration(
     .where(and(eq(conferenceImages.conferenceId, conferenceId), eq(conferenceImages.status, "active")));
 
   const sessionImageBySession = new Map<string, ConferenceImage>();
-  let anchorImage: ConferenceImage | undefined;
+  const anchorImages: ConferenceImage[] = [];
   for (const img of existingImages) {
-    if (img.role === "anchor" && !anchorImage) anchorImage = img;
+    if (img.role === "anchor") anchorImages.push(img);
     if (img.sessionId) sessionImageBySession.set(img.sessionId, img);
   }
+  // Oldest-first so slot 0 = the anchor image the user created first
+  anchorImages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   // Ensure a session image row exists for every session (default: composite).
   for (const session of sessions) {
@@ -964,7 +1041,9 @@ async function runGeneration(
     const needsRender = (img: ConferenceImage): boolean =>
       !img.fileUrl || !isServedPublicImage(img.fileUrl);
     const toRender: Array<{ img: ConferenceImage; session?: ConferenceSession | null }> = [];
-    if (anchorImage && needsRender(anchorImage)) toRender.push({ img: anchorImage });
+    for (const img of anchorImages) {
+      if (needsRender(img)) toRender.push({ img });
+    }
     for (const session of sessions) {
       const img = sessionImageBySession.get(session.id);
       if (img && needsRender(img)) toRender.push({ img, session });
@@ -987,24 +1066,72 @@ async function runGeneration(
     }
   }
 
-  // Build schedule slots: one slot per post target (anchor i, then each session).
-  const targetCount = anchorCount + sessions.length;
+  // ── Schedule slot assignment ────────────────────────────────────────────────
+  //
+  // When anchor images are configured, they are scheduled at a ratio equal to
+  // their count vs session posts. With 3 anchor images and N sessions the pattern
+  // is: [A0, A1, A2, S0, A0, A1, A2, S1, …] giving a 3:1 anchor:session ratio.
+  // Each anchor slot generates fresh copy but reuses the same image URL so the
+  // graphic is shown repeatedly with varied messaging.
+  //
+  // When no anchor images exist fall back to the legacy fixed-count behaviour
+  // (conf.anchorPostCount slots, no image attached).
+
+  type AnchorSlot = { img: ConferenceImage; slotIdx: number };
+  type SessionSlot = { session: ConferenceSession; slotIdx: number };
+
+  const anchorSlots: AnchorSlot[] = [];
+  const sessionSlots: SessionSlot[] = [];
+  let totalSlots: number;
+
+  const nAnchors = anchorImages.length;
+  const nSessions = sessions.length;
+
+  if (nAnchors > 0 && nSessions > 0) {
+    // Interleave: nAnchors anchor slots + 1 session slot per group
+    const groupSize = nAnchors + 1;
+    totalSlots = nSessions * groupSize;
+    for (let s = 0; s < nSessions; s++) {
+      for (let a = 0; a < nAnchors; a++) {
+        anchorSlots.push({ img: anchorImages[a], slotIdx: s * groupSize + a });
+      }
+      sessionSlots.push({ session: sessions[s], slotIdx: s * groupSize + nAnchors });
+    }
+  } else if (nAnchors > 0) {
+    // No sessions — one slot per anchor image
+    totalSlots = nAnchors;
+    for (let a = 0; a < nAnchors; a++) {
+      anchorSlots.push({ img: anchorImages[a], slotIdx: a });
+    }
+  } else {
+    // Legacy: fixed anchor count from conf, then sessions
+    const legacyAnchorCount = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 3);
+    totalSlots = legacyAnchorCount + nSessions;
+    for (let a = 0; a < legacyAnchorCount; a++) {
+      anchorSlots.push({ img: undefined as unknown as ConferenceImage, slotIdx: a });
+    }
+    for (let s = 0; s < nSessions; s++) {
+      sessionSlots.push({ session: sessions[s], slotIdx: legacyAnchorCount + s });
+    }
+  }
+
   const slots = buildScheduleSlots({
     promoStart: conf.promoStartDate ?? conf.startDate ?? new Date(),
     promoEnd: conf.promoEndDate ?? conf.endDate,
     postsPerDay: conf.postsPerDay ?? 2,
     includeSaturday: conf.includeSaturday,
     includeSunday: conf.includeSunday,
-    count: targetCount,
+    count: totalSlots,
     tzOffsetMinutes: options.tzOffsetMinutes,
   });
 
   const baseHashtags = resolveHashtags(conf);
+  const targetCount = anchorSlots.length + sessionSlots.length;
   let created = 0;
 
-  // Anchor posts
-  for (let a = 0; a < anchorCount; a++) {
-    const scheduledDate = slots[a] ?? null;
+  // Anchor posts — each slot may have a different image and always gets fresh copy
+  for (const { img, slotIdx } of anchorSlots) {
+    const scheduledDate = slots[slotIdx] ?? null;
     for (const account of accounts) {
       const variantGroup = randomUUID();
       let variants: string[] = [];
@@ -1027,8 +1154,8 @@ async function runGeneration(
           tenantDomain,
           conferenceId,
           postRole: "anchor",
-          conferenceImageId: anchorImage?.id ?? null,
-          overrideImageUrl: anchorImage?.fileUrl ?? null,
+          conferenceImageId: img?.id ?? null,
+          overrideImageUrl: img?.fileUrl ?? null,
           socialAccountId: account.id,
           platform: account.platform,
           content,
@@ -1046,10 +1173,10 @@ async function runGeneration(
   }
 
   // Session posts (1:1 with their matched graphic)
-  for (let s = 0; s < sessions.length; s++) {
-    const session = sessions[s];
+  let sessionCreated = 0;
+  for (const { session, slotIdx } of sessionSlots) {
     const img = sessionImageBySession.get(session.id);
-    const scheduledDate = slots[anchorCount + s] ?? null;
+    const scheduledDate = slots[slotIdx] ?? null;
     for (const account of accounts) {
       const variantGroup = randomUUID();
       let variants: string[] = [];
@@ -1088,11 +1215,12 @@ async function runGeneration(
       }
     }
     created++;
+    sessionCreated++;
     reportProgress?.({
       phase: "Writing session posts",
       percent: 50 + Math.round((created / targetCount) * 48),
-      currentItem: s + 1,
-      totalItems: sessions.length,
+      currentItem: sessionCreated,
+      totalItems: sessionSlots.length,
       currentItemName: session.title,
     });
   }

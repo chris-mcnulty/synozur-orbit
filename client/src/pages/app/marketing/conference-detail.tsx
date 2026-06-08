@@ -161,6 +161,7 @@ interface ConfImage {
   backgroundId?: string | null;
   fileUrl?: string | null;
   status: string;
+  createdAt: string;
 }
 interface ConferenceBackground {
   id: string;
@@ -296,11 +297,12 @@ export default function ConferenceDetailPage() {
   }
 
   const imageBySession = new Map<string, ConfImage>();
-  let anchorImage: ConfImage | undefined;
+  const anchorImages: ConfImage[] = [];
   for (const img of conf.images) {
     if (img.sessionId) imageBySession.set(img.sessionId, img);
-    else if (img.role === "anchor" && !anchorImage) anchorImage = img;
+    else if (img.role === "anchor") anchorImages.push(img);
   }
+  anchorImages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return (
     <AppLayout>
@@ -338,7 +340,7 @@ export default function ConferenceDetailPage() {
           <TabsContent value="graphics" className="pt-4">
             <GraphicsTab
               conf={conf}
-              anchorImage={anchorImage}
+              anchorImages={anchorImages}
               imageBySession={imageBySession}
               templates={imageTemplates}
               backgrounds={backgrounds}
@@ -969,20 +971,43 @@ function EditSessionDialog({ session, onSaved }: { session: Session; onSaved: ()
 
 function GraphicsTab({
   conf,
-  anchorImage,
+  anchorImages,
   imageBySession,
   templates,
   backgrounds,
   onChange,
 }: {
   conf: Conference;
-  anchorImage?: ConfImage;
+  anchorImages: ConfImage[];
   imageBySession: Map<string, ConfImage>;
   templates: BrandAsset[];
   backgrounds: ConferenceBackground[];
   onChange: () => void;
 }) {
   const { toast } = useToast();
+
+  const addAnchorImage = async () => {
+    try {
+      const r = await fetch(`/api/conferences/${conf.id}/images`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ role: "anchor", source: "logo_composite" }),
+      });
+      if (!r.ok) throw new Error("Failed to create anchor image slot");
+      onChange();
+      toast({ title: "Anchor image slot added" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const deleteAnchorImage = async (imgId: string) => {
+    try {
+      await fetch(`/api/conference-images/${imgId}/archive`, { method: "POST", credentials: "include" });
+      onChange();
+    } catch { /* ignore */ }
+  };
 
   const uploadEventLogo = async (file: File) => {
     try {
@@ -1096,22 +1121,61 @@ function GraphicsTab({
         </CardContent>
       </Card>
 
-      {/* ── Anchor graphic ───────────────────────────────────────────────── */}
+      {/* ── Anchor graphics (up to 3) ────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Anchor graphic (overall presence)</CardTitle>
+          <CardTitle className="text-base flex items-center justify-between gap-2">
+            Anchor graphics
+            <span className="text-xs text-muted-foreground font-normal">
+              {anchorImages.length > 0
+                ? `Scheduled ${anchorImages.length}× more often than session posts`
+                : "Add up to 3 — scheduled more frequently than session posts"}
+            </span>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <ImageSlot
-            conferenceId={conf.id}
-            role="anchor"
-            sessionId={null}
-            image={anchorImage}
-            templates={templates}
-            backgrounds={backgrounds}
-            isAnchor={true}
-            onChange={onChange}
-          />
+        <CardContent className="space-y-4">
+          {anchorImages.length === 0 && (
+            <p className="text-sm text-muted-foreground">No anchor images yet. Add one below.</p>
+          )}
+          {anchorImages.map((img, idx) => (
+            <div key={img.id} className="rounded-md border p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">Anchor {idx + 1}</p>
+                {anchorImages.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => deleteAnchorImage(img.id)}
+                    data-testid={`button-delete-anchor-${img.id}`}
+                    title="Remove anchor slot"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  </Button>
+                )}
+              </div>
+              <ImageSlot
+                conferenceId={conf.id}
+                role="anchor"
+                sessionId={null}
+                image={img}
+                templates={templates}
+                backgrounds={backgrounds}
+                isAnchor={true}
+                onChange={onChange}
+              />
+            </div>
+          ))}
+          {anchorImages.length < 3 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={addAnchorImage}
+              data-testid="button-add-anchor-image"
+            >
+              <Plus className="w-4 h-4 mr-1.5" /> Add anchor image
+            </Button>
+          )}
         </CardContent>
       </Card>
 
