@@ -127,6 +127,13 @@
       "when": 1780916419981,
       "tag": "0030_content_optimizations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780926574501,
+      "tag": "0031_marketing_performance_reports",
+      "breakpoints": true
     }
   ]
 }

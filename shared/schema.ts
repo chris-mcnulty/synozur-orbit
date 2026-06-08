@@ -2067,6 +2067,50 @@ export const insertContentOptimizationSchema = createInsertSchema(contentOptimiz
 export type ContentOptimization = typeof contentOptimizations.$inferSelect;
 export type InsertContentOptimization = z.infer<typeof insertContentOptimizationSchema>;
 
+// Marketing Performance Reports — the closed-loop "performance-analyst" output.
+// Joins first-party click data (marketing_links/clicks) and GA4 conversions
+// (analytics_daily) to content via campaigns, benchmarks against tenant
+// history, and emits recommendations that feed back into the editorial calendar.
+export interface MarketingPerformanceMetrics {
+  totals: { posts: number; clicks: number; conversions: number; revenue: number; sessions: number };
+  benchmark: { hasBaseline: boolean; clicksIndex?: number; conversionsIndex?: number } | null;
+  byCampaign: Array<{
+    campaignId: string | null;
+    name: string;
+    posts: number;
+    clicks: number;
+    conversions: number;
+    revenue: number;
+  }>;
+  perContent: Array<{
+    assetId: string;
+    title: string;
+    postsPublished: number;
+    clicks: number;
+    campaigns: string[];
+  }>;
+}
+
+export const marketingPerformanceReports = pgTable("marketing_performance_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  summary: text("summary"),
+  metrics: jsonb("metrics").$type<MarketingPerformanceMetrics>(),
+  recommendationsEmitted: integer("recommendations_emitted").notNull().default(0),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMarketingPerformanceReportSchema = createInsertSchema(marketingPerformanceReports).omit({
+  id: true,
+  createdAt: true,
+});
+export type MarketingPerformanceReport = typeof marketingPerformanceReports.$inferSelect;
+export type InsertMarketingPerformanceReport = z.infer<typeof insertMarketingPerformanceReportSchema>;
+
 // Per-category bucket mappings — Phase 2 enables routing each marketing
 // activity category to its own Planner bucket. Backwards compatible with
 // the single `plannerBucketId` on marketing_plans, which is used as the

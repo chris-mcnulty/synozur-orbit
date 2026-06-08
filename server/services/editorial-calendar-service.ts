@@ -11,8 +11,8 @@
  */
 
 import { db } from "../db";
-import { trackedKeywords } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { trackedKeywords, recommendations } from "@shared/schema";
+import { and, desc, eq } from "drizzle-orm";
 import { storage, type ContextFilter } from "../storage";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
@@ -107,10 +107,31 @@ export async function generateContentBriefs(
     ? `## Focus / custom guidance\n${focus.trim()}`
     : "";
 
+  // Closed loop: recent open marketing recommendations (e.g. from the
+  // performance report) steer what the next calendar emphasizes.
+  const recRows = await db
+    .select({ title: recommendations.title, description: recommendations.description })
+    .from(recommendations)
+    .where(
+      and(
+        eq(recommendations.tenantDomain, tenantDomain),
+        eq(recommendations.area, "Marketing"),
+        eq(recommendations.status, "pending"),
+      ),
+    )
+    .orderBy(desc(recommendations.createdAt))
+    .limit(8);
+  const insightsBlock = recRows.length
+    ? `## Recent performance insights to act on\nFavor topics/angles that respond to these:\n${recRows
+        .map((r) => `- ${r.title}: ${r.description}`)
+        .join("\n")}`
+    : "";
+
   const prompt = [
     `Produce an editorial calendar of ${count} content briefs as JSON.`,
     strategicBlock,
     keywordBlock,
+    insightsBlock,
     focusBlock,
     `## Rules
 - Every brief MUST have a concrete demand signal (keyword volume, recurring buyer question, competitive gap, or trend) — never fabricate numbers; if unknown, state the qualitative signal.

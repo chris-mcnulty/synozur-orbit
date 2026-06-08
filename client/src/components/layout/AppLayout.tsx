@@ -588,6 +588,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
             { label: "Platform Credentials", icon: KeyRound, href: "/app/marketing/platform-credentials", enterprise: true },
             { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
+            { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true },
           ],
         },
       ],

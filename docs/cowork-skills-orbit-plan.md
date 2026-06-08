@@ -153,9 +153,9 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 **Phase 2 — Production depth + scheduling.** ✅ *Done.* SEO/AEO optimizer + repurposing engine shipped in Phase 1; distribution/editorial planner now recommends channel + posting-window schedules for a calendar's briefs and materializes them into the marketing planner (`marketing_tasks`), riding the existing Microsoft Planner sync. Scheduling is deterministic + unit-tested; surfaced via "Plan distribution" in the Editorial Calendar UI.
 
-**Phase 3 — Distribution (MCP-gated).** Expand channel publishing as MCP tool sets connect.
+**Phase 3 — Distribution (MCP-gated).** *Backlog* — expand channel publishing as MCP tool sets connect.
 
-**Phase 4 — Close the loop.** Marketing performance report feeding recommendations back into the calendar.
+**Phase 4 — Close the loop.** ✅ *Done.* Marketing performance report joins first-party clicks + GA4 conversions to content through campaigns, benchmarks against the prior period, and emits `recommendations` rows that are folded into editorial-calendar generation — closing the loop.
 
 ---
 

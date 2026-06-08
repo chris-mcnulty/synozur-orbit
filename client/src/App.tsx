@@ -50,6 +50,7 @@ import GtmPlanPage from "@/pages/app/marketing/gtm-plan";
 import MessagingFrameworkPage from "@/pages/app/marketing/messaging-framework";
 import EmailNewslettersPage from "@/pages/app/marketing/email-newsletters";
 import EditorialCalendarPage from "@/pages/app/marketing/editorial-calendar";
+import MarketingPerformancePage from "@/pages/app/marketing/performance";
 import MarketingLandingPage from "@/pages/app/marketing/index";
 import ContentLibraryPage from "@/pages/app/marketing/content-library";
 import BrandLibraryPage from "@/pages/app/marketing/brand-library";
@@ -161,6 +162,7 @@ function Router() {
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
       <Route path="/app/marketing/editorial-calendar" component={EditorialCalendarPage} />
+      <Route path="/app/marketing/performance" component={MarketingPerformancePage} />
       <Route path="/app/marketing/content-library">{() => <PageFeatureGate featureKey="contentLibrary" label="Digital/Web Assets" description="Manage URLs, articles, and web-based content assets. Upgrade to unlock this feature."><ContentLibraryPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Visual/Brand Assets" description="Manage approved images, logos, and visual brand identity. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/solution-areas" component={SolutionAreasPage} />
