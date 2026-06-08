@@ -224,6 +224,9 @@ export async function compositeSessionGraphic(opts: {
   speaker?: string | null;
   detail?: string | null;
   customFont?: { fontFaces: string; fontFamily: string } | null;
+  companyLogoBytes?: Buffer | null;
+  websiteUrl?: string | null;
+  eventDates?: string | null;
 }): Promise<Buffer> {
   const W = 1200;
   const H = 675;
@@ -232,6 +235,10 @@ export async function compositeSessionGraphic(opts: {
   const headingFamily = opts.customFont?.fontFamily
     ? `'${opts.customFont.fontFamily}', Arial, Helvetica, sans-serif`
     : "Arial, Helvetica, sans-serif";
+
+  const displayUrl = opts.websiteUrl
+    ? escapeXml(opts.websiteUrl.replace(/^https?:\/\/(www\.)?/, ""))
+    : "";
 
   const titleLines = wrapText(opts.title, 34, 3);
   const titleSvg = titleLines
@@ -244,7 +251,13 @@ export async function compositeSessionGraphic(opts: {
     ? `<text x="64" y="${300 + titleLines.length * 64 + 36}" font-family="${headingFamily}" font-size="34" fill="#e2e8f0">${escapeXml(opts.speaker)}</text>`
     : "";
   const detailSvg = opts.detail
-    ? `<text x="64" y="620" font-family="${headingFamily}" font-size="28" fill="#cbd5e1">${escapeXml(opts.detail)}</text>`
+    ? `<text x="64" y="600" font-family="${headingFamily}" font-size="28" fill="#cbd5e1">${escapeXml(opts.detail)}</text>`
+    : "";
+  const datesSvg = opts.eventDates
+    ? `<text x="64" y="632" font-family="${headingFamily}" font-size="22" fill="rgba(255,255,255,0.70)">${escapeXml(opts.eventDates)}</text>`
+    : "";
+  const urlSvg = displayUrl
+    ? `<text x="64" y="657" font-family="${headingFamily}" font-size="22" fill="rgba(255,255,255,0.60)">${displayUrl}</text>`
     : "";
 
   const overlay = Buffer.from(
@@ -261,6 +274,8 @@ export async function compositeSessionGraphic(opts: {
       ${titleSvg}
       ${speakerSvg}
       ${detailSvg}
+      ${datesSvg}
+      ${urlSvg}
     </svg>`,
   );
 
@@ -279,8 +294,27 @@ export async function compositeSessionGraphic(opts: {
     base = sharp(bg);
   }
 
+  const layers: sharp.OverlayOptions[] = [{ input: overlay, top: 0, left: 0 }];
+
+  if (opts.companyLogoBytes) {
+    const MAX_CO_W = 200;
+    const MAX_CO_H = 56;
+    const coResized = await sharp(opts.companyLogoBytes)
+      .resize(MAX_CO_W, MAX_CO_H, { fit: "inside", withoutEnlargement: true, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(coResized).metadata();
+    const coW = meta.width || MAX_CO_W;
+    const coH = meta.height || MAX_CO_H;
+    layers.push({
+      input: coResized,
+      top: H - coH - 28,
+      left: W - coW - 40,
+    });
+  }
+
   return base
-    .composite([{ input: overlay, top: 0, left: 0 }])
+    .composite(layers)
     .png()
     .toBuffer();
 }
@@ -403,6 +437,8 @@ export async function compositeHeroImage(opts: {
   location?: string | null;
   primaryColor?: string | null;
   customFont?: { fontFaces: string; fontFamily: string } | null;
+  websiteUrl?: string | null;
+  eventDates?: string | null;
 }): Promise<Buffer> {
   const W = 1200;
   const H = 675;
@@ -423,8 +459,22 @@ export async function compositeHeroImage(opts: {
     (l, i) =>
       `<text x="${W / 2}" y="${titleStartY + i * 72}" text-anchor="middle" font-family="${headingFamily}" font-size="64" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
   );
+
+  // Subtitle rows: location then dates, stacked below title
+  let subtitleY = titleStartY + titleLines.length * 72 + 40;
   const locationSvg = subtitleText
-    ? `<text x="${W / 2}" y="${titleStartY + titleLines.length * 72 + 36}" text-anchor="middle" font-family="${headingFamily}" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
+    ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
+    : "";
+  if (subtitleText) subtitleY += 40;
+  const datesSvg = opts.eventDates
+    ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="28" font-weight="400" fill="rgba(255,255,255,0.70)">${escapeXml(opts.eventDates)}</text>`
+    : "";
+
+  const displayUrl = opts.websiteUrl
+    ? escapeXml(opts.websiteUrl.replace(/^https?:\/\/(www\.)?/, ""))
+    : "";
+  const urlSvg = displayUrl
+    ? `<text x="40" y="${H - 22}" font-family="${headingFamily}" font-size="22" fill="rgba(255,255,255,0.65)">${displayUrl}</text>`
     : "";
 
   // Hex → rgba for the scrim tint
@@ -446,6 +496,8 @@ export async function compositeHeroImage(opts: {
       <rect width="${W}" height="${H}" fill="url(#scrim)"/>
       ${titleSvgParts.join("\n      ")}
       ${locationSvg}
+      ${datesSvg}
+      ${urlSvg}
     </svg>`,
   );
 
@@ -588,6 +640,51 @@ export async function renderConferenceImage(
 
   let saved: { fileUrl: string; fileSize: number };
 
+  // ── Shared assets (used by both logo_composite and template_composite) ──────
+
+  // Format event dates without year: "March 18–21" / "March 18 – April 2"
+  const eventDates = (() => {
+    if (!conf.startDate) return null;
+    const start = new Date(conf.startDate);
+    const sm = start.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    const sd = start.toLocaleString("en-US", { day: "numeric", timeZone: "UTC" });
+    if (!conf.endDate) return `${sm} ${sd}`;
+    const end = new Date(conf.endDate);
+    const em = end.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    const ed = end.toLocaleString("en-US", { day: "numeric", timeZone: "UTC" });
+    return sm === em ? `${sm} ${sd}–${ed}` : `${sm} ${sd} – ${em} ${ed}`;
+  })();
+
+  // Company logo — market-scoped first, then tenant-wide (white variant preferred)
+  let companyLogoBytes: Buffer | null = null;
+  if (image.source !== "ai_generated") {
+    const pickLogo = (assets: typeof brandAssets.$inferSelect[]) =>
+      assets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
+      assets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
+      assets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
+      assets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
+      assets.find((a) => a.logoVariant && a.fileUrl);
+
+    let whLogoAsset: typeof brandAssets.$inferSelect | undefined;
+    if (conf.marketId) {
+      const marketLogoAssets = await db.select().from(brandAssets).where(and(
+        eq(brandAssets.tenantDomain, conf.tenantDomain),
+        eq(brandAssets.status, "active"),
+        eq(brandAssets.marketId, conf.marketId),
+      ));
+      whLogoAsset = pickLogo(marketLogoAssets);
+    }
+    if (!whLogoAsset) {
+      const tenantLogoAssets = await db.select().from(brandAssets).where(
+        and(eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active")),
+      );
+      whLogoAsset = pickLogo(tenantLogoAssets);
+    }
+    if (whLogoAsset?.fileUrl) {
+      try { companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl); } catch { /* skip */ }
+    }
+  }
+
   if (image.source === "ai_generated") {
     const prompt = (image.imagePrompt && image.imagePrompt.trim()) || defaultImagePrompt(conf, session);
     const buffer = await generateImageBuffer(prompt, "1024x1024");
@@ -596,10 +693,7 @@ export async function renderConferenceImage(
     // Hero anchor image: background photo + brand scrim + event logo + company logo + conf name
     let backgroundBytes: Buffer | null = null;
     if (image.backgroundId) {
-      const [bg] = await db
-        .select()
-        .from(conferenceBackgrounds)
-        .where(eq(conferenceBackgrounds.id, image.backgroundId));
+      const [bg] = await db.select().from(conferenceBackgrounds).where(eq(conferenceBackgrounds.id, image.backgroundId));
       if (bg?.fileUrl) {
         try { backgroundBytes = await loadImageBytes(bg.fileUrl); } catch { /* fall back to gradient */ }
       }
@@ -610,44 +704,8 @@ export async function renderConferenceImage(
       try { eventLogoBytes = await loadImageBytes(conf.eventLogoFileUrl); } catch { /* skip */ }
     }
 
-    // Prefer market-scoped logo assets; fall back to tenant-wide if none found.
-    let companyLogoBytes: Buffer | null = null;
-    const pickLogo = (assets: typeof brandAssets.$inferSelect[]) =>
-      assets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
-      assets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
-      assets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
-      assets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
-      assets.find((a) => a.logoVariant && a.fileUrl);
-
-    let whLogoAsset: typeof brandAssets.$inferSelect | undefined;
-    if (conf.marketId) {
-      const marketLogoAssets = await db
-        .select()
-        .from(brandAssets)
-        .where(and(
-          eq(brandAssets.tenantDomain, conf.tenantDomain),
-          eq(brandAssets.status, "active"),
-          eq(brandAssets.marketId, conf.marketId),
-        ));
-      whLogoAsset = pickLogo(marketLogoAssets);
-    }
-    if (!whLogoAsset) {
-      const tenantLogoAssets = await db
-        .select()
-        .from(brandAssets)
-        .where(and(eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active")));
-      whLogoAsset = pickLogo(tenantLogoAssets);
-    }
-    if (whLogoAsset?.fileUrl) {
-      try { companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl); } catch { /* skip */ }
-    }
-
     // Brand colors: prefer market-level override, fall back to tenant default.
-    const [tenantRow] = await db
-      .select()
-      .from(tenants)
-      .where(eq(tenants.domain, conf.tenantDomain));
-
+    const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, conf.tenantDomain));
     let primaryColor: string | null = null;
     if (conf.marketId) {
       const [marketRow] = await db.select().from(markets).where(eq(markets.id, conf.marketId));
@@ -664,25 +722,22 @@ export async function renderConferenceImage(
       location: conf.location,
       primaryColor,
       customFont,
+      websiteUrl: conf.website ?? null,
+      eventDates,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   } else {
-    // template_composite
+    // template_composite — session graphic
     let templateBytes: Buffer | null = null;
     if (image.templateAssetId) {
       const [tpl] = await db.select().from(brandAssets).where(eq(brandAssets.id, image.templateAssetId));
       if (tpl?.fileUrl) {
-        try {
-          templateBytes = await loadImageBytes(tpl.fileUrl);
-        } catch (err: any) {
+        try { templateBytes = await loadImageBytes(tpl.fileUrl); } catch (err: any) {
           console.error("[Conference] Failed to load template image:", err?.message);
         }
       }
     }
-    const detail = [
-      session?.room,
-      formatUtcDateTime(session?.sessionStart),
-    ]
+    const detail = [session?.room, formatUtcDateTime(session?.sessionStart)]
       .filter(Boolean)
       .join(" · ");
     const customFont = await resolveCompositorFont(conf.tenantDomain, conf.marketId);
@@ -692,6 +747,9 @@ export async function renderConferenceImage(
       speaker: sessionSpeakerText(session),
       detail: detail || conf.eventHashtag || null,
       customFont,
+      companyLogoBytes,
+      websiteUrl: conf.website ?? null,
+      eventDates,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   }
