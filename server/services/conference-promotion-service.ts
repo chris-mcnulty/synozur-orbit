@@ -34,6 +34,7 @@ import {
   socialAccounts,
   scheduledJobRuns,
   tenants,
+  markets,
   brandAssets,
   type Conference,
   type ConferenceSession,
@@ -537,28 +538,50 @@ export async function renderConferenceImage(
       try { eventLogoBytes = await loadImageBytes(conf.eventLogoFileUrl); } catch { /* skip */ }
     }
 
-    // Prefer the white_horizontal logo variant for dark backgrounds; fall back
-    // to any logo asset in the brand library for this tenant.
+    // Prefer market-scoped logo assets; fall back to tenant-wide if none found.
     let companyLogoBytes: Buffer | null = null;
-    const logoAssets = await db
-      .select()
-      .from(brandAssets)
-      .where(and(eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active")));
-    const whLogoAsset =
-      logoAssets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
-      logoAssets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
-      logoAssets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
-      logoAssets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
-      logoAssets.find((a) => a.logoVariant && a.fileUrl);
+    const pickLogo = (assets: typeof brandAssets.$inferSelect[]) =>
+      assets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
+      assets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
+      assets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
+      assets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
+      assets.find((a) => a.logoVariant && a.fileUrl);
+
+    let whLogoAsset: typeof brandAssets.$inferSelect | undefined;
+    if (conf.marketId) {
+      const marketLogoAssets = await db
+        .select()
+        .from(brandAssets)
+        .where(and(
+          eq(brandAssets.tenantDomain, conf.tenantDomain),
+          eq(brandAssets.status, "active"),
+          eq(brandAssets.marketId, conf.marketId),
+        ));
+      whLogoAsset = pickLogo(marketLogoAssets);
+    }
+    if (!whLogoAsset) {
+      const tenantLogoAssets = await db
+        .select()
+        .from(brandAssets)
+        .where(and(eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active")));
+      whLogoAsset = pickLogo(tenantLogoAssets);
+    }
     if (whLogoAsset?.fileUrl) {
       try { companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl); } catch { /* skip */ }
     }
 
-    // Fetch tenant brand colors for the scrim / gradient fallback
+    // Brand colors: prefer market-level override, fall back to tenant default.
     const [tenantRow] = await db
       .select()
       .from(tenants)
       .where(eq(tenants.domain, conf.tenantDomain));
+
+    let primaryColor: string | null = null;
+    if (conf.marketId) {
+      const [marketRow] = await db.select().from(markets).where(eq(markets.id, conf.marketId));
+      primaryColor = marketRow?.primaryColor ?? null;
+    }
+    if (!primaryColor) primaryColor = tenantRow?.primaryColor ?? null;
 
     const buffer = await compositeHeroImage({
       backgroundBytes,
@@ -566,7 +589,7 @@ export async function renderConferenceImage(
       companyLogoBytes,
       conferenceName: conf.name,
       location: conf.location,
-      primaryColor: tenantRow?.primaryColor ?? null,
+      primaryColor,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
   } else {

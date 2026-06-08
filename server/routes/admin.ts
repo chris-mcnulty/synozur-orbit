@@ -2344,7 +2344,7 @@ Respond in JSON format:
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const { name, description, status, businessType } = req.body;
+      const { name, description, status, businessType, primaryColor, secondaryColor } = req.body;
       const updates: any = {};
       const wasArchived = market.status === "archived";
       
@@ -2356,6 +2356,8 @@ Respond in JSON format:
       if (businessType !== undefined && ["b2b", "b2c"].includes(businessType)) {
         updates.businessType = businessType;
       }
+      if (primaryColor !== undefined) updates.primaryColor = primaryColor || null;
+      if (secondaryColor !== undefined) updates.secondaryColor = secondaryColor || null;
 
       const updatedMarket = await storage.updateMarket(req.params.id, updates);
       

@@ -231,6 +231,10 @@ export const markets = pgTable("markets", {
   businessType: text("business_type").notNull().default("b2b"),
   isDefault: boolean("is_default").notNull().default(false),
   status: text("status").notNull().default("active"), // active, archived
+  // Per-market brand colors — used by the event image compositor and PDF renderer.
+  // When set, these override the tenant-level primaryColor / secondaryColor.
+  primaryColor: text("primary_color"),
+  secondaryColor: text("secondary_color"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

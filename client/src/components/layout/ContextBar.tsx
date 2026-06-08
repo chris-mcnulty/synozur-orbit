@@ -91,6 +91,8 @@ export default function ContextBar() {
   const [editMarketName, setEditMarketName] = useState("");
   const [editMarketDescription, setEditMarketDescription] = useState("");
   const [editMarketBusinessType, setEditMarketBusinessType] = useState<"b2b" | "b2c">("b2b");
+  const [editMarketPrimaryColor, setEditMarketPrimaryColor] = useState("#810FFB");
+  const [editMarketSecondaryColor, setEditMarketSecondaryColor] = useState("#E60CB3");
   const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
   const [newMarketBusinessType, setNewMarketBusinessType] = useState<"b2b" | "b2c">("b2b");
 
@@ -335,8 +337,8 @@ export default function ContextBar() {
   };
 
   const updateMarketMutation = useMutation({
-    mutationFn: async ({ marketId, name, description, businessType }: { marketId: string; name: string; description?: string; businessType?: string }) => {
-      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description, businessType });
+    mutationFn: async ({ marketId, name, description, businessType, primaryColor, secondaryColor }: { marketId: string; name: string; description?: string; businessType?: string; primaryColor?: string; secondaryColor?: string }) => {
+      const response = await apiRequest("PATCH", `/api/markets/${marketId}`, { name, description, businessType, primaryColor, secondaryColor });
       // apiRequest already throws on error, so response.ok is guaranteed here
       return response.json();
     },
@@ -417,6 +419,8 @@ export default function ContextBar() {
     setEditMarketName(market.name);
     setEditMarketDescription(market.description || "");
     setEditMarketBusinessType((market.businessType as "b2b" | "b2c") || "b2b");
+    setEditMarketPrimaryColor((market as any).primaryColor || "#810FFB");
+    setEditMarketSecondaryColor((market as any).secondaryColor || "#E60CB3");
     setEditMarketOpen(true);
   };
 
@@ -427,6 +431,8 @@ export default function ContextBar() {
         name: editMarketName.trim(),
         description: editMarketDescription.trim() || undefined,
         businessType: editMarketBusinessType,
+        primaryColor: editMarketPrimaryColor,
+        secondaryColor: editMarketSecondaryColor,
       });
     }
   };
@@ -1080,13 +1086,15 @@ export default function ContextBar() {
           setMarketToEdit(null);
           setEditMarketName("");
           setEditMarketDescription("");
+          setEditMarketPrimaryColor("#810FFB");
+          setEditMarketSecondaryColor("#E60CB3");
         }
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Market</DialogTitle>
             <DialogDescription>
-              Update the name and description for this market.
+              Update the name, description, and brand colors for this market.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -1142,6 +1150,46 @@ export default function ContextBar() {
                   B2C scoring prioritizes social signals like Instagram engagement over LinkedIn and website content depth.
                 </p>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label>Brand Colors</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Used in event image generation and PDF exports for this market. Overrides tenant defaults.</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={editMarketPrimaryColor}
+                  onChange={(e) => setEditMarketPrimaryColor(e.target.value)}
+                  className="w-9 h-9 rounded cursor-pointer border border-input p-0.5 shrink-0"
+                  data-testid="input-edit-market-primary-color"
+                />
+                <Input
+                  value={editMarketPrimaryColor}
+                  onChange={(e) => setEditMarketPrimaryColor(e.target.value)}
+                  placeholder="#810FFB"
+                  className="font-mono text-sm"
+                  maxLength={7}
+                  data-testid="input-edit-market-primary-color-text"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap w-20">Primary</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={editMarketSecondaryColor}
+                  onChange={(e) => setEditMarketSecondaryColor(e.target.value)}
+                  className="w-9 h-9 rounded cursor-pointer border border-input p-0.5 shrink-0"
+                  data-testid="input-edit-market-secondary-color"
+                />
+                <Input
+                  value={editMarketSecondaryColor}
+                  onChange={(e) => setEditMarketSecondaryColor(e.target.value)}
+                  placeholder="#E60CB3"
+                  className="font-mono text-sm"
+                  maxLength={7}
+                  data-testid="input-edit-market-secondary-color-text"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap w-20">Secondary</span>
+              </div>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">

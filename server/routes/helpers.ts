@@ -228,6 +228,8 @@ export const updateMarketSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
   status: z.enum(["active", "archived"]).optional(),
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+  secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
 });
 
 export const grantConsultantAccessSchema = z.object({
