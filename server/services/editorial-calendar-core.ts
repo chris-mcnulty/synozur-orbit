@@ -155,3 +155,89 @@ export function assessCalendarWarnings(
 
   return warnings;
 }
+
+// ── Copywriter (draft-from-brief) helpers ──────────────────────────────────
+
+/**
+ * Per-format drafting guidance injected into the copywriter prompt. Keeps the
+ * structure/length expectations for each content format in one testable place.
+ */
+export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
+  blog_post:
+    "Write a 700-1100 word blog post in Markdown: a compelling H1, a hook intro, 3-5 H2 sections with skimmable subheads, and a short conclusion that leads into the CTA. Weave the target keyword in naturally (no stuffing).",
+  landing_page:
+    "Write landing-page copy in Markdown: a benefit-led hero headline + subhead, 3-4 value-proposition blocks (subhead + 1-2 sentences each), a short social-proof/objection-handling section, and a single strong CTA block. Keep it scannable and conversion-focused.",
+  linkedin_post:
+    "Write a single LinkedIn post (150-300 words): a scroll-stopping first line, short punchy paragraphs with line breaks, one concrete insight, and a soft CTA. End with 3-5 relevant hashtags on their own line.",
+  x_post:
+    "Write a single post under 280 characters: one sharp idea, no fluff, at most 1-2 hashtags.",
+  newsletter:
+    "Write an email newsletter in Markdown: a subject line as the title, a personal-feeling intro, 1-3 short value sections, and a clear CTA. Conversational but on-brand.",
+  video_script:
+    "Write a short-form video script: a 0-3s hook, then beat-by-beat spoken lines with brief [VISUAL] cues in brackets, ending on the CTA. Aim for 45-90 seconds of spoken content.",
+  case_study:
+    "Write a case study in Markdown: Challenge, Approach, Results (with concrete-but-not-fabricated outcomes framed qualitatively if numbers are unknown), and a closing CTA.",
+  whitepaper:
+    "Write a whitepaper outline-to-draft in Markdown: executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA. Authoritative and well-structured.",
+  other:
+    "Write well-structured Markdown copy appropriate to the topic, with a clear headline, body, and a CTA.",
+};
+
+/** Map a content-brief format onto the contentAssets.assetType enum. */
+export function briefFormatToAssetType(format: ContentBriefFormat): string {
+  switch (format) {
+    case "blog_post":
+      return "blog_post";
+    case "whitepaper":
+      return "whitepaper";
+    case "case_study":
+      return "case_study";
+    case "video_script":
+      return "video";
+    default:
+      // landing_page, linkedin_post, x_post, newsletter, other
+      return "other";
+  }
+}
+
+export interface ParsedDraft {
+  title: string | null;
+  body: string;
+  meta: string | null;
+}
+
+const DRAFT_SECTION = /===\s*(TITLE|BODY|META)\s*===/gi;
+
+/**
+ * Parse a delimiter-formatted copywriter response into title/body/meta.
+ * Delimiters (more robust than JSON for long Markdown bodies):
+ *   ===TITLE=== ... ===BODY=== ... ===META=== ...
+ * Falls back to treating the whole (fence-stripped) text as the body.
+ */
+export function parseDraftResponse(text: string): ParsedDraft {
+  const cleaned = text.replace(/```(?:markdown|md)?\s*/gi, "").replace(/```/g, "").trim();
+
+  const sections: Record<string, string> = {};
+  const matches: Array<{ key: string; start: number; markerStart: number }> = [];
+  DRAFT_SECTION.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = DRAFT_SECTION.exec(cleaned)) !== null) {
+    matches.push({ key: m[1].toUpperCase(), start: m.index + m[0].length, markerStart: m.index });
+  }
+  for (let i = 0; i < matches.length; i++) {
+    const end = i + 1 < matches.length ? matches[i + 1].markerStart : cleaned.length;
+    sections[matches[i].key] = cleaned.slice(matches[i].start, end).trim();
+  }
+
+  const body = sections.BODY || cleaned;
+  const norm = (v: string | undefined): string | null => {
+    const s = (v ?? "").trim();
+    return s.length > 0 ? s : null;
+  };
+
+  return {
+    title: norm(sections.TITLE),
+    body: body.trim(),
+    meta: norm(sections.META),
+  };
+}

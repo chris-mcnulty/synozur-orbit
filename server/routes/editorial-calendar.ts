@@ -1,12 +1,13 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs } from "@shared/schema";
+import { editorialCalendars, contentBriefs, contentAssets } from "@shared/schema";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { generateContentBriefs } from "../services/editorial-calendar-service";
-import { DEFAULT_FUNNEL_TARGETS } from "../services/editorial-calendar-core";
+import { draftFromBrief } from "../services/copywriter-service";
+import { DEFAULT_FUNNEL_TARGETS, briefFormatToAssetType } from "../services/editorial-calendar-core";
 
 const EDITABLE_BRIEF_FIELDS = [
   "title",
@@ -175,6 +176,76 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content-briefs patch]", err);
       res.status(500).json({ error: err.message || "Failed to update content brief" });
+    }
+  });
+
+  // Draft content from a brief: generate a first draft in the brief's format,
+  // persist it as a content asset, and link it back to the brief.
+  app.post("/api/content-briefs/:id/draft", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [brief] = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.id, req.params.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+          ),
+        );
+      if (!brief) return res.status(404).json({ error: "Not found" });
+
+      const instructions = typeof req.body?.instructions === "string" ? req.body.instructions : undefined;
+      const draft = await draftFromBrief(brief, {
+        isDefaultMarket: ctx.isDefaultMarket,
+        instructions,
+      });
+
+      if (!draft.body?.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable draft. Please try again." });
+      }
+
+      const result = await db.transaction(async (tx) => {
+        const [asset] = await tx
+          .insert(contentAssets)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: draft.title || brief.title,
+            description: draft.meta || null,
+            content: draft.body,
+            assetType: briefFormatToAssetType(draft.format as any),
+            status: "active",
+            createdBy: ctx.userId,
+          })
+          .returning();
+
+        const [updatedBrief] = await tx
+          .update(contentBriefs)
+          .set({ contentAssetId: asset.id, status: "drafted", updatedAt: new Date() })
+          .where(eq(contentBriefs.id, brief.id))
+          .returning();
+
+        return { asset, brief: updatedBrief };
+      });
+
+      res.status(201).json({
+        ...result,
+        draft: {
+          title: draft.title,
+          body: draft.body,
+          meta: draft.meta,
+          format: draft.format,
+        },
+        usage: draft.usage,
+        model: draft.model,
+      });
+    } catch (err: any) {
+      console.error("[content-briefs draft]", err);
+      res.status(500).json({ error: err.message || "Failed to draft content" });
     }
   });
 

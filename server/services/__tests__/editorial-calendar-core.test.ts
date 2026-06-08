@@ -5,6 +5,8 @@ import {
   normalizeBrief,
   computeFunnelBreakdown,
   assessCalendarWarnings,
+  briefFormatToAssetType,
+  parseDraftResponse,
   type DraftBrief,
 } from "../editorial-calendar-core";
 
@@ -105,6 +107,32 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     for (let i = 0; i < 5; i++) briefs.push(brief({ funnelStage: "consideration" }));
     for (let i = 0; i < 4; i++) briefs.push(brief({ funnelStage: "decision" }));
     assert.deepEqual(assessCalendarWarnings(briefs), []);
+  });
+
+  await test("briefFormatToAssetType maps to contentAssets enum", () => {
+    assert.equal(briefFormatToAssetType("blog_post"), "blog_post");
+    assert.equal(briefFormatToAssetType("whitepaper"), "whitepaper");
+    assert.equal(briefFormatToAssetType("case_study"), "case_study");
+    assert.equal(briefFormatToAssetType("video_script"), "video");
+    assert.equal(briefFormatToAssetType("landing_page"), "other");
+    assert.equal(briefFormatToAssetType("linkedin_post"), "other");
+  });
+
+  await test("parseDraftResponse splits title/body/meta and strips fences", () => {
+    const text = "```markdown\n===TITLE===\nHow to X\n===BODY===\n# How to X\n\nSome **body** text.\n===META===\nA short summary.\n```";
+    const p = parseDraftResponse(text);
+    assert.equal(p.title, "How to X");
+    assert.ok(p.body.includes("# How to X"));
+    assert.ok(p.body.includes("Some **body** text."));
+    assert.ok(!p.body.includes("==="), "body should not contain delimiters");
+    assert.equal(p.meta, "A short summary.");
+  });
+
+  await test("parseDraftResponse falls back to whole text as body", () => {
+    const p = parseDraftResponse("Just a plain draft with no markers.");
+    assert.equal(p.title, null);
+    assert.equal(p.meta, null);
+    assert.equal(p.body, "Just a plain draft with no markers.");
   });
 
   if (failures > 0) {
