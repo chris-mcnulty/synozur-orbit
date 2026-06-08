@@ -149,7 +149,7 @@ export default function BrandLibraryPage() {
     fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
   });
   const [form, setForm] = useState({
-    name: "", description: "", url: "", categoryId: "", fileType: "",
+    name: "", description: "", url: "", fileUrl: "", categoryId: "", fileType: "",
     productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
     assetType: "other", solutionAreaIds: [] as string[], logoVariant: "",
@@ -157,7 +157,7 @@ export default function BrandLibraryPage() {
   });
 
   const resetForm = () => setForm({
-    name: "", description: "", url: "", categoryId: "", fileType: "",
+    name: "", description: "", url: "", fileUrl: "", categoryId: "", fileType: "",
     productIds: [], tags: { seasons: [], topics: [] },
     assetType: "other", solutionAreaIds: [], logoVariant: "",
     fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
@@ -403,12 +403,39 @@ export default function BrandLibraryPage() {
 
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [addFontUploading, setAddFontUploading] = useState(false);
+  const addFontFileRef = useRef<HTMLInputElement>(null);
 
   function fontMimeFromExtension(filename: string): string {
     const ext = filename.split(".").pop()?.toLowerCase();
     const map: Record<string, string> = { ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2" };
     return map[ext ?? ""] || "application/octet-stream";
   }
+
+  const handleAddFontUpload = async (file: File) => {
+    setAddFontUploading(true);
+    try {
+      const contentType = (file.type && file.type !== "application/octet-stream")
+        ? file.type : fontMimeFromExtension(file.name);
+      const reqRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType }),
+      });
+      if (!reqRes.ok) throw new Error((await reqRes.json()).error);
+      const { uploadURL, objectPath } = await reqRes.json();
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": contentType } });
+      if (!uploadRes.ok) throw new Error("File upload failed");
+      const ext = file.name.split(".").pop()?.toLowerCase() || "font";
+      setForm(f => ({ ...f, fileUrl: objectPath, fileType: ext }));
+      toast({ title: "Font file uploaded" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setAddFontUploading(false);
+    }
+  };
 
   const handleFileUpload = async (file: File) => {
     setUploadingFile(true);
@@ -794,10 +821,12 @@ export default function BrandLibraryPage() {
                       <Label>Description</Label>
                       <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Usage notes" data-testid="input-brand-description" />
                     </div>
-                    <div>
-                      <Label>URL or File Path</Label>
-                      <Input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." data-testid="input-brand-url" />
-                    </div>
+                    {form.assetType !== "font" && (
+                      <div>
+                        <Label>URL or File Path</Label>
+                        <Input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." data-testid="input-brand-url" />
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label>Category</Label>
@@ -854,7 +883,40 @@ export default function BrandLibraryPage() {
 
                     {form.assetType === "font" && (
                       <div className="space-y-3 rounded-lg border border-border/60 p-3 bg-muted/30">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Font Metadata</p>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Font File</p>
+                        <input
+                          ref={addFontFileRef}
+                          type="file"
+                          accept=".ttf,.otf,.woff,.woff2"
+                          className="hidden"
+                          onChange={e => { if (e.target.files?.[0]) handleAddFontUpload(e.target.files[0]); }}
+                          data-testid="input-add-brand-font-file"
+                        />
+                        <div className="flex items-center gap-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={addFontUploading}
+                            onClick={() => addFontFileRef.current?.click()}
+                            data-testid="button-upload-add-brand-font"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            {addFontUploading ? "Uploading…" : form.fileUrl ? "Replace File" : "Choose Font File"}
+                          </Button>
+                          {form.fileUrl && (
+                            <>
+                              <style>{`@font-face { font-family: "add-font-prev"; src: url("${form.fileUrl}"); font-weight: ${form.fontWeight || "400"}; font-style: ${form.fontStyle || "normal"}; }`}</style>
+                              <span
+                                className="text-3xl select-none leading-none"
+                                style={{ fontFamily: `"add-font-prev", serif`, fontWeight: form.fontWeight || "400", fontStyle: form.fontStyle as any || "normal" }}
+                                title="Live font preview"
+                              >Aa</span>
+                            </>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mt-1">Font Metadata</p>
                         <div>
                           <Label>Font Family Name</Label>
                           <Input
@@ -1188,8 +1250,18 @@ export default function BrandLibraryPage() {
                         <Upload className="w-3.5 h-3.5" />
                         {uploadingFile ? "Uploading..." : "Choose File"}
                       </Button>
-                      {editForm.fileUrl && editForm.fileUrl.startsWith("/objects/") && (
+                      {editForm.fileUrl && editForm.fileUrl.startsWith("/objects/") && editForm.assetType !== "font" && (
                         <span className="text-xs text-muted-foreground truncate max-w-[200px]">File uploaded</span>
+                      )}
+                      {editForm.assetType === "font" && editForm.fileUrl && (
+                        <>
+                          <style>{`@font-face { font-family: "edit-font-prev"; src: url("${editForm.fileUrl}"); font-weight: ${editForm.fontWeight || "400"}; font-style: ${editForm.fontStyle || "normal"}; }`}</style>
+                          <span
+                            className="text-3xl select-none leading-none ml-2"
+                            style={{ fontFamily: `"edit-font-prev", serif`, fontWeight: editForm.fontWeight || "400", fontStyle: editForm.fontStyle as any || "normal" }}
+                            title="Live font preview"
+                          >Aa</span>
+                        </>
                       )}
                     </div>
                   </div>
