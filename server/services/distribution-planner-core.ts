@@ -5,9 +5,10 @@
  * on weekdays at platform-appropriate hours, mapping formats to channels and
  * dates to fiscal-style quarters. No AI, no I/O — fully unit-testable.
  *
- * Timezone note: hours are applied in UTC. Precise per-market timezone shifting
- * is a future refinement (the `markets` table has no timezone column yet), and
- * for a Planner due-date the day matters more than the exact hour.
+ * Timezone: best-posting hours are interpreted as the user's LOCAL wall-clock
+ * time. Callers pass `tzOffsetMinutes` (the client's `Date.getTimezoneOffset()`)
+ * and the scheduled UTC instant is computed as `localWallClock + offset`,
+ * matching the conference-promotion scheduler. Defaults to UTC when omitted.
  */
 
 export type Channel = "linkedin" | "twitter" | "blog" | "email" | "instagram" | "facebook";
@@ -97,6 +98,12 @@ export interface BuildScheduleOptions {
   periodStart: Date;
   periodEnd: Date;
   skipWeekends?: boolean;
+  /**
+   * Client timezone offset in minutes (`Date.getTimezoneOffset()`). Best-posting
+   * hours are placed in this local timezone: UTC = localWallClock + offset.
+   * Defaults to 0 (UTC).
+   */
+  tzOffsetMinutes?: number;
 }
 
 const VALID_CHANNELS = new Set<Channel>([
@@ -150,14 +157,16 @@ export function buildSchedule(
     if (opts.skipWeekends) date = avoidWeekend(date);
 
     const channel = resolveChannel(item);
-    const scheduledAt = new Date(Date.UTC(
+    // bestHour is a LOCAL wall-clock hour; convert to the UTC instant.
+    const localWallClock = Date.UTC(
       date.getUTCFullYear(),
       date.getUTCMonth(),
       date.getUTCDate(),
       bestHourForChannel(channel),
       0,
       0,
-    ));
+    );
+    const scheduledAt = new Date(localWallClock + (opts.tzOffsetMinutes ?? 0) * 60_000);
 
     return {
       briefId: item.id,
@@ -165,7 +174,8 @@ export function buildSchedule(
       format: item.format,
       channel,
       scheduledAt: scheduledAt.toISOString(),
-      timeframe: dateToTimeframe(scheduledAt),
+      // Quarter of the local posting date (not the tz-shifted UTC instant).
+      timeframe: dateToTimeframe(date),
     };
   });
 }

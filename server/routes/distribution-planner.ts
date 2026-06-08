@@ -29,7 +29,7 @@ export function registerDistributionPlannerRoutes(app: Express) {
         );
       if (!calendar) return res.status(404).json({ error: "Calendar not found" });
 
-      const { periodStart, periodEnd, skipWeekends, statuses, planId } = req.body ?? {};
+      const { periodStart, periodEnd, skipWeekends, statuses, planId, tzOffsetMinutes } = req.body ?? {};
       const activityGroup = VALID_ACTIVITY_GROUPS.includes(req.body?.activityGroup)
         ? req.body.activityGroup
         : "Digital";
@@ -41,6 +41,7 @@ export function registerDistributionPlannerRoutes(app: Express) {
         periodEnd: periodEnd ? new Date(periodEnd) : undefined,
         skipWeekends: typeof skipWeekends === "boolean" ? skipWeekends : undefined,
         statuses: Array.isArray(statuses) ? statuses : undefined,
+        tzOffsetMinutes: typeof tzOffsetMinutes === "number" ? tzOffsetMinutes : undefined,
       });
 
       if (schedule.length === 0) {

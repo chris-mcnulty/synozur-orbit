@@ -21,6 +21,7 @@ export interface PlanDistributionParams {
   periodEnd?: Date;
   skipWeekends?: boolean;
   statuses?: string[];
+  tzOffsetMinutes?: number;
 }
 
 export interface PlanDistributionResult {
@@ -55,7 +56,12 @@ export async function planDistribution(
       format: b.format,
       preferredChannels: b.channels,
     })),
-    { periodStart, periodEnd, skipWeekends: params.skipWeekends ?? true },
+    {
+      periodStart,
+      periodEnd,
+      skipWeekends: params.skipWeekends ?? true,
+      tzOffsetMinutes: params.tzOffsetMinutes,
+    },
   );
 
   return { schedule };

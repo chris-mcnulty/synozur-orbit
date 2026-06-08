@@ -141,6 +141,8 @@ export default function EditorialCalendarPage() {
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
   const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
+  const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [distOpen, setDistOpen] = useState(false);
@@ -233,10 +235,32 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to draft content");
       return res.json();
     },
-    onSuccess: (data: { draft: DraftResult }) => {
+    onSuccess: (data: { draft: DraftResult; asset?: { id: string } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       setDraft(data.draft);
+      setDraftAssetId(data.asset?.id ?? null);
+      setRewriteInstr("");
       toast.success("Draft created and saved to the content library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const rewriteDraft = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content-assets/${draftAssetId}/rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instructions: rewriteInstr }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to rewrite");
+      return res.json();
+    },
+    onSuccess: (data: { body: string }) => {
+      setDraft((d) => (d ? { ...d, body: data.body } : d));
+      setRewriteInstr("");
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      toast.success("Draft rewritten");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -288,6 +312,7 @@ export default function EditorialCalendarPage() {
           periodEnd: distEnd,
           skipWeekends: distSkipWeekends,
           planId: distPlanId || undefined,
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Failed to plan distribution");
@@ -634,6 +659,34 @@ export default function EditorialCalendarPage() {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>AI-generated draft. Saved to your content library — review and edit before publishing.</span>
             </div>
+            {draftAssetId && (
+              <div className="space-y-2 rounded-md border p-3">
+                <Label htmlFor="rewrite-instr" className="text-sm font-medium">
+                  AI rewrite
+                </Label>
+                <Textarea
+                  id="rewrite-instr"
+                  placeholder="e.g. Make it punchier, add a stat-led intro, cut to ~600 words"
+                  value={rewriteInstr}
+                  onChange={(e) => setRewriteInstr(e.target.value)}
+                  data-testid="input-rewrite"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
+                  onClick={() => rewriteDraft.mutate()}
+                  data-testid="button-rewrite"
+                >
+                  {rewriteDraft.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <PenLine className="mr-2 h-4 w-4" />
+                  )}
+                  Rewrite draft
+                </Button>
+              </div>
+            )}
             <DialogFooter>
               <Button
                 variant="outline"

@@ -29,6 +29,11 @@ const SYSTEM_PROMPT =
   "their problem, and earn the call to action. You never fabricate statistics, customer names, or quotes. " +
   "Respond using ONLY the requested ===TITLE===/===BODY===/===META=== format.";
 
+const REWRITE_SYSTEM_PROMPT =
+  "You are an expert B2B copy editor. You revise existing content per the user's instructions while " +
+  "preserving the brand's voice and positioning and never fabricating facts, stats, or quotes. " +
+  "Return ONLY the revised content in Markdown — no preamble, no commentary, no code fences.";
+
 export interface DraftFromBriefResult extends ParsedDraft {
   format: string;
   usage: { inputTokens: number; outputTokens: number };
@@ -101,6 +106,52 @@ Respond with exactly these three sections and nothing else:
     ...parsed,
     title: parsed.title || brief.title,
     format,
+    usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+    model: result.model,
+  };
+}
+
+export interface RewriteParams {
+  tenantDomain: string;
+  marketId?: string | null;
+  isDefaultMarket?: boolean;
+  title: string;
+  body: string;
+  format: string;
+  instructions: string;
+}
+
+export interface RewriteResult {
+  body: string;
+  usage: { inputTokens: number; outputTokens: number };
+  model: string;
+}
+
+/** Revise an existing long-form draft per instructions, keeping brand voice. */
+export async function rewriteLongFormContent(p: RewriteParams): Promise<RewriteResult> {
+  const format = coerceFormat(p.format);
+  const strategicCtx = await loadStrategicContext(p.tenantDomain, p.marketId || undefined, p.isDefaultMarket);
+  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+
+  const prompt = [
+    "Revise the content below according to the instructions.",
+    strategicBlock,
+    `## Format guidance\n${FORMAT_GUIDANCE[format]}`,
+    `## Current content\nTitle: ${p.title}\n\n${p.body.slice(0, 12000)}`,
+    `## Instructions\n${p.instructions.trim()}`,
+    "## Response\nReturn ONLY the full revised content in Markdown.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const result = await completeForFeature("marketing_tasks", prompt, {
+    tenantDomain: p.tenantDomain,
+    systemPrompt: REWRITE_SYSTEM_PROMPT,
+    maxTokens: 8192,
+  });
+
+  return {
+    body: parseDraftResponse(result.text).body,
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
     model: result.model,
   };

@@ -74,6 +74,21 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(new Date(sched[0].scheduledAt).getUTCDate(), 2);
   });
 
+  await test("buildSchedule places best-hour in the user's local timezone", () => {
+    // UTC-5 -> getTimezoneOffset() = +300. LinkedIn best hour = 9 local.
+    const sched = buildSchedule([{ id: "x", title: "T", format: "linkedin_post" }], {
+      periodStart: new Date(Date.UTC(2026, 2, 2)),
+      periodEnd: new Date(Date.UTC(2026, 2, 20)),
+      skipWeekends: true,
+      tzOffsetMinutes: 300,
+    });
+    const at = new Date(sched[0].scheduledAt);
+    // 9:00 local + 5h = 14:00 UTC
+    assert.equal(at.getUTCHours(), 14);
+    // Local quarter preserved
+    assert.equal(sched[0].timeframe, "Q1");
+  });
+
   await test("buildSchedule honors preferredChannels over format", () => {
     const sched = buildSchedule(
       [{ id: "x", title: "T", format: "blog_post", preferredChannels: ["X"] }],

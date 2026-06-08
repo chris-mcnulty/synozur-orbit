@@ -7,6 +7,7 @@ import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { optimizeContent } from "../services/seo-aeo-service";
 import { repurposeAsset } from "../services/repurpose-service";
+import { rewriteLongFormContent } from "../services/copywriter-service";
 
 export function registerContentProductionRoutes(app: Express) {
   // SEO/AEO optimize — accepts a contentAssetId or a raw { title, content }.
@@ -68,6 +69,49 @@ export function registerContentProductionRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content optimize]", err);
       res.status(500).json({ error: err.message || "Failed to optimize content" });
+    }
+  });
+
+  // Long-form AI rewrite: revise a content asset's body per instructions
+  // (brand-voice grounded) and persist the result back to the asset.
+  app.post("/api/content-assets/:id/rewrite", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const instructions = typeof req.body?.instructions === "string" ? req.body.instructions.trim() : "";
+      if (!instructions) return res.status(400).json({ error: "Provide rewrite instructions." });
+
+      const [asset] = await db
+        .select()
+        .from(contentAssets)
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+      if (!asset) return res.status(404).json({ error: "Content asset not found" });
+      if (!asset.content?.trim()) return res.status(409).json({ error: "This asset has no content to rewrite." });
+
+      const rw = await rewriteLongFormContent({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        isDefaultMarket: ctx.isDefaultMarket,
+        title: asset.title,
+        body: asset.content,
+        format: asset.assetType,
+        instructions,
+      });
+
+      if (!rw.body.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable rewrite. Please try again." });
+      }
+
+      await db
+        .update(contentAssets)
+        .set({ content: rw.body, updatedAt: new Date() })
+        .where(eq(contentAssets.id, asset.id));
+
+      res.json({ body: rw.body, usage: rw.usage, model: rw.model });
+    } catch (err: any) {
+      console.error("[content rewrite]", err);
+      res.status(500).json({ error: err.message || "Failed to rewrite content" });
     }
   });
 
