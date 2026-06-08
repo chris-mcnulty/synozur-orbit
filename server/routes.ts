@@ -45,6 +45,7 @@ import { registerTenantFontRoutes } from "./routes/tenant-fonts";
 import { registerMarketingContextRoutes } from "./routes/marketing-context";
 import { registerEditorialCalendarRoutes } from "./routes/editorial-calendar";
 import { registerContentProductionRoutes } from "./routes/content-production";
+import { registerDistributionPlannerRoutes } from "./routes/distribution-planner";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -126,6 +127,7 @@ export async function registerRoutes(
   registerMarketingContextRoutes(app);
   registerEditorialCalendarRoutes(app);
   registerContentProductionRoutes(app);
+  registerDistributionPlannerRoutes(app);
 
   return httpServer;
 }

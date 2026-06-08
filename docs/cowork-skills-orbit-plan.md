@@ -151,7 +151,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices, ga
 
 **Phase 1 — Content development (priority).** ✅ *Done.* Demand-scored editorial calendar/briefs (consuming MPF + analysis + personas + SEO) → multi-format copywriter → repurposing engine → SEO/AEO optimizer, all surfaced in the Editorial Calendar UI. The MPF stays the canonical positioning/voice source; no separate positioning dossier.
 
-**Phase 2 — Production depth + scheduling.** SEO/AEO optimizer (biggest net-new), repurposing engine, distribution/editorial planner on the existing scheduler.
+**Phase 2 — Production depth + scheduling.** ✅ *Done.* SEO/AEO optimizer + repurposing engine shipped in Phase 1; distribution/editorial planner now recommends channel + posting-window schedules for a calendar's briefs and materializes them into the marketing planner (`marketing_tasks`), riding the existing Microsoft Planner sync. Scheduling is deterministic + unit-tested; surfaced via "Plan distribution" in the Editorial Calendar UI.
 
 **Phase 3 — Distribution (MCP-gated).** Expand channel publishing as MCP tool sets connect.
 

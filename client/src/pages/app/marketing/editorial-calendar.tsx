@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Share2,
   Search,
+  CalendarClock,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +73,21 @@ interface RepurposeVariantResult {
   platform: string;
   content: string;
   hashtags: string[];
+}
+
+interface MarketingPlan {
+  id: string;
+  name: string;
+  fiscalYear?: string;
+}
+
+interface ScheduleRow {
+  briefId: string;
+  title: string;
+  format: string;
+  channel: string;
+  scheduledAt: string;
+  timeframe: string;
 }
 
 interface OptimizationResult {
@@ -127,6 +143,14 @@ export default function EditorialCalendarPage() {
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
+  const [distOpen, setDistOpen] = useState(false);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const in30Iso = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const [distStart, setDistStart] = useState(todayIso);
+  const [distEnd, setDistEnd] = useState(in30Iso);
+  const [distSkipWeekends, setDistSkipWeekends] = useState(true);
+  const [distPlanId, setDistPlanId] = useState<string>("");
+  const [schedule, setSchedule] = useState<ScheduleRow[] | null>(null);
 
   const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
@@ -135,6 +159,13 @@ export default function EditorialCalendarPage() {
   const allowed = tenant?.features?.editorialCalendar !== false;
   const repurposeAllowed = tenant?.features?.contentRepurposing !== false;
   const optimizeAllowed = tenant?.features?.seoAeoOptimizer !== false;
+  const distributionAllowed = tenant?.features?.distributionPlanner !== false;
+
+  const { data: marketingPlans } = useQuery<MarketingPlan[]>({
+    queryKey: ["/api/marketing-plans"],
+    queryFn: async () => (await getJson("/api/marketing-plans")) ?? [],
+    enabled: distOpen,
+  });
 
   const { data: calendars, isLoading: calendarsLoading } = useQuery<EditorialCalendar[]>({
     queryKey: ["/api/editorial-calendars"],
@@ -246,6 +277,33 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const planDistribution = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/editorial-calendars/${activeId}/distribution-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          periodStart: distStart,
+          periodEnd: distEnd,
+          skipWeekends: distSkipWeekends,
+          planId: distPlanId || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to plan distribution");
+      return res.json();
+    },
+    onSuccess: (data: { schedule: ScheduleRow[]; committed: boolean; tasksCreated?: number; plan?: { name: string } }) => {
+      setSchedule(data.schedule);
+      if (data.committed) {
+        toast.success(`Added ${data.tasksCreated} tasks to "${data.plan?.name}" — sync to Microsoft Planner from the planner.`);
+      } else {
+        toast.success(`Scheduled ${data.schedule.length} briefs (preview)`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const deleteCalendar = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/editorial-calendars/${id}`, {
@@ -313,6 +371,20 @@ export default function EditorialCalendarPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {activeId && distributionAllowed && briefs.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSchedule(null);
+                    setDistOpen(true);
+                  }}
+                  data-testid="button-plan-distribution"
+                >
+                  <CalendarClock className="mr-1 h-4 w-4" />
+                  Plan distribution
+                </Button>
+              )}
               {activeId && (
                 <Button
                   variant="ghost"
@@ -710,6 +782,98 @@ export default function EditorialCalendarPage() {
             )}
             <DialogFooter>
               <Button onClick={() => setOptimization(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Distribution planner */}
+        <Dialog open={distOpen} onOpenChange={setDistOpen}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Plan distribution</DialogTitle>
+              <DialogDescription>
+                Spread this calendar's briefs across channels and posting windows. Optionally push the schedule into a
+                marketing plan, where it rides the existing Microsoft Planner sync.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="dist-start">Start</Label>
+                  <Input id="dist-start" type="date" value={distStart} onChange={(e) => setDistStart(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dist-end">End</Label>
+                  <Input id="dist-end" type="date" value={distEnd} onChange={(e) => setDistEnd(e.target.value)} />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={distSkipWeekends}
+                  onChange={(e) => setDistSkipWeekends(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Skip weekends
+              </label>
+              <div className="space-y-2">
+                <Label>Add to marketing plan (optional)</Label>
+                <Select value={distPlanId || "__none__"} onValueChange={(v) => setDistPlanId(v === "__none__" ? "" : v)}>
+                  <SelectTrigger data-testid="select-dist-plan">
+                    <SelectValue placeholder="Preview only — don't push to planner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Preview only — don't push to planner</SelectItem>
+                    {(marketingPlans ?? []).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                        {p.fiscalYear ? ` (FY${p.fiscalYear})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {schedule && schedule.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">
+                    Schedule ({schedule.length})
+                  </p>
+                  <div className="divide-y rounded-md border">
+                    {schedule.map((s) => (
+                      <div key={s.briefId} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                        <span className="truncate">{s.title}</span>
+                        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="secondary">{s.channel}</Badge>
+                          {new Date(s.scheduledAt).toLocaleDateString()} · {s.timeframe}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDistOpen(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => planDistribution.mutate()}
+                disabled={planDistribution.isPending}
+                data-testid="button-run-distribution"
+              >
+                {planDistribution.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Planning…
+                  </>
+                ) : (
+                  <>
+                    <CalendarClock className="mr-2 h-4 w-4" />
+                    {distPlanId ? "Plan & push to planner" : "Preview schedule"}
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
