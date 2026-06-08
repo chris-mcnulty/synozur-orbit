@@ -1263,113 +1263,155 @@ async function runGeneration(
     });
   }
 
+  // ── Rebuild a flat ordered moment list from the shuffled anchor/session slots ──
+  type MomentItem =
+    | { kind: "anchor"; img: ConferenceImage }
+    | { kind: "session"; session: ConferenceSession };
+
+  const momentOrder: MomentItem[] = (() => {
+    const combined: (MomentItem & { slotIdx: number })[] = [
+      ...anchorSlots.map(a => ({ kind: "anchor" as const, img: a.img, slotIdx: a.slotIdx })),
+      ...sessionSlots.map(s => ({ kind: "session" as const, session: s.session, slotIdx: s.slotIdx })),
+    ];
+    combined.sort((a, b) => a.slotIdx - b.slotIdx);
+    return combined;
+  })();
+
+  const numMoments = momentOrder.length;
+  if (numMoments === 0) return;
+
+  // ── Calculate target slot count = postsPerDay × eligible window days ──────────
+  // This fills the full promotion window rather than just one slot per moment.
+  const promoStart = conf.promoStartDate ?? conf.startDate ?? new Date();
+  const promoEnd   = conf.promoEndDate ?? conf.endDate;
+  const perDayCap  = Math.min(Math.max(1, conf.postsPerDay ?? 2), 8);
+
+  const targetSlotCount = (() => {
+    if (!promoEnd) return numMoments; // no window configured → one slot per moment
+    const isEl = (d: Date) => {
+      const dow = d.getUTCDay();
+      return (dow !== 0 || conf.includeSunday) && (dow !== 6 || conf.includeSaturday);
+    };
+    let days = 0;
+    const cur = new Date(promoStart); cur.setUTCHours(0, 0, 0, 0);
+    const end = new Date(promoEnd);   end.setUTCHours(23, 59, 59, 999);
+    for (let g = 0; g < 3650 && cur <= end; g++) {
+      if (isEl(cur)) days++;
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return Math.max(numMoments, days * perDayCap);
+  })();
+
   const slots = buildScheduleSlots({
-    promoStart: conf.promoStartDate ?? conf.startDate ?? new Date(),
-    promoEnd: conf.promoEndDate ?? conf.endDate,
+    promoStart,
+    promoEnd,
     postsPerDay: conf.postsPerDay ?? 2,
     includeSaturday: conf.includeSaturday,
     includeSunday: conf.includeSunday,
-    count: totalSlots,
+    count: targetSlotCount,
     tzOffsetMinutes: options.tzOffsetMinutes,
   });
 
-  const baseHashtags = resolveHashtags(conf);
-  const targetCount = anchorSlots.length + sessionSlots.length;
-  let created = 0;
+  // ── Pre-generate copy variants once per (moment × account) ───────────────────
+  // Variants are cached and cycled across appearances so AI calls = numMoments ×
+  // numAccounts (same as before), not totalSlots × numAccounts.
+  const variantPool = new Map<string, string[]>(); // `${momentIdx}:${accountId}` → variants
 
-  // Anchor posts — each slot may have a different image and always gets fresh copy
-  for (const { img, slotIdx } of anchorSlots) {
-    const scheduledDate = slots[slotIdx] ?? null;
-    for (const account of accounts) {
-      const variantGroup = randomUUID();
-      let variants: string[] = [];
-      try {
-        variants = await generateCopyVariants({
-          platform: account.platform,
-          socialAccountId: account.id,
-          tenantDomain,
-          variantCount,
-          conf,
-          session: null,
-        });
-      } catch (err: any) {
-        console.error("[Conference] Anchor copy generation failed:", err?.message);
-        continue;
-      }
-      for (const content of variants) {
-        await db.insert(generatedPosts).values({
-          id: randomUUID(),
-          tenantDomain,
-          conferenceId,
-          postRole: "anchor",
-          conferenceImageId: img?.id ?? null,
-          overrideImageUrl: img?.fileUrl ?? null,
-          socialAccountId: account.id,
-          platform: account.platform,
-          content,
-          hashtags: baseHashtags,
-          variantGroup,
-          scheduledDate,
-          sourceUrl: conf.website ?? null,
-          status: "draft",
-          generationJobId: jobId,
-        });
-      }
+  const getVariants = async (
+    momentIdx: number,
+    account: (typeof accounts)[0],
+  ): Promise<string[]> => {
+    const key = `${momentIdx}:${account.id}`;
+    if (variantPool.has(key)) return variantPool.get(key)!;
+    const m = momentOrder[momentIdx];
+    let vs: string[] = [];
+    try {
+      vs = await generateCopyVariants({
+        platform: account.platform,
+        socialAccountId: account.id,
+        tenantDomain,
+        variantCount,
+        conf,
+        session: m.kind === "session" ? m.session : null,
+      });
+    } catch (err: any) {
+      console.error("[Conference] Copy generation failed for moment", momentIdx, err?.message);
     }
-    created++;
-    reportProgress?.({ phase: "Writing anchor posts", percent: 40 + Math.round((created / targetCount) * 10) });
+    variantPool.set(key, vs);
+    return vs;
+  };
+
+  // Pre-warm variant cache in order so progress feedback is sensible
+  reportProgress?.({ phase: "Generating copy", percent: 42 });
+  for (let mi = 0; mi < numMoments; mi++) {
+    for (const account of accounts) {
+      await getVariants(mi, account);
+    }
+    reportProgress?.({
+      phase: "Generating copy",
+      percent: 42 + Math.round(((mi + 1) / numMoments) * 8),
+      currentItem: mi + 1,
+      totalItems: numMoments,
+      currentItemName: momentOrder[mi].kind === "session"
+        ? momentOrder[mi].session.title
+        : "Anchor post",
+    });
   }
 
-  // Session posts (1:1 with their matched graphic)
-  let sessionCreated = 0;
-  for (const { session, slotIdx } of sessionSlots) {
-    const img = sessionImageBySession.get(session.id);
-    const scheduledDate = slots[slotIdx] ?? null;
+  // ── Round-robin: each slot → moment[slotIdx % numMoments] ────────────────────
+  // Variants cycle: appearance k of moment m uses variants[k % variants.length].
+  // Each slot is its own post per account — no in-slot pick-one alternatives,
+  // since the point is temporal spread, not simultaneous alternatives.
+  const baseHashtags = resolveHashtags(conf);
+  let created = 0;
+
+  for (let slotIdx = 0; slotIdx < slots.length; slotIdx++) {
+    const momentIdx  = slotIdx % numMoments;
+    const appearance = Math.floor(slotIdx / numMoments);
+    const moment     = momentOrder[momentIdx];
+    const scheduledDate = slots[slotIdx];
+    const img =
+      moment.kind === "anchor"
+        ? moment.img
+        : sessionImageBySession.get(moment.session.id);
+    const variantGroup = randomUUID();
+
     for (const account of accounts) {
-      const variantGroup = randomUUID();
-      let variants: string[] = [];
-      try {
-        variants = await generateCopyVariants({
-          platform: account.platform,
-          socialAccountId: account.id,
-          tenantDomain,
-          variantCount,
-          conf,
-          session,
-        });
-      } catch (err: any) {
-        console.error("[Conference] Session copy generation failed:", err?.message);
-        continue;
-      }
-      for (const content of variants) {
-        await db.insert(generatedPosts).values({
-          id: randomUUID(),
-          tenantDomain,
-          conferenceId,
-          conferenceSessionId: session.id,
-          postRole: "session",
-          conferenceImageId: img?.id ?? null,
-          overrideImageUrl: img?.fileUrl ?? null,
-          socialAccountId: account.id,
-          platform: account.platform,
-          content,
-          hashtags: baseHashtags,
-          variantGroup,
-          scheduledDate,
-          sourceUrl: session.url ?? conf.website ?? null,
-          status: "draft",
-          generationJobId: jobId,
-        });
-      }
+      const variants = await getVariants(momentIdx, account);
+      if (variants.length === 0) continue;
+
+      // Cycle: appearance 0→v0, 1→v1, 2→v2, 3→v0, …
+      const content = variants[appearance % variants.length];
+
+      await db.insert(generatedPosts).values({
+        id: randomUUID(),
+        tenantDomain,
+        conferenceId,
+        ...(moment.kind === "session" ? { conferenceSessionId: moment.session.id } : {}),
+        postRole: moment.kind === "anchor" ? "anchor" : "session",
+        conferenceImageId: img?.id ?? null,
+        overrideImageUrl: img?.fileUrl ?? null,
+        socialAccountId: account.id,
+        platform: account.platform,
+        content,
+        hashtags: baseHashtags,
+        variantGroup,
+        scheduledDate,
+        sourceUrl:
+          moment.kind === "session"
+            ? (moment.session.url ?? conf.website ?? null)
+            : (conf.website ?? null),
+        status: "draft",
+        generationJobId: jobId,
+      });
     }
+
     created++;
-    sessionCreated++;
     reportProgress?.({
-      phase: "Writing session posts",
-      percent: 50 + Math.round((created / targetCount) * 48),
-      currentItem: sessionCreated,
-      totalItems: sessionSlots.length,
-      currentItemName: session.title,
+      phase: "Writing posts",
+      percent: 50 + Math.round((created / slots.length) * 48),
+      currentItem: created,
+      totalItems: slots.length,
     });
   }
 
