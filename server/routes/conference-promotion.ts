@@ -122,7 +122,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const images = await db
       .select()
       .from(conferenceImages)
-      .where(eq(conferenceImages.conferenceId, conf.id));
+      .where(and(eq(conferenceImages.conferenceId, conf.id), eq(conferenceImages.status, "active")));
     res.json({ ...conf, sessions, images });
   });
 
