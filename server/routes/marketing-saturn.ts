@@ -81,6 +81,7 @@ import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
+import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
@@ -130,6 +131,34 @@ async function guardFeature(
     }
     return false;
   }
+}
+
+/**
+ * Pick a short, clean headline for a branded content-draft graphic. Prefers a
+ * caller-supplied headline, then the draft title; falls back to the first
+ * sentence of the body/description with markdown + URLs + hashtags stripped.
+ */
+function deriveContentHeadline(
+  provided: unknown,
+  asset: { title?: string | null; content?: string | null; description?: string | null },
+): string | null {
+  if (typeof provided === "string" && provided.trim()) {
+    return provided.trim().slice(0, 100);
+  }
+  if (asset.title && asset.title.trim()) {
+    return asset.title.trim().slice(0, 100);
+  }
+  const raw = (asset.content || asset.description || "").trim();
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/#[^\s#]+/g, "")
+    .replace(/[#*_>`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  const firstSentence = cleaned.split(/(?<=[.!?])\s/)[0] || cleaned;
+  return firstSentence.slice(0, 100).trim();
 }
 
 // ─── register ────────────────────────────────────────────────────────────────
@@ -767,6 +796,45 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } as InsertBrandAsset).returning();
 
     res.status(201).json(brandAsset);
+  });
+
+  // ───── Generate an optional branded graphic for a content draft ─────
+  // Composites a brand-color gradient + tenant logo + a headline derived from
+  // the draft (the same look as the conference/social hero graphics), saves it
+  // to the public bucket, and stores the URL on the draft's leadImageUrl. This
+  // only runs when the user explicitly asks — nothing generates automatically.
+  app.post("/api/content-assets/:id/generate-branded-image", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+
+    const [asset] = await db.select().from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, req.params.id),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ));
+    if (!asset) return res.status(404).json({ error: "Content asset not found" });
+
+    const headline = deriveContentHeadline(req.body?.headline, asset);
+    if (!headline) {
+      return res.status(422).json({ error: "No text available to build a graphic from." });
+    }
+
+    try {
+      const saved = await generateBrandedPostGraphic({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        headline,
+      });
+      const [row] = await db.update(contentAssets)
+        .set({ leadImageUrl: saved.fileUrl, updatedAt: new Date() })
+        .where(eq(contentAssets.id, asset.id))
+        .returning();
+      res.json(row);
+    } catch (err: any) {
+      console.error("[Content Branded Image Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to generate image" });
+    }
   });
 
   // Seed default categories for a tenant/market if none exist

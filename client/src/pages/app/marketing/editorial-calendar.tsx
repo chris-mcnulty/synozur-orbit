@@ -35,6 +35,9 @@ import {
   Library,
   Save,
   FileDown,
+  Image as ImageIcon,
+  RefreshCw,
+  X,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -147,6 +150,7 @@ export default function EditorialCalendarPage() {
   const [count, setCount] = useState(15);
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
+  const [draftImageUrl, setDraftImageUrl] = useState<string | null>(null);
   const [draftDirty, setDraftDirty] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
@@ -243,10 +247,11 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to draft content");
       return res.json();
     },
-    onSuccess: (data: { draft: DraftResult; asset?: { id: string } }) => {
+    onSuccess: (data: { draft: DraftResult; asset?: { id: string; leadImageUrl?: string | null } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       setDraft(data.draft);
       setDraftAssetId(data.asset?.id ?? null);
+      setDraftImageUrl(data.asset?.leadImageUrl ?? null);
       setDraftDirty(false);
       setRewriteInstr("");
       toast.success("Draft created and saved to the content library");
@@ -290,6 +295,46 @@ export default function EditorialCalendarPage() {
       setDraftDirty(false);
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       toast.success("Draft saved to the content library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const generateImage = useMutation({
+    mutationFn: async () => {
+      if (!draftAssetId) throw new Error("No draft to add an image to");
+      const res = await fetch(`/api/content-assets/${draftAssetId}/generate-branded-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ headline: draft?.title || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to generate image");
+      return res.json();
+    },
+    onSuccess: (row: { leadImageUrl: string | null }) => {
+      setDraftImageUrl(row.leadImageUrl ?? null);
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast.success("Branded image generated");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removeImage = useMutation({
+    mutationFn: async () => {
+      if (!draftAssetId) throw new Error("No draft selected");
+      const res = await fetch(`/api/content-assets/${draftAssetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ leadImageUrl: null }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to remove image");
+      return res.json();
+    },
+    onSuccess: () => {
+      setDraftImageUrl(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast.success("Branded image removed");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -822,6 +867,7 @@ export default function EditorialCalendarPage() {
             if (!o) {
               setDraft(null);
               setDraftAssetId(null);
+              setDraftImageUrl(null);
               setDraftDirty(false);
               setRewriteInstr("");
             }
@@ -895,6 +941,75 @@ export default function EditorialCalendarPage() {
                   )}
                   Rewrite draft
                 </Button>
+              </div>
+            )}
+            {draftAssetId && (
+              <div className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Branded image</Label>
+                  <span className="text-xs text-muted-foreground">Optional</span>
+                </div>
+                {draftImageUrl ? (
+                  <div className="space-y-2">
+                    <img
+                      src={draftImageUrl}
+                      alt="Branded graphic for this draft"
+                      className="w-full rounded-md border"
+                      data-testid="img-draft-branded"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={generateImage.isPending}
+                        onClick={() => generateImage.mutate()}
+                        data-testid="button-regenerate-image"
+                      >
+                        {generateImage.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Regenerate
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        disabled={removeImage.isPending}
+                        onClick={() => removeImage.mutate()}
+                        data-testid="button-remove-image"
+                      >
+                        {removeImage.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="mr-2 h-4 w-4" />
+                        )}
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Generate a branded graphic (brand colors, logo, and a headline from this draft) to go with the post.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={generateImage.isPending}
+                      onClick={() => generateImage.mutate()}
+                      data-testid="button-generate-image"
+                    >
+                      {generateImage.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                      )}
+                      Generate branded image
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             <DialogFooter className="flex-wrap gap-2 sm:justify-between">
