@@ -32,9 +32,12 @@ import {
   Share2,
   Search,
   CalendarClock,
+  Library,
+  Save,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 interface ContentBrief {
@@ -136,12 +139,14 @@ async function getJson(url: string) {
 
 export default function EditorialCalendarPage() {
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
+  const [draftDirty, setDraftDirty] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
@@ -153,6 +158,7 @@ export default function EditorialCalendarPage() {
   const [distSkipWeekends, setDistSkipWeekends] = useState(true);
   const [distPlanId, setDistPlanId] = useState<string>("");
   const [schedule, setSchedule] = useState<ScheduleRow[] | null>(null);
+  const [committedPlan, setCommittedPlan] = useState<{ name: string; tasks: number } | null>(null);
 
   const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
@@ -239,6 +245,7 @@ export default function EditorialCalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       setDraft(data.draft);
       setDraftAssetId(data.asset?.id ?? null);
+      setDraftDirty(false);
       setRewriteInstr("");
       toast.success("Draft created and saved to the content library");
     },
@@ -261,6 +268,26 @@ export default function EditorialCalendarPage() {
       setRewriteInstr("");
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       toast.success("Draft rewritten");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const saveDraft = useMutation({
+    mutationFn: async () => {
+      if (!draftAssetId || !draft) throw new Error("No draft to save");
+      const res = await fetch(`/api/content-assets/${draftAssetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: draft.title, content: draft.body }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to save draft");
+      return res.json();
+    },
+    onSuccess: () => {
+      setDraftDirty(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast.success("Draft saved to the content library");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -320,10 +347,11 @@ export default function EditorialCalendarPage() {
     },
     onSuccess: (data: { schedule: ScheduleRow[]; committed: boolean; tasksCreated?: number; plan?: { name: string } }) => {
       setSchedule(data.schedule);
+      setCommittedPlan(data.committed ? { name: data.plan?.name ?? "marketing plan", tasks: data.tasksCreated ?? 0 } : null);
       if (data.committed) {
-        toast.success(`Added ${data.tasksCreated} tasks to "${data.plan?.name}" — sync to Microsoft Planner from the planner.`);
+        toast.success(`Added ${data.tasksCreated} tasks to "${data.plan?.name}" — open the Marketing Planner to review.`);
       } else {
-        toast.success(`Scheduled ${data.schedule.length} briefs (preview)`);
+        toast.success(`Scheduled ${data.schedule.length} briefs (preview only — pick a plan to commit)`);
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -379,6 +407,33 @@ export default function EditorialCalendarPage() {
             </Button>
           </div>
 
+          {/* How the planning surfaces fit together */}
+          <Card className="border-dashed bg-muted/30">
+            <CardContent className="grid gap-3 py-4 text-sm sm:grid-cols-3">
+              <div>
+                <p className="font-medium">📋 Editorial Calendar (here)</p>
+                <p className="text-muted-foreground">
+                  Plan and write the content itself. Drafts are saved to the Content Library; repurposed social posts
+                  flow to the Social Calendar.
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">💎 Marketing Planner</p>
+                <p className="text-muted-foreground">
+                  Your strategic roadmap of campaigns and tasks by quarter. "Plan distribution" can push these briefs in
+                  as tasks (and on to Microsoft Planner).
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">🗓️ Social Calendar</p>
+                <p className="text-muted-foreground">
+                  The day-by-day grid of social posts. Schedule and publish the social variants created by "Repurpose"
+                  here.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Calendar selector */}
           {calendarsLoading ? (
             <p className="text-sm text-muted-foreground">Loading calendars…</p>
@@ -402,6 +457,7 @@ export default function EditorialCalendarPage() {
                   size="sm"
                   onClick={() => {
                     setSchedule(null);
+                    setCommittedPlan(null);
                     setDistOpen(true);
                   }}
                   data-testid="button-plan-distribution"
@@ -646,18 +702,58 @@ export default function EditorialCalendarPage() {
         </Dialog>
 
         {/* Draft viewer */}
-        <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+        <Dialog
+          open={!!draft}
+          onOpenChange={(o) => {
+            if (!o) {
+              setDraft(null);
+              setDraftAssetId(null);
+              setDraftDirty(false);
+              setRewriteInstr("");
+            }
+          }}
+        >
           <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{draft?.title}</DialogTitle>
-              {draft?.meta && <DialogDescription>{draft.meta}</DialogDescription>}
+              <DialogTitle>Edit draft</DialogTitle>
+              <DialogDescription>
+                This draft lives in your Content Library. Edit it here, or open the library for the full editor.
+              </DialogDescription>
             </DialogHeader>
-            <div className="rounded-md bg-muted/40 p-4">
-              <pre className="whitespace-pre-wrap break-words font-sans text-sm">{draft?.body}</pre>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="draft-title" className="text-xs font-medium uppercase text-muted-foreground">
+                  Title
+                </Label>
+                <Input
+                  id="draft-title"
+                  value={draft?.title ?? ""}
+                  onChange={(e) => {
+                    setDraft((d) => (d ? { ...d, title: e.target.value } : d));
+                    setDraftDirty(true);
+                  }}
+                  data-testid="input-draft-title"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
+                  Body
+                </Label>
+                <Textarea
+                  id="draft-body"
+                  className="min-h-[320px] font-sans text-sm leading-relaxed"
+                  value={draft?.body ?? ""}
+                  onChange={(e) => {
+                    setDraft((d) => (d ? { ...d, body: e.target.value } : d));
+                    setDraftDirty(true);
+                  }}
+                  data-testid="input-draft-body"
+                />
+              </div>
             </div>
             <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>AI-generated draft. Saved to your content library — review and edit before publishing.</span>
+              <span>AI-generated draft. Review and edit before publishing. Click Save to keep your changes.</span>
             </div>
             {draftAssetId && (
               <div className="space-y-2 rounded-md border p-3">
@@ -687,20 +783,42 @@ export default function EditorialCalendarPage() {
                 </Button>
               </div>
             )}
-            <DialogFooter>
+            <DialogFooter className="flex-wrap gap-2 sm:justify-between">
               <Button
                 variant="outline"
-                onClick={() => {
-                  if (draft) {
-                    navigator.clipboard.writeText(draft.body);
-                    toast.success("Copied to clipboard");
-                  }
-                }}
+                onClick={() => navigate(`/app/marketing/content-library?asset=${draftAssetId}`)}
+                disabled={!draftAssetId}
+                data-testid="button-open-library"
               >
-                <Copy className="mr-2 h-4 w-4" />
-                Copy
+                <Library className="mr-2 h-4 w-4" />
+                Open in Content Library
               </Button>
-              <Button onClick={() => setDraft(null)}>Close</Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (draft) {
+                      navigator.clipboard.writeText(draft.body);
+                      toast.success("Copied to clipboard");
+                    }
+                  }}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy
+                </Button>
+                <Button
+                  onClick={() => saveDraft.mutate()}
+                  disabled={saveDraft.isPending || !draftDirty || !draftAssetId}
+                  data-testid="button-save-draft"
+                >
+                  {saveDraft.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  {draftDirty ? "Save" : "Saved"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -903,6 +1021,23 @@ export default function EditorialCalendarPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {committedPlan && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+                  <span>
+                    Added {committedPlan.tasks} task{committedPlan.tasks === 1 ? "" : "s"} to "{committedPlan.name}".
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/app/marketing-planner")}
+                    data-testid="button-open-planner"
+                  >
+                    <CalendarClock className="mr-1 h-4 w-4" />
+                    Open Marketing Planner
+                  </Button>
                 </div>
               )}
             </div>

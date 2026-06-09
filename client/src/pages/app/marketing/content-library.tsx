@@ -460,6 +460,22 @@ export default function ContentLibraryPage() {
     setEditOpen(true);
   };
 
+  useEffect(() => {
+    if (!isAllowed) return;
+    const assetId = new URLSearchParams(window.location.search).get("asset");
+    if (!assetId) return;
+    fetch(`/api/content-assets/${assetId}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((asset: ContentAsset | null) => {
+        if (asset) openEditDialog(asset);
+      })
+      .finally(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("asset");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      });
+  }, [isAllowed]);
+
   const toggleEditTag = (type: "seasons" | "topics", value: string) => {
     setEditForm(f => ({
       ...f,
