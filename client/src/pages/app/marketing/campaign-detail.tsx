@@ -288,7 +288,7 @@ export default function CampaignDetailPage() {
       setGenerateMode("asset");
       setVariantsPerPlatform(null);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
-      toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
+      toast({ title: "Post generation started", description: "Social post drafts will appear in the Posts tab below once generation is complete." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
