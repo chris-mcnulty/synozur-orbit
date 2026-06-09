@@ -469,6 +469,34 @@ export function registerSaturnMarketingRoutes(app: Express) {
     });
   });
 
+  // Branded Word (.docx) export of a content draft — Synozur logo, brand color, and fonts
+  app.get("/api/content-assets/:id/download/docx", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const [row] = await db.select().from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, req.params.id),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ));
+    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row.content?.trim()) {
+      return res.status(422).json({ error: "This draft has no written content to export yet." });
+    }
+    try {
+      const { buildBrandedDocx } = await import("../services/docx-generator.js");
+      const title = row.title || "Content Draft";
+      const docBuffer = await buildBrandedDocx(title, row.content || "");
+      const safeName = title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_draft";
+      const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(docBuffer);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Failed to generate document" });
+    }
+  });
+
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);

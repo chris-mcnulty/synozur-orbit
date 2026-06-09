@@ -34,6 +34,7 @@ import {
   CalendarClock,
   Library,
   Save,
+  FileDown,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -147,6 +148,7 @@ export default function EditorialCalendarPage() {
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
   const [draftDirty, setDraftDirty] = useState(false);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
@@ -291,6 +293,40 @@ export default function EditorialCalendarPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const downloadDocx = async () => {
+    if (!draftAssetId) return;
+    if (draftDirty) {
+      toast.error("Save your changes first, then download.");
+      return;
+    }
+    setDownloadingDocx(true);
+    try {
+      const res = await fetch(`/api/content-assets/${draftAssetId}/download/docx`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = "Failed to download Word document";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = (draft?.title || "Content_Draft").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Content_Draft";
+      a.download = `${safe}_${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Downloaded branded Word document");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download Word document");
+    } finally {
+      setDownloadingDocx(false);
+    }
+  };
 
   const repurposeAsset = useMutation({
     mutationFn: async (assetId: string) => {
@@ -805,6 +841,19 @@ export default function EditorialCalendarPage() {
                 >
                   <Copy className="mr-2 h-4 w-4" />
                   Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={downloadDocx}
+                  disabled={downloadingDocx || !draftAssetId}
+                  data-testid="button-download-docx"
+                >
+                  {downloadingDocx ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileDown className="mr-2 h-4 w-4" />
+                  )}
+                  Download Word
                 </Button>
                 <Button
                   onClick={() => saveDraft.mutate()}

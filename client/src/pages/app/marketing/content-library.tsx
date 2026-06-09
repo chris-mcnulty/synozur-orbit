@@ -129,6 +129,7 @@ export default function ContentLibraryPage() {
   const [bulkQueuedCount, setBulkQueuedCount] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [showBrandImagePicker, setShowBrandImagePicker] = useState(false);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   const [urlInput, setUrlInput] = useState("");
@@ -438,6 +439,43 @@ export default function ContentLibraryPage() {
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const downloadDocx = async (asset: ContentAsset) => {
+    if (detailAsset && (editForm.title !== detailAsset.title || (editForm.content || "") !== (detailAsset.content || ""))) {
+      toast({ title: "Save first", description: "Save your changes, then download so the document matches.", variant: "destructive" });
+      return;
+    }
+    if (!asset.content?.trim()) {
+      toast({ title: "Nothing to export", description: "This asset has no written content yet.", variant: "destructive" });
+      return;
+    }
+    setDownloadingDocx(true);
+    try {
+      const res = await fetch(`/api/content-assets/${asset.id}/download/docx`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = "Failed to download Word document";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = (asset.title || "Content_Draft").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Content_Draft";
+      a.download = `${safe}_${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded", description: "Branded Word document saved." });
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "Failed to download Word document", variant: "destructive" });
+    } finally {
+      setDownloadingDocx(false);
+    }
+  };
 
   const openEditDialog = (asset: ContentAsset) => {
     setEditForm({
@@ -2053,6 +2091,15 @@ export default function ContentLibraryPage() {
                       data-testid="button-create-product-from-detail"
                     >
                       <Package className="w-4 h-4" /> Create Product
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2"
+                      disabled={downloadingDocx || !editForm.content?.trim()}
+                      onClick={() => downloadDocx({ ...detailAsset, title: editForm.title, content: editForm.content })}
+                      data-testid="button-download-docx"
+                    >
+                      <Download className="w-4 h-4" /> {downloadingDocx ? "Preparing..." : "Download Word"}
                     </Button>
                     <Button
                       className="flex-1"
