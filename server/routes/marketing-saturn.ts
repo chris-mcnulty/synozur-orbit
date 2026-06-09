@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, count } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, isNotNull, count } from "drizzle-orm";
 import { parsePaginationParams, buildPaginatedEnvelope, toContainsPattern } from "../utils/pagination";
 import { randomUUID } from "crypto";
 import {
@@ -384,6 +384,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } else {
       conditions.push(ne(contentAssets.status, "archived"));
     }
+    // The Digital/Web Assets library holds URL-fronted (or uploaded-file)
+    // finished-good source assets used to generate outbound content. Generated
+    // drafts (e.g. the editorial calendar's "draft from brief" output) are
+    // stored as content assets so they can be edited and exported to Word, but
+    // they have no public URL — exclude anything without a url/fileUrl so the
+    // library stays a clean set of usable source assets and drafts don't get
+    // pulled into outbound campaigns.
+    conditions.push(or(
+      and(isNotNull(contentAssets.url), ne(contentAssets.url, "")),
+      isNotNull(contentAssets.fileUrl),
+    )!);
     const pagination = parsePaginationParams(req);
     if (pagination.q) {
       const pattern = toContainsPattern(pagination.q);
@@ -502,6 +513,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status, assetType, solutionAreaIds } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "title is required" });
+    // Normalize url: blank/whitespace-only becomes null so the library filter
+    // (which keeps only url/file-backed source assets) treats it consistently.
+    const normalizedUrl = typeof url === "string" && url.trim() ? url.trim() : null;
     const safeAssetType = typeof assetType === "string" && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)
       ? (assetType as ContentAssetType)
       : "other";
@@ -511,7 +525,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       marketId: ctx.marketId,
       title: title.trim(),
       description,
-      url,
+      url: normalizedUrl,
       content,
       aiSummary: aiSummary || null,
       leadImageUrl: leadImageUrl || null,
@@ -544,7 +558,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
-    if (url !== undefined) updates.url = url;
+    if (url !== undefined) updates.url = typeof url === "string" && url.trim() ? url.trim() : null;
     if (content !== undefined) updates.content = content;
     if (categoryId !== undefined) updates.categoryId = categoryId;
     if (status !== undefined) updates.status = status;

@@ -1,3 +1,4 @@
+- [Content library = url-fronted source assets](content-library-source-vs-drafts.md) — Digital/Web Assets library shows only content_assets with url/fileUrl; content-only drafts excluded by design.
 - [Hero compositor font paths](hero-compositor-fonts.md) — Avenir Next LT Pro TTFs must use absolute path via path.resolve(cwd, "client/public/fonts/") for Sharp/librsvg to embed them.
 - [Conference backgrounds CRUD](conference-backgrounds.md) — conferenceBackgrounds table + routes added; backgroundId FK on conferenceImages links hero composites to location photos.
 - [logo_composite render chain](logo-composite-render.md) — logo_composite branch in renderConferenceImage: bg photo → scrim → event logo → white_horizontal company logo → conf name. Falls back to brand-gradient if no backgroundBytes.
