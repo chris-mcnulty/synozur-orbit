@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, DragEvent as ReactDragEvent, SetStateAction } from "react";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ import {
   CalendarRange,
   Tag,
   X,
+  GripVertical,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -354,6 +356,44 @@ export default function MarketingCalendarPage() {
     bulkMut.mutate({ action, params });
   };
 
+  // Drag-and-drop scheduling: dropping backlog drafts onto a day cell schedules
+  // them. Reuses the same bulk "schedule" path as the bulk bar so single and
+  // multi-draft drops behave identically.
+  const dragScheduleMut = useMutation({
+    mutationFn: async ({ descriptors, date }: { descriptors: { type: string; id: string }[]; date: string }) => {
+      const res = await apiRequest("POST", "/api/marketing-calendar/bulk", {
+        action: "schedule",
+        items: descriptors,
+        date,
+      });
+      return res.json() as Promise<{ affected: number; skipped: string[] }>;
+    },
+    onSuccess: (data) => {
+      invalidate();
+      clearSelection();
+      toast({
+        title: `Scheduled ${data.affected} item${data.affected === 1 ? "" : "s"}`,
+        description: data.skipped?.length ? data.skipped.join(" ") : undefined,
+      });
+    },
+    onError: (e: any) => toast({ title: "Could not schedule", description: e.message, variant: "destructive" }),
+  });
+
+  // Given the dragged draft, return the descriptors to schedule: the whole
+  // multi-selection if the dragged item is part of it, otherwise just itself.
+  const dragDescriptors = (it: CalendarItem): { type: string; id: string }[] => {
+    const k = itemKey(it);
+    if (selected.has(k) && selected.size > 1) {
+      return filteredBacklog.filter((b) => selected.has(itemKey(b))).map((b) => ({ type: b.type, id: b.id }));
+    }
+    return [{ type: it.type, id: it.id }];
+  };
+
+  const handleDropSchedule = (descriptors: { type: string; id: string }[], dateKey: string) => {
+    if (!descriptors.length || dragScheduleMut.isPending) return;
+    dragScheduleMut.mutate({ descriptors, date: new Date(`${dateKey}T09:00:00`).toISOString() });
+  };
+
   const periodLabel = grouping === "quarter"
     ? `Q${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`
     : anchor.toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -460,7 +500,28 @@ export default function MarketingCalendarPage() {
             ) : groupBy !== "none" ? (
               <GroupedList items={scheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
             ) : grouping === "month" ? (
-              <MonthGrid anchor={anchor} byDay={byDay} filterOpts={filterOpts} onSelect={setDetail} />
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                <div className="min-w-0 flex-1">
+                  <MonthGrid
+                    anchor={anchor}
+                    byDay={byDay}
+                    filterOpts={filterOpts}
+                    onSelect={setDetail}
+                    onDropSchedule={handleDropSchedule}
+                  />
+                </div>
+                <BacklogRail
+                  items={filteredBacklog}
+                  totalCount={backlogItems.length}
+                  isLoading={backlogLoading}
+                  selected={selected}
+                  toggleSelected={toggleSelected}
+                  itemKey={itemKey}
+                  onSelect={setDetail}
+                  dragDescriptors={dragDescriptors}
+                  scheduling={dragScheduleMut.isPending}
+                />
+              </div>
             ) : (
               <QuarterList anchor={anchor} items={scheduled} filterOpts={filterOpts} onSelect={setDetail} />
             )}
@@ -549,16 +610,37 @@ function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOp
   );
 }
 
-function MonthGrid({ anchor, byDay, filterOpts, onSelect }: { anchor: Date; byDay: Map<string, CalendarItem[]>; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void }) {
+function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
+  anchor: Date;
+  byDay: Map<string, CalendarItem[]>;
+  filterOpts?: FilterOptions;
+  onSelect: (i: CalendarItem) => void;
+  onDropSchedule?: (descriptors: { type: string; id: string }[], dateKey: string) => void;
+}) {
   const first = startOfMonth(anchor);
   const startDow = first.getDay();
   const daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
   const todayKey = ymd(new Date());
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const cells: (Date | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(anchor.getFullYear(), anchor.getMonth(), d));
   while (cells.length % 7 !== 0) cells.push(null);
+
+  const handleDrop = (e: ReactDragEvent, key: string) => {
+    e.preventDefault();
+    setDragOverKey(null);
+    if (!onDropSchedule) return;
+    const raw = e.dataTransfer.getData("application/json");
+    if (!raw) return;
+    try {
+      const descriptors = JSON.parse(raw) as { type: string; id: string }[];
+      if (Array.isArray(descriptors) && descriptors.length) onDropSchedule(descriptors, key);
+    } catch {
+      // Ignore drops that don't carry our draft payload.
+    }
+  };
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -569,8 +651,17 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect }: { anchor: Date; byDa
         {cells.map((date, i) => {
           const key = date ? ymd(date) : null;
           const dayItems = key ? byDay.get(key) || [] : [];
+          const isDropTarget = !!date && !!onDropSchedule;
+          const isDragOver = key !== null && key === dragOverKey;
           return (
-            <div key={i} className={`min-h-[96px] border-b border-r p-1 ${date ? "" : "bg-muted/20"} ${key === todayKey ? "bg-primary/5" : ""}`}>
+            <div
+              key={i}
+              className={`min-h-[96px] border-b border-r p-1 ${date ? "" : "bg-muted/20"} ${key === todayKey ? "bg-primary/5" : ""} ${isDragOver ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
+              data-testid={key ? `day-cell-${key}` : undefined}
+              onDragOver={isDropTarget ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (key !== dragOverKey) setDragOverKey(key); } : undefined}
+              onDragLeave={isDropTarget ? (e) => { if (e.currentTarget === e.target && key === dragOverKey) setDragOverKey(null); } : undefined}
+              onDrop={isDropTarget ? (e) => handleDrop(e, key!) : undefined}
+            >
               {date && (
                 <>
                   <div className={`mb-1 text-right text-xs ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}>{date.getDate()}</div>
@@ -584,6 +675,75 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect }: { anchor: Date; byDa
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Compact, draggable backlog rail shown beside the month grid. Lets users drag
+// drafts (single or multi-selected) onto a day cell to schedule them.
+function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, itemKey, onSelect, dragDescriptors, scheduling }: {
+  items: CalendarItem[];
+  totalCount: number;
+  isLoading: boolean;
+  selected: Set<string>;
+  toggleSelected: (it: CalendarItem) => void;
+  itemKey: (it: { type: string; id: string }) => string;
+  onSelect: (i: CalendarItem) => void;
+  dragDescriptors: (it: CalendarItem) => { type: string; id: string }[];
+  scheduling: boolean;
+}) {
+  const selectedCount = items.filter((it) => selected.has(itemKey(it))).length;
+
+  const onDragStart = (e: ReactDragEvent, it: CalendarItem) => {
+    const descriptors = dragDescriptors(it);
+    e.dataTransfer.setData("application/json", JSON.stringify(descriptors));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  return (
+    <div className="rounded-lg border lg:w-72 lg:shrink-0" data-testid="backlog-rail">
+      <div className="flex items-center gap-2 border-b bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+        <Inbox className="h-3.5 w-3.5" />
+        <span>Backlog ({items.length})</span>
+        {scheduling && <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" />}
+      </div>
+      {isLoading ? (
+        <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : items.length === 0 ? (
+        <p className="p-4 text-center text-xs text-muted-foreground" data-testid="backlog-rail-empty">
+          {totalCount === 0 ? "Nothing in the backlog." : "No drafts match the backlog filters."}
+        </p>
+      ) : (
+        <>
+          <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+            {selectedCount > 1
+              ? `Drag any selected draft onto a day to schedule all ${selectedCount}.`
+              : "Drag a draft onto a day to schedule it. Tick boxes to move several at once."}
+          </p>
+          <div className="max-h-[560px] space-y-1 overflow-y-auto p-2" data-testid="backlog-rail-list">
+            {items.map((it) => {
+              const k = itemKey(it);
+              const checked = selected.has(k);
+              return (
+                <div
+                  key={k}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, it)}
+                  className={`flex cursor-grab items-center gap-2 rounded border px-2 py-1.5 text-xs active:cursor-grabbing ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
+                  data-testid={`backlog-rail-row-${it.id}`}
+                >
+                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
+                  <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
+                    {it.title}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
