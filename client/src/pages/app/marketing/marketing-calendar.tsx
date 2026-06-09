@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +36,10 @@ import {
   Share2,
   PenLine,
   ExternalLink,
+  Inbox,
+  CalendarRange,
+  Tag,
+  X,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -57,6 +63,11 @@ interface CalendarItem {
   campaignId?: string | null;
   solutionAreaId?: string | null;
   conferenceId?: string | null;
+  // Server-resolved labels (scoped tenant-wide, so out-of-market assignments
+  // still render a name instead of going blank).
+  campaignName?: string | null;
+  solutionAreaName?: string | null;
+  conferenceName?: string | null;
   imageUrl?: string | null;
 }
 
@@ -98,16 +109,18 @@ interface ResolvedAssignment {
 function resolveAssignments(item: CalendarItem, filterOpts?: FilterOptions): ResolvedAssignment[] {
   const find = (list: FilterOption[] | undefined, id: string) => list?.find((o) => o.id === id)?.name;
   const out: ResolvedAssignment[] = [];
+  // Prefer the server-resolved name (works even for out-of-scope assignments);
+  // fall back to the in-scope filter option list when it isn't provided.
   if (item.campaignId) {
-    const name = find(filterOpts?.campaigns, item.campaignId);
+    const name = item.campaignName ?? find(filterOpts?.campaigns, item.campaignId);
     if (name) out.push({ kind: "campaign", name });
   }
   if (item.solutionAreaId) {
-    const name = find(filterOpts?.solutionAreas, item.solutionAreaId);
+    const name = item.solutionAreaName ?? find(filterOpts?.solutionAreas, item.solutionAreaId);
     if (name) out.push({ kind: "theme", name });
   }
   if (item.conferenceId) {
-    const name = find(filterOpts?.conferences, item.conferenceId);
+    const name = item.conferenceName ?? find(filterOpts?.conferences, item.conferenceId);
     if (name) out.push({ kind: "event", name });
   }
   return out;
@@ -136,6 +149,7 @@ export default function MarketingCalendarPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
+  const [view, setView] = useState<"calendar" | "backlog">("calendar");
   const [anchor, setAnchor] = useState(() => startOfMonth(new Date()));
   const [grouping, setGrouping] = useState<"month" | "quarter">("month");
   const [groupBy, setGroupBy] = useState<"none" | "campaign" | "theme" | "event">("none");
@@ -144,6 +158,13 @@ export default function MarketingCalendarPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
 
+  // ── Backlog state ──
+  const [backlogFilters, setBacklogFilters] = useState({ type: "all", campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDate, setBulkDate] = useState("");
+  const [assignKind, setAssignKind] = useState<AssignmentKind>("campaign");
+  const [assignValue, setAssignValue] = useState("none");
+
   const range = useMemo(() => {
     if (grouping === "quarter") return quarterRange(anchor);
     const start = startOfMonth(anchor);
@@ -151,22 +172,26 @@ export default function MarketingCalendarPage() {
     return { start, end };
   }, [anchor, grouping]);
 
+  // The calendar grid shows ONLY scheduled items in the active window.
   const queryUrl = useMemo(() => {
     const p = new URLSearchParams();
     p.set("from", range.start.toISOString());
     p.set("to", range.end.toISOString());
-    p.set("includeUnscheduled", "true");
     if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
     if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
     if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
     return `/api/marketing-calendar?${p.toString()}`;
   }, [range, filters]);
 
+  // The backlog query returns ONLY unscheduled drafts, tenant-wide, with no
+  // calendar filters applied — the backlog has its own independent filters.
+  const backlogUrl = "/api/marketing-calendar?unscheduledOnly=true";
+
   const { data: items = [], isLoading } = useQuery<CalendarItem[]>({ queryKey: [queryUrl] });
+  const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<CalendarItem[]>({ queryKey: [backlogUrl] });
   const { data: filterOpts } = useQuery<FilterOptions>({ queryKey: ["/api/marketing-calendar/filters"] });
 
   const scheduled = useMemo(() => items.filter((i) => i.date), [items]);
-  const unscheduled = useMemo(() => items.filter((i) => !i.date), [items]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarItem[]>();
@@ -179,9 +204,40 @@ export default function MarketingCalendarPage() {
     return map;
   }, [scheduled]);
 
+  // Invalidate every marketing-calendar query (grid + backlog + filters) so a
+  // change in one view reflects in the other.
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: [queryUrl] });
+    qc.invalidateQueries({
+      predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("/api/marketing-calendar"),
+    });
   };
+
+  // Apply the backlog's own client-side filters (independent of the calendar).
+  const filteredBacklog = useMemo(() => {
+    return backlogItems.filter((it) => {
+      if (backlogFilters.type !== "all" && it.type !== backlogFilters.type) return false;
+      if (backlogFilters.campaignId !== "all" && (it.campaignId ?? "") !== backlogFilters.campaignId) return false;
+      if (backlogFilters.solutionAreaId !== "all" && (it.solutionAreaId ?? "") !== backlogFilters.solutionAreaId) return false;
+      if (backlogFilters.conferenceId !== "all" && (it.conferenceId ?? "") !== backlogFilters.conferenceId) return false;
+      if (backlogFilters.status !== "all" && it.lifecycle !== backlogFilters.status) return false;
+      return true;
+    });
+  }, [backlogItems, backlogFilters]);
+
+  const itemKey = (it: { type: string; id: string }) => `${it.type}-${it.id}`;
+  const toggleSelected = (it: CalendarItem) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = itemKey(it);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+  const selectedDescriptors = useMemo(
+    () => filteredBacklog.filter((it) => selected.has(itemKey(it))).map((it) => ({ type: it.type, id: it.id })),
+    [filteredBacklog, selected],
+  );
 
   const approveMut = useMutation({
     mutationFn: async (it: CalendarItem) => {
@@ -270,6 +326,34 @@ export default function MarketingCalendarPage() {
     onError: (e: any) => toast({ title: "Could not export CSV", description: e.message, variant: "destructive" }),
   });
 
+  const bulkMut = useMutation({
+    mutationFn: async ({ action, params }: { action: string; params?: Record<string, any> }) => {
+      const res = await apiRequest("POST", "/api/marketing-calendar/bulk", {
+        action,
+        items: selectedDescriptors,
+        ...(params || {}),
+      });
+      return res.json() as Promise<{ affected: number; skipped: string[] }>;
+    },
+    onSuccess: (data, vars) => {
+      invalidate();
+      clearSelection();
+      setBulkDate("");
+      setAssignValue("none");
+      const labels: Record<string, string> = { schedule: "Scheduled", approve: "Approved", assign: "Assignment updated", discard: "Discarded" };
+      toast({
+        title: `${labels[vars.action] ?? "Done"} ${data.affected} item${data.affected === 1 ? "" : "s"}`,
+        description: data.skipped?.length ? data.skipped.join(" ") : undefined,
+      });
+    },
+    onError: (e: any) => toast({ title: "Bulk action failed", description: e.message, variant: "destructive" }),
+  });
+
+  const runBulk = (action: string, params?: Record<string, any>) => {
+    if (selectedDescriptors.length === 0) return;
+    bulkMut.mutate({ action, params });
+  };
+
   const periodLabel = grouping === "quarter"
     ? `Q${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`
     : anchor.toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -300,114 +384,114 @@ export default function MarketingCalendarPage() {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-md border p-0.5">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => step(-1)} data-testid="button-prev-period"><ChevronLeft className="h-4 w-4" /></Button>
-            <span className="min-w-[150px] text-center text-sm font-medium" data-testid="text-period-label">{periodLabel}</span>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => step(1)} data-testid="button-next-period"><ChevronRight className="h-4 w-4" /></Button>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setAnchor(startOfMonth(new Date()))} data-testid="button-today">Today</Button>
-
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Select value={grouping} onValueChange={(v) => setGrouping(v as any)} disabled={groupBy !== "none"}>
-              <SelectTrigger className="h-8 w-[130px]" data-testid="select-grouping"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="month">Month view</SelectItem>
-                <SelectItem value="quarter">Quarter view</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as any)}>
-              <SelectTrigger className="h-8 w-[140px]" data-testid="select-groupby"><SelectValue placeholder="Group by" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No grouping</SelectItem>
-                <SelectItem value="campaign">Group by campaign</SelectItem>
-                <SelectItem value="theme">Group by theme</SelectItem>
-                <SelectItem value="event">Group by event</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filters.campaignId} onValueChange={(v) => setFilters((f) => ({ ...f, campaignId: v }))}>
-              <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All campaigns</SelectItem>
-                {filterOpts?.campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.solutionAreaId} onValueChange={(v) => setFilters((f) => ({ ...f, solutionAreaId: v }))}>
-              <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-theme"><SelectValue placeholder="Theme" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All themes</SelectItem>
-                {filterOpts?.solutionAreas.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.conferenceId} onValueChange={(v) => setFilters((f) => ({ ...f, conferenceId: v }))}>
-              <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-event"><SelectValue placeholder="Event" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All events</SelectItem>
-                {filterOpts?.conferences.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* Calendar / Backlog toggle */}
+        <div className="flex items-center gap-1 rounded-md border p-0.5 w-fit">
+          <Button variant={view === "calendar" ? "secondary" : "ghost"} size="sm" className="h-8" onClick={() => setView("calendar")} data-testid="button-view-calendar">
+            <CalendarRange className="mr-2 h-4 w-4" /> Calendar
+          </Button>
+          <Button variant={view === "backlog" ? "secondary" : "ghost"} size="sm" className="h-8" onClick={() => setView("backlog")} data-testid="button-view-backlog">
+            <Inbox className="mr-2 h-4 w-4" /> Backlog
+            {backlogItems.length > 0 && <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]" data-testid="badge-backlog-count">{backlogItems.length}</Badge>}
+          </Button>
         </div>
 
-        {/* Legend */}
-        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-          {(Object.keys(TYPE_META) as ItemType[]).map((t) => (
-            <span key={t} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[t].dot}`} /> {TYPE_META[t].label}</span>
-          ))}
-        </div>
+        {view === "calendar" ? (
+          <>
+            {/* Controls */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 rounded-md border p-0.5">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => step(-1)} data-testid="button-prev-period"><ChevronLeft className="h-4 w-4" /></Button>
+                <span className="min-w-[150px] text-center text-sm font-medium" data-testid="text-period-label">{periodLabel}</span>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => step(1)} data-testid="button-next-period"><ChevronRight className="h-4 w-4" /></Button>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setAnchor(startOfMonth(new Date()))} data-testid="button-today">Today</Button>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
-          {/* Calendar */}
-          <div>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Select value={grouping} onValueChange={(v) => setGrouping(v as any)} disabled={groupBy !== "none"}>
+                  <SelectTrigger className="h-8 w-[130px]" data-testid="select-grouping"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="month">Month view</SelectItem>
+                    <SelectItem value="quarter">Quarter view</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={groupBy} onValueChange={(v) => setGroupBy(v as any)}>
+                  <SelectTrigger className="h-8 w-[140px]" data-testid="select-groupby"><SelectValue placeholder="Group by" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No grouping</SelectItem>
+                    <SelectItem value="campaign">Group by campaign</SelectItem>
+                    <SelectItem value="theme">Group by theme</SelectItem>
+                    <SelectItem value="event">Group by event</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filters.campaignId} onValueChange={(v) => setFilters((f) => ({ ...f, campaignId: v }))}>
+                  <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All campaigns</SelectItem>
+                    {filterOpts?.campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.solutionAreaId} onValueChange={(v) => setFilters((f) => ({ ...f, solutionAreaId: v }))}>
+                  <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-theme"><SelectValue placeholder="Theme" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All themes</SelectItem>
+                    {filterOpts?.solutionAreas.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.conferenceId} onValueChange={(v) => setFilters((f) => ({ ...f, conferenceId: v }))}>
+                  <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-event"><SelectValue placeholder="Event" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All events</SelectItem>
+                    {filterOpts?.conferences.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+              {(Object.keys(TYPE_META) as ItemType[]).map((t) => (
+                <span key={t} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[t].dot}`} /> {TYPE_META[t].label}</span>
+              ))}
+            </div>
+
+            {/* Calendar (scheduled items only) */}
             {isLoading ? (
               <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : groupBy !== "none" ? (
-              <GroupedList items={items} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
+              <GroupedList items={scheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
             ) : grouping === "month" ? (
               <MonthGrid anchor={anchor} byDay={byDay} filterOpts={filterOpts} onSelect={setDetail} />
             ) : (
-              <QuarterList anchor={anchor} items={scheduled} onSelect={setDetail} />
+              <QuarterList anchor={anchor} items={scheduled} filterOpts={filterOpts} onSelect={setDetail} />
             )}
-          </div>
-
-          {/* Unscheduled tray */}
-          <Card className="h-fit">
-            <CardContent className="p-3">
-              <h3 className="mb-2 text-sm font-semibold">Unscheduled ({unscheduled.length})</h3>
-              {unscheduled.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Everything has a date. Nice.</p>
-              ) : (
-                <div className="space-y-2" data-testid="list-unscheduled">
-                  {unscheduled.map((it) => (
-                    <button key={`${it.type}-${it.id}`} onClick={() => setDetail(it)} className="w-full rounded-md border p-2 text-left hover:bg-muted" data-testid={`item-unscheduled-${it.id}`}>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />
-                        <span className="truncate text-xs font-medium">{it.title}</span>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between gap-1">
-                        <Badge variant="outline" className={`px-1 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
-                        <Input
-                          type="date"
-                          className="h-6 w-[120px] text-[11px]"
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v) rescheduleMut.mutate({ it, date: new Date(`${v}T09:00:00`).toISOString() });
-                          }}
-                          data-testid={`input-schedule-${it.id}`}
-                        />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+          </>
+        ) : (
+          <BacklogPanel
+            items={filteredBacklog}
+            totalCount={backlogItems.length}
+            isLoading={backlogLoading}
+            filterOpts={filterOpts}
+            backlogFilters={backlogFilters}
+            setBacklogFilters={setBacklogFilters}
+            selected={selected}
+            toggleSelected={toggleSelected}
+            clearSelection={clearSelection}
+            setSelected={setSelected}
+            itemKey={itemKey}
+            onSelect={setDetail}
+            bulkDate={bulkDate}
+            setBulkDate={setBulkDate}
+            assignKind={assignKind}
+            setAssignKind={setAssignKind}
+            assignValue={assignValue}
+            setAssignValue={setAssignValue}
+            runBulk={runBulk}
+            bulkBusy={bulkMut.isPending}
+          />
+        )}
       </div>
 
-      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} filterOpts={filterOpts} onCreated={() => qc.invalidateQueries({ queryKey: [queryUrl] })} />
+      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} filterOpts={filterOpts} onCreated={invalidate} />
 
       <DetailDialog
         item={detail}
@@ -422,6 +506,21 @@ export default function MarketingCalendarPage() {
         busy={approveMut.isPending || deleteMut.isPending || exportDocxMut.isPending || handoffMut.isPending || assignMut.isPending}
       />
     </AppLayout>
+  );
+}
+
+// Small colored dots summarizing an item's campaign / theme / event assignments,
+// shown consistently across the month, quarter, grouped, and backlog views.
+function AssignmentDots({ item, filterOpts }: { item: CalendarItem; filterOpts?: FilterOptions }) {
+  const assignments = resolveAssignments(item, filterOpts);
+  if (assignments.length === 0) return null;
+  const tip = assignments.map((a) => `${ASSIGN_META[a.kind].label}: ${a.name}`).join(", ");
+  return (
+    <span className="flex shrink-0 items-center gap-0.5" title={tip} data-testid={`assign-dots-${item.id}`}>
+      {assignments.map((a) => (
+        <span key={a.kind} className={`h-1.5 w-1.5 rounded-full ${ASSIGN_META[a.kind].dot}`} />
+      ))}
+    </span>
   );
 }
 
@@ -489,7 +588,7 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect }: { anchor: Date; byDa
   );
 }
 
-function QuarterList({ anchor, items, onSelect }: { anchor: Date; items: CalendarItem[]; onSelect: (i: CalendarItem) => void }) {
+function QuarterList({ anchor, items, filterOpts, onSelect }: { anchor: Date; items: CalendarItem[]; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void }) {
   const q = Math.floor(anchor.getMonth() / 3);
   const months = [0, 1, 2].map((m) => new Date(anchor.getFullYear(), q * 3 + m, 1));
   return (
@@ -511,7 +610,8 @@ function QuarterList({ anchor, items, onSelect }: { anchor: Date; items: Calenda
                   <button key={`${it.type}-${it.id}`} onClick={() => onSelect(it)} className="flex w-full items-center gap-1.5 rounded border p-1.5 text-left text-xs hover:bg-muted" data-testid={`item-quarter-${it.id}`}>
                     <span className="w-9 shrink-0 text-[10px] text-muted-foreground">{new Date(it.date!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />
-                    <span className="truncate">{it.title}</span>
+                    <span className="flex-1 truncate">{it.title}</span>
+                    <AssignmentDots item={it} filterOpts={filterOpts} />
                   </button>
                 ))}
               </div>
@@ -847,6 +947,7 @@ function GroupedList({ items, groupBy, filterOpts, onSelect }: {
                     <span className="w-14 shrink-0 text-[10px] text-muted-foreground">{it.date ? new Date(it.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</span>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />
                     <span className="flex-1 truncate">{it.title}</span>
+                    <AssignmentDots item={it} filterOpts={filterOpts} />
                     <Badge variant="outline" className={`shrink-0 px-1 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
                   </button>
                 ))}
@@ -855,6 +956,177 @@ function GroupedList({ items, groupBy, filterOpts, onSelect }: {
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+interface BacklogFilterState {
+  type: string;
+  campaignId: string;
+  solutionAreaId: string;
+  conferenceId: string;
+  status: string;
+}
+
+function BacklogPanel({
+  items, totalCount, isLoading, filterOpts, backlogFilters, setBacklogFilters,
+  selected, toggleSelected, clearSelection, setSelected, itemKey, onSelect,
+  bulkDate, setBulkDate, assignKind, setAssignKind, assignValue, setAssignValue, runBulk, bulkBusy,
+}: {
+  items: CalendarItem[];
+  totalCount: number;
+  isLoading: boolean;
+  filterOpts?: FilterOptions;
+  backlogFilters: BacklogFilterState;
+  setBacklogFilters: Dispatch<SetStateAction<BacklogFilterState>>;
+  selected: Set<string>;
+  toggleSelected: (it: CalendarItem) => void;
+  clearSelection: () => void;
+  setSelected: Dispatch<SetStateAction<Set<string>>>;
+  itemKey: (it: { type: string; id: string }) => string;
+  onSelect: (i: CalendarItem) => void;
+  bulkDate: string;
+  setBulkDate: (v: string) => void;
+  assignKind: AssignmentKind;
+  setAssignKind: (v: AssignmentKind) => void;
+  assignValue: string;
+  setAssignValue: (v: string) => void;
+  runBulk: (action: string, params?: Record<string, any>) => void;
+  bulkBusy: boolean;
+}) {
+  const allKeys = items.map(itemKey);
+  const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k));
+  const someSelected = allKeys.some((k) => selected.has(k));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allKeys));
+  const selectedCount = allKeys.filter((k) => selected.has(k)).length;
+
+  const assignOptions = assignKind === "campaign" ? filterOpts?.campaigns : assignKind === "theme" ? filterOpts?.solutionAreas : filterOpts?.conferences;
+  const doAssign = () => {
+    const key = assignKind === "campaign" ? "campaignId" : assignKind === "theme" ? "solutionAreaId" : "conferenceId";
+    runBulk("assign", { [key]: assignValue === "none" ? null : assignValue });
+  };
+  const doSchedule = () => {
+    if (!bulkDate) return;
+    runBulk("schedule", { date: new Date(`${bulkDate}T09:00:00`).toISOString() });
+  };
+
+  return (
+    <div className="space-y-3" data-testid="backlog-panel">
+      <p className="text-sm text-muted-foreground">
+        Unscheduled drafts across social, email, and content. Select items to schedule, approve, assign, or discard them in bulk.
+      </p>
+
+      {/* Backlog filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={backlogFilters.type} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, type: v }))}>
+          <SelectTrigger className="h-8 w-[130px]" data-testid="select-backlog-type"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="social">Social</SelectItem>
+            <SelectItem value="email">Email</SelectItem>
+            <SelectItem value="content">Content</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={backlogFilters.campaignId} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, campaignId: v }))}>
+          <SelectTrigger className="h-8 w-[150px]" data-testid="select-backlog-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All campaigns</SelectItem>
+            {filterOpts?.campaigns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={backlogFilters.solutionAreaId} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, solutionAreaId: v }))}>
+          <SelectTrigger className="h-8 w-[150px]" data-testid="select-backlog-theme"><SelectValue placeholder="Theme" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All themes</SelectItem>
+            {filterOpts?.solutionAreas.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={backlogFilters.conferenceId} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, conferenceId: v }))}>
+          <SelectTrigger className="h-8 w-[150px]" data-testid="select-backlog-event"><SelectValue placeholder="Event" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All events</SelectItem>
+            {filterOpts?.conferences.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={backlogFilters.status} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, status: v }))}>
+          <SelectTrigger className="h-8 w-[130px]" data-testid="select-backlog-status"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="delivered">Delivered</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Bulk action bar */}
+      {selectedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2" data-testid="bulk-action-bar">
+          <span className="text-sm font-medium" data-testid="text-selected-count">{selectedCount} selected</span>
+          <Button variant="ghost" size="sm" className="h-8" onClick={clearSelection} data-testid="button-clear-selection"><X className="mr-1 h-3.5 w-3.5" /> Clear</Button>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="flex items-center gap-1">
+            <Input type="date" className="h-8 w-[140px]" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} data-testid="input-bulk-date" />
+            <Button size="sm" className="h-8" onClick={doSchedule} disabled={!bulkDate || bulkBusy} data-testid="button-bulk-schedule"><CalendarDays className="mr-1 h-3.5 w-3.5" /> Schedule</Button>
+          </div>
+          <Button variant="outline" size="sm" className="h-8" onClick={() => runBulk("approve")} disabled={bulkBusy} data-testid="button-bulk-approve"><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve</Button>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="flex items-center gap-1">
+            <Select value={assignKind} onValueChange={(v) => { setAssignKind(v as AssignmentKind); setAssignValue("none"); }}>
+              <SelectTrigger className="h-8 w-[110px]" data-testid="select-assign-kind"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="campaign">Campaign</SelectItem>
+                <SelectItem value="theme">Theme</SelectItem>
+                <SelectItem value="event">Event</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={assignValue} onValueChange={setAssignValue}>
+              <SelectTrigger className="h-8 w-[150px]" data-testid="select-assign-value"><SelectValue placeholder="Choose…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (clear)</SelectItem>
+                {assignOptions?.map((o) => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" className="h-8" onClick={doAssign} disabled={bulkBusy} data-testid="button-bulk-assign"><Tag className="mr-1 h-3.5 w-3.5" /> Assign</Button>
+          </div>
+          <Separator orientation="vertical" className="h-6" />
+          <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => runBulk("discard")} disabled={bulkBusy} data-testid="button-bulk-discard"><Trash2 className="mr-1 h-3.5 w-3.5" /> Discard</Button>
+          {bulkBusy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        </div>
+      )}
+
+      {/* Item list */}
+      {isLoading ? (
+        <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : items.length === 0 ? (
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground" data-testid="backlog-empty">
+          {totalCount === 0 ? "Nothing in the backlog. Every draft has a date." : "No backlog items match these filters."}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border">
+          <div className="flex items-center gap-3 border-b bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+            <Checkbox checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={toggleAll} data-testid="checkbox-select-all" aria-label="Select all" />
+            <span>Select all ({items.length})</span>
+          </div>
+          <div className="divide-y" data-testid="backlog-list">
+            {items.map((it) => {
+              const k = itemKey(it);
+              const checked = selected.has(k);
+              return (
+                <div key={k} className={`flex items-center gap-3 px-3 py-2 text-sm ${checked ? "bg-primary/5" : "hover:bg-muted/50"}`} data-testid={`backlog-row-${it.id}`}>
+                  <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-item-${it.id}`} aria-label={`Select ${it.title}`} />
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
+                  <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-backlog-item-${it.id}`}>
+                    {it.title}
+                  </button>
+                  <AssignmentDots item={it} filterOpts={filterOpts} />
+                  <Badge variant="outline" className={`shrink-0 px-1.5 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

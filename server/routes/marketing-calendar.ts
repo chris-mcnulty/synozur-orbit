@@ -86,16 +86,26 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled } = req.query as Record<string, string>;
+      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly } = req.query as Record<string, string>;
       const fromDate = from ? new Date(from) : null;
       const toDate = to ? new Date(to) : null;
       const wantUnscheduled = includeUnscheduled === "true" || includeUnscheduled === "1";
+      // Backlog mode: return ONLY items that have no scheduled date, ignoring
+      // the date window entirely. Powers the dedicated backlog panel.
+      const onlyUnscheduled = unscheduledOnly === "true" || unscheduledOnly === "1";
 
       const inWindow = (d: Date | null) => {
         if (!d) return false;
         if (fromDate && d < fromDate) return false;
         if (toDate && d > toDate) return false;
         return true;
+      };
+      // Shared gate: decide whether an item (by its resolved date) belongs in
+      // the response, honoring backlog vs windowed-calendar mode.
+      const includeByDate = (date: Date | null): boolean => {
+        const scheduled = !!date;
+        if (onlyUnscheduled) return !scheduled;
+        return scheduled ? inWindow(date) : wantUnscheduled;
       };
 
       // ── Social posts (scoped by tenant only — generated_posts has no market) ──
@@ -169,8 +179,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       for (const p of socialRows) {
         const date = p.scheduledDate ?? p.publishedAt ?? null;
-        const scheduled = !!date;
-        if (scheduled ? !inWindow(date) : !wantUnscheduled) continue;
+        if (!includeByDate(date)) continue;
         items.push({
           id: p.id,
           type: "social",
@@ -189,8 +198,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       for (const e of emailRows) {
         const date = e.scheduledAt ?? e.sentAt ?? null;
-        const scheduled = !!date;
-        if (scheduled ? !inWindow(date) : !wantUnscheduled) continue;
+        if (!includeByDate(date)) continue;
         items.push({
           id: e.id,
           type: "email",
@@ -207,8 +215,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       for (const b of briefRows) {
         const date = b.scheduledAt ?? null;
-        const scheduled = !!date;
-        if (scheduled ? !inWindow(date) : !wantUnscheduled) continue;
+        if (!includeByDate(date)) continue;
         items.push({
           id: b.id,
           type: "content",
@@ -223,6 +230,40 @@ export function registerMarketingCalendarRoutes(app: Express) {
           solutionAreaId: b.solutionAreaId,
           conferenceId: b.conferenceId,
         });
+      }
+
+      // ── Resolve campaign / theme / event NAMES server-side ──
+      // Scoped to the tenant only (not the active market) so an item assigned
+      // to a campaign/theme/event that lives outside the current market scope
+      // still shows its label instead of silently appearing blank.
+      const collectIds = (key: "campaignId" | "solutionAreaId" | "conferenceId") =>
+        Array.from(new Set(items.map((i) => i[key]).filter((v): v is string => !!v)));
+      const campIds = collectIds("campaignId");
+      const themeIds = collectIds("solutionAreaId");
+      const eventIds = collectIds("conferenceId");
+
+      const [campNameRows, themeNameRows, eventNameRows] = await Promise.all([
+        campIds.length
+          ? db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns)
+              .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), inArray(campaigns.id, campIds)))
+          : Promise.resolve([] as { id: string; name: string }[]),
+        themeIds.length
+          ? db.select({ id: solutionAreas.id, name: solutionAreas.name }).from(solutionAreas)
+              .where(and(eq(solutionAreas.tenantDomain, ctx.tenantDomain), inArray(solutionAreas.id, themeIds)))
+          : Promise.resolve([] as { id: string; name: string }[]),
+        eventIds.length
+          ? db.select({ id: conferences.id, name: conferences.name }).from(conferences)
+              .where(and(eq(conferences.tenantDomain, ctx.tenantDomain), inArray(conferences.id, eventIds)))
+          : Promise.resolve([] as { id: string; name: string }[]),
+      ]);
+
+      const campName = new Map(campNameRows.map((r) => [r.id, r.name]));
+      const themeName = new Map(themeNameRows.map((r) => [r.id, r.name]));
+      const eventName = new Map(eventNameRows.map((r) => [r.id, r.name]));
+      for (const it of items) {
+        it.campaignName = it.campaignId ? campName.get(it.campaignId) ?? null : null;
+        it.solutionAreaName = it.solutionAreaId ? themeName.get(it.solutionAreaId) ?? null : null;
+        it.conferenceName = it.conferenceId ? eventName.get(it.conferenceId) ?? null : null;
       }
 
       res.json(items);
@@ -543,6 +584,113 @@ export function registerMarketingCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[marketing-calendar export-csv]", err.message);
       res.status(500).json({ error: err.message || "Failed to export CSV" });
+    }
+  });
+
+  // ───── Bulk actions on backlog items (schedule / approve / assign / discard) ─────
+  app.post("/api/marketing-calendar/bulk", async (req, res) => {
+    if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const body = req.body ?? {};
+      const action = String(body.action || "");
+      const rawItems: Array<{ type: string; id: string }> = Array.isArray(body.items) ? body.items : [];
+      if (!rawItems.length) return res.status(400).json({ error: "No items selected." });
+
+      // Group selected item ids by type so we can batch each table.
+      const byType: Record<string, string[]> = { social: [], email: [], content: [] };
+      for (const it of rawItems) {
+        if (it && byType[it.type] && it.id) byType[it.type].push(it.id);
+      }
+
+      let affected = 0;
+      const skipped: string[] = [];
+
+      if (action === "schedule") {
+        const when = body.date ? new Date(body.date) : null;
+        if (!when || isNaN(when.getTime())) return res.status(400).json({ error: "A valid date is required to schedule." });
+        if (byType.social.length) {
+          const r = await db.update(generatedPosts).set({ scheduledDate: when, updatedAt: new Date() })
+            .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, byType.social))).returning({ id: generatedPosts.id });
+          affected += r.length;
+        }
+        if (byType.email.length) {
+          const r = await db.update(generatedEmails).set({ scheduledAt: when, updatedAt: new Date() })
+            .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
+          affected += r.length;
+        }
+        if (byType.content.length) {
+          const r = await db.update(contentBriefs).set({ scheduledAt: when, updatedAt: new Date() })
+            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
+          affected += r.length;
+        }
+      } else if (action === "approve") {
+        // Blog/content and email support an Approve gate. Social posts rely on
+        // the CSV export (= delivered) flow and have no approve step — skip them.
+        if (byType.content.length) {
+          const r = await db.update(contentBriefs).set({ status: "approved", updatedAt: new Date() })
+            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
+          affected += r.length;
+        }
+        if (byType.email.length) {
+          const r = await db.update(generatedEmails).set({ status: "approved", updatedAt: new Date() })
+            .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
+          affected += r.length;
+        }
+        if (byType.social.length) skipped.push(`${byType.social.length} social post(s) — social posts are delivered via CSV export, not approval.`);
+      } else if (action === "assign") {
+        // Only set the assignment fields that were explicitly provided.
+        const setFor = (target: "social" | "email" | "content") => {
+          const u: any = { updatedAt: new Date() };
+          if ("campaignId" in body) u.campaignId = body.campaignId || null;
+          if ("solutionAreaId" in body) u.solutionAreaId = body.solutionAreaId || null;
+          if ("conferenceId" in body) u.conferenceId = body.conferenceId || null;
+          return u;
+        };
+        if (!("campaignId" in body) && !("solutionAreaId" in body) && !("conferenceId" in body)) {
+          return res.status(400).json({ error: "Provide a campaign, theme, or event to assign." });
+        }
+        if (byType.social.length) {
+          const r = await db.update(generatedPosts).set(setFor("social"))
+            .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, byType.social))).returning({ id: generatedPosts.id });
+          affected += r.length;
+        }
+        if (byType.email.length) {
+          const r = await db.update(generatedEmails).set(setFor("email"))
+            .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
+          affected += r.length;
+        }
+        if (byType.content.length) {
+          const r = await db.update(contentBriefs).set(setFor("content"))
+            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
+          affected += r.length;
+        }
+      } else if (action === "discard") {
+        // Social → soft-delete via status; content → "removed" status; email has
+        // no soft-delete status, so it is hard-deleted.
+        if (byType.social.length) {
+          const r = await db.update(generatedPosts).set({ status: "deleted", updatedAt: new Date() })
+            .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, byType.social))).returning({ id: generatedPosts.id });
+          affected += r.length;
+        }
+        if (byType.content.length) {
+          const r = await db.update(contentBriefs).set({ status: "removed", updatedAt: new Date() })
+            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
+          affected += r.length;
+        }
+        if (byType.email.length) {
+          const r = await db.delete(generatedEmails)
+            .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
+          affected += r.length;
+        }
+      } else {
+        return res.status(400).json({ error: "Unknown bulk action." });
+      }
+
+      res.json({ ok: true, affected, skipped });
+    } catch (err: any) {
+      console.error("[marketing-calendar bulk]", err.message);
+      res.status(500).json({ error: err.message || "Failed to apply bulk action" });
     }
   });
 

@@ -3711,19 +3711,24 @@ const CONTENT_ANGLES: { name: string; directive: string }[] = [
  * Determine how many unique text variants to generate per platform so that each
  * scheduled day gets a meaningfully different post.
  *
- * Floor: 5 variants (gives even short campaigns visible variety).
- * Ceiling: 30 variants (covers a month of weekday posts; longer campaigns will
- *   cycle the variant pool monthly, which avoids day-after-day or every-other-day
- *   repetition while keeping AI generation cost bounded).
+ * Floor: 3 variants (gives even short campaigns a little variety).
+ * Ceiling: 10 variants (covers ~two weeks of weekday posts; longer campaigns
+ *   cycle the variant pool, which avoids day-after-day repetition while keeping
+ *   the backlog manageable and AI generation cost bounded).
  */
+const MIN_VARIANTS_PER_PLATFORM = 3;
+const MAX_VARIANTS_PER_PLATFORM = 10;
+// Hard cap on how many draft rows a single generation run may persist, across
+// all platforms and image variations combined. Prevents the variants × brand
+// images × platforms grid from flooding the backlog with hundreds of drafts.
+const MAX_DRAFTS_PER_GENERATION = 60;
+
 function calculateTargetVariantsPerPlatform(campaignRow: { numberOfDays: number | null; includeSaturday: boolean | null; includeSunday: boolean | null }): { target: number; eligibleDays: number; capped: boolean } {
   const baseDays = campaignRow.numberOfDays ?? 7;
   const daysPerWeek = 5 + (campaignRow.includeSaturday ? 1 : 0) + (campaignRow.includeSunday ? 1 : 0);
   const eligibleDays = Math.max(1, Math.ceil(baseDays * daysPerWeek / 7));
-  const MIN_VARIANTS = 5;
-  const MAX_VARIANTS = 30;
-  const target = Math.min(Math.max(eligibleDays, MIN_VARIANTS), MAX_VARIANTS);
-  return { target, eligibleDays, capped: eligibleDays > MAX_VARIANTS };
+  const target = Math.min(Math.max(eligibleDays, MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM);
+  return { target, eligibleDays, capped: eligibleDays > MAX_VARIANTS_PER_PLATFORM };
 }
 
 async function generatePostsAsync(
@@ -4166,12 +4171,22 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
     }
 
     reportProgress?.({ phase: "Saving posts", percent: 95 });
-    if (generatedRows.length) {
-      await db.insert(generatedPosts).values(generatedRows);
+    // Server-side hard cap: never persist more than MAX_DRAFTS_PER_GENERATION
+    // drafts from a single run, no matter how the variants × images × platforms
+    // grid multiplies out. Keeps the backlog manageable.
+    let rowsToInsert = generatedRows;
+    if (rowsToInsert.length > MAX_DRAFTS_PER_GENERATION) {
+      console.warn(
+        `[Saturn] Capping generated drafts from ${rowsToInsert.length} to ${MAX_DRAFTS_PER_GENERATION} (per-run limit)`,
+      );
+      rowsToInsert = rowsToInsert.slice(0, MAX_DRAFTS_PER_GENERATION);
+    }
+    if (rowsToInsert.length) {
+      await db.insert(generatedPosts).values(rowsToInsert);
     }
 
     await db.update(scheduledJobRuns)
-      .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: generatedRows.length } })
+      .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: rowsToInsert.length } })
       .where(eq(scheduledJobRuns.id, jobId));
   } catch (err: any) {
     console.error("[Saturn] Post generation failed:", err.message, err.stack);
