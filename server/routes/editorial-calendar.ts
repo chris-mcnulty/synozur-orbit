@@ -9,6 +9,24 @@ import { generateContentBriefs } from "../services/editorial-calendar-service";
 import { draftFromBrief } from "../services/copywriter-service";
 import { DEFAULT_FUNNEL_TARGETS, briefFormatToAssetType } from "../services/editorial-calendar-core";
 
+const FORMAT_LABELS: Record<string, string> = {
+  blog_post: "Blog post",
+  landing_page: "Landing page",
+  linkedin_post: "LinkedIn post",
+  x_post: "X / Twitter post",
+  newsletter: "Newsletter",
+  video_script: "Video script",
+  case_study: "Case study",
+  whitepaper: "Whitepaper",
+  other: "Other",
+};
+
+const FUNNEL_LABELS: Record<string, string> = {
+  awareness: "Awareness",
+  consideration: "Consideration",
+  decision: "Decision",
+};
+
 const EDITABLE_BRIEF_FIELDS = [
   "title",
   "format",
@@ -263,6 +281,88 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content-briefs draft]", err);
       res.status(500).json({ error: err.message || "Failed to draft content" });
+    }
+  });
+
+  // Branded Word (.docx) export of a single content brief — Synozur logo,
+  // brand color, and fonts. Maps the brief's strategy fields into a readable doc.
+  app.get("/api/content-briefs/:id/download/docx", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [brief] = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.id, req.params.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
+          ),
+        );
+      if (!brief) return res.status(404).json({ error: "Not found" });
+
+      const formatLabel = FORMAT_LABELS[brief.format] ?? brief.format;
+      const funnelLabel = FUNNEL_LABELS[brief.funnelStage] ?? brief.funnelStage;
+
+      const lines: string[] = [`# ${brief.title}`, ""];
+      const field = (label: string, value: string | null | undefined) => {
+        if (value && String(value).trim()) {
+          lines.push(`**${label}:** ${String(value).trim()}`, "");
+        }
+      };
+      field("Format", formatLabel);
+      field("Funnel stage", funnelLabel);
+      field("Target keyword", brief.targetKeyword);
+      field("Target reader", brief.targetReader);
+      field("Call to action", brief.cta);
+      field("Demand signal", brief.demandSignal);
+      field("Differentiation angle", brief.differentiationAngle);
+      if (brief.channels && brief.channels.length) {
+        field("Channels", brief.channels.join(", "));
+      }
+      if (brief.estimatedHours != null) {
+        field("Estimated hours", `${brief.estimatedHours}h`);
+      }
+
+      const { buildBrandedDocx } = await import("../services/docx-generator.js");
+      const docBuffer = await buildBrandedDocx(brief.title, lines.join("\n"));
+      const safeName =
+        brief.title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_brief";
+      const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(docBuffer);
+    } catch (err: any) {
+      console.error("[content-briefs download docx]", err);
+      res.status(500).json({ error: err.message || "Failed to generate document" });
+    }
+  });
+
+  // Permanently delete a single content brief (hard delete).
+  app.delete("/api/content-briefs/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+      const [deleted] = await db
+        .delete(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.id, req.params.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
+          ),
+        )
+        .returning({ id: contentBriefs.id });
+      if (!deleted) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[content-briefs delete]", err);
+      res.status(500).json({ error: err.message || "Failed to delete content brief" });
     }
   });
 

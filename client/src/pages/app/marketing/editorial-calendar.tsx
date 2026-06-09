@@ -393,6 +393,52 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const deleteBrief = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content-briefs/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to delete brief");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      toast.success("Brief deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const [downloadingBriefId, setDownloadingBriefId] = useState<string | null>(null);
+  const downloadBriefDocx = async (brief: ContentBrief) => {
+    setDownloadingBriefId(brief.id);
+    try {
+      const res = await fetch(`/api/content-briefs/${brief.id}/download/docx`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = "Failed to download Word document";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = brief.title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Content_Brief";
+      a.download = `${safe}_${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Downloaded branded Word document");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download Word document");
+    } finally {
+      setDownloadingBriefId(null);
+    }
+  };
+
   const deleteCalendar = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/editorial-calendars/${id}`, {
@@ -647,6 +693,38 @@ export default function EditorialCalendarPage() {
                             SEO/AEO
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={downloadingBriefId === b.id}
+                          onClick={() => downloadBriefDocx(b)}
+                          data-testid={`download-brief-${b.id}`}
+                        >
+                          {downloadingBriefId === b.id ? (
+                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileDown className="mr-1 h-4 w-4" />
+                          )}
+                          Word
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          disabled={deleteBrief.isPending && deleteBrief.variables === b.id}
+                          onClick={() => {
+                            if (confirm(`Permanently delete the brief "${b.title}"? This cannot be undone.`)) {
+                              deleteBrief.mutate(b.id);
+                            }
+                          }}
+                          data-testid={`delete-brief-${b.id}`}
+                        >
+                          {deleteBrief.isPending && deleteBrief.variables === b.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
                       </div>
                     </div>
 
