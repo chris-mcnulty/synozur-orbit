@@ -1992,10 +1992,17 @@ export const contentBriefs = pgTable("content_briefs", {
   cta: text("cta"),
   channels: text("channels").array(),
   estimatedHours: real("estimated_hours"),
-  status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, drafted, scheduled, published, removed
+  status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, drafted, scheduled, approved, published, removed
   aiGenerated: boolean("ai_generated").notNull().default(true),
   // Link to a produced draft once the copywriter runs (Phase 1, step 2).
   contentAssetId: varchar("content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+  // Unified Marketing Calendar: a planned/scheduled date so a brief/draft can
+  // sit on the calendar, plus lightweight campaign/theme/event assignment.
+  // Forward-ref FKs because campaigns/solutionAreas/conferences are declared later.
+  scheduledAt: timestamp("scheduled_at"),
+  campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
+  solutionAreaId: varchar("solution_area_id").references((): AnyPgColumn => solutionAreas.id, { onDelete: "set null" }),
+  conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2884,6 +2891,8 @@ export const generatedPosts = pgTable("generated_posts", {
   conferenceSessionId: varchar("conference_session_id").references((): AnyPgColumn => conferenceSessions.id, { onDelete: "cascade" }),
   conferenceImageId: varchar("conference_image_id").references((): AnyPgColumn => conferenceImages.id, { onDelete: "set null" }),
   postRole: text("post_role"), // anchor | session
+  // Unified Marketing Calendar: optional theme (solution area) assignment.
+  solutionAreaId: varchar("solution_area_id").references((): AnyPgColumn => solutionAreas.id, { onDelete: "set null" }),
   scheduledDate: timestamp("scheduled_date"),
   status: text("status").notNull().default("draft"), // draft, approved, exported, deleted, rejected, published, publish_failed
   editedContent: text("edited_content"), // User-edited version of the post
@@ -2948,7 +2957,11 @@ export const generatedEmails = pgTable("generated_emails", {
   subjectLineSuggestions: text("subject_line_suggestions").array(),
   coachingTips: text("coaching_tips").array(),
   label: text("label"),
-  status: text("status").notNull().default("draft"),
+  status: text("status").notNull().default("draft"), // draft, approved, sent
+  // Unified Marketing Calendar: planned/scheduled date + theme/event assignment.
+  scheduledAt: timestamp("scheduled_at"),
+  solutionAreaId: varchar("solution_area_id").references((): AnyPgColumn => solutionAreas.id, { onDelete: "set null" }),
+  conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

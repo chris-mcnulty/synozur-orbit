@@ -575,6 +575,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         {
           label: "Execute",
           items: [
+            { label: "Marketing Calendar", icon: CalendarDays, href: "/app/marketing/marketing-calendar", enterprise: true },
             { label: "Editorial Calendar", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true },
             { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true },
             { label: "Social Calendar", icon: CalendarDays, href: "/app/marketing/calendar", enterprise: true },
