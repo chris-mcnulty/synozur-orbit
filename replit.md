@@ -66,10 +66,10 @@ Interim decision for how each generated content type goes outbound, until the ne
 | :--- | :--- | :--- |
 | Social posts | SocialPilot CSV | At least the next month, then revisit direct posting. |
 | Blog posts | Branded Word doc | Switch to direct website API once it's available. |
-| Whitepapers | Branded Word doc | _Pending confirmation._ |
-| Case studies | Branded Word doc | _Pending confirmation._ |
-| Landing page copy | Branded Word doc | Handoff for page build; direct via website API later. _Pending confirmation._ |
-| Email newsletters | Email campaign engine | Generated and sent in-engine. Review/approval export _pending confirmation._ |
+| Whitepapers | Branded Word doc | — |
+| Case studies | Branded Word doc | — |
+| Landing page copy | Branded Word doc | Handoff for page build; direct via website API later. |
+| Email newsletters | Email campaign engine | Generation, formatting, and tracking only — the engine does **not** send automatically. |
 | Video scripts | Branded Word doc | — |
 | Podcasts | Branded Word doc outline | Podcasts ("Polaris") are recorded **live** — no AI-generated MP3 audio needed. Outline follows Synozur's standard format: see `docs/polaris-podcast-outline-format.md` (example: `docs/polaris-outline-example.docx`). |
 
