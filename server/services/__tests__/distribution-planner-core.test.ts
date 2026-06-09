@@ -97,6 +97,42 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].channel, "twitter");
   });
 
+  await test("buildSchedule steers a single item off an already-busy day", () => {
+    // Ideal lands on Mon Mar 2 but it's already crowded → nudges to an open day.
+    const sched = buildSchedule([{ id: "x", title: "T", format: "blog_post" }], {
+      periodStart: new Date(Date.UTC(2026, 2, 2)), // Mon
+      periodEnd: new Date(Date.UTC(2026, 2, 20)),
+      skipWeekends: true,
+      existingDayCounts: { "2026-03-02": 5 },
+    });
+    const placed = new Date(sched[0].scheduledAt);
+    const placedKey = `${placed.getUTCFullYear()}-03-${String(placed.getUTCDate()).padStart(2, "0")}`;
+    assert.notEqual(placedKey, "2026-03-02", "should not stack on the busy day");
+    const day = placed.getUTCDay();
+    assert.ok(day !== 0 && day !== 6, "weekday only");
+  });
+
+  await test("buildSchedule does not cluster many items on the same busy day", () => {
+    const sched = buildSchedule(items(4, "blog_post"), {
+      periodStart: new Date(Date.UTC(2026, 2, 2)),
+      periodEnd: new Date(Date.UTC(2026, 2, 27)),
+      skipWeekends: true,
+    });
+    const dayKeys = sched.map((s) => new Date(s.scheduledAt).toISOString().slice(0, 10));
+    assert.equal(new Set(dayKeys).size, dayKeys.length, "each item on a distinct day");
+  });
+
+  await test("buildSchedule with empty existing load matches plain spread", () => {
+    const opts = {
+      periodStart: new Date(Date.UTC(2026, 0, 5)),
+      periodEnd: new Date(Date.UTC(2026, 0, 30)),
+      skipWeekends: true,
+    };
+    const a = buildSchedule(items(5), opts);
+    const b = buildSchedule(items(5), { ...opts, existingDayCounts: {} });
+    assert.deepEqual(a.map((s) => s.scheduledAt), b.map((s) => s.scheduledAt));
+  });
+
   if (failures > 0) {
     console.error(`\n${failures} test(s) failed`);
     process.exit(1);

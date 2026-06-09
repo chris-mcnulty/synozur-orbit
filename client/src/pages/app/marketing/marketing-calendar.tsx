@@ -81,6 +81,115 @@ interface FilterOptions {
   campaigns: FilterOption[];
   solutionAreas: FilterOption[];
   conferences: FilterOption[];
+  socialChannels?: FilterOption[];
+  contentFormats?: FilterOption[];
+}
+
+// ── Type filter (bucket → channel/format) ──
+// A single string drives the filter: "all", a bucket ("social"/"email"/
+// "content"), a social channel ("social:linkedin"), or a content format
+// ("content:blog_post"). Email is its own bucket with no sub-dimension.
+function matchesTypeFilter(item: CalendarItem, tf: string): boolean {
+  if (tf === "all") return true;
+  if (tf.includes(":")) {
+    const [bucket, sub] = tf.split(":");
+    if (item.type !== bucket) return false;
+    if (bucket === "social") return (item.platform ?? "").toLowerCase() === sub;
+    if (bucket === "content") return (item.format ?? "") === sub;
+    return true;
+  }
+  return item.type === tf;
+}
+
+function typeFilterLabel(tf: string, filterOpts?: FilterOptions): string {
+  if (tf === "all") return "All types";
+  if (tf.includes(":")) {
+    const [bucket, sub] = tf.split(":");
+    if (bucket === "social") return filterOpts?.socialChannels?.find((c) => c.id === sub)?.name ?? sub;
+    if (bucket === "content") return filterOpts?.contentFormats?.find((f) => f.id === sub)?.name ?? sub;
+    return sub;
+  }
+  return TYPE_META[tf as ItemType]?.label ?? tf;
+}
+
+// Grouped type/channel/format dropdown shared by the calendar and the backlog.
+// Top-level buckets, then per-channel social options and per-format content
+// options pulled from the filters endpoint.
+function TypeFilterSelect({
+  value, onChange, filterOpts, testid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  filterOpts?: FilterOptions;
+  testid?: string;
+}) {
+  const channels = filterOpts?.socialChannels ?? [];
+  const formats = filterOpts?.contentFormats ?? [];
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-8 w-[170px]" data-testid={testid ?? "select-type-filter"}>
+        <SelectValue placeholder="Type">{typeFilterLabel(value, filterOpts)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All types</SelectItem>
+        <SelectItem value="social">Social — all</SelectItem>
+        {channels.map((c) => (
+          <SelectItem key={`social:${c.id}`} value={`social:${c.id}`} data-testid={`option-social-${c.id}`}>
+            &nbsp;&nbsp;{c.name}
+          </SelectItem>
+        ))}
+        <SelectItem value="email">Email</SelectItem>
+        <SelectItem value="content">Content — all</SelectItem>
+        {formats.map((f) => (
+          <SelectItem key={`content:${f.id}`} value={`content:${f.id}`} data-testid={`option-content-${f.id}`}>
+            &nbsp;&nbsp;{f.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+interface DateAdvice {
+  date: string;
+  count: number;
+  busy: boolean;
+  threshold: number;
+  suggestion: string | null;
+}
+
+// Inline warning that appears when the chosen day already has several activities,
+// offering the nearest open weekday. Quiet when the day is clear.
+function DateCrowdingHint({ date, onPick, testid }: { date: string; onPick?: (d: string) => void; testid?: string }) {
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(date || "");
+  const tz = new Date().getTimezoneOffset();
+  const { data } = useQuery<DateAdvice>({
+    queryKey: [`/api/marketing-calendar/date-advice?date=${date}&tzOffset=${tz}`],
+    enabled: valid,
+  });
+  if (!valid || !data || !data.busy) return null;
+  const pretty = (d: string) => {
+    const [y, m, dd] = d.split("-").map(Number);
+    return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  };
+  return (
+    <p className="text-xs text-amber-600 dark:text-amber-400" data-testid={testid ?? "text-crowding-hint"}>
+      This day already has {data.count} activities.
+      {data.suggestion && (
+        <>
+          {" "}Try{" "}
+          {onPick ? (
+            <button type="button" className="font-medium underline" onClick={() => onPick(data.suggestion!)} data-testid="button-crowding-suggestion">
+              {pretty(data.suggestion)}
+            </button>
+          ) : (
+            <span className="font-medium">{pretty(data.suggestion)}</span>
+          )}
+          {" "}instead.
+        </>
+      )}
+    </p>
+  );
 }
 
 const TYPE_META: Record<ItemType, { label: string; dot: string; chip: string }> = {
@@ -156,12 +265,14 @@ export default function MarketingCalendarPage() {
   const [grouping, setGrouping] = useState<"month" | "quarter">("month");
   const [groupBy, setGroupBy] = useState<"none" | "campaign" | "theme" | "event">("none");
   const [filters, setFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all" });
+  // Shared type/channel/format filter used by both the calendar and the backlog.
+  const [typeFilter, setTypeFilter] = useState("all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
 
   // ── Backlog state ──
-  const [backlogFilters, setBacklogFilters] = useState({ type: "all", campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" });
+  const [backlogFilters, setBacklogFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDate, setBulkDate] = useState("");
   const [assignKind, setAssignKind] = useState<AssignmentKind>("campaign");
@@ -194,17 +305,21 @@ export default function MarketingCalendarPage() {
   const { data: filterOpts } = useQuery<FilterOptions>({ queryKey: ["/api/marketing-calendar/filters"] });
 
   const scheduled = useMemo(() => items.filter((i) => i.date), [items]);
+  const visibleScheduled = useMemo(
+    () => scheduled.filter((i) => matchesTypeFilter(i, typeFilter)),
+    [scheduled, typeFilter],
+  );
 
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarItem[]>();
-    for (const it of scheduled) {
+    for (const it of visibleScheduled) {
       const k = localKey(it.date);
       if (!k) continue;
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(it);
     }
     return map;
-  }, [scheduled]);
+  }, [visibleScheduled]);
 
   // Invalidate every marketing-calendar query (grid + backlog + filters) so a
   // change in one view reflects in the other.
@@ -217,14 +332,14 @@ export default function MarketingCalendarPage() {
   // Apply the backlog's own client-side filters (independent of the calendar).
   const filteredBacklog = useMemo(() => {
     return backlogItems.filter((it) => {
-      if (backlogFilters.type !== "all" && it.type !== backlogFilters.type) return false;
+      if (!matchesTypeFilter(it, typeFilter)) return false;
       if (backlogFilters.campaignId !== "all" && (it.campaignId ?? "") !== backlogFilters.campaignId) return false;
       if (backlogFilters.solutionAreaId !== "all" && (it.solutionAreaId ?? "") !== backlogFilters.solutionAreaId) return false;
       if (backlogFilters.conferenceId !== "all" && (it.conferenceId ?? "") !== backlogFilters.conferenceId) return false;
       if (backlogFilters.status !== "all" && it.lifecycle !== backlogFilters.status) return false;
       return true;
     });
-  }, [backlogItems, backlogFilters]);
+  }, [backlogItems, backlogFilters, typeFilter]);
 
   const itemKey = (it: { type: string; id: string }) => `${it.type}-${it.id}`;
   const toggleSelected = (it: CalendarItem) => {
@@ -463,6 +578,7 @@ export default function MarketingCalendarPage() {
                     <SelectItem value="event">Group by event</SelectItem>
                   </SelectContent>
                 </Select>
+                <TypeFilterSelect value={typeFilter} onChange={setTypeFilter} filterOpts={filterOpts} testid="select-calendar-type" />
                 <Select value={filters.campaignId} onValueChange={(v) => setFilters((f) => ({ ...f, campaignId: v }))}>
                   <SelectTrigger className="h-8 w-[150px]" data-testid="select-filter-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
                   <SelectContent>
@@ -487,18 +603,26 @@ export default function MarketingCalendarPage() {
               </div>
             </div>
 
-            {/* Legend */}
+            {/* Legend + active type filter indicator */}
             <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
               {(Object.keys(TYPE_META) as ItemType[]).map((t) => (
                 <span key={t} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[t].dot}`} /> {TYPE_META[t].label}</span>
               ))}
+              {typeFilter !== "all" && (
+                <span className="ml-auto flex items-center gap-2" data-testid="text-calendar-filter-indicator">
+                  Showing {visibleScheduled.length} of {scheduled.length} · {typeFilterLabel(typeFilter, filterOpts)}
+                  <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setTypeFilter("all")} data-testid="button-calendar-clear-type">
+                    <X className="mr-1 h-3 w-3" /> Clear
+                  </Button>
+                </span>
+              )}
             </div>
 
             {/* Calendar (scheduled items only) */}
             {isLoading ? (
               <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : groupBy !== "none" ? (
-              <GroupedList items={scheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
+              <GroupedList items={visibleScheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
             ) : grouping === "month" ? (
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
                 <div className="min-w-0 flex-1">
@@ -523,7 +647,7 @@ export default function MarketingCalendarPage() {
                 />
               </div>
             ) : (
-              <QuarterList anchor={anchor} items={scheduled} filterOpts={filterOpts} onSelect={setDetail} />
+              <QuarterList anchor={anchor} items={visibleScheduled} filterOpts={filterOpts} onSelect={setDetail} />
             )}
           </>
         ) : (
@@ -534,6 +658,8 @@ export default function MarketingCalendarPage() {
             filterOpts={filterOpts}
             backlogFilters={backlogFilters}
             setBacklogFilters={setBacklogFilters}
+            typeFilter={typeFilter}
+            setTypeFilter={setTypeFilter}
             selected={selected}
             toggleSelected={toggleSelected}
             clearSelection={clearSelection}
@@ -555,6 +681,7 @@ export default function MarketingCalendarPage() {
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} filterOpts={filterOpts} onCreated={invalidate} />
 
       <DetailDialog
+        key={detail ? itemKey(detail) : "none"}
         item={detail}
         filterOpts={filterOpts}
         onOpenChange={(o) => !o && setDetail(null)}
@@ -876,6 +1003,7 @@ function AddItemDialog({ open, onOpenChange, filterOpts, onCreated }: {
           <div>
             <Label className="text-xs">Date (optional — leave blank for unscheduled)</Label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
+            <DateCrowdingHint date={date} onPick={setDate} testid="text-add-crowding" />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -939,8 +1067,8 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   onAssign: (it: CalendarItem, patch: Record<string, string | null>) => void;
   busy: boolean;
 }) {
+  const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
   if (!item) return null;
-  const dateVal = item.date ? localKey(item.date) || "" : "";
   const assignments = resolveAssignments(item, filterOpts);
   // Only blog/content and email require an explicit Approve; social posts are
   // high-volume and rely on the bulk CSV export (= delivered) flow instead.
@@ -980,9 +1108,17 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           <Label className="text-xs">Date</Label>
           <Input
             type="date"
-            defaultValue={dateVal}
-            onChange={(e) => onReschedule(item, e.target.value ? new Date(`${e.target.value}T09:00:00`).toISOString() : null)}
+            value={dateVal}
+            onChange={(e) => {
+              setDateVal(e.target.value);
+              onReschedule(item, e.target.value ? new Date(`${e.target.value}T09:00:00`).toISOString() : null);
+            }}
             data-testid="input-detail-date"
+          />
+          <DateCrowdingHint
+            date={dateVal}
+            onPick={(d) => { setDateVal(d); onReschedule(item, new Date(`${d}T09:00:00`).toISOString()); }}
+            testid="text-detail-crowding"
           />
         </div>
 
@@ -1121,7 +1257,6 @@ function GroupedList({ items, groupBy, filterOpts, onSelect }: {
 }
 
 interface BacklogFilterState {
-  type: string;
   campaignId: string;
   solutionAreaId: string;
   conferenceId: string;
@@ -1129,7 +1264,7 @@ interface BacklogFilterState {
 }
 
 function BacklogPanel({
-  items, totalCount, isLoading, filterOpts, backlogFilters, setBacklogFilters,
+  items, totalCount, isLoading, filterOpts, backlogFilters, setBacklogFilters, typeFilter, setTypeFilter,
   selected, toggleSelected, clearSelection, setSelected, itemKey, onSelect,
   bulkDate, setBulkDate, assignKind, setAssignKind, assignValue, setAssignValue, runBulk, bulkBusy,
 }: {
@@ -1139,6 +1274,8 @@ function BacklogPanel({
   filterOpts?: FilterOptions;
   backlogFilters: BacklogFilterState;
   setBacklogFilters: Dispatch<SetStateAction<BacklogFilterState>>;
+  typeFilter: string;
+  setTypeFilter: (v: string) => void;
   selected: Set<string>;
   toggleSelected: (it: CalendarItem) => void;
   clearSelection: () => void;
@@ -1178,15 +1315,7 @@ function BacklogPanel({
 
       {/* Backlog filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={backlogFilters.type} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, type: v }))}>
-          <SelectTrigger className="h-8 w-[130px]" data-testid="select-backlog-type"><SelectValue placeholder="Type" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="social">Social</SelectItem>
-            <SelectItem value="email">Email</SelectItem>
-            <SelectItem value="content">Content</SelectItem>
-          </SelectContent>
-        </Select>
+        <TypeFilterSelect value={typeFilter} onChange={setTypeFilter} filterOpts={filterOpts} testid="select-backlog-type" />
         <Select value={backlogFilters.campaignId} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, campaignId: v }))}>
           <SelectTrigger className="h-8 w-[150px]" data-testid="select-backlog-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
           <SelectContent>
@@ -1217,6 +1346,20 @@ function BacklogPanel({
             <SelectItem value="delivered">Delivered</SelectItem>
           </SelectContent>
         </Select>
+        {(typeFilter !== "all" || backlogFilters.campaignId !== "all" || backlogFilters.solutionAreaId !== "all" || backlogFilters.conferenceId !== "all" || backlogFilters.status !== "all") && (
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" data-testid="text-backlog-filter-indicator">
+            Showing {items.length} of {totalCount}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => { setTypeFilter("all"); setBacklogFilters({ campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" }); }}
+              data-testid="button-backlog-clear-filters"
+            >
+              <X className="mr-1 h-3 w-3" /> Clear all
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Bulk action bar */}
@@ -1225,9 +1368,12 @@ function BacklogPanel({
           <span className="text-sm font-medium" data-testid="text-selected-count">{selectedCount} selected</span>
           <Button variant="ghost" size="sm" className="h-8" onClick={clearSelection} data-testid="button-clear-selection"><X className="mr-1 h-3.5 w-3.5" /> Clear</Button>
           <Separator orientation="vertical" className="h-6" />
-          <div className="flex items-center gap-1">
-            <Input type="date" className="h-8 w-[140px]" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} data-testid="input-bulk-date" />
-            <Button size="sm" className="h-8" onClick={doSchedule} disabled={!bulkDate || bulkBusy} data-testid="button-bulk-schedule"><CalendarDays className="mr-1 h-3.5 w-3.5" /> Schedule</Button>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1">
+              <Input type="date" className="h-8 w-[140px]" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} data-testid="input-bulk-date" />
+              <Button size="sm" className="h-8" onClick={doSchedule} disabled={!bulkDate || bulkBusy} data-testid="button-bulk-schedule"><CalendarDays className="mr-1 h-3.5 w-3.5" /> Schedule</Button>
+            </div>
+            <DateCrowdingHint date={bulkDate} onPick={setBulkDate} testid="text-bulk-crowding" />
           </div>
           <Button variant="outline" size="sm" className="h-8" onClick={() => runBulk("approve")} disabled={bulkBusy} data-testid="button-bulk-approve"><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve</Button>
           <Separator orientation="vertical" className="h-6" />

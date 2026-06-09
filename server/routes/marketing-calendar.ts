@@ -30,6 +30,34 @@ import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { buildPostsCsv } from "../services/posts-csv-export";
+import { getScheduledDayCounts } from "../services/schedule-load";
+
+// A day with at least this many activities is considered "crowded".
+const BUSY_THRESHOLD = 3;
+
+// Friendly labels for the type filter's channel (social platform) and content
+// format sub-dimensions, surfaced by the /filters endpoint.
+const PLATFORM_LABELS: Record<string, string> = {
+  linkedin: "LinkedIn",
+  twitter: "X / Twitter",
+  x: "X / Twitter",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  blog: "Blog",
+};
+const FORMAT_LABELS: Record<string, string> = {
+  blog_post: "Blog post",
+  whitepaper: "Whitepaper",
+  case_study: "Case study",
+  landing_page: "Landing page",
+  video_script: "Video script",
+  newsletter: "Newsletter",
+  linkedin_post: "LinkedIn post",
+  x_post: "X post",
+};
+function titleize(s: string): string {
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 type Lifecycle = "draft" | "approved" | "delivered";
 
@@ -284,7 +312,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const campMarket = or(eq(campaigns.marketId, ctx.marketId), isNull(campaigns.marketId));
       const themeMarket = or(eq(solutionAreas.marketId, ctx.marketId), isNull(solutionAreas.marketId));
       const eventMarket = or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId));
-      const [camps, themes, events] = await Promise.all([
+      const [camps, themes, events, platformRows, formatRows] = await Promise.all([
         db
           .select({ id: campaigns.id, name: campaigns.name })
           .from(campaigns)
@@ -300,11 +328,102 @@ export function registerMarketingCalendarRoutes(app: Express) {
           .from(conferences)
           .where(and(eq(conferences.tenantDomain, ctx.tenantDomain), eventMarket, ne(conferences.status, "deleted")))
           .orderBy(desc(conferences.startDate)),
+        // Distinct social platforms (channels) and content formats actually
+        // present, so the type filter only offers values that exist.
+        db
+          .selectDistinct({ platform: generatedPosts.platform })
+          .from(generatedPosts)
+          .where(and(
+            eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+            ne(generatedPosts.status, "rejected"),
+            ne(generatedPosts.status, "deleted"),
+          )),
+        db
+          .selectDistinct({ format: contentBriefs.format })
+          .from(contentBriefs)
+          .where(and(
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            or(eq(contentBriefs.marketId, ctx.marketId), isNull(contentBriefs.marketId)),
+            ne(contentBriefs.status, "removed"),
+          )),
       ]);
-      res.json({ campaigns: camps, solutionAreas: themes, conferences: events });
+
+      const socialChannels = platformRows
+        .map((r) => (r.platform || "").toLowerCase())
+        .filter(Boolean)
+        .map((p) => ({ id: p, name: PLATFORM_LABELS[p] ?? titleize(p) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const contentFormats = formatRows
+        .map((r) => r.format || "")
+        .filter(Boolean)
+        .map((f) => ({ id: f, name: FORMAT_LABELS[f] ?? titleize(f) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      res.json({ campaigns: camps, solutionAreas: themes, conferences: events, socialChannels, contentFormats });
     } catch (err: any) {
       console.error("[marketing-calendar filters]", err.message);
       res.status(500).json({ error: err.message || "Failed to load filters" });
+    }
+  });
+
+  // ───── Day-load advice (is this day already crowded? suggest a nearby open one) ─────
+  app.get("/api/marketing-calendar/date-advice", async (req, res) => {
+    if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const date = String((req.query.date as string) || "");
+      const tz = parseInt((req.query.tzOffset as string) || "0", 10) || 0;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
+      }
+      const [y, m, d] = date.split("-").map(Number);
+      // Count activities in a generous window around the target so we can both
+      // measure the day and suggest a nearby open one.
+      const SEARCH_DAYS = 21;
+      const centerUtc = Date.UTC(y, m - 1, d, 12, 0, 0);
+      const from = new Date(centerUtc - (SEARCH_DAYS + 1) * 86_400_000);
+      const to = new Date(centerUtc + (SEARCH_DAYS + 1) * 86_400_000);
+      const counts = await getScheduledDayCounts({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        from,
+        to,
+        tzOffsetMinutes: tz,
+      });
+
+      const keyFor = (off: number): string => {
+        const cd = new Date(Date.UTC(y, m - 1, d + off));
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${cd.getUTCFullYear()}-${pad(cd.getUTCMonth() + 1)}-${pad(cd.getUTCDate())}`;
+      };
+      const isWeekend = (off: number) => {
+        const day = new Date(Date.UTC(y, m - 1, d + off)).getUTCDay();
+        return day === 0 || day === 6;
+      };
+
+      const count = counts.get(date) ?? 0;
+      const busy = count >= BUSY_THRESHOLD;
+
+      // When crowded, look outward (forward first) for the nearest weekday that
+      // is under the busy threshold.
+      let suggestion: string | null = null;
+      if (busy) {
+        for (let r = 1; r <= SEARCH_DAYS && !suggestion; r++) {
+          for (const off of [r, -r]) {
+            if (isWeekend(off)) continue;
+            const key = keyFor(off);
+            if ((counts.get(key) ?? 0) < BUSY_THRESHOLD) {
+              suggestion = key;
+              break;
+            }
+          }
+        }
+      }
+
+      res.json({ date, count, busy, threshold: BUSY_THRESHOLD, suggestion });
+    } catch (err: any) {
+      console.error("[marketing-calendar date-advice]", err.message);
+      res.status(500).json({ error: err.message || "Failed to evaluate date" });
     }
   });
 

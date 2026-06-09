@@ -10,12 +10,15 @@ import { db } from "../db";
 import { contentBriefs } from "@shared/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { buildSchedule, type ScheduledItem } from "./distribution-planner-core";
+import { getScheduledDayCounts } from "./schedule-load";
 
 // Briefs in these statuses are worth scheduling by default (skip removed).
 export const DEFAULT_PLAN_STATUSES = ["suggested", "accepted", "in_progress", "drafted"];
 
 export interface PlanDistributionParams {
   tenantDomain: string;
+  /** Active market — scopes the "already booked" awareness for emails/content. */
+  marketId?: string | null;
   calendarId: string;
   periodStart?: Date;
   periodEnd?: Date;
@@ -49,6 +52,18 @@ export async function planDistribution(
   const periodEnd =
     params.periodEnd ?? new Date(periodStart.getTime() + 30 * 86_400_000);
 
+  // Read what's already booked in the window so placement can avoid clustering
+  // on days that already have marketing activity. Exclude the briefs we're about
+  // to schedule so they don't count against themselves.
+  const existing = await getScheduledDayCounts({
+    tenantDomain: params.tenantDomain,
+    marketId: params.marketId,
+    from: periodStart,
+    to: periodEnd,
+    tzOffsetMinutes: params.tzOffsetMinutes,
+    excludeBriefIds: briefs.map((b) => b.id),
+  });
+
   const schedule = buildSchedule(
     briefs.map((b) => ({
       id: b.id,
@@ -61,6 +76,7 @@ export async function planDistribution(
       periodEnd,
       skipWeekends: params.skipWeekends ?? true,
       tzOffsetMinutes: params.tzOffsetMinutes,
+      existingDayCounts: Object.fromEntries(existing),
     },
   );
 

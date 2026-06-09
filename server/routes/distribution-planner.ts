@@ -37,6 +37,7 @@ export function registerDistributionPlannerRoutes(app: Express) {
 
       const { schedule } = await planDistribution({
         tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
         calendarId: calendar.id,
         periodStart: periodStart ? new Date(periodStart) : undefined,
         periodEnd: periodEnd ? new Date(periodEnd) : undefined,
