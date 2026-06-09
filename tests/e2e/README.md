@@ -1,7 +1,13 @@
 # E2E tests
 
 Playwright specs covering the inline-validation behavior introduced in task #67
-and locked in by task #81.
+and locked in by task #81, plus the marketing-calendar backlog bulk actions.
+
+> **Auth note:** the seeded `e2e-test@synozur.com` password is environment
+> specific. Set `E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` to override. The
+> backlog spec falls back to `TEST_EMAIL` / `TEST_PASSWORD`
+> (`test@synozur.com` by default), which is a Standard User on the
+> enterprise `synozur.com` tenant.
 
 ## Prerequisites
 
@@ -48,5 +54,15 @@ Browser binaries are downloaded on demand via
   duplicate (case-insensitive) tags are rejected, and typing into the
   input clears the error.
 
-All flows close their dialog with Escape rather than saving so the tests
-do not mutate any persisted records.
+The inline-validation flows close their dialog with Escape rather than
+saving so they do not mutate any persisted records.
+
+`backlog-bulk-actions.spec.ts` exercises the **Marketing Calendar backlog**
+(`/app/marketing/marketing-calendar`, Backlog tab): it seeds ten unscheduled
+drafts (social, email, content) via `POST /api/marketing-calendar/items`,
+then runs each bulk action through the UI and asserts the outcome —
+**schedule** removes items from the backlog (and they appear in the calendar
+grid), **approve** flips email/content to the "Approved" lifecycle while they
+stay in the backlog, **assign** attaches a campaign, and **discard** removes
+items from the backlog. Everything it creates is cleaned up at the end via
+`DELETE /api/marketing-calendar/items/:type/:id`.
