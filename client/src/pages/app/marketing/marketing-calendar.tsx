@@ -195,6 +195,64 @@ const TYPE_META: Record<ItemType, { label: string; dot: string; chip: string }> 
   content: { label: "Content", dot: "bg-violet-500", chip: "border-violet-200 bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-900" },
 };
 
+// Short, scannable markers for a social post's channel or a content draft's
+// format, mirroring the friendly names from the server's /filters endpoint
+// (PLATFORM_LABELS / FORMAT_LABELS). Surfaced on every calendar pill/row so a
+// filtered or unfiltered calendar is easy to read at a glance.
+const CHANNEL_MARKERS: Record<string, { abbr: string; label: string }> = {
+  linkedin: { abbr: "LI", label: "LinkedIn" },
+  twitter: { abbr: "X", label: "X / Twitter" },
+  x: { abbr: "X", label: "X / Twitter" },
+  facebook: { abbr: "FB", label: "Facebook" },
+  instagram: { abbr: "IG", label: "Instagram" },
+  blog: { abbr: "Blog", label: "Blog" },
+};
+const FORMAT_MARKERS: Record<string, { abbr: string; label: string }> = {
+  blog_post: { abbr: "Blog", label: "Blog post" },
+  whitepaper: { abbr: "WP", label: "Whitepaper" },
+  case_study: { abbr: "Case", label: "Case study" },
+  landing_page: { abbr: "LP", label: "Landing page" },
+  video_script: { abbr: "Video", label: "Video script" },
+  newsletter: { abbr: "News", label: "Newsletter" },
+  linkedin_post: { abbr: "LI", label: "LinkedIn post" },
+  x_post: { abbr: "X", label: "X post" },
+};
+
+function titleizeClient(s: string): string {
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Resolve the channel (social) or format (content) marker for an item, or null
+// when the item has no sub-dimension (e.g. email, or a social post with no
+// platform recorded).
+function channelFormatMarker(item: CalendarItem): { abbr: string; label: string } | null {
+  if (item.type === "social" && item.platform) {
+    const p = item.platform.toLowerCase();
+    return CHANNEL_MARKERS[p] ?? { abbr: titleizeClient(p).slice(0, 4), label: titleizeClient(p) };
+  }
+  if (item.type === "content" && item.format) {
+    const f = item.format;
+    return FORMAT_MARKERS[f] ?? { abbr: titleizeClient(f).slice(0, 4), label: titleizeClient(f) };
+  }
+  return null;
+}
+
+// Tiny pill carrying a social channel / content format abbreviation, shown on
+// calendar items across all views. Tooltip spells out the full name.
+function ChannelFormatTag({ item }: { item: CalendarItem }) {
+  const marker = channelFormatMarker(item);
+  if (!marker) return null;
+  return (
+    <span
+      className="shrink-0 rounded bg-black/[0.06] px-1 text-[9px] font-semibold uppercase leading-[1.4] tracking-wide text-foreground/70 dark:bg-white/10"
+      title={marker.label}
+      data-testid={`tag-channel-format-${item.id}`}
+    >
+      {marker.abbr}
+    </span>
+  );
+}
+
 const LIFECYCLE_META: Record<Lifecycle, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-muted text-muted-foreground" },
   approved: { label: "Approved", cls: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
@@ -627,10 +685,30 @@ export default function MarketingCalendarPage() {
             </div>
 
             {/* Legend + active type filter indicator */}
-            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
               {(Object.keys(TYPE_META) as ItemType[]).map((t) => (
                 <span key={t} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[t].dot}`} /> {TYPE_META[t].label}</span>
               ))}
+              {((filterOpts?.socialChannels?.length ?? 0) > 0 || (filterOpts?.contentFormats?.length ?? 0) > 0) && (
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l pl-4">
+                  {filterOpts?.socialChannels?.map((c) => (
+                    <span key={`legend-social-${c.id}`} className="flex items-center gap-1" data-testid={`legend-channel-${c.id}`}>
+                      <span className="rounded bg-black/[0.06] px-1 text-[9px] font-semibold uppercase tracking-wide text-foreground/70 dark:bg-white/10">
+                        {CHANNEL_MARKERS[c.id]?.abbr ?? titleizeClient(c.id).slice(0, 4)}
+                      </span>
+                      {c.name}
+                    </span>
+                  ))}
+                  {filterOpts?.contentFormats?.map((f) => (
+                    <span key={`legend-content-${f.id}`} className="flex items-center gap-1" data-testid={`legend-format-${f.id}`}>
+                      <span className="rounded bg-black/[0.06] px-1 text-[9px] font-semibold uppercase tracking-wide text-foreground/70 dark:bg-white/10">
+                        {FORMAT_MARKERS[f.id]?.abbr ?? titleizeClient(f.id).slice(0, 4)}
+                      </span>
+                      {f.name}
+                    </span>
+                  ))}
+                </span>
+              )}
               {typeFilter !== "all" && (
                 <span className="ml-auto flex items-center gap-2" data-testid="text-calendar-filter-indicator">
                   Showing {visibleScheduled.length} of {scheduled.length} · {typeFilterLabel(typeFilter, filterOpts)}
@@ -777,6 +855,7 @@ function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOp
       title={titleAttr}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.lifecycle === "delivered" ? "bg-green-500" : item.lifecycle === "approved" ? "bg-blue-500" : "bg-gray-400"}`} />
+      <ChannelFormatTag item={item} />
       <span className="truncate">{item.title}</span>
       {assignments.length > 0 && (
         <span className="ml-auto flex shrink-0 items-center gap-0.5" data-testid={`assign-dots-${item.id}`}>
@@ -914,6 +993,7 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
                   <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
+                  <ChannelFormatTag item={it} />
                   <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
                     {it.title}
                   </button>
@@ -949,6 +1029,7 @@ function QuarterList({ anchor, items, filterOpts, onSelect }: { anchor: Date; it
                   <button key={`${it.type}-${it.id}`} onClick={() => onSelect(it)} className="flex w-full items-center gap-1.5 rounded border p-1.5 text-left text-xs hover:bg-muted" data-testid={`item-quarter-${it.id}`}>
                     <span className="w-9 shrink-0 text-[10px] text-muted-foreground">{new Date(it.date!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />
+                    <ChannelFormatTag item={it} />
                     <span className="flex-1 truncate">{it.title}</span>
                     <AssignmentDots item={it} filterOpts={filterOpts} />
                   </button>
@@ -1134,6 +1215,9 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
             <Badge variant="outline">{TYPE_META[item.type].label}</Badge>
+            {channelFormatMarker(item) && (
+              <Badge variant="outline" data-testid="badge-detail-channel-format">{channelFormatMarker(item)!.label}</Badge>
+            )}
             <Badge variant="outline" className={LIFECYCLE_META[item.lifecycle].cls}>{LIFECYCLE_META[item.lifecycle].label}</Badge>
           </DialogDescription>
         </DialogHeader>
@@ -1294,6 +1378,7 @@ function GroupedList({ items, groupBy, filterOpts, onSelect }: {
                   <button key={`${it.type}-${it.id}`} onClick={() => onSelect(it)} className="flex w-full items-center gap-2 rounded border p-1.5 text-left text-xs hover:bg-muted" data-testid={`item-grouped-${it.id}`}>
                     <span className="w-14 shrink-0 text-[10px] text-muted-foreground">{it.date ? new Date(it.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</span>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />
+                    <ChannelFormatTag item={it} />
                     <span className="flex-1 truncate">{it.title}</span>
                     <AssignmentDots item={it} filterOpts={filterOpts} />
                     <Badge variant="outline" className={`shrink-0 px-1 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
@@ -1474,6 +1559,7 @@ function BacklogPanel({
                 <div key={k} className={`flex items-center gap-3 px-3 py-2 text-sm ${checked ? "bg-primary/5" : "hover:bg-muted/50"}`} data-testid={`backlog-row-${it.id}`}>
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-item-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
+                  <ChannelFormatTag item={it} />
                   <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-backlog-item-${it.id}`}>
                     {it.title}
                   </button>
