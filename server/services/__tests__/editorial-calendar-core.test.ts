@@ -7,6 +7,9 @@ import {
   assessCalendarWarnings,
   briefFormatToAssetType,
   parseDraftResponse,
+  recommendedBriefCount,
+  formatCampaignContextForPrompt,
+  RECOMMENDED_ASSET_MIX,
   type DraftBrief,
 } from "../editorial-calendar-core";
 
@@ -133,6 +136,47 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.equal(p.title, null);
     assert.equal(p.meta, null);
     assert.equal(p.body, "Just a plain draft with no markers.");
+  });
+
+  await test("recommendedBriefCount sums the asset mix per type", () => {
+    for (const type of ["theme", "event", "offering"] as const) {
+      const expected = RECOMMENDED_ASSET_MIX[type].reduce((s, m) => s + m.count, 0);
+      assert.equal(recommendedBriefCount(type), expected);
+      assert.ok(expected >= 5, `${type} mix should yield a usable count`);
+    }
+  });
+
+  await test("formatCampaignContextForPrompt includes intent, audience, and mix", () => {
+    const block = formatCampaignContextForPrompt({
+      type: "event",
+      name: "June Security Webinar",
+      objective: "Drive webinar registrations",
+      goal: "200 registrations",
+      audience: ["Jordan — Head of Security — SaaS"],
+      durationDays: 14,
+      channels: ["linkedin", "email"],
+    });
+    assert.ok(block.includes("June Security Webinar"), "names the campaign");
+    assert.ok(block.includes("event"), "states the type");
+    assert.ok(block.includes("200 registrations"), "includes the goal");
+    assert.ok(block.includes("Jordan — Head of Security — SaaS"), "lists the audience");
+    assert.ok(block.includes("14 day"), "mentions the duration");
+    assert.ok(/newsletter/.test(block), "includes the recommended asset mix");
+  });
+
+  await test("formatCampaignContextForPrompt omits empty optional fields", () => {
+    const block = formatCampaignContextForPrompt({
+      type: "theme",
+      name: "Always-On Thought Leadership",
+      objective: null,
+      goal: null,
+      audience: [],
+      durationDays: null,
+      channels: [],
+    });
+    assert.ok(!block.includes("Objective:"), "no objective line when null");
+    assert.ok(!block.includes("Measurable goal:"), "no goal line when null");
+    assert.ok(!block.includes("Target audience"), "no audience block when empty");
   });
 
   if (failures > 0) {

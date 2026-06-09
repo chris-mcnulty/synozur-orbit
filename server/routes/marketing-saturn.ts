@@ -35,6 +35,8 @@ import {
   campaignAssets,
   campaignSocialAccounts,
   campaignSolutionAreas,
+  CAMPAIGN_TYPES,
+  type CampaignType,
   generatedPosts,
   generatedEmails,
   scheduledJobRuns,
@@ -392,6 +394,24 @@ export function registerSaturnMarketingRoutes(app: Express) {
         inArray(solutionAreas.id, candidates),
         eq(solutionAreas.tenantDomain, ctx.tenantDomain),
         eq(solutionAreas.marketId, ctx.marketId),
+      ));
+    return found.map(f => f.id);
+  }
+
+  // Validate that the supplied persona ids belong to this tenant/market, so a
+  // campaign's audience only references the tenant's own ICP personas.
+  async function validAudiencePersonaIds(
+    ctx: { tenantDomain: string; marketId: string },
+    ids: unknown,
+  ): Promise<string[]> {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const candidates = ids.filter((s): s is string => typeof s === "string" && s.length > 0);
+    if (candidates.length === 0) return [];
+    const found = await db.select({ id: personas.id }).from(personas)
+      .where(and(
+        inArray(personas.id, candidates),
+        eq(personas.tenantDomain, ctx.tenantDomain),
+        eq(personas.marketId, ctx.marketId),
       ));
     return found.map(f => f.id);
   }
@@ -1748,8 +1768,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+
+      const resolvedCampaignType: CampaignType = CAMPAIGN_TYPES.includes(campaignType)
+        ? campaignType
+        : "theme";
+      const validPersonaIds = await validAudiencePersonaIds(ctx, audiencePersonaIds);
 
       const validAssetIds: string[] = [];
       if (Array.isArray(assetIds) && assetIds.length > 0) {
@@ -1783,6 +1808,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
           marketId: ctx.marketId,
           name: name.trim(),
           description: description || null,
+          campaignType: resolvedCampaignType,
+          objective: typeof objective === "string" && objective.trim() ? objective.trim() : null,
+          goal: typeof goal === "string" && goal.trim() ? goal.trim() : null,
+          audiencePersonaIds: validPersonaIds.length ? validPersonaIds : null,
           startDate: startDate ? new Date(startDate) : null,
           endDate: endDate ? new Date(endDate) : null,
           numberOfDays: numberOfDays ?? null,
@@ -1840,11 +1869,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "campaigns")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds } = req.body;
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds } = req.body;
       const updateData: any = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
       if (status !== undefined) updateData.status = status;
+      if (campaignType !== undefined && CAMPAIGN_TYPES.includes(campaignType)) updateData.campaignType = campaignType;
+      if (objective !== undefined) updateData.objective = typeof objective === "string" && objective.trim() ? objective.trim() : null;
+      if (goal !== undefined) updateData.goal = typeof goal === "string" && goal.trim() ? goal.trim() : null;
+      if (audiencePersonaIds !== undefined) {
+        const validPersonaIds = await validAudiencePersonaIds(ctx, audiencePersonaIds);
+        updateData.audiencePersonaIds = validPersonaIds.length ? validPersonaIds : null;
+      }
       if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
       if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
       if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
@@ -1911,6 +1947,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
           marketId: ctx.marketId,
           name: `${source.name} (Copy)`,
           description: source.description,
+          campaignType: source.campaignType,
+          objective: source.objective,
+          goal: source.goal,
+          audiencePersonaIds: source.audiencePersonaIds,
           startDate: source.startDate,
           endDate: source.endDate,
           numberOfDays: source.numberOfDays,

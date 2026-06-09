@@ -1956,6 +1956,10 @@ export const editorialCalendars = pgTable("editorial_calendars", {
   funnelTargets: jsonb("funnel_targets").$type<{ awareness: number; consideration: number; decision: number }>(),
   // The focus/custom guidance the user supplied at generation time.
   focus: text("focus"),
+  // Optional owning campaign: when a calendar is generated from a campaign, it
+  // is the campaign's content plan. Forward-ref because campaigns is declared
+  // later. NULL for standalone editorial calendars.
+  campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("active"), // active, archived
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2764,7 +2768,15 @@ export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
   "marketing_guidelines",
 ] as const;
 
-// Campaigns — group assets + social accounts for coordinated content creation
+// Campaign types — the intent that anchors a campaign. Drives brief generation
+// grounding and the recommended asset mix. Kept here so frontend and backend
+// stay in sync. "event" campaigns subsume the conference-promotion flow.
+export const CAMPAIGN_TYPES = ["theme", "event", "offering"] as const;
+export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
+
+// Campaigns — the orchestrating umbrella for a coordinated push: intent
+// (theme/event/offering) + audience + timeline, under which content briefs,
+// assets, emails, and social posts are produced and rolled up.
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
@@ -2772,6 +2784,14 @@ export const campaigns = pgTable("campaigns", {
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"), // draft, active, completed, archived, deleted
+  // Intent: what kind of push this is. Anchors brief generation + asset mix.
+  campaignType: text("campaign_type").notNull().default("theme"), // CampaignType
+  // The strategic objective in the user's words (what we're promoting + why).
+  objective: text("objective"),
+  // The measurable goal (e.g. "200 webinar registrations").
+  goal: text("goal"),
+  // ICP personas this campaign targets (FK ids into personas; array, no cascade).
+  audiencePersonaIds: text("audience_persona_ids").array(),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   numberOfDays: integer("number_of_days"),

@@ -72,6 +72,10 @@ interface Campaign {
   name: string;
   description?: string;
   status: string;
+  campaignType?: string;
+  objective?: string;
+  goal?: string;
+  audiencePersonaIds?: string[];
   startDate?: string;
   endDate?: string;
   numberOfDays?: number;
@@ -82,6 +86,42 @@ interface Campaign {
   assets: CampaignAsset[];
   socialAccounts: CampaignSocialAccount[];
 }
+
+interface ContentBrief {
+  id: string;
+  title: string;
+  format: string;
+  funnelStage: string;
+  status: string;
+  demandSignal?: string | null;
+  differentiationAngle?: string | null;
+  targetReader?: string | null;
+  cta?: string | null;
+  estimatedHours?: number | null;
+}
+
+interface ContentPlanResponse {
+  calendar: { id: string; name: string } | null;
+  briefs: ContentBrief[];
+}
+
+const BRIEF_FORMAT_LABELS: Record<string, string> = {
+  blog_post: "Blog post",
+  landing_page: "Landing page",
+  linkedin_post: "LinkedIn post",
+  x_post: "X / Twitter post",
+  newsletter: "Newsletter",
+  video_script: "Video script",
+  case_study: "Case study",
+  whitepaper: "Whitepaper",
+  other: "Other",
+};
+
+const FUNNEL_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
+  awareness: "secondary",
+  consideration: "default",
+  decision: "outline",
+};
 
 interface MarketProduct {
   id: string;
@@ -245,6 +285,38 @@ export default function CampaignDetailPage() {
       const r = await fetch(`/api/campaigns/${id}/generated-posts`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+  });
+
+  const { data: contentPlan } = useQuery<ContentPlanResponse>({
+    queryKey: [`/api/campaigns/${id}/content-plan`],
+    queryFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/content-plan`, { credentials: "include" });
+      return r.ok ? r.json() : { calendar: null, briefs: [] };
+    },
+  });
+  const briefs = contentPlan?.briefs ?? [];
+
+  const generateBriefsMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/generate-briefs`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Failed to generate content briefs";
+        try { msg = JSON.parse(text).error || msg; } catch { msg = text || msg; }
+        throw new Error(msg);
+      }
+      return r.json();
+    },
+    onSuccess: (data: { briefs?: ContentBrief[] }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/content-plan`] });
+      toast({ title: "Content plan generated", description: `${data.briefs?.length ?? 0} briefs added to this campaign.` });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const { data: jobStatus } = useQuery<{ status: string }>({
@@ -896,8 +968,32 @@ export default function CampaignDetailPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-campaign-name">{campaign.name}</h1>
-            {campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold" data-testid="text-campaign-name">{campaign.name}</h1>
+              {campaign.campaignType && (
+                <Badge variant="secondary" className="capitalize" data-testid="badge-campaign-type">{campaign.campaignType}</Badge>
+              )}
+            </div>
+            {campaign.objective && <p className="text-muted-foreground text-sm mt-1" data-testid="text-campaign-objective">{campaign.objective}</p>}
+            {!campaign.objective && campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
+            {(campaign.goal || (campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0)) && (
+              <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
+                {campaign.goal && (
+                  <span className="inline-flex items-center gap-1" data-testid="text-campaign-goal">
+                    <Target className="w-3 h-3" />{campaign.goal}
+                  </span>
+                )}
+                {campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <AtSign className="w-3 h-3" />
+                    {campaign.audiencePersonaIds
+                      .map(pid => availablePersonas.find(p => p.id === pid)?.name)
+                      .filter(Boolean)
+                      .join(", ") || `${campaign.audiencePersonaIds.length} persona(s)`}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-1 mt-2" data-testid="campaign-detail-products">
               {campaign.productIds && campaign.productIds.length > 0 && campaign.productIds.map(pid => {
                 const product = marketProducts.find(p => p.id === pid);
@@ -1001,13 +1097,82 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="posts">
+        <Tabs defaultValue="plan">
           <TabsList>
+            <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
             <TabsTrigger value="links" className="gap-1.5" data-testid="tab-links"><Link2 className="w-3.5 h-3.5" />Links</TabsTrigger>
           </TabsList>
+
+          {/* Content Plan — briefs that support this campaign */}
+          <TabsContent value="plan" className="space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold">Content plan</h3>
+                <p className="text-sm text-muted-foreground max-w-xl">
+                  Demand-scored briefs that support this campaign's objective, grounded in your messaging framework, competitive gaps, and the selected audience.
+                </p>
+              </div>
+              <Button
+                onClick={() => generateBriefsMutation.mutate()}
+                disabled={generateBriefsMutation.isPending}
+                className="gap-2"
+                data-testid="button-generate-briefs"
+              >
+                {generateBriefsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {briefs.length ? "Generate more briefs" : "Generate content briefs"}
+              </Button>
+            </div>
+
+            {briefs.length === 0 ? (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  No briefs yet. Generate a content plan to turn this campaign's intent into the right set of assets to produce.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {briefs.map((b) => (
+                  <Card key={b.id} data-testid={`brief-${b.id}`}>
+                    <CardContent className="py-3">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{b.title}</span>
+                            <Badge variant="outline" className="text-xs">{BRIEF_FORMAT_LABELS[b.format] ?? b.format}</Badge>
+                            <Badge variant={FUNNEL_BADGE_VARIANT[b.funnelStage] ?? "secondary"} className="text-xs capitalize">{b.funnelStage}</Badge>
+                            <Badge variant="secondary" className="text-xs capitalize">{b.status}</Badge>
+                          </div>
+                          {b.differentiationAngle && (
+                            <p className="text-xs text-muted-foreground mt-1">{b.differentiationAngle}</p>
+                          )}
+                          {(b.targetReader || b.demandSignal) && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {b.targetReader ? <span><span className="font-medium">For:</span> {b.targetReader}. </span> : null}
+                              {b.demandSignal ? <span><span className="font-medium">Signal:</span> {b.demandSignal}</span> : null}
+                            </p>
+                          )}
+                        </div>
+                        {contentPlan?.calendar && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
+                            data-testid={`button-open-brief-${b.id}`}
+                          >
+                            Open in calendar <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
             <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />

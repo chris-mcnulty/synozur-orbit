@@ -37,6 +37,10 @@ interface Campaign {
   name: string;
   description?: string;
   status: string;
+  campaignType?: string;
+  objective?: string;
+  goal?: string;
+  audiencePersonaIds?: string[];
   startDate?: string;
   endDate?: string;
   numberOfDays?: number;
@@ -45,6 +49,19 @@ interface Campaign {
   productIds?: string[];
   createdAt: string;
 }
+
+interface Persona {
+  id: string;
+  name: string;
+  role?: string;
+  isIcp?: boolean;
+}
+
+const CAMPAIGN_TYPE_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: "theme", label: "Theme", hint: "Ongoing awareness push around a point of view" },
+  { value: "event", label: "Event", hint: "Promote a webinar, conference, or dated event" },
+  { value: "offering", label: "Offering", hint: "Launch or spotlight a product / service" },
+];
 
 interface MarketProduct {
   id: string;
@@ -137,6 +154,10 @@ export default function CampaignsPage() {
   const [form, setForm] = useState({
     name: prefillContext ? `Campaign: ${(briefingAction || recommendationContext || "").substring(0, 50)}` : "",
     description: prefillContext,
+    campaignType: "theme",
+    objective: prefillContext,
+    goal: "",
+    selectedPersonaIds: [] as string[],
     selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [] as string[],
     selectedSocialIds: [] as string[],
     selectedProductIds: [] as string[],
@@ -170,6 +191,8 @@ export default function CampaignsPage() {
   const resetForm = () => {
     setForm({
       name: "", description: "",
+      campaignType: "theme", objective: "", goal: "",
+      selectedPersonaIds: [],
       selectedAssetIds: preselectedAssetId ? [preselectedAssetId] : [],
       selectedSocialIds: [],
       selectedProductIds: [],
@@ -236,6 +259,23 @@ export default function CampaignsPage() {
     },
     enabled: isAllowed,
   });
+
+  const { data: personasRaw = [] } = useQuery<Persona[]>({
+    queryKey: ["/api/personas"],
+    queryFn: async () => {
+      const r = await fetch("/api/personas", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      // /api/personas may return an array or a paginated envelope.
+      return Array.isArray(data) ? data : data?.items ?? [];
+    },
+    enabled: isAllowed,
+  });
+  // ICP personas first, so the audience picker leads with the canonical profiles.
+  const personas = useMemo(
+    () => [...personasRaw].sort((a, b) => Number(b.isIcp ?? false) - Number(a.isIcp ?? false)),
+    [personasRaw],
+  );
 
   const activeAssets = useMemo(() => allAssets.filter(a => a.status !== "archived"), [allAssets]);
 
@@ -320,6 +360,10 @@ export default function CampaignsPage() {
         body: JSON.stringify({
           name: form.name,
           description: form.description,
+          campaignType: form.campaignType,
+          objective: form.objective,
+          goal: form.goal,
+          audiencePersonaIds: form.selectedPersonaIds,
           startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
           endDate,
           numberOfDays: form.numberOfDays,
@@ -378,6 +422,15 @@ export default function CampaignsPage() {
       selectedSocialIds: f.selectedSocialIds.includes(id)
         ? f.selectedSocialIds.filter(a => a !== id)
         : [...f.selectedSocialIds, id],
+    }));
+  };
+
+  const togglePersona = (id: string) => {
+    setForm(f => ({
+      ...f,
+      selectedPersonaIds: f.selectedPersonaIds.includes(id)
+        ? f.selectedPersonaIds.filter(a => a !== id)
+        : [...f.selectedPersonaIds, id],
     }));
   };
 
@@ -466,12 +519,77 @@ export default function CampaignsPage() {
                     )}
                   </div>
                   <div>
+                    <Label>Campaign Type</Label>
+                    <div className="grid grid-cols-3 gap-2 mt-1">
+                      {CAMPAIGN_TYPE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, campaignType: opt.value }))}
+                          className={`text-left rounded-md border p-2.5 transition-colors ${
+                            form.campaignType === opt.value
+                              ? "border-primary bg-primary/5 ring-1 ring-primary"
+                              : "border-input hover:bg-muted/50"
+                          }`}
+                          data-testid={`button-campaign-type-${opt.value}`}
+                        >
+                          <span className="block text-sm font-medium">{opt.label}</span>
+                          <span className="block text-xs text-muted-foreground mt-0.5">{opt.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Objective</Label>
+                    <Textarea
+                      value={form.objective}
+                      onChange={e => setForm(f => ({ ...f, objective: e.target.value }))}
+                      placeholder="What are we promoting, and why? e.g. Drive registrations for the June security webinar."
+                      rows={3}
+                      data-testid="input-campaign-objective"
+                    />
+                  </div>
+                  <div>
+                    <Label>Goal</Label>
+                    <Input
+                      value={form.goal}
+                      onChange={e => setForm(f => ({ ...f, goal: e.target.value }))}
+                      placeholder="Measurable target, e.g. 200 webinar registrations"
+                      data-testid="input-campaign-goal"
+                    />
+                  </div>
+                  <div>
+                    <Label>Audience (ICP personas)</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between text-left font-normal" data-testid="button-campaign-select-personas">
+                          {form.selectedPersonaIds.length ? `${form.selectedPersonaIds.length} selected` : "Who are we trying to reach?"}
+                          <ChevronDown className="w-4 h-4 ml-2 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-72 max-h-48 overflow-y-auto">
+                        {personas.length === 0 ? (
+                          <div className="px-2 py-1 text-sm text-muted-foreground">No personas yet. Create personas in Marketing → Personas.</div>
+                        ) : personas.map(p => (
+                          <DropdownMenuCheckboxItem
+                            key={p.id}
+                            checked={form.selectedPersonaIds.includes(p.id)}
+                            onCheckedChange={() => togglePersona(p.id)}
+                            data-testid={`checkbox-campaign-persona-${p.id}`}
+                          >
+                            {p.name}{p.role ? ` — ${p.role}` : ""}{p.isIcp ? " (ICP)" : ""}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div>
                     <Label>Description</Label>
                     <Textarea
                       value={form.description}
                       onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                      placeholder="Campaign goals and context..."
-                      rows={3}
+                      placeholder="Optional extra context..."
+                      rows={2}
                       data-testid="input-campaign-description"
                     />
                   </div>

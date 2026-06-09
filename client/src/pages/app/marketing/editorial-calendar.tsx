@@ -181,7 +181,12 @@ async function getJson(url: string) {
 export default function EditorialCalendarPage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Honor a ?calendar=<id> deep link (e.g. from a campaign's content plan).
+  const initialCalendarId =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("calendar")
+      : null;
+  const [selectedId, setSelectedId] = useState<string | null>(initialCalendarId);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
