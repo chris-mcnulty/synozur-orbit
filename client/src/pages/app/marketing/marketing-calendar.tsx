@@ -168,10 +168,7 @@ function DateCrowdingHint({ date, onPick, testid }: { date: string; onPick?: (d:
     enabled: valid,
   });
   if (!valid || !data || !data.busy) return null;
-  const pretty = (d: string) => {
-    const [y, m, dd] = d.split("-").map(Number);
-    return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  };
+  const pretty = prettyDay;
   return (
     <p className="text-xs text-amber-600 dark:text-amber-400" data-testid={testid ?? "text-crowding-hint"}>
       This day already has {data.count} activities.
@@ -255,6 +252,10 @@ function quarterRange(d: Date) {
   const end = new Date(d.getFullYear(), q * 3 + 3, 0, 23, 59, 59);
   return { start, end };
 }
+function prettyDay(d: string) {
+  const [y, m, dd] = d.split("-").map(Number);
+  return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
 
 export default function MarketingCalendarPage() {
   const { toast } = useToast();
@@ -270,6 +271,9 @@ export default function MarketingCalendarPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
+  // When a draft is dropped onto a crowded day, we hold the drop here and ask
+  // the user to confirm (or pick the suggested open day) before scheduling.
+  const [pendingDrop, setPendingDrop] = useState<{ descriptors: { type: string; id: string }[]; dateKey: string } | null>(null);
 
   // ── Backlog state ──
   const [backlogFilters, setBacklogFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" });
@@ -504,9 +508,28 @@ export default function MarketingCalendarPage() {
     return [{ type: it.type, id: it.id }];
   };
 
-  const handleDropSchedule = (descriptors: { type: string; id: string }[], dateKey: string) => {
-    if (!descriptors.length || dragScheduleMut.isPending) return;
+  const scheduleDrop = (descriptors: { type: string; id: string }[], dateKey: string) => {
     dragScheduleMut.mutate({ descriptors, date: new Date(`${dateKey}T09:00:00`).toISOString() });
+  };
+
+  // Before scheduling a drop, ask the date-advice endpoint whether the target
+  // day is crowded. If so, surface the same warning + suggestion the dialogs use
+  // and let the user confirm; otherwise schedule straight away.
+  const handleDropSchedule = async (descriptors: { type: string; id: string }[], dateKey: string) => {
+    if (!descriptors.length || dragScheduleMut.isPending) return;
+    const tz = new Date().getTimezoneOffset();
+    try {
+      const advice = await qc.fetchQuery<DateAdvice>({
+        queryKey: [`/api/marketing-calendar/date-advice?date=${dateKey}&tzOffset=${tz}`],
+      });
+      if (advice?.busy) {
+        setPendingDrop({ descriptors, dateKey });
+        return;
+      }
+    } catch {
+      // If the advice lookup fails, fall back to scheduling without a warning.
+    }
+    scheduleDrop(descriptors, dateKey);
   };
 
   const periodLabel = grouping === "quarter"
@@ -677,6 +700,35 @@ export default function MarketingCalendarPage() {
           />
         )}
       </div>
+
+      <Dialog open={!!pendingDrop} onOpenChange={(o) => !o && setPendingDrop(null)}>
+        <DialogContent data-testid="dialog-drop-crowding">
+          <DialogHeader>
+            <DialogTitle>That day looks busy</DialogTitle>
+            <DialogDescription>
+              {pendingDrop
+                ? `Scheduling ${pendingDrop.descriptors.length} item${pendingDrop.descriptors.length === 1 ? "" : "s"} onto ${prettyDay(pendingDrop.dateKey)}.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingDrop && (
+            <DateCrowdingHint
+              date={pendingDrop.dateKey}
+              onPick={(d) => { scheduleDrop(pendingDrop.descriptors, d); setPendingDrop(null); }}
+              testid="text-drop-crowding"
+            />
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDrop(null)} data-testid="button-drop-cancel">Cancel</Button>
+            <Button
+              onClick={() => { if (pendingDrop) { scheduleDrop(pendingDrop.descriptors, pendingDrop.dateKey); setPendingDrop(null); } }}
+              data-testid="button-drop-schedule-anyway"
+            >
+              Schedule anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} filterOpts={filterOpts} onCreated={invalidate} />
 
