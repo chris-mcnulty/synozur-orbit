@@ -58,6 +58,21 @@ Orbit is an AI-driven platform that centralizes and enhances go-to-market strate
 - **Product Management Tools**: Feature catalog, roadmap view, AI-powered roadmap recommendations, customer feedback and voting.
 - **SEO & Share-of-Voice Tracking**: Keyword tracking, SERP analysis, and visibility reporting for baseline and competitors.
 
+## Content Export Strategy (Interim)
+
+Interim decision for how each generated content type goes outbound, until the new website API opens up for direct posting. Revisit when the website ships.
+
+| Content type | Interim outbound format | Notes |
+| :--- | :--- | :--- |
+| Social posts | SocialPilot CSV | At least the next month, then revisit direct posting. |
+| Blog posts | Branded Word doc | Switch to direct website API once it's available. |
+| Whitepapers | Branded Word doc | _Pending confirmation._ |
+| Case studies | Branded Word doc | _Pending confirmation._ |
+| Landing page copy | Branded Word doc | Handoff for page build; direct via website API later. _Pending confirmation._ |
+| Email newsletters | Email campaign engine | Generated and sent in-engine. Review/approval export _pending confirmation._ |
+| Video scripts | Branded Word doc | — |
+| Podcasts | Branded Word doc outline | Podcasts are recorded **live** — no AI-generated MP3 audio needed. Outline follows Synozur's standard format (see example). |
+
 ## User preferences
 
 Preferred communication style: Simple, everyday language.
