@@ -51,7 +51,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Collapsible,
   CollapsibleContent,
@@ -673,7 +672,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         </div>
 
         {/* Navigation */}
-        <ScrollArea className="flex-1 px-4 py-2">
+        <div className="flex-1 px-4 py-2 overflow-y-auto min-h-0" style={{ WebkitOverflowScrolling: "touch" }}>
           <div className="space-y-2">
             {navigation.map((group, i) => {
               const isExpanded = expandedSections.includes(group.group);
@@ -769,7 +768,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Sidebar Footer - User Profile */}
         <div className="p-4 border-t border-sidebar-border bg-sidebar/50">
