@@ -2116,7 +2116,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (editedContent !== undefined) updateFields.editedContent = editedContent;
       if (status !== undefined) updateFields.status = status;
       if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
-      if (overrideBrandAssetId !== undefined) updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
+      if (overrideBrandAssetId !== undefined) {
+        if (overrideBrandAssetId) {
+          // Tenant boundary: only allow referencing brand assets this tenant owns.
+          const [owned] = await db.select({ id: brandAssets.id }).from(brandAssets).where(and(
+            eq(brandAssets.id, overrideBrandAssetId),
+            eq(brandAssets.tenantDomain, ctx.tenantDomain),
+          ));
+          if (!owned) return res.status(404).json({ error: "Brand asset not found" });
+        }
+        updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
+      }
       if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
       if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
       const [row] = await db.update(generatedPosts)

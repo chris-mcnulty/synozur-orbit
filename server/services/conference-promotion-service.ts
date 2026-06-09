@@ -565,6 +565,81 @@ export async function compositeHeroImage(opts: {
     .toBuffer();
 }
 
+/**
+ * Generate a standalone branded social graphic for a generated post: a brand-color
+ * gradient (Synozur purple by default), a large centered headline, and the tenant
+ * logo in the corner — the same visual language as the conference hero graphics,
+ * but driven by arbitrary post copy instead of a conference. Returns the public
+ * Orbit path so external schedulers can fetch the image by URL.
+ */
+export async function generateBrandedPostGraphic(opts: {
+  tenantDomain: string;
+  marketId?: string | null;
+  headline: string;
+  subtitle?: string | null;
+}): Promise<{ fileUrl: string; fileSize: number }> {
+  const { tenantDomain, marketId, headline } = opts;
+
+  const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, tenantDomain));
+
+  // Company logo: market-scoped brand asset → tenant-wide brand asset → tenant.logoUrl.
+  const pickLogo = (assets: typeof brandAssets.$inferSelect[]) =>
+    assets.find((a) => a.logoVariant === "white_horizontal" && a.fileUrl) ||
+    assets.find((a) => a.logoVariant === "white_square" && a.fileUrl) ||
+    assets.find((a) => a.logoVariant?.startsWith("white") && a.fileUrl) ||
+    assets.find((a) => a.logoVariant?.startsWith("color") && a.fileUrl) ||
+    assets.find((a) => a.logoVariant && a.fileUrl);
+
+  let logoAsset: typeof brandAssets.$inferSelect | undefined;
+  if (marketId) {
+    const marketAssets = await db.select().from(brandAssets).where(and(
+      eq(brandAssets.tenantDomain, tenantDomain),
+      eq(brandAssets.status, "active"),
+      eq(brandAssets.marketId, marketId),
+    ));
+    logoAsset = pickLogo(marketAssets);
+  }
+  if (!logoAsset) {
+    const tenantAssets = await db.select().from(brandAssets).where(and(
+      eq(brandAssets.tenantDomain, tenantDomain),
+      eq(brandAssets.status, "active"),
+    ));
+    logoAsset = pickLogo(tenantAssets);
+  }
+
+  let companyLogoBytes: Buffer | null = null;
+  if (logoAsset?.fileUrl) {
+    try { companyLogoBytes = await loadImageBytes(logoAsset.fileUrl); } catch { /* skip */ }
+  }
+  if (!companyLogoBytes && tenantRow?.logoUrl) {
+    try { companyLogoBytes = await loadImageBytes(tenantRow.logoUrl); } catch { /* skip */ }
+  }
+
+  // Brand color: market override → tenant default → brand purple.
+  let primaryColor: string | null = null;
+  if (marketId) {
+    const [marketRow] = await db.select().from(markets).where(eq(markets.id, marketId));
+    primaryColor = marketRow?.primaryColor ?? null;
+  }
+  if (!primaryColor) primaryColor = tenantRow?.primaryColor ?? null;
+
+  const customFont = await resolveCompositorFont(tenantDomain, marketId);
+
+  const buffer = await compositeHeroImage({
+    backgroundBytes: null,
+    eventLogoBytes: null,
+    companyLogoBytes,
+    conferenceName: headline,
+    location: opts.subtitle ?? null,
+    primaryColor,
+    customFont,
+    websiteUrl: null,
+    eventDates: null,
+  });
+
+  return saveConferenceImageBuffer(buffer, "image/png", "png");
+}
+
 function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null): string {
   if (session) {
     const speaker = sessionSpeakerText(session);

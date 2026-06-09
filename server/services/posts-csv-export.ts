@@ -61,7 +61,13 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
   const brandAssetIds = Array.from(new Set(posts.map(p => p.overrideBrandAssetId).filter(Boolean))) as string[];
   const brandMap = new Map<string, any>();
   if (brandAssetIds.length) {
-    const assets = await db.select().from(brandAssets).where(inArray(brandAssets.id, brandAssetIds));
+    // Tenant-scope the lookup so a post referencing another tenant's asset id
+    // (defense-in-depth alongside the write-path ownership check) can never
+    // resolve to a foreign asset URL in the export.
+    const assets = await db.select().from(brandAssets).where(and(
+      eq(brandAssets.tenantDomain, tenantDomain),
+      inArray(brandAssets.id, brandAssetIds),
+    ));
     for (const a of assets) brandMap.set(a.id, a);
   }
 

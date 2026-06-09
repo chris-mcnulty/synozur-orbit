@@ -27,11 +27,13 @@ import {
   socialAccountVoiceProfiles,
   campaigns,
   marketingAuditLog,
+  brandAssets,
   AI_FEATURES,
   type VoiceFrameworkRef,
   type GeneratedPost,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
+import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { guardFeature } from "./helpers";
@@ -68,6 +70,28 @@ function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
     out.push({ kind, id });
   }
   return out;
+}
+
+/**
+ * Pick a short, clean headline for a branded post graphic. Prefers a caller-
+ * supplied headline; otherwise derives one from the post copy by stripping URLs
+ * and hashtags, taking the first sentence, and capping the length so it fits the
+ * graphic's title area.
+ */
+function derivePostHeadline(provided: unknown, post: GeneratedPost): string | null {
+  if (typeof provided === "string" && provided.trim()) {
+    return provided.trim().slice(0, 100);
+  }
+  const raw = (post.editedContent || post.content || "").trim();
+  if (!raw) return null;
+  const cleaned = raw
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/#[^\s#]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  const firstSentence = cleaned.split(/(?<=[.!?])\s/)[0] || cleaned;
+  return firstSentence.slice(0, 100).trim();
 }
 
 interface RewriteRequestBody {
@@ -309,9 +333,34 @@ export function registerMarketingPostsRoutes(app: Express) {
 
       const {
         editedContent, hashtags, status, scheduledDate, content,
+        overrideImageUrl, overrideBrandAssetId,
       } = req.body ?? {};
 
       const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
+      if (overrideImageUrl !== undefined) {
+        if (overrideImageUrl !== null && typeof overrideImageUrl !== "string") {
+          return res.status(400).json({ error: "overrideImageUrl must be a string or null" });
+        }
+        updateFields.overrideImageUrl = overrideImageUrl || null;
+        // A raw image URL set on its own supersedes any brand-asset selection.
+        if (overrideBrandAssetId === undefined) updateFields.overrideBrandAssetId = null;
+      }
+      if (overrideBrandAssetId !== undefined) {
+        if (overrideBrandAssetId !== null && typeof overrideBrandAssetId !== "string") {
+          return res.status(400).json({ error: "overrideBrandAssetId must be a string or null" });
+        }
+        if (overrideBrandAssetId) {
+          // Tenant boundary: a post may only reference brand assets owned by its
+          // own tenant. Without this check a caller could point a post at another
+          // tenant's asset, which would later surface in CSV exports/previews.
+          const [owned] = await db.select({ id: brandAssets.id }).from(brandAssets).where(and(
+            eq(brandAssets.id, overrideBrandAssetId),
+            eq(brandAssets.tenantDomain, ctx.tenantDomain),
+          ));
+          if (!owned) return res.status(404).json({ error: "Brand asset not found" });
+        }
+        updateFields.overrideBrandAssetId = overrideBrandAssetId || null;
+      }
       if (editedContent !== undefined) {
         if (editedContent !== null && typeof editedContent !== "string") {
           return res.status(400).json({ error: "editedContent must be a string or null" });
@@ -358,6 +407,42 @@ export function registerMarketingPostsRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Post Patch Error]", err.message);
       res.status(500).json({ error: err.message || "Failed to update post" });
+    }
+  });
+
+  // ───── Generate a branded social graphic for a post ─────
+  // Composites a brand-color gradient + tenant logo + a headline pulled from
+  // the post copy (the same look as the conference hero graphics), saves it to
+  // the public bucket, and stores the URL on the post.
+  app.post("/api/generated-posts/:id/generate-image", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [post] = await db.select().from(generatedPosts).where(and(
+        eq(generatedPosts.id, req.params.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+
+      const headline = derivePostHeadline(req.body?.headline, post);
+      if (!headline) {
+        return res.status(422).json({ error: "No text available to build a graphic from." });
+      }
+
+      const saved = await generateBrandedPostGraphic({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        headline,
+      });
+
+      const [row] = await db.update(generatedPosts)
+        .set({ overrideImageUrl: saved.fileUrl, overrideBrandAssetId: null, updatedAt: new Date() })
+        .where(eq(generatedPosts.id, post.id))
+        .returning();
+      res.json(row);
+    } catch (err: any) {
+      console.error("[Post Image Generate Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to generate image" });
     }
   });
 
@@ -438,6 +523,7 @@ export function registerMarketingPostsRoutes(app: Express) {
         status: generatedPosts.status,
         socialAccountId: generatedPosts.socialAccountId,
         campaignId: generatedPosts.campaignId,
+        overrideImageUrl: generatedPosts.overrideImageUrl,
         accountName: socialAccounts.accountName,
       })
         .from(generatedPosts)

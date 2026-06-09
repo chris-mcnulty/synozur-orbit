@@ -10,11 +10,13 @@
  * react-big-calendar for a single screen.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
+  Sparkles, Upload, Library, Loader2,
 } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths,
   format, isSameMonth, isSameDay, isToday, parseISO, setHours, setMinutes, setSeconds,
@@ -38,6 +40,7 @@ interface CalendarPost {
   socialAccountId: string | null;
   campaignId: string | null;
   accountName?: string | null;
+  overrideImageUrl?: string | null;
 }
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -260,6 +263,7 @@ export default function CalendarPage() {
 
         {selectedPost && (
           <PostDetailDrawer
+            key={selectedPost.id}
             post={selectedPost}
             onClose={() => setSelectedPost(null)}
             onReschedule={(iso) => rescheduleMutation.mutate({ id: selectedPost.id, scheduledDate: iso })}
@@ -282,6 +286,71 @@ function PostDetailDrawer({
     ? format(parseISO(post.scheduledDate), "yyyy-MM-dd'T'HH:mm")
     : "";
   const [when, setWhen] = useState(initial);
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(post.overrideImageUrl ?? null);
+  const [showPicker, setShowPicker] = useState(false);
+
+  const invalidateCalendar = () =>
+    queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+
+  const generateImage = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/generated-posts/${post.id}/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Generation failed");
+      return r.json();
+    },
+    onSuccess: (row: { overrideImageUrl?: string | null }) => {
+      setImageUrl(row.overrideImageUrl ?? null);
+      invalidateCalendar();
+      toast({ title: "Branded image created" });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't create image", description: err.message, variant: "destructive" }),
+  });
+
+  const setImage = useMutation({
+    mutationFn: async (payload: { overrideImageUrl: string | null; overrideBrandAssetId?: string | null }) => {
+      const r = await fetch(`/api/generated-posts/${post.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Update failed");
+      return r.json();
+    },
+    onSuccess: (row: { overrideImageUrl?: string | null }) => {
+      setImageUrl(row.overrideImageUrl ?? null);
+      invalidateCalendar();
+    },
+    onError: (err: Error) => toast({ title: "Couldn't update image", description: err.message, variant: "destructive" }),
+  });
+
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (resp) => setImage.mutate({ overrideImageUrl: resp.objectPath, overrideBrandAssetId: null }),
+    onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
+
+  const { data: brandAssets = [] } = useQuery<any[]>({
+    queryKey: ["/api/brand-assets"],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: showPicker,
+  });
+  const brandImages = brandAssets.filter((ba: any) => {
+    const url = ba.fileUrl || ba.url || "";
+    const mime = ba.mimeType || ba.fileType || "";
+    return /\.(png|jpe?g|webp|gif|svg)$/i.test(url) || /^image\//i.test(mime);
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
@@ -308,6 +377,110 @@ function PostDetailDrawer({
           <div>
             <div className="text-xs text-muted-foreground mb-1">Preview</div>
             <p className="text-sm whitespace-pre-wrap">{post.preview}</p>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Image</div>
+            {imageUrl ? (
+              <div className="space-y-2">
+                <img
+                  src={imageUrl}
+                  alt="Post graphic"
+                  className="w-full rounded-lg border"
+                  data-testid="img-post-graphic"
+                  onError={e => (e.currentTarget.style.display = "none")}
+                />
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setImage.mutate({ overrideImageUrl: null, overrideBrandAssetId: null })}
+                  disabled={setImage.isPending}
+                  data-testid="button-remove-post-image"
+                >
+                  <X className="w-3.5 h-3.5 mr-1" /> Remove image
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No image yet.</p>
+            )}
+            <div className="flex flex-wrap gap-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => generateImage.mutate()}
+                disabled={generateImage.isPending}
+                data-testid="button-generate-post-image"
+              >
+                {generateImage.isPending
+                  ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                {generateImage.isPending ? "Creating..." : "Generate branded image"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                data-testid="button-upload-post-image"
+              >
+                {isUploading
+                  ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  : <Upload className="w-3.5 h-3.5 mr-1" />}
+                {isUploading ? "Uploading..." : "Upload"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPicker(v => !v)}
+                data-testid="button-pick-post-image"
+              >
+                <Library className="w-3.5 h-3.5 mr-1" /> {showPicker ? "Hide" : "Visual/Brand Assets"}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadFile(f);
+                  e.currentTarget.value = "";
+                }}
+                data-testid="input-upload-post-image"
+              />
+            </div>
+            {showPicker && (
+              <div className="border rounded-lg p-3 mt-2 bg-muted/30 space-y-2">
+                <Label className="text-xs text-muted-foreground">Select an image from Visual/Brand Assets</Label>
+                {brandImages.length > 0 ? (
+                  <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                    {brandImages.map((ba: any) => {
+                      const u = ba.fileUrl || ba.url || "";
+                      return (
+                        <button
+                          key={ba.id}
+                          type="button"
+                          className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-card"
+                          onClick={() => {
+                            setImage.mutate({ overrideImageUrl: u, overrideBrandAssetId: ba.id });
+                            setShowPicker(false);
+                          }}
+                          data-testid={`button-brand-image-${ba.id}`}
+                        >
+                          <img
+                            src={u}
+                            alt={ba.name}
+                            className="w-full h-full object-cover"
+                            onError={e => (e.currentTarget.style.display = "none")}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No images in Visual/Brand Assets yet.</p>
+                )}
+              </div>
+            )}
           </div>
           {post.status !== "published" && (
             <div>
