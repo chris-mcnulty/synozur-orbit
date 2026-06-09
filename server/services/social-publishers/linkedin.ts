@@ -1,11 +1,12 @@
 /**
- * LinkedInPublisher — Task #97 + multi-tenant credentials refactor
+ * LinkedInPublisher
  *
  * Implements direct publishing to LinkedIn via the UGC Posts API and the
- * standard 3-legged OAuth code flow. Tenants supply their own LinkedIn
- * client_id + client_secret via the tenant-credentials UI; env vars are
- * not consulted (this is a multi-tenant deployment and tenant admins can't
- * set environment variables).
+ * standard 3-legged OAuth code flow. LinkedIn uses a single, Synozur-owned
+ * OAuth app (the Buffer/Hootsuite pattern): credentials come from the global
+ * env vars LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET, resolved via
+ * getPlatformCredentials("linkedin"). Tenants never register their own app or
+ * enter credentials — they just click "Connect LinkedIn" and consent.
  *
  * Required scopes: `openid profile email w_member_social`,
  * plus `w_organization_social rw_organization_admin` for company pages.
@@ -19,7 +20,9 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
-import { getPlatformCredentials } from "../platform-credentials-service";
+import { getPlatformCredentials, isLinkedInDirectPublishEnabled } from "../platform-credentials-service";
+
+const NOT_APPROVED_MESSAGE = "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. We'll turn on one-click Connect as soon as it's approved.";
 
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
@@ -30,14 +33,19 @@ export class LinkedInPublisher implements SocialPublisher {
   supported = true;
 
   async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    // Direct posting is gated off until LinkedIn approves the shared app.
+    if (!isLinkedInDirectPublishEnabled()) return false;
     const creds = await getPlatformCredentials(tenantDomain, "linkedin");
     return !!(creds?.clientId && creds.clientSecret);
   }
 
   async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
+    if (!isLinkedInDirectPublishEnabled()) {
+      throw new Error(NOT_APPROVED_MESSAGE);
+    }
     const creds = await getPlatformCredentials(req.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn OAuth is not configured for this tenant. Configure your LinkedIn client_id and client_secret in Tenant → Platform Credentials.");
+      throw new Error("LinkedIn isn't configured on this platform yet — please contact support.");
     }
     const params = new URLSearchParams({
       response_type: "code",
@@ -56,7 +64,7 @@ export class LinkedInPublisher implements SocialPublisher {
   ): Promise<OAuthCallbackResult> {
     const creds = await getPlatformCredentials(options.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn OAuth is not configured for this tenant.");
+      throw new Error("LinkedIn isn't configured on this platform yet — please contact support.");
     }
     const tokenResp = await fetch(`${AUTH_HOST}/oauth/v2/accessToken`, {
       method: "POST",
@@ -168,6 +176,13 @@ export class LinkedInPublisher implements SocialPublisher {
 
   async publish(ctx: PublishContext): Promise<PublishResult> {
     const { account, post } = ctx;
+    if (!isLinkedInDirectPublishEnabled()) {
+      return {
+        success: false,
+        errorCode: "not_approved",
+        errorMessage: NOT_APPROVED_MESSAGE,
+      };
+    }
     if (!account.encryptedAccessToken) {
       return {
         success: false,

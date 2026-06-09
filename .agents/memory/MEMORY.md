@@ -3,3 +3,4 @@
 - [Conference backgrounds CRUD](conference-backgrounds.md) — conferenceBackgrounds table + routes added; backgroundId FK on conferenceImages links hero composites to location photos.
 - [logo_composite render chain](logo-composite-render.md) — logo_composite branch in renderConferenceImage: bg photo → scrim → event logo → white_horizontal company logo → conf name. Falls back to brand-gradient if no backgroundBytes.
 - [Unified Marketing Calendar](unified-marketing-calendar.md) — aggregates social/email/content; social scoped tenant-only (no marketId), emails+briefs tenant+market; lifecycle derived; gated on editorialCalendar feature.
+- [LinkedIn global app + posting gate](linkedin-global-app.md) — LinkedIn uses one Synozur-owned OAuth app (env vars, not per-tenant); direct posting gated by LINKEDIN_DIRECT_PUBLISH_ENABLED until LinkedIn approves.

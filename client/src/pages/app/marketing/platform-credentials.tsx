@@ -1,10 +1,14 @@
 /**
  * Platform Credentials Page
  *
- * Tenant admins register their own OAuth apps (LinkedIn / Twitter / X /
- * Facebook / Instagram) and paste the client_id + client_secret here.
- * Secrets are encrypted at rest. The page is admin-only; non-admins see
- * a 403 from the API and a friendly notice on the page.
+ * Tenant admins register their own OAuth apps (Twitter / X / Facebook /
+ * Instagram) and paste the client_id + client_secret here. Secrets are
+ * encrypted at rest. The page is admin-only; non-admins see a 403 from the
+ * API and a friendly notice on the page.
+ *
+ * LinkedIn is intentionally not listed: it uses a single, Synozur-owned
+ * OAuth app, so tenants connect it one-click from the Social Accounts page
+ * with no app registration or credentials needed.
  *
  * Bluesky is intentionally not listed: it uses per-account app passwords
  * managed on the Social Accounts page, not OAuth client credentials.
@@ -49,14 +53,6 @@ interface PlatformConfig {
 }
 
 const PLATFORMS: PlatformConfig[] = [
-  {
-    key: "linkedin",
-    label: "LinkedIn",
-    secretRequired: true,
-    description: "LinkedIn Developer App. Required scopes: openid, profile, email, w_member_social, w_organization_social, rw_organization_admin.",
-    redirectNote: "Add your tenant's `…/api/social-accounts/oauth/callback` URL as an authorized redirect URL on the LinkedIn app.",
-    helpUrl: "https://www.linkedin.com/developers/apps",
-  },
   {
     key: "twitter",
     label: "X / Twitter",
@@ -196,7 +192,11 @@ export default function PlatformCredentialsPage() {
               Multi-tenant deployments don't share a single SaaS-vendor OAuth app. Each tenant brings its own so the consent screen carries your brand, your rate-limit budget is independent, and your platform review state is yours alone.
             </p>
             <p>
-              Bluesky doesn't appear here — it uses per-account app passwords entered on the{" "}
+              LinkedIn doesn't appear here — it's connected one-click from the{" "}
+              <Link href="/app/marketing/social-accounts" className="text-primary underline">Social Accounts</Link> page. No app registration or credentials needed.
+            </p>
+            <p>
+              Bluesky doesn't appear here either — it uses per-account app passwords entered on the{" "}
               <Link href="/app/marketing/social-accounts" className="text-primary underline">Social Accounts</Link> page.
             </p>
           </CardContent>

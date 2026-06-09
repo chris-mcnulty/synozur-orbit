@@ -2595,8 +2595,12 @@ export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 // The platform string matches socialAccounts.platform values: 'linkedin',
 // 'twitter', 'facebook', 'instagram'. (Bluesky uses app-passwords on each
 // social account, so it never appears here.)
+// LinkedIn is intentionally NOT listed here: it uses a single, Synozur-owned
+// global OAuth app (env vars LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET), so
+// tenants connect it one-click from the Social Accounts page without ever
+// registering their own app or entering credentials. The remaining platforms
+// stay per-tenant (each tenant brings its own OAuth app).
 export const PLATFORM_CREDENTIAL_PLATFORMS = [
-  "linkedin",
   "twitter",
   "facebook",
   "instagram",

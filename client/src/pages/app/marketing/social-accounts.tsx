@@ -697,7 +697,7 @@ export default function SocialAccountsPage() {
   const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
   const [blueskyAccount, setBlueskyAccount] = useState<SocialAccount | null>(null);
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; linkedinDirectPublishEnabled?: boolean }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const r = await fetch("/api/tenant/info", { credentials: "include" });
@@ -706,6 +706,9 @@ export default function SocialAccountsPage() {
   });
 
   const isAllowed = tenantInfo?.features?.socialAccounts === true;
+  // LinkedIn direct posting is pending LinkedIn's app review. Until it's
+  // approved, show a "coming soon" notice instead of a Connect button.
+  const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;
 
   const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],
@@ -1010,6 +1013,14 @@ export default function SocialAccountsPage() {
                             </Button>
                           </div>
                         </>
+                      ) : account.platform === "linkedin" && !linkedinPublishEnabled ? (
+                        <div
+                          className="flex items-start gap-1.5 text-xs text-muted-foreground rounded-md border border-dashed p-2"
+                          data-testid={`status-linkedin-coming-soon-${account.id}`}
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                          <span>Direct posting to LinkedIn is coming soon — it's pending LinkedIn's app review. One-click Connect will turn on automatically once it's approved.</span>
+                        </div>
                       ) : (
                         <Button
                           size="sm"

@@ -27,14 +27,46 @@ export interface ResolvedPlatformCredentials {
 }
 
 /**
+ * Returns the single, Synozur-owned LinkedIn OAuth credentials from the
+ * environment. LinkedIn is the one platform that uses a shared global app
+ * (Buffer/Hootsuite pattern) rather than per-tenant credentials, so customers
+ * can connect with one click without registering their own LinkedIn app.
+ * Returns null when the global env vars are not set.
+ */
+export function getGlobalLinkedInCredentials(): ResolvedPlatformCredentials | null {
+  const clientId = process.env.LINKEDIN_CLIENT_ID?.trim();
+  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
+/**
+ * Whether LinkedIn direct posting is live yet. The shared Synozur LinkedIn app
+ * needs LinkedIn's Community Management API approval before its posting scopes
+ * (w_member_social, w_organization_social, rw_organization_admin) will work, so
+ * we keep direct posting gated OFF until that approval lands. Flip the
+ * LINKEDIN_DIRECT_PUBLISH_ENABLED env var to "true" once the app is approved —
+ * no code change needed.
+ */
+export function isLinkedInDirectPublishEnabled(): boolean {
+  return process.env.LINKEDIN_DIRECT_PUBLISH_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
  * Returns decrypted credentials for the (tenant, platform) pair, or null if
  * none configured. Decryption failures are treated as missing — callers
  * should surface that as "credentials need to be re-entered".
+ *
+ * LinkedIn is special-cased: it always resolves from the single Synozur-owned
+ * global app (env vars), never from the per-tenant table.
  */
 export async function getPlatformCredentials(
   tenantDomain: string,
   platform: PlatformCredentialPlatform | string,
 ): Promise<ResolvedPlatformCredentials | null> {
+  if (platform === "linkedin") {
+    return getGlobalLinkedInCredentials();
+  }
   const [row] = await db.select().from(tenantPlatformCredentials).where(and(
     eq(tenantPlatformCredentials.tenantDomain, tenantDomain),
     eq(tenantPlatformCredentials.platform, platform),

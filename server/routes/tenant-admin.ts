@@ -7,6 +7,7 @@ import { toContextFilter, hasAdminAccess } from "./helpers";
 import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type ScoreBreakdown } from "../services/scoring-service";
 import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, MANUAL_ACTION_KEYS, resolveEffectivePlan, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus } from "../services/manual-action-quota";
+import { isLinkedInDirectPublishEnabled } from "../services/platform-credentials-service";
 import { normalizeToCanonicalDomain } from "../utils/url-normalization";
 
 export function registerTenantAdminRoutes(app: Express) {
@@ -1000,6 +1001,10 @@ export function registerTenantAdminRoutes(app: Express) {
         isPremium,
         name: tenant.name,
         features,
+        // LinkedIn direct posting is gated until LinkedIn approves the shared
+        // Synozur app; the UI uses this to show "coming soon" instead of a
+        // broken Connect button.
+        linkedinDirectPublishEnabled: isLinkedInDirectPublishEnabled(),
         usage: {
           competitorCount,
           monthlyAnalysisCount,

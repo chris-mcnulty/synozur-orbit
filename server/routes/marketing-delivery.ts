@@ -410,9 +410,12 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).json({ error: `Direct publishing is not supported for ${account.platform} yet.` });
     }
     if (!await publisher.oauthConfigured(ctx.tenantDomain)) {
+      const error = account.platform === "linkedin"
+        ? "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. We'll turn on one-click Connect as soon as it's approved."
+        : `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`;
       return res.status(503).json({
-        error: `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`,
-        configureRequired: true,
+        error,
+        configureRequired: account.platform !== "linkedin",
         platform: account.platform,
       });
     }
