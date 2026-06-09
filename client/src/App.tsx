@@ -60,6 +60,7 @@ import CampaignsPage from "@/pages/app/marketing/campaigns";
 import ConferencePromotionPage from "@/pages/app/marketing/conference-promotion";
 import ConferenceDetailPage from "@/pages/app/marketing/conference-detail";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
+import PlanningHubPage from "@/pages/app/marketing/planning-hub";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import PlatformCredentialsPage from "@/pages/app/marketing/platform-credentials";
 import ComposerPage from "@/pages/app/marketing/composer";
@@ -170,6 +171,7 @@ function Router() {
       <Route path="/app/marketing/solution-areas" component={SolutionAreasPage} />
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
+      <Route path="/app/marketing/planning-hub">{() => <PageFeatureGate featureKey="campaigns" label="Planning Hub" description="Plan all marketing for a campaign or theme in one view. Upgrade to unlock this feature."><PlanningHubPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferencePromotionPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences/:id">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferenceDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />

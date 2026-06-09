@@ -48,6 +48,7 @@ import { registerMarketingCalendarRoutes } from "./routes/marketing-calendar";
 import { registerContentProductionRoutes } from "./routes/content-production";
 import { registerDistributionPlannerRoutes } from "./routes/distribution-planner";
 import { registerMarketingPerformanceRoutes } from "./routes/marketing-performance";
+import { registerPlanningHubRoutes } from "./routes/planning-hub";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -132,6 +133,7 @@ export async function registerRoutes(
   registerContentProductionRoutes(app);
   registerDistributionPlannerRoutes(app);
   registerMarketingPerformanceRoutes(app);
+  registerPlanningHubRoutes(app);
 
   return httpServer;
 }

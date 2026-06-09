@@ -31,6 +31,7 @@ import {
   ChevronDown,
   ExternalLink,
   Link2,
+  Target,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -929,6 +930,16 @@ export default function CampaignDetailPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => navigate(`/app/marketing/planning-hub?scope=campaign&id=${id}`)}
+              data-testid="button-open-planning-hub"
+            >
+              <Target className="w-3.5 h-3.5" />
+              Planning Hub
+            </Button>
             <Button
               variant="outline"
               size="sm"

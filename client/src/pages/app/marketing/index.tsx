@@ -22,6 +22,7 @@ import {
   Send,
   LayoutGrid,
   TrendingUp,
+  Target,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
@@ -148,6 +149,17 @@ export default function MarketingLandingPage() {
       actionLabel: "View Social Campaigns",
       actionHref: "/app/marketing/campaigns",
       testId: "card-social-campaigns",
+    },
+    {
+      title: "Planning Hub",
+      description: "See and plan every piece of marketing for a campaign or theme in one view.",
+      icon: Target,
+      generated: false,
+      loading: false,
+      enterprise: true,
+      actionLabel: "Open Planning Hub",
+      actionHref: "/app/marketing/planning-hub",
+      testId: "card-planning-hub",
     },
     {
       title: "Email Newsletters",

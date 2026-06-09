@@ -15,7 +15,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Layers, Plus, Pencil, Trash2, Loader2, Lock } from "lucide-react";
+import { Layers, Plus, Pencil, Trash2, Loader2, Lock, Target } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface SolutionArea {
   id: string;
@@ -36,6 +37,7 @@ const emptyForm = { name: "", description: "", color: "#810FFB", sortOrder: 0 };
 
 export default function SolutionAreasPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [editArea, setEditArea] = useState<SolutionArea | null>(null);
@@ -198,6 +200,14 @@ export default function SolutionAreasPage() {
                       <CardTitle className="text-base leading-tight truncate">{area.name}</CardTitle>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={() => navigate(`/app/marketing/planning-hub?scope=theme&id=${area.id}`)}
+                        data-testid={`button-plan-area-${area.id}`}
+                        title="Open in Planning Hub"
+                      >
+                        <Target className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost" size="icon" className="h-7 w-7"
                         onClick={() => openEdit(area)}
