@@ -71,7 +71,7 @@ Interim decision for how each generated content type goes outbound, until the ne
 | Landing page copy | Branded Word doc | Handoff for page build; direct via website API later. _Pending confirmation._ |
 | Email newsletters | Email campaign engine | Generated and sent in-engine. Review/approval export _pending confirmation._ |
 | Video scripts | Branded Word doc | — |
-| Podcasts | Branded Word doc outline | Podcasts are recorded **live** — no AI-generated MP3 audio needed. Outline follows Synozur's standard format (see example). |
+| Podcasts | Branded Word doc outline | Podcasts ("Polaris") are recorded **live** — no AI-generated MP3 audio needed. Outline follows Synozur's standard format: see `docs/polaris-podcast-outline-format.md` (example: `docs/polaris-outline-example.docx`). |
 
 ## User preferences
 
