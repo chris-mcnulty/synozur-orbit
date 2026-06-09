@@ -292,6 +292,11 @@ function resolveAssignments(item: CalendarItem, filterOpts?: FilterOptions): Res
   return out;
 }
 
+// Drag payload type for already-scheduled pills, distinct from the backlog
+// rail's "application/json" descriptor array so day cells can tell a reschedule
+// drag apart from a backlog schedule drag.
+const SCHEDULED_DRAG_TYPE = "application/x-orbit-scheduled";
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -590,6 +595,15 @@ export default function MarketingCalendarPage() {
     scheduleDrop(descriptors, dateKey);
   };
 
+  // Dragging an already-scheduled pill onto another day reschedules it; dropping
+  // it on the backlog rail (dateKey null) unschedules it. Both reuse the single
+  // PATCH reschedule path.
+  const handleRescheduleDrag = (descriptor: { type: string; id: string }, dateKey: string | null) => {
+    if (rescheduleMut.isPending) return;
+    const date = dateKey ? new Date(`${dateKey}T09:00:00`).toISOString() : null;
+    rescheduleMut.mutate({ it: descriptor as CalendarItem, date });
+  };
+
   const periodLabel = grouping === "quarter"
     ? `Q${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`
     : anchor.toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -733,6 +747,7 @@ export default function MarketingCalendarPage() {
                     filterOpts={filterOpts}
                     onSelect={setDetail}
                     onDropSchedule={handleDropSchedule}
+                    onReschedule={(d, key) => handleRescheduleDrag(d, key)}
                   />
                 </div>
                 <BacklogRail
@@ -745,6 +760,7 @@ export default function MarketingCalendarPage() {
                   onSelect={setDetail}
                   dragDescriptors={dragDescriptors}
                   scheduling={dragScheduleMut.isPending}
+                  onUnschedule={(d) => handleRescheduleDrag(d, null)}
                 />
               </div>
             ) : (
@@ -842,7 +858,7 @@ function AssignmentDots({ item, filterOpts }: { item: CalendarItem; filterOpts?:
   );
 }
 
-function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void }) {
+function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarItem; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void; draggable?: boolean }) {
   const assignments = resolveAssignments(item, filterOpts);
   const titleAttr = assignments.length
     ? `${item.title} — ${assignments.map((a) => `${ASSIGN_META[a.kind].label}: ${a.name}`).join(", ")}`
@@ -850,7 +866,12 @@ function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOp
   return (
     <button
       onClick={() => onSelect(item)}
-      className={`flex w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-left text-[11px] ${TYPE_META[item.type].chip}`}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => {
+        e.dataTransfer.setData(SCHEDULED_DRAG_TYPE, JSON.stringify({ type: item.type, id: item.id }));
+        e.dataTransfer.effectAllowed = "move";
+      } : undefined}
+      className={`flex w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-left text-[11px] ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${TYPE_META[item.type].chip}`}
       data-testid={`item-calendar-${item.id}`}
       title={titleAttr}
     >
@@ -868,12 +889,13 @@ function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOp
   );
 }
 
-function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
+function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule, onReschedule }: {
   anchor: Date;
   byDay: Map<string, CalendarItem[]>;
   filterOpts?: FilterOptions;
   onSelect: (i: CalendarItem) => void;
   onDropSchedule?: (descriptors: { type: string; id: string }[], dateKey: string) => void;
+  onReschedule?: (descriptor: { type: string; id: string }, dateKey: string) => void;
 }) {
   const first = startOfMonth(anchor);
   const startDow = first.getDay();
@@ -889,6 +911,18 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
   const handleDrop = (e: ReactDragEvent, key: string) => {
     e.preventDefault();
     setDragOverKey(null);
+    // Reschedule drag: an already-scheduled pill moved to another day.
+    const sched = e.dataTransfer.getData(SCHEDULED_DRAG_TYPE);
+    if (sched && onReschedule) {
+      try {
+        const d = JSON.parse(sched) as { type: string; id: string };
+        if (d?.type && d?.id) onReschedule(d, key);
+      } catch {
+        // Ignore malformed reschedule payloads.
+      }
+      return;
+    }
+    // Schedule drag: one or more backlog drafts dropped onto a day.
     if (!onDropSchedule) return;
     const raw = e.dataTransfer.getData("application/json");
     if (!raw) return;
@@ -909,7 +943,7 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
         {cells.map((date, i) => {
           const key = date ? ymd(date) : null;
           const dayItems = key ? byDay.get(key) || [] : [];
-          const isDropTarget = !!date && !!onDropSchedule;
+          const isDropTarget = !!date && (!!onDropSchedule || !!onReschedule);
           const isDragOver = key !== null && key === dragOverKey;
           return (
             <div
@@ -924,7 +958,7 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
                 <>
                   <div className={`mb-1 text-right text-xs ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}>{date.getDate()}</div>
                   <div className="space-y-0.5">
-                    {dayItems.slice(0, 4).map((it) => <ItemPill key={`${it.type}-${it.id}`} item={it} filterOpts={filterOpts} onSelect={onSelect} />)}
+                    {dayItems.slice(0, 4).map((it) => <ItemPill key={`${it.type}-${it.id}`} item={it} filterOpts={filterOpts} onSelect={onSelect} draggable={!!onReschedule} />)}
                     {dayItems.length > 4 && <div className="px-1 text-[10px] text-muted-foreground">+{dayItems.length - 4} more</div>}
                   </div>
                 </>
@@ -939,7 +973,7 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule }: {
 
 // Compact, draggable backlog rail shown beside the month grid. Lets users drag
 // drafts (single or multi-selected) onto a day cell to schedule them.
-function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, itemKey, onSelect, dragDescriptors, scheduling }: {
+function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, itemKey, onSelect, dragDescriptors, scheduling, onUnschedule }: {
   items: CalendarItem[];
   totalCount: number;
   isLoading: boolean;
@@ -949,8 +983,10 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
   onSelect: (i: CalendarItem) => void;
   dragDescriptors: (it: CalendarItem) => { type: string; id: string }[];
   scheduling: boolean;
+  onUnschedule?: (descriptor: { type: string; id: string }) => void;
 }) {
   const selectedCount = items.filter((it) => selected.has(itemKey(it))).length;
+  const [isUnscheduleOver, setIsUnscheduleOver] = useState(false);
 
   const onDragStart = (e: ReactDragEvent, it: CalendarItem) => {
     const descriptors = dragDescriptors(it);
@@ -958,8 +994,38 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
     e.dataTransfer.effectAllowed = "move";
   };
 
+  // The rail accepts already-scheduled pills (dragged from the month grid) and
+  // unschedules them — backlog drafts dragged within the rail carry a different
+  // payload and are ignored here.
+  const canUnschedule = !!onUnschedule;
+  const onUnscheduleDragOver = (e: ReactDragEvent) => {
+    if (!canUnschedule || !e.dataTransfer.types.includes(SCHEDULED_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!isUnscheduleOver) setIsUnscheduleOver(true);
+  };
+  const onUnscheduleDrop = (e: ReactDragEvent) => {
+    setIsUnscheduleOver(false);
+    if (!canUnschedule) return;
+    const sched = e.dataTransfer.getData(SCHEDULED_DRAG_TYPE);
+    if (!sched) return;
+    e.preventDefault();
+    try {
+      const d = JSON.parse(sched) as { type: string; id: string };
+      if (d?.type && d?.id) onUnschedule!(d);
+    } catch {
+      // Ignore malformed payloads.
+    }
+  };
+
   return (
-    <div className="rounded-lg border lg:w-72 lg:shrink-0" data-testid="backlog-rail">
+    <div
+      className={`rounded-lg border lg:w-72 lg:shrink-0 ${isUnscheduleOver ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
+      data-testid="backlog-rail"
+      onDragOver={canUnschedule ? onUnscheduleDragOver : undefined}
+      onDragLeave={canUnschedule ? () => setIsUnscheduleOver(false) : undefined}
+      onDrop={canUnschedule ? onUnscheduleDrop : undefined}
+    >
       <div className="flex items-center gap-2 border-b bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
         <Inbox className="h-3.5 w-3.5" />
         <span>Backlog ({items.length})</span>
@@ -976,7 +1042,7 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
           <p className="px-3 pt-2 text-[11px] text-muted-foreground">
             {selectedCount > 1
               ? `Drag any selected draft onto a day to schedule all ${selectedCount}.`
-              : "Drag a draft onto a day to schedule it. Tick boxes to move several at once."}
+              : "Drag a draft onto a day to schedule it. Drop a scheduled item here to unschedule it. Tick boxes to move several at once."}
           </p>
           <div className="max-h-[560px] space-y-1 overflow-y-auto p-2" data-testid="backlog-rail-list">
             {items.map((it) => {
