@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -232,6 +232,8 @@ export default function EmailNewslettersPage() {
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [editMode, setEditMode] = useState<"visual" | "source">("visual");
+  const editableRef = useRef<HTMLDivElement>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
   const [labelDialogEmail, setLabelDialogEmail] = useState<SavedEmail | null>(null);
@@ -399,6 +401,15 @@ export default function EmailNewslettersPage() {
     const ids = new Set(activeAssets.flatMap(a => a.productIds || []));
     return products.filter(p => ids.has(p.id));
   }, [activeAssets, products]);
+
+  // Sync contenteditable div when switching to visual mode or opening a new email
+  useEffect(() => {
+    if (editingEmail?.platform === "hubspot-marketing" && editMode === "visual" && editableRef.current) {
+      editableRef.current.innerHTML = DOMPurify.sanitize(editBody, {
+        ADD_ATTR: ["width", "height", "cellpadding", "cellspacing", "border", "align", "valign", "bgcolor", "target"],
+      });
+    }
+  }, [editingEmail?.id, editMode]);
 
   const updateEmailMutation = useMutation({
     mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
@@ -1084,6 +1095,7 @@ export default function EmailNewslettersPage() {
                         title="Edit email"
                         onClick={e => {
                           e.stopPropagation();
+                          setEditMode("visual");
                           setEditingEmail(email);
                           setEditSubject(email.subject);
                           setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
@@ -1128,8 +1140,8 @@ export default function EmailNewslettersPage() {
           </Card>
         )}
 
-        <Dialog open={!!editingEmail} onOpenChange={v => { if (!v) setEditingEmail(null); }}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <Dialog open={!!editingEmail} onOpenChange={v => { if (!v) { setEditingEmail(null); setEditMode("visual"); } }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Email</DialogTitle>
               <DialogDescription>Modify the subject line and email body.</DialogDescription>
@@ -1140,18 +1152,77 @@ export default function EmailNewslettersPage() {
                 <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} data-testid="input-edit-email-subject" />
               </div>
               <div>
-                <Label>{editingEmail?.platform === "hubspot-marketing" ? "HTML Body" : "Email Body"}</Label>
-                <Textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
+                {editingEmail?.platform === "hubspot-marketing" ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Email Body</Label>
+                      <div className="flex gap-1 text-xs">
+                        <button
+                          onClick={() => {
+                            if (editMode === "visual" && editableRef.current) {
+                              setEditBody(editableRef.current.innerHTML);
+                            }
+                            setEditMode("visual");
+                          }}
+                          className={`px-2.5 py-1 rounded border transition-colors ${editMode === "visual" ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:bg-muted/80"}`}
+                          data-testid="button-edit-mode-visual"
+                        >Visual</button>
+                        <button
+                          onClick={() => {
+                            if (editMode === "visual" && editableRef.current) {
+                              setEditBody(editableRef.current.innerHTML);
+                            }
+                            setEditMode("source");
+                          }}
+                          className={`px-2.5 py-1 rounded border transition-colors ${editMode === "source" ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:bg-muted/80"}`}
+                          data-testid="button-edit-mode-source"
+                        >HTML</button>
+                      </div>
+                    </div>
+                    {editMode === "visual" ? (
+                      <div
+                        ref={editableRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        className="border rounded bg-card text-sm overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring p-1"
+                        style={{ minHeight: "300px", maxHeight: "55vh" }}
+                        data-testid="visual-edit-email"
+                      />
+                    ) : (
+                      <Textarea
+                        value={editBody}
+                        onChange={e => setEditBody(e.target.value)}
+                        rows={16}
+                        className="font-mono text-xs"
+                        data-testid="input-edit-email-body"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {editMode === "visual"
+                        ? "Click any text in the preview to edit it directly."
+                        : "Edit the raw HTML. Switch to Visual to see the rendered result."}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <Label>Email Body</Label>
+                    <Textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={12} className="font-mono text-xs" data-testid="input-edit-email-body" />
+                  </div>
+                )}
               </div>
               <Button
                 className="w-full"
                 disabled={!editSubject.trim() || updateEmailMutation.isPending}
                 onClick={() => {
                   if (editingEmail) {
+                    let bodyToSave = editBody;
+                    if (editingEmail.platform === "hubspot-marketing" && editMode === "visual" && editableRef.current) {
+                      bodyToSave = editableRef.current.innerHTML;
+                    }
                     updateEmailMutation.mutate({
                       emailId: editingEmail.id,
                       subject: editSubject,
-                      body: editBody,
+                      body: bodyToSave,
                       isHtml: editingEmail.platform === "hubspot-marketing",
                     });
                   }
@@ -1412,6 +1483,7 @@ export default function EmailNewslettersPage() {
                     className="gap-1.5 text-xs"
                     onClick={() => {
                       if (!viewingEmail) return;
+                      setEditMode("visual");
                       setEditingEmail(viewingEmail);
                       setEditSubject(viewingEmail.subject);
                       setEditBody(viewingEmail.platform === "hubspot-marketing" ? viewingEmail.htmlBody : (viewingEmail.textBody || viewingEmail.htmlBody));
@@ -1426,7 +1498,31 @@ export default function EmailNewslettersPage() {
               </div>
             </DialogHeader>
             {viewingEmail && (
-              <div className="mt-2">
+              <div className="mt-2 space-y-4">
+                {viewingEmail.subjectLineSuggestions && viewingEmail.subjectLineSuggestions.length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Subject Line Suggestions</label>
+                    <ol className="space-y-1">
+                      {viewingEmail.subjectLineSuggestions.map((line, i) => (
+                        <li key={i} className="flex items-center justify-between gap-2 text-sm border rounded px-3 py-2 bg-muted/30" data-testid={`text-view-subject-suggestion-${i}`}>
+                          <span>{i + 1}. {line}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 shrink-0"
+                            onClick={() => {
+                              navigator.clipboard.writeText(line);
+                              toast({ title: "Copied", description: "Subject line copied to clipboard" });
+                            }}
+                            data-testid={`button-copy-view-subject-${i}`}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
                 {viewingEmail.platform === "hubspot-marketing" ? (
                   <div
                     className="border rounded bg-card text-card-foreground text-sm overflow-y-auto"
