@@ -177,6 +177,7 @@ export default function CampaignDetailPage() {
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
   const [wrapPostLinks, setWrapPostLinks] = useState(false);
+  const [variantsPerPlatform, setVariantsPerPlatform] = useState<number | null>(null);
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
@@ -255,14 +256,25 @@ export default function CampaignDetailPage() {
     refetchInterval: (data: any) => (data?.status === "running" || data?.status === "pending") ? 3000 : false,
   });
 
+  const { data: genConfig } = useQuery<{ minVariantsPerPlatform: number; maxVariantsPerPlatform: number; maxDraftsPerGeneration: number }>({
+    queryKey: ["/api/social/generation-config"],
+    queryFn: async () => {
+      const r = await fetch(`/api/social/generation-config`, { credentials: "include" });
+      return r.ok ? r.json() : { minVariantsPerPlatform: 3, maxVariantsPerPlatform: 10, maxDraftsPerGeneration: 60 };
+    },
+    staleTime: Infinity,
+  });
+  const minVariants = genConfig?.minVariantsPerPlatform ?? 3;
+  const maxVariants = genConfig?.maxVariantsPerPlatform ?? 10;
+
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -274,6 +286,7 @@ export default function CampaignDetailPage() {
       setThematicBrief("");
       setThematicUrl("");
       setGenerateMode("asset");
+      setVariantsPerPlatform(null);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Posts will appear once generation is complete." });
     },
@@ -1911,7 +1924,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -1921,22 +1934,41 @@ export default function CampaignDetailPage() {
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 pr-1">
 
-            {/* Variant count hint based on campaign duration */}
+            {/* Variants-per-platform control */}
             {(() => {
               const days = campaign?.numberOfDays ?? 7;
               const dpw = 5 + (campaign?.includeSaturday ? 1 : 0) + (campaign?.includeSunday ? 1 : 0);
               const eligibleDays = Math.max(1, Math.ceil(days * dpw / 7));
-              const MAX_VARIANTS = 30;
-              const target = Math.min(Math.max(eligibleDays, 5), MAX_VARIANTS);
-              const capped = eligibleDays > MAX_VARIANTS;
+              const autoTarget = Math.min(Math.max(eligibleDays, minVariants), maxVariants);
+              const effective = variantsPerPlatform ?? autoTarget;
               const accountCount = campaign?.socialAccounts?.length || 1;
               return (
-                <div className="rounded-lg border bg-primary/5 border-primary/20 px-3 py-2.5">
+                <div className="rounded-lg border bg-primary/5 border-primary/20 px-3 py-2.5 space-y-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium">Variants per channel</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">How many unique text variants to draft for each social channel.</p>
+                    </div>
+                    <Select
+                      value={variantsPerPlatform === null ? "auto" : String(variantsPerPlatform)}
+                      onValueChange={(v) => setVariantsPerPlatform(v === "auto" ? null : Number(v))}
+                    >
+                      <SelectTrigger className="h-8 w-[150px] text-xs flex-shrink-0" data-testid="select-variants-per-platform">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto ({autoTarget})</SelectItem>
+                        {Array.from({ length: maxVariants - minVariants + 1 }, (_, i) => minVariants + i).map(n => (
+                          <SelectItem key={n} value={String(n)}>{n} per channel</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <p className="text-xs text-foreground" data-testid="text-variant-count-hint">
-                    Will generate <strong>~{target} unique text variants per channel</strong> ({target * accountCount} total across {accountCount} channel{accountCount !== 1 ? "s" : ""}), each committed to a distinct creative angle — question hook, statistic, story, contrarian take, behind-the-scenes, comparison, and more. Consecutive scheduled days never repeat the same post.
-                    {capped && (
+                    Will generate <strong>{effective} unique text variants per channel</strong> ({effective * accountCount} total across {accountCount} channel{accountCount !== 1 ? "s" : ""}), each committed to a distinct creative angle — question hook, statistic, story, contrarian take, behind-the-scenes, comparison, and more. Consecutive scheduled days never repeat the same post.
+                    {eligibleDays > effective && (
                       <span className="block mt-1 text-muted-foreground">
-                        Your campaign has {eligibleDays} eligible posting days. The variant pool is capped at {MAX_VARIANTS} per channel to control AI cost, so the same texts will recycle roughly every {MAX_VARIANTS} scheduled days.
+                        Your campaign has {eligibleDays} eligible posting days, so the {effective} variants will recycle roughly every {effective} scheduled days. Choose a higher number for more variety (max {maxVariants}).
                       </span>
                     )}
                   </p>
@@ -2115,7 +2147,7 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
@@ -2123,6 +2155,7 @@ export default function CampaignDetailPage() {
                 thematicBrief: generateMode === "thematic" ? thematicBrief : undefined,
                 thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
                 wrapLinks: wrapPostLinks,
+                variantsPerPlatform,
               })}
               disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim())}
               className="gap-2"

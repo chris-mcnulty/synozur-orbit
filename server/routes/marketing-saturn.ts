@@ -2547,6 +2547,14 @@ Return ONLY a valid JSON object (no markdown fences) with:
       // opt out by sending { includeAssetLeadImages: false }.
       const includeAssetLeadImages: boolean = req.body?.includeAssetLeadImages !== false;
 
+      // Optional user-chosen volume: how many unique text variants to draft per
+      // platform. Clamp to the supported range; null = auto-size to posting days.
+      const rawVariants = req.body?.variantsPerPlatform;
+      const variantsPerPlatform: number | null =
+        (typeof rawVariants === "number" && Number.isFinite(rawVariants))
+          ? Math.min(Math.max(Math.round(rawVariants), MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM)
+          : null;
+
       await db.delete(generatedPosts)
         .where(and(
           eq(generatedPosts.campaignId, campaign.id),
@@ -2587,7 +2595,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           personaIds,
           useThematicMode ? thematicBrief : "",
           useThematicMode ? thematicUrl : "",
-          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages },
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform },
           reportProgress,
         ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
@@ -2617,6 +2625,17 @@ Return ONLY a valid JSON object (no markdown fences) with:
       console.error("[Generate Posts Status Error]", err.message);
       res.status(500).json({ error: "Failed to get post generation status" });
     }
+  });
+
+  // Exposes the supported bounds for the "how many variants per platform"
+  // control so the UI selector stays in sync with the server-side clamp.
+  app.get("/api/social/generation-config", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    res.json({
+      minVariantsPerPlatform: MIN_VARIANTS_PER_PLATFORM,
+      maxVariantsPerPlatform: MAX_VARIANTS_PER_PLATFORM,
+      maxDraftsPerGeneration: MAX_DRAFTS_PER_GENERATION,
+    });
   });
 
   app.get("/api/campaigns/:id/export-preview", async (req, res) => {
@@ -3723,11 +3742,19 @@ const MAX_VARIANTS_PER_PLATFORM = 10;
 // images × platforms grid from flooding the backlog with hundreds of drafts.
 const MAX_DRAFTS_PER_GENERATION = 60;
 
-function calculateTargetVariantsPerPlatform(campaignRow: { numberOfDays: number | null; includeSaturday: boolean | null; includeSunday: boolean | null }): { target: number; eligibleDays: number; capped: boolean } {
+function calculateTargetVariantsPerPlatform(
+  campaignRow: { numberOfDays: number | null; includeSaturday: boolean | null; includeSunday: boolean | null },
+  requested?: number | null,
+): { target: number; eligibleDays: number; capped: boolean } {
   const baseDays = campaignRow.numberOfDays ?? 7;
   const daysPerWeek = 5 + (campaignRow.includeSaturday ? 1 : 0) + (campaignRow.includeSunday ? 1 : 0);
   const eligibleDays = Math.max(1, Math.ceil(baseDays * daysPerWeek / 7));
-  const target = Math.min(Math.max(eligibleDays, MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM);
+  // When the user explicitly picks a volume, honour it (clamped to the
+  // supported range). Otherwise auto-size to the number of eligible days.
+  const desired = (typeof requested === "number" && Number.isFinite(requested))
+    ? Math.round(requested)
+    : eligibleDays;
+  const target = Math.min(Math.max(desired, MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM);
   return { target, eligibleDays, capped: eligibleDays > MAX_VARIANTS_PER_PLATFORM };
 }
 
@@ -3740,7 +3767,7 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
-  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean } = {},
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
   // Default ON: lead images from source content assets are folded into the
@@ -3893,7 +3920,7 @@ async function generatePostsAsync(
             leadImageUrl: null,
           }];
 
-    const { target: targetVariantsPerPlatform, eligibleDays, capped } = calculateTargetVariantsPerPlatform(campaignRow);
+    const { target: targetVariantsPerPlatform, eligibleDays, capped } = calculateTargetVariantsPerPlatform(campaignRow, wrapOpts.variantsPerPlatform);
     const VARIANTS_PER_BATCH = 4; // angles per AI call — keeps prompts focused and JSON parseable
     if (capped) {
       console.log(`[Saturn] Campaign ${campaignId} has ${eligibleDays} eligible posting days but variant target capped at ${targetVariantsPerPlatform}; the variant pool will cycle approximately every ${targetVariantsPerPlatform} scheduled days.`);
