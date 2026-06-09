@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs, contentAssets } from "@shared/schema";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas } from "@shared/schema";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
@@ -166,7 +166,41 @@ export function registerEditorialCalendarRoutes(app: Express) {
         )
         .orderBy(asc(contentBriefs.sortOrder), asc(contentBriefs.createdAt));
 
-      res.json({ calendar, briefs });
+      // Enrich briefs that have a generated draft with that draft's current
+      // title and category so the calendar can show the brief↔draft link and
+      // the draft's library category in one place.
+      const assetIds = briefs
+        .map((b) => b.contentAssetId)
+        .filter((id): id is string => !!id);
+      let assetMap = new Map<string, { title: string; categoryId: string | null }>();
+      if (assetIds.length) {
+        const assets = await db
+          .select({
+            id: contentAssets.id,
+            title: contentAssets.title,
+            categoryId: contentAssets.categoryId,
+          })
+          .from(contentAssets)
+          .where(
+            and(
+              inArray(contentAssets.id, assetIds),
+              eq(contentAssets.tenantDomain, ctx.tenantDomain),
+              eq(contentAssets.marketId, ctx.marketId),
+            ),
+          );
+        assetMap = new Map(assets.map((a) => [a.id, { title: a.title, categoryId: a.categoryId }]));
+      }
+
+      const enriched = briefs.map((b) => {
+        const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
+        return {
+          ...b,
+          draftTitle: asset?.title ?? null,
+          draftCategoryId: asset?.categoryId ?? null,
+        };
+      });
+
+      res.json({ calendar, briefs: enriched });
     } catch (err: any) {
       console.error("[editorial-calendars get]", err);
       res.status(500).json({ error: err.message || "Failed to fetch editorial calendar" });
@@ -182,6 +216,37 @@ export function registerEditorialCalendarRoutes(app: Express) {
       for (const field of EDITABLE_BRIEF_FIELDS) {
         if (req.body?.[field] !== undefined) updates[field] = req.body[field];
       }
+
+      // Campaign / theme assignment — validate the referenced row belongs to
+      // the caller's tenant+market before linking so the FK can't accumulate
+      // cross-tenant references. An empty string / null clears the assignment.
+      if (req.body?.campaignId !== undefined) {
+        const id = req.body.campaignId;
+        if (id) {
+          const [c] = await db
+            .select({ id: campaigns.id })
+            .from(campaigns)
+            .where(and(eq(campaigns.id, id), eq(campaigns.tenantDomain, ctx.tenantDomain), eq(campaigns.marketId, ctx.marketId)));
+          if (!c) return res.status(400).json({ error: "Unknown campaign" });
+          updates.campaignId = id;
+        } else {
+          updates.campaignId = null;
+        }
+      }
+      if (req.body?.solutionAreaId !== undefined) {
+        const id = req.body.solutionAreaId;
+        if (id) {
+          const [s] = await db
+            .select({ id: solutionAreas.id })
+            .from(solutionAreas)
+            .where(and(eq(solutionAreas.id, id), eq(solutionAreas.tenantDomain, ctx.tenantDomain), eq(solutionAreas.marketId, ctx.marketId)));
+          if (!s) return res.status(400).json({ error: "Unknown theme" });
+          updates.solutionAreaId = id;
+        } else {
+          updates.solutionAreaId = null;
+        }
+      }
+
       if (Object.keys(updates).length === 0) {
         return res.status(400).json({ error: "No editable fields provided" });
       }

@@ -38,6 +38,8 @@ import {
   Image as ImageIcon,
   RefreshCw,
   X,
+  FileText,
+  Link2,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -59,6 +61,15 @@ interface ContentBrief {
   estimatedHours: number | null;
   status: string;
   contentAssetId: string | null;
+  campaignId: string | null;
+  solutionAreaId: string | null;
+  draftTitle: string | null;
+  draftCategoryId: string | null;
+}
+
+interface NamedRow {
+  id: string;
+  name: string;
 }
 
 interface EditorialCalendar {
@@ -133,7 +144,33 @@ const FUNNEL_BADGE: Record<string, string> = {
   decision: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
 };
 
-const STATUS_OPTIONS = ["suggested", "accepted", "in_progress", "drafted", "scheduled", "published", "removed"];
+// Ordered content lifecycle: suggested → … → posted. "removed" sits outside
+// the flow (a brief that was dropped). Labels are user-friendly; values match
+// the persisted brief.status.
+const LIFECYCLE: { value: string; label: string }[] = [
+  { value: "suggested", label: "Suggested" },
+  { value: "accepted", label: "Accepted" },
+  { value: "in_progress", label: "In progress" },
+  { value: "drafted", label: "Drafted" },
+  { value: "approved", label: "Approved" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "published", label: "Posted" },
+];
+const STATUS_OPTIONS = [...LIFECYCLE.map((s) => s.value), "removed"];
+const STATUS_LABELS: Record<string, string> = {
+  ...Object.fromEntries(LIFECYCLE.map((s) => [s.value, s.label])),
+  removed: "Removed",
+};
+const STATUS_BADGE: Record<string, string> = {
+  suggested: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  accepted: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
+  in_progress: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+  drafted: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
+  approved: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  scheduled: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200",
+  published: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  removed: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200",
+};
 
 async function getJson(url: string) {
   const res = await fetch(url, { credentials: "include" });
@@ -150,6 +187,8 @@ export default function EditorialCalendarPage() {
   const [count, setCount] = useState(15);
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
+  const [draftBriefTitle, setDraftBriefTitle] = useState<string | null>(null);
+  const [openingDraftId, setOpeningDraftId] = useState<string | null>(null);
   const [draftImageUrl, setDraftImageUrl] = useState<string | null>(null);
   const [draftDirty, setDraftDirty] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
@@ -199,6 +238,25 @@ export default function EditorialCalendarPage() {
 
   const briefs = detail?.briefs ?? [];
 
+  // Assignment options — campaigns, themes (solution areas), and categories.
+  // These are gated behind their own features; when unavailable the lists are
+  // simply empty and the selects show nothing to pick.
+  const { data: campaignOptions } = useQuery<NamedRow[]>({
+    queryKey: ["/api/campaigns"],
+    queryFn: async () => (await getJson("/api/campaigns")) ?? [],
+    enabled: allowed,
+  });
+  const { data: themeOptions } = useQuery<NamedRow[]>({
+    queryKey: ["/api/solution-areas"],
+    queryFn: async () => (await getJson("/api/solution-areas")) ?? [],
+    enabled: allowed,
+  });
+  const { data: categoryOptions } = useQuery<NamedRow[]>({
+    queryKey: ["/api/content-categories"],
+    queryFn: async () => (await getJson("/api/content-categories")) ?? [],
+    enabled: allowed,
+  });
+
   const generate = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/editorial-calendars/generate", {
@@ -247,14 +305,63 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to draft content");
       return res.json();
     },
-    onSuccess: (data: { draft: DraftResult; asset?: { id: string; leadImageUrl?: string | null } }) => {
+    onSuccess: (data: { draft: DraftResult; asset?: { id: string; leadImageUrl?: string | null } }, briefId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       setDraft(data.draft);
       setDraftAssetId(data.asset?.id ?? null);
+      setDraftBriefTitle(briefs.find((b) => b.id === briefId)?.title ?? null);
       setDraftImageUrl(data.asset?.leadImageUrl ?? null);
       setDraftDirty(false);
       setRewriteInstr("");
       toast.success("Draft created and saved to the content library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Re-open an already-generated draft in the editor without re-generating it.
+  const openDraft = async (b: ContentBrief) => {
+    if (!b.contentAssetId) return;
+    setOpeningDraftId(b.id);
+    try {
+      const asset = await getJson(`/api/content-assets/${b.contentAssetId}`);
+      if (!asset) {
+        toast.error("Couldn't open the draft — it may have been deleted.");
+        return;
+      }
+      setDraft({
+        title: asset.title ?? null,
+        body: asset.content ?? "",
+        meta: asset.description ?? null,
+        format: b.format,
+      });
+      setDraftAssetId(asset.id);
+      setDraftBriefTitle(b.title);
+      setDraftImageUrl(asset.leadImageUrl ?? null);
+      setDraftDirty(false);
+      setRewriteInstr("");
+    } catch {
+      toast.error("Couldn't open the draft.");
+    } finally {
+      setOpeningDraftId(null);
+    }
+  };
+
+  // Assign the draft's library category. Category lives on the content asset,
+  // so this is only available once a brief has been drafted.
+  const assignCategory = useMutation({
+    mutationFn: async ({ assetId, categoryId }: { assetId: string; categoryId: string | null }) => {
+      const res = await fetch(`/api/content-assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ categoryId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to set category");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -666,7 +773,18 @@ export default function EditorialCalendarPage() {
                             {FUNNEL_LABELS[b.funnelStage] ?? b.funnelStage}
                           </span>
                           <Badge variant="secondary">{FORMAT_LABELS[b.format] ?? b.format}</Badge>
-                          {b.status === "drafted" && <Badge>Drafted</Badge>}
+                          <span
+                            className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[b.status] ?? STATUS_BADGE.suggested}`}
+                            data-testid={`status-badge-${b.id}`}
+                          >
+                            {STATUS_LABELS[b.status] ?? b.status}
+                          </span>
+                          {b.contentAssetId && (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid={`linked-draft-${b.id}`}>
+                              <Link2 className="h-3 w-3" />
+                              Draft ready
+                            </span>
+                          )}
                           {b.targetKeyword && (
                             <span className="text-xs text-muted-foreground">🔑 {b.targetKeyword}</span>
                           )}
@@ -687,25 +805,65 @@ export default function EditorialCalendarPage() {
                           <SelectContent>
                             {STATUS_OPTIONS.map((s) => (
                               <SelectItem key={s} value={s}>
-                                {s.replace("_", " ")}
+                                {STATUS_LABELS[s] ?? s}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={draftBrief.isPending}
-                          onClick={() => draftBrief.mutate(b.id)}
-                          data-testid={`draft-${b.id}`}
-                        >
-                          {draftBrief.isPending && draftBrief.variables === b.id ? (
-                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                          ) : (
-                            <PenLine className="mr-1 h-4 w-4" />
-                          )}
-                          {b.contentAssetId ? "Re-draft" : "Draft"}
-                        </Button>
+                        {b.contentAssetId ? (
+                          <>
+                            <Button
+                              size="sm"
+                              disabled={openingDraftId === b.id}
+                              onClick={() => openDraft(b)}
+                              data-testid={`open-draft-${b.id}`}
+                            >
+                              {openingDraftId === b.id ? (
+                                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                              ) : (
+                                <FileText className="mr-1 h-4 w-4" />
+                              )}
+                              Open draft
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={draftBrief.isPending && draftBrief.variables === b.id}
+                              onClick={() => {
+                                if (confirm("Regenerate the draft? This replaces the current draft text in the content library.")) {
+                                  draftBrief.mutate(b.id);
+                                }
+                              }}
+                              data-testid={`draft-${b.id}`}
+                            >
+                              {draftBrief.isPending && draftBrief.variables === b.id ? (
+                                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-1 h-4 w-4" />
+                              )}
+                              Re-draft
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={draftBrief.isPending && draftBrief.variables === b.id}
+                            onClick={() => draftBrief.mutate(b.id)}
+                            data-testid={`draft-${b.id}`}
+                          >
+                            {draftBrief.isPending && draftBrief.variables === b.id ? (
+                              <>
+                                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                Drafting…
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-1 h-4 w-4" />
+                                Generate draft
+                              </>
+                            )}
+                          </Button>
+                        )}
                         {b.contentAssetId && repurposeAllowed && (
                           <Button
                             size="sm"
@@ -771,6 +929,63 @@ export default function EditorialCalendarPage() {
                           )}
                         </Button>
                       </div>
+                    </div>
+
+                    {/* Assignment: campaign, theme, category. Campaign and theme
+                        live on the brief; category lives on the generated draft
+                        (content asset), so it's only enabled once drafted. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium uppercase text-muted-foreground">Assign</span>
+                      <Select
+                        value={b.campaignId ?? "__none__"}
+                        onValueChange={(v) =>
+                          updateBrief.mutate({ id: b.id, updates: { campaignId: v === "__none__" ? null : v } })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-campaign-${b.id}`}>
+                          <SelectValue placeholder="Campaign" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No campaign</SelectItem>
+                          {(campaignOptions ?? []).map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={b.solutionAreaId ?? "__none__"}
+                        onValueChange={(v) =>
+                          updateBrief.mutate({ id: b.id, updates: { solutionAreaId: v === "__none__" ? null : v } })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-theme-${b.id}`}>
+                          <SelectValue placeholder="Theme" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No theme</SelectItem>
+                          {(themeOptions ?? []).map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={b.draftCategoryId ?? "__none__"}
+                        disabled={!b.contentAssetId || assignCategory.isPending}
+                        onValueChange={(v) =>
+                          b.contentAssetId &&
+                          assignCategory.mutate({ assetId: b.contentAssetId, categoryId: v === "__none__" ? null : v })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-category-${b.id}`}>
+                          <SelectValue placeholder={b.contentAssetId ? "Category" : "Category (draft first)"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No category</SelectItem>
+                          {(categoryOptions ?? []).map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -870,6 +1085,7 @@ export default function EditorialCalendarPage() {
               setDraftImageUrl(null);
               setDraftDirty(false);
               setRewriteInstr("");
+              setDraftBriefTitle(null);
             }
           }}
         >
@@ -877,7 +1093,14 @@ export default function EditorialCalendarPage() {
             <DialogHeader>
               <DialogTitle>Edit draft</DialogTitle>
               <DialogDescription>
-                This draft lives in your Content Library. Edit it here, or open the library for the full editor.
+                {draftBriefTitle ? (
+                  <span className="inline-flex items-center gap-1" data-testid="text-draft-source-brief">
+                    <Link2 className="h-3 w-3" />
+                    From brief: <span className="font-medium">{draftBriefTitle}</span>
+                  </span>
+                ) : (
+                  "This draft lives in your Content Library. Edit it here, or open the library for the full editor."
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
