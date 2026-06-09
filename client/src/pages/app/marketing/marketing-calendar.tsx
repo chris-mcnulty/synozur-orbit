@@ -82,6 +82,37 @@ const LIFECYCLE_META: Record<Lifecycle, { label: string; cls: string }> = {
   delivered: { label: "Delivered", cls: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
 };
 
+type AssignmentKind = "campaign" | "theme" | "event";
+
+const ASSIGN_META: Record<AssignmentKind, { label: string; dot: string; chip: string }> = {
+  campaign: { label: "Campaign", dot: "bg-rose-500", chip: "border-rose-200 bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-900" },
+  theme: { label: "Theme", dot: "bg-teal-500", chip: "border-teal-200 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-900" },
+  event: { label: "Event", dot: "bg-indigo-500", chip: "border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-900" },
+};
+
+interface ResolvedAssignment {
+  kind: AssignmentKind;
+  name: string;
+}
+
+function resolveAssignments(item: CalendarItem, filterOpts?: FilterOptions): ResolvedAssignment[] {
+  const find = (list: FilterOption[] | undefined, id: string) => list?.find((o) => o.id === id)?.name;
+  const out: ResolvedAssignment[] = [];
+  if (item.campaignId) {
+    const name = find(filterOpts?.campaigns, item.campaignId);
+    if (name) out.push({ kind: "campaign", name });
+  }
+  if (item.solutionAreaId) {
+    const name = find(filterOpts?.solutionAreas, item.solutionAreaId);
+    if (name) out.push({ kind: "theme", name });
+  }
+  if (item.conferenceId) {
+    const name = find(filterOpts?.conferences, item.conferenceId);
+    if (name) out.push({ kind: "event", name });
+  }
+  return out;
+}
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -334,7 +365,7 @@ export default function MarketingCalendarPage() {
             ) : groupBy !== "none" ? (
               <GroupedList items={items} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
             ) : grouping === "month" ? (
-              <MonthGrid anchor={anchor} byDay={byDay} onSelect={setDetail} />
+              <MonthGrid anchor={anchor} byDay={byDay} filterOpts={filterOpts} onSelect={setDetail} />
             ) : (
               <QuarterList anchor={anchor} items={scheduled} onSelect={setDetail} />
             )}
@@ -394,21 +425,32 @@ export default function MarketingCalendarPage() {
   );
 }
 
-function ItemPill({ item, onSelect }: { item: CalendarItem; onSelect: (i: CalendarItem) => void }) {
+function ItemPill({ item, filterOpts, onSelect }: { item: CalendarItem; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void }) {
+  const assignments = resolveAssignments(item, filterOpts);
+  const titleAttr = assignments.length
+    ? `${item.title} — ${assignments.map((a) => `${ASSIGN_META[a.kind].label}: ${a.name}`).join(", ")}`
+    : item.title;
   return (
     <button
       onClick={() => onSelect(item)}
       className={`flex w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-left text-[11px] ${TYPE_META[item.type].chip}`}
       data-testid={`item-calendar-${item.id}`}
-      title={item.title}
+      title={titleAttr}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.lifecycle === "delivered" ? "bg-green-500" : item.lifecycle === "approved" ? "bg-blue-500" : "bg-gray-400"}`} />
       <span className="truncate">{item.title}</span>
+      {assignments.length > 0 && (
+        <span className="ml-auto flex shrink-0 items-center gap-0.5" data-testid={`assign-dots-${item.id}`}>
+          {assignments.map((a) => (
+            <span key={a.kind} className={`h-1.5 w-1.5 rounded-full ${ASSIGN_META[a.kind].dot}`} />
+          ))}
+        </span>
+      )}
     </button>
   );
 }
 
-function MonthGrid({ anchor, byDay, onSelect }: { anchor: Date; byDay: Map<string, CalendarItem[]>; onSelect: (i: CalendarItem) => void }) {
+function MonthGrid({ anchor, byDay, filterOpts, onSelect }: { anchor: Date; byDay: Map<string, CalendarItem[]>; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void }) {
   const first = startOfMonth(anchor);
   const startDow = first.getDay();
   const daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
@@ -434,7 +476,7 @@ function MonthGrid({ anchor, byDay, onSelect }: { anchor: Date; byDay: Map<strin
                 <>
                   <div className={`mb-1 text-right text-xs ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}>{date.getDate()}</div>
                   <div className="space-y-0.5">
-                    {dayItems.slice(0, 4).map((it) => <ItemPill key={`${it.type}-${it.id}`} item={it} onSelect={onSelect} />)}
+                    {dayItems.slice(0, 4).map((it) => <ItemPill key={`${it.type}-${it.id}`} item={it} filterOpts={filterOpts} onSelect={onSelect} />)}
                     {dayItems.length > 4 && <div className="px-1 text-[10px] text-muted-foreground">+{dayItems.length - 4} more</div>}
                   </div>
                 </>
@@ -639,6 +681,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
 }) {
   if (!item) return null;
   const dateVal = item.date ? localKey(item.date) || "" : "";
+  const assignments = resolveAssignments(item, filterOpts);
   // Only blog/content and email require an explicit Approve; social posts are
   // high-volume and rely on the bulk CSV export (= delivered) flow instead.
   const canApprove = (item.type === "content" || item.type === "email") && item.lifecycle === "draft";
@@ -654,6 +697,22 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             <Badge variant="outline" className={LIFECYCLE_META[item.lifecycle].cls}>{LIFECYCLE_META[item.lifecycle].label}</Badge>
           </DialogDescription>
         </DialogHeader>
+
+        {assignments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" data-testid="detail-assignment-chips">
+            {assignments.map((a) => (
+              <Badge
+                key={a.kind}
+                variant="outline"
+                className={`gap-1 px-1.5 py-0 text-[11px] ${ASSIGN_META[a.kind].chip}`}
+                data-testid={`chip-assignment-${a.kind}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${ASSIGN_META[a.kind].dot}`} />
+                {ASSIGN_META[a.kind].label}: {a.name}
+              </Badge>
+            ))}
+          </div>
+        )}
 
         {item.preview && <p className="rounded-md bg-muted p-2 text-sm text-muted-foreground">{item.preview}</p>}
 
