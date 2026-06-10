@@ -46,6 +46,8 @@ import {
   Handshake,
   PencilLine,
   CalendarDays,
+  CalendarRange,
+  Share2,
   KeyRound,
   Layers,
 } from "lucide-react";
@@ -93,6 +95,10 @@ interface NavItem {
   href: string;
   enterprise?: boolean;
   comingSoon?: boolean;
+  // Renders as a subordinate/nested item beneath the preceding primary entry
+  // (extra indentation + a left guide). Used to signal that a calendar feeds
+  // into the master Marketing Calendar above it.
+  indent?: boolean;
 }
 
 interface NavSubGroup {
@@ -573,12 +579,20 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           ],
         },
         {
+          label: "Calendars",
+          items: [
+            // Master, cross-channel overview (social + email + content) listed
+            // first. The two focused execution calendars below feed into it and
+            // render indented to signal that subordinate relationship.
+            { label: "Marketing Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true },
+            { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, indent: true },
+            { label: "Editorial Calendar", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, indent: true },
+          ],
+        },
+        {
           label: "Execute",
           items: [
-            { label: "Marketing Calendar", icon: CalendarDays, href: "/app/marketing/marketing-calendar", enterprise: true },
-            { label: "Editorial Calendar", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true },
             { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true },
-            { label: "Social Calendar", icon: CalendarDays, href: "/app/marketing/calendar", enterprise: true },
             { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
             { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true },
             { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true },
@@ -693,7 +707,10 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
                     href={item.href}
                     data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative pl-4",
+                      "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",
+                      // Indented items nest beneath the preceding primary entry
+                      // with extra left padding and a subtle vertical guide.
+                      item.indent ? "ml-3 pl-5 border-l border-sidebar-border/60" : "pl-4",
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient"
                         : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",

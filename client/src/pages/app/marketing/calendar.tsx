@@ -14,7 +14,7 @@ import { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
-  Sparkles, Upload, Library, Loader2,
+  Sparkles, Upload, Library, Loader2, Share2,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import {
@@ -176,11 +176,22 @@ export default function CalendarPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
+            <Link
+              href="/app/marketing/marketing-calendar"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
+              data-testid="link-back-to-marketing-calendar"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to Marketing Calendar
+            </Link>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <CalendarDays className="w-6 h-6" /> Social Calendar
+              <Share2 className="w-6 h-6" /> Social Calendar
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Scheduled and recently-published posts. Drag to reschedule. Click for details.
+              Social-only execution view — schedule, reschedule, retry, and add branded graphics for social posts. Part of the{" "}
+              <Link href="/app/marketing/marketing-calendar" className="text-primary underline" data-testid="link-master-calendar">
+                Marketing Calendar
+              </Link>{" "}
+              overview.
             </p>
           </div>
           <div className="flex items-center gap-1">

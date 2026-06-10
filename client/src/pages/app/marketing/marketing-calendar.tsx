@@ -1451,7 +1451,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             )}
             {item.type === "social" && (
               <Link href="/app/marketing/calendar">
-                <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Social tools</Button>
+                <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Open in Social Calendar</Button>
               </Link>
             )}
           </div>

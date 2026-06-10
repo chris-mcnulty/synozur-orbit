@@ -45,6 +45,8 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
   "/app/marketing/social-accounts": "Social Accounts",
   "/app/marketing/platform-credentials": "Platform Credentials",
   "/app/marketing/composer": "Composer",
+  "/app/marketing/marketing-calendar": "Marketing Calendar",
+  "/app/marketing/editorial-calendar": "Editorial Calendar",
   "/app/marketing/calendar": "Social Calendar",
   "/app/marketing/browser-extension": "Browser Extension",
   "/app/reports": "Reports",
