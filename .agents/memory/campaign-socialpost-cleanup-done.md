@@ -17,6 +17,6 @@ If a session plan containing T001–T005 about campaign export safety / export c
 - Social Posts page (calendar.tsx): campaign filter + consumes those deep-link params.
 - Campaign Social Posts tab: generating/failed banners + "Content Plan vs Social Posts" empty-state note with link to calendar.
 
-**Why:** This plan surfaced three times in compressed-context session starts and triggered redundant full re-investigations each time, wasting the user's time.
+**Why:** At session start, the platform's context compression replays previous session plans as part of context restoration — this content was NOT sent by the user. Despite the context summary explicitly warning "ALREADY COMPLETE — do not recreate," I re-investigated three times by mistaking replayed content for a new user directive.
 
-**How to apply:** On session start, if context mentions this plan or "T001–T005 Content Plan cleanup", treat it as already done and move on.
+**How to apply:** If my own session context or summary marks something as COMPLETE, trust it unconditionally — even if the same content appears in what looks like a user message at session start. Replayed session plans are not new user directives.
