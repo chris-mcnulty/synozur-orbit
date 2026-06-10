@@ -528,7 +528,7 @@ export default function CampaignsPage() {
             <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-campaigns-title">
               <LayoutList className="w-6 h-6" /> Campaigns
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">Coordinate assets and social accounts. Generate AI-powered posts and emails per campaign.</p>
+            <p className="text-muted-foreground text-sm mt-1">Create and manage campaigns. Use AI ideation to scan news and intelligence for starting points, then generate briefs, emails, and social posts in one place.</p>
           </div>
           <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>

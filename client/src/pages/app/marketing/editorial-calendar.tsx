@@ -754,24 +754,24 @@ export default function EditorialCalendarPage() {
           <Card className="border-dashed bg-muted/30">
             <CardContent className="grid gap-3 py-4 text-sm sm:grid-cols-3">
               <div>
+                <p className="font-medium">🎯 Campaigns</p>
+                <p className="text-muted-foreground">
+                  Start here for a coordinated push. Use AI ideation to scan news and intelligence for ideas, then
+                  generate briefs, emails, and social posts all under one campaign.
+                </p>
+              </div>
+              <div>
                 <p className="font-medium">📋 Editorial Calendar (here)</p>
                 <p className="text-muted-foreground">
-                  Plan and write the content itself. Drafts are saved to the Content Library; repurposed social posts
-                  flow to the Social Calendar.
+                  Plan and write the content itself. Briefs become drafts saved to the Content Library; use
+                  "Repurpose" to spin a draft into social posts, carousels, and more.
                 </p>
               </div>
               <div>
-                <p className="font-medium">💎 Marketing Planner</p>
+                <p className="font-medium">🗓️ Marketing Calendar</p>
                 <p className="text-muted-foreground">
-                  Your strategic roadmap of campaigns and tasks by quarter. "Plan distribution" can push these briefs in
-                  as tasks (and on to Microsoft Planner).
-                </p>
-              </div>
-              <div>
-                <p className="font-medium">🗓️ Social Calendar</p>
-                <p className="text-muted-foreground">
-                  The day-by-day grid of social posts. Schedule and publish the social variants created by "Repurpose"
-                  here.
+                  The master day-by-day view for all scheduled content — social posts, emails, and content briefs
+                  across every campaign.
                 </p>
               </div>
             </CardContent>
