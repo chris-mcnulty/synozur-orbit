@@ -82,6 +82,7 @@ import { storage, type ContextFilter } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
+import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { guardManualAction } from "./helpers";
@@ -1863,13 +1864,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, foundingSignalsInput } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const resolvedCampaignType: CampaignType = CAMPAIGN_TYPES.includes(campaignType)
         ? campaignType
         : "theme";
       const validPersonaIds = await validAudiencePersonaIds(ctx, audiencePersonaIds);
+
+      // Freeze the news + intelligence action items that founded this campaign
+      // (from ideation when adopted, else the latest published briefing).
+      const foundingSignals = await captureFoundingSignals({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || undefined,
+        ideation: foundingSignalsInput && typeof foundingSignalsInput === "object" ? foundingSignalsInput : null,
+      });
 
       const validAssetIds: string[] = [];
       if (Array.isArray(assetIds) && assetIds.length > 0) {
@@ -1913,6 +1922,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           includeSaturday: includeSaturday ?? false,
           includeSunday: includeSunday ?? false,
           productIds: Array.isArray(productIds) ? productIds : null,
+          foundingSignals,
           createdBy: ctx.userId,
         } as InsertCampaign);
 

@@ -74,6 +74,11 @@ interface CampaignIdea {
   signals: string[];
 }
 
+interface SubjectNews {
+  subject: string;
+  headlines: { title: string; source: string; url: string; snippet: string }[];
+}
+
 interface MarketProduct {
   id: string;
   name: string;
@@ -185,6 +190,10 @@ export default function CampaignsPage() {
   const [ideaSubjects, setIdeaSubjects] = useState("");
   const [ideas, setIdeas] = useState<CampaignIdea[] | null>(null);
   const [ideaAsOf, setIdeaAsOf] = useState<string | null>(null);
+  // The scanned news + adopted idea behind this campaign, frozen onto it at
+  // creation as "founding signals". Cleared on reset.
+  const [ideaNews, setIdeaNews] = useState<SubjectNews[]>([]);
+  const [adoptedIdea, setAdoptedIdea] = useState<CampaignIdea | null>(null);
 
   const stepFieldErrors = useMemo(() => {
     const result = stepSchemas[step].safeParse(form as any);
@@ -227,6 +236,8 @@ export default function CampaignsPage() {
     setIdeaSubjects("");
     setIdeas(null);
     setIdeaAsOf(null);
+    setIdeaNews([]);
+    setAdoptedIdea(null);
   };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -395,6 +406,9 @@ export default function CampaignsPage() {
           assetIds: form.selectedAssetIds,
           socialAccountIds: form.selectedSocialIds,
           productIds: form.selectedProductIds,
+          foundingSignalsInput: (ideaNews.length || adoptedIdea)
+            ? { news: ideaNews, signals: adoptedIdea?.signals ?? [], intelAsOf: ideaAsOf }
+            : undefined,
         }),
       });
       if (!r.ok) {
@@ -426,9 +440,10 @@ export default function CampaignsPage() {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to suggest ideas");
       return r.json();
     },
-    onSuccess: (data: { ideas: CampaignIdea[]; intelAsOf: string | null }) => {
+    onSuccess: (data: { ideas: CampaignIdea[]; intelAsOf: string | null; news?: SubjectNews[] }) => {
       setIdeas(data.ideas ?? []);
       setIdeaAsOf(data.intelAsOf ?? null);
+      setIdeaNews(Array.isArray(data.news) ? data.news : []);
       if (!data.ideas?.length) {
         toast({ title: "No ideas returned", description: "Add a message or subjects to scan, then try again." });
       }
@@ -451,6 +466,7 @@ export default function CampaignsPage() {
       objective: idea.objective || f.objective,
       selectedPersonaIds: matched.length ? matched : f.selectedPersonaIds,
     }));
+    setAdoptedIdea(idea);
     setIdeas(null);
     toast({ title: "Idea applied", description: "Review and adjust the details below." });
   };
@@ -753,8 +769,8 @@ export default function CampaignsPage() {
                     <Button
                       variant="outline"
                       className="flex-1"
-                      disabled={!isStepValid || createCampaignMutation.isPending}
-                      onClick={() => createCampaignMutation.mutate()}
+                      disabled={!isStepValid || createMutation.isPending}
+                      onClick={() => createMutation.mutate()}
                       data-testid="button-create-now"
                     >
                       Create now

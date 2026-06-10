@@ -14,6 +14,8 @@ import {
   loadStrategicContext,
   formatStrategicContextForPrompt,
   formatPersonaContextForPrompt,
+  loadCampaignFoundingSignals,
+  formatFoundingSignalsForPrompt,
 } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
 import {
@@ -83,6 +85,14 @@ export async function draftFromBrief(
     if (persona) personaBlock = formatPersonaContextForPrompt([persona as any]);
   }
 
+  // Frozen founding signals from the brief's campaign (if any) — supporting
+  // facts the copywriter may cite. Briefs not tied to a campaign skip this.
+  let foundingSignalsBlock = "";
+  if (brief.campaignId) {
+    const fs = await loadCampaignFoundingSignals(brief.campaignId);
+    foundingSignalsBlock = formatFoundingSignalsForPrompt(fs);
+  }
+
   const briefBlock = [
     "## Content Brief",
     `Working title: ${brief.title}`,
@@ -100,6 +110,7 @@ export async function draftFromBrief(
   const prompt = [
     `Draft this piece of content.`,
     strategicBlock,
+    foundingSignalsBlock,
     personaBlock,
     briefBlock,
     `## Format guidance\n${FORMAT_GUIDANCE[format]}`,

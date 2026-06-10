@@ -14,7 +14,7 @@
 
 import { storage, type ContextFilter } from "../storage";
 import { db } from "../db";
-import { brandAssets, tenantFonts } from "@shared/schema";
+import { brandAssets, tenantFonts, campaigns, type FoundingSignals } from "@shared/schema";
 import { and, asc, eq, ne } from "drizzle-orm";
 
 export interface StrategicContext {
@@ -440,4 +440,70 @@ export function formatPersonaContextForPrompt(personaData: Array<{
   });
 
   return `## Target Personas (Selected)\nThe following buyer personas have been specifically selected for this content. Tailor messaging, language, pain points addressed, and value propositions to resonate with these audiences:\n\n${parts.join("\n\n")}`;
+}
+
+/**
+ * Loads the frozen "founding signals" snapshot stored on a campaign, keyed by
+ * campaign id. Returns null when the campaign has no snapshot (e.g. campaigns
+ * created before the feature shipped). Never throws.
+ */
+export async function loadCampaignFoundingSignals(
+  campaignId: string,
+): Promise<FoundingSignals | null> {
+  try {
+    const [row] = await db
+      .select({ foundingSignals: campaigns.foundingSignals })
+      .from(campaigns)
+      .where(eq(campaigns.id, campaignId));
+    return (row?.foundingSignals as FoundingSignals | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Formats a campaign's frozen founding signals into a prompt block of
+ * supporting facts the copywriter may cite. Returns "" when the snapshot is
+ * empty so callers can omit the section entirely.
+ */
+export function formatFoundingSignalsForPrompt(fs: FoundingSignals | null): string {
+  if (!fs) return "";
+
+  const parts: string[] = [];
+
+  if (Array.isArray(fs.newsArticles) && fs.newsArticles.length) {
+    const lines = fs.newsArticles
+      .slice(0, 10)
+      .map((n) => {
+        const src = n.source ? ` (${n.source})` : "";
+        const blurb = n.description ? ` — ${n.description.slice(0, 200)}` : "";
+        return `- ${n.title}${src}${blurb}`;
+      })
+      .join("\n");
+    parts.push(`News in play when this campaign was founded:\n${lines}`);
+  }
+
+  if (Array.isArray(fs.actionItems) && fs.actionItems.length) {
+    const lines = fs.actionItems
+      .slice(0, 8)
+      .map((a) => `- [${a.urgency}] ${a.title}${a.description ? `: ${a.description.slice(0, 200)}` : ""}`)
+      .join("\n");
+    parts.push(`Intelligence action items behind this campaign:\n${lines}`);
+  }
+
+  if (Array.isArray(fs.ideaSignals) && fs.ideaSignals.length) {
+    const lines = fs.ideaSignals.slice(0, 8).map((s) => `- ${s}`).join("\n");
+    parts.push(`Founding signal notes:\n${lines}`);
+  }
+
+  if (parts.length === 0) return "";
+
+  const asOf = fs.capturedAt ? ` (captured ${fs.capturedAt.slice(0, 10)})` : "";
+  return (
+    `## Campaign founding signals${asOf} — supporting facts you may cite\n` +
+    "These are frozen facts that motivated this campaign. You may draw on them as supporting " +
+    "context or statistics where relevant. Do NOT fabricate anything beyond them, and never " +
+    "invent statistics, customer names, or quotes.\n" +
+    parts.join("\n\n")
+  );
 }

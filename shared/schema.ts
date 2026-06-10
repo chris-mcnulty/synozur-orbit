@@ -2816,6 +2816,33 @@ export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
 export const CAMPAIGN_TYPES = ["theme", "event", "offering"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
 
+// Frozen "founding signals" snapshot captured onto a campaign at planning time:
+// the news stories + intelligence action items that informed it. Mirrors the
+// VoiceProfileSnapshot pattern (a snapshot, not FKs) so later briefing
+// regeneration never changes what a campaign was founded on. Display-only, and
+// surfaced to the copywriter as supporting facts it may cite.
+export interface FoundingSignalNews {
+  title: string;
+  source: string;
+  url: string;
+  publishedAt: string; // ISO date, or "" when unknown (e.g. scanned headlines)
+  description: string;
+}
+export interface FoundingSignalActionItem {
+  title: string;
+  description: string;
+  urgency: string; // immediate | this_week | this_month | watch
+  category?: string;
+}
+export interface FoundingSignals {
+  capturedAt: string; // ISO timestamp of capture
+  origin: "ideation" | "briefing"; // how the campaign was founded
+  briefingAsOf?: string | null; // the intelligence briefing this drew from
+  newsArticles: FoundingSignalNews[];
+  actionItems: FoundingSignalActionItem[];
+  ideaSignals?: string[]; // free-text signal citations from an adopted idea
+}
+
 // Campaigns — the orchestrating umbrella for a coordinated push: intent
 // (theme/event/offering) + audience + timeline, under which content briefs,
 // assets, emails, and social posts are produced and rolled up.
@@ -2841,6 +2868,9 @@ export const campaigns = pgTable("campaigns", {
   includeSunday: boolean("include_sunday").notNull().default(false),
   productIds: text("product_ids").array(),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
+  // Frozen news + intelligence action items that founded this campaign (see
+  // FoundingSignals). Captured at creation; never mutated by later briefings.
+  foundingSignals: jsonb("founding_signals").$type<FoundingSignals>(),
   thematicBrief: text("thematic_brief"),
   thematicUrl: text("thematic_url"),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
