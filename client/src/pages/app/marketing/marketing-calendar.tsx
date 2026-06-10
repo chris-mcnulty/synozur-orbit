@@ -71,6 +71,40 @@ interface CalendarItem {
   solutionAreaName?: string | null;
   conferenceName?: string | null;
   imageUrl?: string | null;
+  // WS4: when a dense social batch is collapsed into one item.
+  isBatch?: boolean;
+  batchKey?: string;
+  count?: number;
+  platforms?: Record<string, number>;
+}
+
+const PLATFORM_ABBR: Record<string, string> = {
+  linkedin: "LI", twitter: "X", x: "X", facebook: "FB", instagram: "IG",
+};
+
+// Summarize a batch's platform breakdown, e.g. "LI 24 · X 30".
+function batchBreakdown(platforms?: Record<string, number>): string {
+  if (!platforms) return "";
+  return Object.entries(platforms)
+    .sort((a, b) => b[1] - a[1])
+    .map(([p, n]) => `${PLATFORM_ABBR[p] ?? p} ${n}`)
+    .join(" · ");
+}
+
+// Normalize a server "social_batch" item into a calendar item that renders via
+// the existing social styling, flagged so pills/handlers treat it as a batch.
+function normalizeBatchItems(rows: CalendarItem[]): CalendarItem[] {
+  return rows.map((r) => {
+    if ((r as any).type !== "social_batch") return r;
+    const breakdown = batchBreakdown((r as any).platforms);
+    return {
+      ...r,
+      type: "social",
+      isBatch: true,
+      title: `${(r as any).count ?? 0} social posts${breakdown ? ` · ${breakdown}` : ""}`,
+      lifecycle: r.lifecycle ?? "draft",
+    } as CalendarItem;
+  });
 }
 
 interface FilterOption {
@@ -334,6 +368,8 @@ export default function MarketingCalendarPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
+  // WS4: when drilling into a collapsed social batch (shows its members).
+  const [batchDrill, setBatchDrill] = useState<{ key: string; label: string } | null>(null);
   // When a draft is dropped onto a crowded day, we hold the drop here and ask
   // the user to confirm (or pick the suggested open day) before scheduling.
   const [pendingDrop, setPendingDrop] = useState<{ descriptors: { type: string; id: string }[]; dateKey: string } | null>(null);
@@ -360,16 +396,27 @@ export default function MarketingCalendarPage() {
     if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
     if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
     if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
+    // Drilling into a batch returns its individual posts; otherwise collapse
+    // dense social batches so the calendar isn't a wall of identical posts.
+    if (batchDrill) p.set("batchId", batchDrill.key);
+    else p.set("rollupSocial", "true");
     return `/api/marketing-calendar?${p.toString()}`;
-  }, [range, filters]);
+  }, [range, filters, batchDrill]);
 
   // The backlog query returns ONLY unscheduled drafts, tenant-wide, with no
   // calendar filters applied — the backlog has its own independent filters.
   const backlogUrl = "/api/marketing-calendar?unscheduledOnly=true";
 
-  const { data: items = [], isLoading } = useQuery<CalendarItem[]>({ queryKey: [queryUrl] });
+  const { data: items = [], isLoading } = useQuery<CalendarItem[]>({ queryKey: [queryUrl], select: normalizeBatchItems });
   const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<CalendarItem[]>({ queryKey: [backlogUrl] });
   const { data: filterOpts } = useQuery<FilterOptions>({ queryKey: ["/api/marketing-calendar/filters"] });
+
+  // Open per-item detail for normal items; drill into the batch's posts for a
+  // collapsed social batch.
+  const handleSelect = (i: CalendarItem) => {
+    if (i.isBatch && i.batchKey) setBatchDrill({ key: i.batchKey, label: i.title });
+    else setDetail(i);
+  };
 
   const scheduled = useMemo(() => items.filter((i) => i.date), [items]);
   const visibleScheduled = useMemo(
@@ -733,11 +780,22 @@ export default function MarketingCalendarPage() {
               )}
             </div>
 
+            {/* Batch drill-in banner */}
+            {batchDrill && (
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-900 dark:bg-blue-950" data-testid="banner-batch-drill">
+                <Inbox className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                <span className="text-blue-800 dark:text-blue-200">Viewing one social batch — {batchDrill.label}</span>
+                <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => setBatchDrill(null)} data-testid="button-exit-batch-drill">
+                  <X className="mr-1 h-3 w-3" /> Back to all
+                </Button>
+              </div>
+            )}
+
             {/* Calendar (scheduled items only) */}
             {isLoading ? (
               <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : groupBy !== "none" ? (
-              <GroupedList items={visibleScheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={setDetail} />
+              <GroupedList items={visibleScheduled} groupBy={groupBy} filterOpts={filterOpts} onSelect={handleSelect} />
             ) : grouping === "month" ? (
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
                 <div className="min-w-0 flex-1">
@@ -745,7 +803,7 @@ export default function MarketingCalendarPage() {
                     anchor={anchor}
                     byDay={byDay}
                     filterOpts={filterOpts}
-                    onSelect={setDetail}
+                    onSelect={handleSelect}
                     onDropSchedule={handleDropSchedule}
                     onReschedule={(d, key) => handleRescheduleDrag(d, key)}
                   />
@@ -764,7 +822,7 @@ export default function MarketingCalendarPage() {
                 />
               </div>
             ) : (
-              <QuarterList anchor={anchor} items={visibleScheduled} filterOpts={filterOpts} onSelect={setDetail} />
+              <QuarterList anchor={anchor} items={visibleScheduled} filterOpts={filterOpts} onSelect={handleSelect} />
             )}
           </>
         ) : (
@@ -860,23 +918,29 @@ function AssignmentDots({ item, filterOpts }: { item: CalendarItem; filterOpts?:
 
 function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarItem; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void; draggable?: boolean }) {
   const assignments = resolveAssignments(item, filterOpts);
-  const titleAttr = assignments.length
+  // A collapsed batch is never individually draggable (it has no single date/id).
+  const canDrag = !!draggable && !item.isBatch;
+  const titleAttr = item.isBatch
+    ? `${item.title} — click to drill in`
+    : assignments.length
     ? `${item.title} — ${assignments.map((a) => `${ASSIGN_META[a.kind].label}: ${a.name}`).join(", ")}`
     : item.title;
   return (
     <button
       onClick={() => onSelect(item)}
-      draggable={draggable}
-      onDragStart={draggable ? (e) => {
+      draggable={canDrag}
+      onDragStart={canDrag ? (e) => {
         e.dataTransfer.setData(SCHEDULED_DRAG_TYPE, JSON.stringify({ type: item.type, id: item.id }));
         e.dataTransfer.effectAllowed = "move";
       } : undefined}
-      className={`flex w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-left text-[11px] ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${TYPE_META[item.type].chip}`}
+      className={`flex w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-left text-[11px] ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${item.isBatch ? "font-medium ring-1 ring-inset ring-blue-300 dark:ring-blue-800" : ""} ${TYPE_META[item.type].chip}`}
       data-testid={`item-calendar-${item.id}`}
       title={titleAttr}
     >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.lifecycle === "delivered" ? "bg-green-500" : item.lifecycle === "approved" ? "bg-blue-500" : "bg-gray-400"}`} />
-      <ChannelFormatTag item={item} />
+      {item.isBatch
+        ? <Inbox className="h-3 w-3 shrink-0" />
+        : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.lifecycle === "delivered" ? "bg-green-500" : item.lifecycle === "approved" ? "bg-blue-500" : "bg-gray-400"}`} />}
+      {!item.isBatch && <ChannelFormatTag item={item} />}
       <span className="truncate">{item.title}</span>
       {assignments.length > 0 && (
         <span className="ml-auto flex shrink-0 items-center gap-0.5" data-testid={`assign-dots-${item.id}`}>

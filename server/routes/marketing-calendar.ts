@@ -31,6 +31,7 @@ import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { getScheduledDayCounts } from "../services/schedule-load";
+import { rollupSocialItems, type RollupSocialItem } from "../services/calendar-rollup-core";
 
 // A day with at least this many activities is considered "crowded".
 const BUSY_THRESHOLD = 3;
@@ -114,10 +115,12 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly } = req.query as Record<string, string>;
+      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly, rollupSocial, batchId } = req.query as Record<string, string>;
       const fromDate = from ? new Date(from) : null;
       const toDate = to ? new Date(to) : null;
       const wantUnscheduled = includeUnscheduled === "true" || includeUnscheduled === "1";
+      // WS4: collapse dense social batches into one item per (batch, day).
+      const wantRollup = rollupSocial === "true" || rollupSocial === "1";
       // Backlog mode: return ONLY items that have no scheduled date, ignoring
       // the date window entirely. Powers the dedicated backlog panel.
       const onlyUnscheduled = unscheduledOnly === "true" || unscheduledOnly === "1";
@@ -141,6 +144,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
       if (campaignId) socialConds.push(eq(generatedPosts.campaignId, campaignId));
       if (solutionAreaId) socialConds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
       if (conferenceId) socialConds.push(eq(generatedPosts.conferenceId, conferenceId));
+      // WS4 drill-down: restrict to the posts of a single batch (its generation
+      // run, repurpose group, event, or campaign).
+      if (batchId) {
+        socialConds.push(
+          or(
+            eq(generatedPosts.generationJobId, batchId),
+            eq(generatedPosts.variantGroup, batchId),
+            eq(generatedPosts.conferenceId, batchId),
+            eq(generatedPosts.campaignId, batchId),
+          )!,
+        );
+      }
       const socialRows = await db
         .select({
           id: generatedPosts.id,
@@ -153,6 +168,8 @@ export function registerMarketingCalendarRoutes(app: Express) {
           campaignId: generatedPosts.campaignId,
           solutionAreaId: generatedPosts.solutionAreaId,
           conferenceId: generatedPosts.conferenceId,
+          generationJobId: generatedPosts.generationJobId,
+          variantGroup: generatedPosts.variantGroup,
           overrideImageUrl: generatedPosts.overrideImageUrl,
           accountName: socialAccounts.accountName,
         })
@@ -205,10 +222,11 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       const items: any[] = [];
 
+      const socialItems: RollupSocialItem[] = [];
       for (const p of socialRows) {
         const date = p.scheduledDate ?? p.publishedAt ?? null;
         if (!includeByDate(date)) continue;
-        items.push({
+        socialItems.push({
           id: p.id,
           type: "social",
           title: p.accountName ? `${p.platform} · ${p.accountName}` : `${p.platform} post`,
@@ -220,8 +238,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
           campaignId: p.campaignId,
           solutionAreaId: p.solutionAreaId,
           conferenceId: p.conferenceId,
+          generationJobId: p.generationJobId,
+          variantGroup: p.variantGroup,
           imageUrl: p.overrideImageUrl ?? null,
         });
+      }
+
+      // Roll up dense social batches unless we're drilling into one batch.
+      if (wantRollup && !batchId) {
+        const { batches, loose } = rollupSocialItems(socialItems, { threshold: BUSY_THRESHOLD });
+        items.push(...batches, ...loose);
+      } else {
+        items.push(...socialItems);
       }
 
       for (const e of emailRows) {
