@@ -10,8 +10,8 @@
  * react-big-calendar for a single screen.
  */
 
-import { useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearch } from "wouter";
 import {
   CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
   Sparkles, Upload, Library, Loader2, Share2,
@@ -62,8 +62,28 @@ const STATUS_DOT: Record<string, string> = {
 export default function CalendarPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [cursorMonth, setCursorMonth] = useState<Date>(new Date());
+
+  // Deep-link support: the master Marketing Calendar can link here with a
+  // ?post=<id> (and optional &date=<iso>) to land on a specific post.
+  const searchString = useSearch();
+  const deepLink = useMemo(() => {
+    const p = new URLSearchParams(searchString);
+    return { postId: p.get("post"), date: p.get("date") };
+  }, [searchString]);
+
+  const [cursorMonth, setCursorMonth] = useState<Date>(() => {
+    const p = new URLSearchParams(searchString);
+    const d = p.get("date");
+    if (d) {
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
+  // Once we've honored a given deep-link post id, don't reopen it (so the user
+  // can freely close the drawer without it snapping back open).
+  const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -114,6 +134,19 @@ export default function CalendarPage() {
     }));
     return m;
   }, [posts]);
+
+  // When arriving via a deep link, open the targeted post's drawer once the
+  // month's posts have loaded. If the post isn't in this range (or no longer
+  // exists), we just leave the calendar on the linked month — no error.
+  useEffect(() => {
+    if (!deepLink.postId || openedDeepLink === deepLink.postId) return;
+    if (isLoading) return;
+    const match = posts.find(p => p.id === deepLink.postId);
+    if (match) {
+      setSelectedPost(match);
+      setOpenedDeepLink(deepLink.postId);
+    }
+  }, [deepLink.postId, openedDeepLink, isLoading, posts]);
 
   const rescheduleMutation = useMutation({
     mutationFn: async ({ id, scheduledDate }: { id: string; scheduledDate: string }) => {

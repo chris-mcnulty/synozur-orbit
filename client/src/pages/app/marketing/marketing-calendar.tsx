@@ -1398,6 +1398,16 @@ function editorHref(it: CalendarItem): string {
   return "/app/marketing/editorial-calendar";
 }
 
+// Deep-link a single social post into the Social Calendar so it lands on the
+// right month and opens that post's drawer. Batches (no single post id) and
+// unscheduled items fall back to the general view.
+function socialCalendarHref(it: CalendarItem): string {
+  if (it.isBatch) return "/app/marketing/calendar";
+  const params = new URLSearchParams({ post: it.id });
+  if (it.date) params.set("date", it.date);
+  return `/app/marketing/calendar?${params.toString()}`;
+}
+
 function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onExportDocx, onHandoffEmail, onReschedule, onAssign, busy }: {
   item: CalendarItem | null;
   filterOpts?: FilterOptions;
@@ -1523,7 +1533,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
               </Button>
             )}
             {item.type === "social" && (
-              <Link href="/app/marketing/calendar">
+              <Link href={socialCalendarHref(item)}>
                 <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Open in Social Posts</Button>
               </Link>
             )}
