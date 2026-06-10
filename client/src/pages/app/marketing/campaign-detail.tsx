@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { rollupPosts, batchSourceOf } from "@shared/social-rollup";
 import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -164,6 +165,8 @@ interface GeneratedPost {
   hashtags: string[];
   status: string;
   variantGroup?: string;
+  generationJobId?: string | null;
+  conferenceId?: string | null;
   overrideImageUrl?: string;
   overrideBrandAssetId?: string;
   sourceUrl?: string;
@@ -196,6 +199,9 @@ export default function CampaignDetailPage() {
   const [addingAssets, setAddingAssets] = useState(false);
   const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
   const [postFilter, setPostFilter] = useState<string>("active");
+  // WS4: when drilling into one collapsed social batch (its generation run,
+  // repurpose group, or event); null shows the batch overview.
+  const [batchFilter, setBatchFilter] = useState<string | null>(null);
   const [editCampaignOpen, setEditCampaignOpen] = useState(false);
   const [editCampaignName, setEditCampaignName] = useState("");
   const [editCampaignDescription, setEditCampaignDescription] = useState("");
@@ -287,6 +293,14 @@ export default function CampaignDetailPage() {
     },
   });
 
+  // WS4: collapse dense social batches so the campaign view isn't a wall of
+  // identical posts. Operates on non-discarded posts.
+  const postBatches = useMemo(() => {
+    const active = posts.filter((p) => p.status !== "deleted" && p.status !== "rejected");
+    return rollupPosts(active, { threshold: 3 });
+  }, [posts]);
+  const activeBatch = batchFilter ? postBatches.batches.find((b) => b.key === batchFilter) ?? null : null;
+
   const { data: contentPlan } = useQuery<ContentPlanResponse>({
     queryKey: [`/api/campaigns/${id}/content-plan`],
     queryFn: async () => {
@@ -295,6 +309,14 @@ export default function CampaignDetailPage() {
     },
   });
   const briefs = contentPlan?.briefs ?? [];
+
+  const { data: linkedEvents = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string; postCount: number }[]>({
+    queryKey: [`/api/campaigns/${id}/events`],
+    queryFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
 
   const generateBriefsMutation = useMutation({
     mutationFn: async () => {
@@ -1172,6 +1194,31 @@ export default function CampaignDetailPage() {
                 ))}
               </div>
             )}
+
+            {linkedEvents.length > 0 && (
+              <div className="space-y-2 pt-2" data-testid="campaign-events">
+                <h3 className="text-sm font-semibold flex items-center gap-1.5"><Calendar className="w-4 h-4" />Events</h3>
+                {linkedEvents.map((ev) => (
+                  <Card key={ev.id} data-testid={`event-${ev.id}`}>
+                    <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{ev.name}</span>
+                          <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
+                          <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
+                        </div>
+                        {ev.startDate && (
+                          <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
+                        )}
+                      </div>
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate(`/app/marketing/conferences/${ev.id}`)} data-testid={`button-open-event-${ev.id}`}>
+                        Open event <ExternalLink className="w-3 h-3" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
@@ -1359,8 +1406,66 @@ export default function CampaignDetailPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 grid-cols-1">
+              <div className="space-y-4">
+                {/* WS4: collapse dense batches so we don't show a wall of identical posts */}
+                {!batchFilter && postBatches.batches.length > 0 && (
+                  <div className="space-y-2" data-testid="batch-overview">
+                    <p className="text-xs text-muted-foreground">
+                      {postBatches.batches.length} social {postBatches.batches.length === 1 ? "batch" : "batches"} —
+                      open one to review and act on its posts.
+                    </p>
+                    {postBatches.batches.map((b) => (
+                      <Card key={b.key} data-testid={`batch-${b.key}`}>
+                        <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Share2 className="w-4 h-4 text-muted-foreground" />
+                              <span className="font-medium text-sm">{b.count} social posts</span>
+                              {b.posts[0]?.conferenceId && <Badge variant="outline" className="text-[10px]">Event</Badge>}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {Object.entries(b.platforms).sort((a, c) => c[1] - a[1]).map(([pl, n]) => (
+                                <Badge key={pl} variant="secondary" className="text-[10px] capitalize">{pl} {n}</Badge>
+                              ))}
+                              {Object.entries(b.statusCounts).map(([st, n]) => (
+                                <span key={st} className="text-[10px] text-muted-foreground capitalize">· {n} {st}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setBatchFilter(b.key)}
+                            data-testid={`button-open-batch-${b.key}`}
+                          >
+                            Review {b.count} posts
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {batchFilter && (
+                  <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-900 dark:bg-blue-950" data-testid="banner-batch-drill">
+                    <Share2 className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+                    <span className="text-blue-800 dark:text-blue-200">
+                      Reviewing one batch — {activeBatch?.count ?? 0} posts
+                    </span>
+                    <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => setBatchFilter(null)} data-testid="button-exit-batch">
+                      <X className="w-3 h-3 mr-1" /> Back to batches
+                    </Button>
+                  </div>
+                )}
+
+                <div className="grid gap-4 grid-cols-1">
                 {posts.filter(p => {
+                  // Hide posts that belong to a collapsed batch unless we're
+                  // drilling into that batch; loose posts always show.
+                  const src = batchSourceOf(p);
+                  const isBatched = postBatches.batches.some((b) => b.key === src);
+                  if (batchFilter) { if (src !== batchFilter) return false; }
+                  else if (isBatched) return false;
                   if (postFilter === "all") return p.status !== "deleted";
                   if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected";
                   return p.status === postFilter;
@@ -1571,6 +1676,7 @@ export default function CampaignDetailPage() {
                     </Card>
                   );
                 })}
+                </div>
               </div>
             )}
           </TabsContent>

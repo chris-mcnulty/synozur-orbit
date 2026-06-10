@@ -1462,6 +1462,8 @@ async function runGeneration(
         id: randomUUID(),
         tenantDomain,
         conferenceId,
+        // Stamp the parent campaign so event posts roll up into its master view.
+        campaignId: conf.campaignId ?? null,
         ...(moment.kind === "session" ? { conferenceSessionId: moment.session.id } : {}),
         postRole: moment.kind === "anchor" ? "anchor" : "session",
         conferenceImageId: img?.id ?? null,

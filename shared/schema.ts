@@ -3057,6 +3057,10 @@ export const conferences = pgTable("conferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  // Optional parent campaign: an "event" campaign can own a conference, so its
+  // promotion posts roll up into the campaign's master view. Forward-ref FK
+  // because campaigns is declared later. NULL for standalone conferences.
+  campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   location: text("location"),

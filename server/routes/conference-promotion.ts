@@ -11,7 +11,7 @@
 
 import type { Express } from "express";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -19,6 +19,7 @@ import {
   conferenceImages,
   conferenceBackgrounds,
   generatedPosts,
+  campaigns,
   scheduledJobRuns,
   CONFERENCE_IMAGE_SOURCES,
   CONFERENCE_IMAGE_ROLES,
@@ -60,6 +61,20 @@ function cleanStringArray(v: unknown): string[] {
   return v.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
 }
 
+// Resolve an optional parent-campaign id, verifying it belongs to this tenant.
+// Returns the id when valid, or null (so a bad/foreign id is simply ignored).
+async function resolveParentCampaignId(
+  ctx: { tenantDomain: string },
+  raw: unknown,
+): Promise<string | null> {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const [row] = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(and(eq(campaigns.id, raw), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+  return row?.id ?? null;
+}
+
 // Normalise a speakers payload (array of strings or { name, isStaff }) into
 // structured ConferenceSpeaker[]. Empty names are dropped.
 function cleanSpeakers(v: unknown): ConferenceSpeaker[] {
@@ -90,6 +105,36 @@ function cleanSessionType(v: unknown): string | null {
 
 export function registerConferencePromotionRoutes(app: Express) {
   // ── Conferences ────────────────────────────────────────────────────────────
+
+  // Events (conferences) linked to a campaign, with a post count — powers the
+  // campaign master view's Events section.
+  app.get("/api/campaigns/:id/events", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    const ctx = await getRequestContext(req);
+    const rows = await db
+      .select()
+      .from(conferences)
+      .where(and(
+        eq(conferences.campaignId, req.params.id),
+        eq(conferences.tenantDomain, ctx.tenantDomain),
+        inArray(conferences.status, ["active", "archived"]),
+      ))
+      .orderBy(desc(conferences.startDate));
+    const events = await Promise.all(
+      rows.map(async (c) => {
+        const [{ n } = { n: 0 }] = await db
+          .select({ n: count() })
+          .from(generatedPosts)
+          .where(and(
+            eq(generatedPosts.conferenceId, c.id),
+            ne(generatedPosts.status, "deleted"),
+            ne(generatedPosts.status, "rejected"),
+          ));
+        return { id: c.id, name: c.name, status: c.status, startDate: c.startDate, endDate: c.endDate, postCount: Number(n) || 0 };
+      }),
+    );
+    res.json(events);
+  });
 
   app.get("/api/conferences", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
@@ -133,12 +178,14 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (!b.name || typeof b.name !== "string" || !b.name.trim()) {
       return res.status(400).json({ error: "name is required" });
     }
+    const parentCampaignId = await resolveParentCampaignId(ctx, b.campaignId);
     const [row] = await db
       .insert(conferences)
       .values({
         id: randomUUID(),
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
+        campaignId: parentCampaignId,
         name: b.name.trim(),
         description: typeof b.description === "string" ? b.description : null,
         location: typeof b.location === "string" ? b.location : null,
@@ -194,6 +241,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if ("productIds" in b) patch.productIds = cleanStringArray(b.productIds);
     if ("eventLogoFileUrl" in b) patch.eventLogoFileUrl = b.eventLogoFileUrl ?? null;
     if ("eventLogoFileType" in b) patch.eventLogoFileType = b.eventLogoFileType ?? null;
+    if ("campaignId" in b) patch.campaignId = await resolveParentCampaignId(ctx, b.campaignId);
 
     const [row] = await db.update(conferences).set(patch).where(eq(conferences.id, existing.id)).returning();
     res.json(row);
