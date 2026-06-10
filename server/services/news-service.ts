@@ -81,7 +81,8 @@ function buildSearchQuery(name: string, url?: string, industry?: string): string
 async function searchNews(
   query: string,
   maxArticles: number = MAX_ARTICLES_PER_ENTITY,
-  fromDate?: string
+  fromDate?: string,
+  opts?: { sortBy?: "publishedAt" | "relevance"; inFields?: string }
 ): Promise<{ articles: any[]; totalArticles: number }> {
   const apiKey = process.env.GNEWS_API_KEY;
   if (!apiKey) {
@@ -94,8 +95,14 @@ async function searchNews(
     token: apiKey,
     lang: "en",
     max: String(maxArticles),
-    sortby: "publishedAt",
+    sortby: opts?.sortBy ?? "publishedAt",
   });
+
+  // Restrict where the keywords must appear (e.g. "title,description") so a
+  // term buried deep in an article's body doesn't pull in off-topic stories.
+  if (opts?.inFields) {
+    params.set("in", opts.inFields);
+  }
 
   if (fromDate) {
     params.set("from", fromDate);
@@ -147,7 +154,15 @@ export async function scanNewsForSubjects(
 
   const out: SubjectNews[] = [];
   for (const subject of cleaned) {
-    const { articles } = await searchNews(subject, perSubject);
+    // Quote multi-word subjects so GNews matches the whole phrase (e.g.
+    // "AI costs") rather than any article mentioning "AI" OR "costs". Combined
+    // with relevance sorting and title/description matching, this keeps the
+    // scan on-topic instead of returning the day's newest loosely-matched news.
+    const q = subject.includes(" ") ? `"${subject.replace(/"/g, "")}"` : subject;
+    const { articles } = await searchNews(q, perSubject, undefined, {
+      sortBy: "relevance",
+      inFields: "title,description",
+    });
     out.push({
       subject,
       headlines: (articles || []).slice(0, perSubject).map((a: any) => {
