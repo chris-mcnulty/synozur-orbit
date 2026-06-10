@@ -74,6 +74,7 @@ interface CalendarItem {
   // WS4: when a dense social batch is collapsed into one item.
   isBatch?: boolean;
   batchKey?: string;
+  day?: string;
   count?: number;
   platforms?: Record<string, number>;
 }
@@ -369,7 +370,7 @@ export default function MarketingCalendarPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
   // WS4: when drilling into a collapsed social batch (shows its members).
-  const [batchDrill, setBatchDrill] = useState<{ key: string; label: string } | null>(null);
+  const [batchDrill, setBatchDrill] = useState<{ key: string; day: string; label: string } | null>(null);
   // When a draft is dropped onto a crowded day, we hold the drop here and ask
   // the user to confirm (or pick the suggested open day) before scheduling.
   const [pendingDrop, setPendingDrop] = useState<{ descriptors: { type: string; id: string }[]; dateKey: string } | null>(null);
@@ -396,9 +397,10 @@ export default function MarketingCalendarPage() {
     if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
     if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
     if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
-    // Drilling into a batch returns its individual posts; otherwise collapse
-    // dense social batches so the calendar isn't a wall of identical posts.
-    if (batchDrill) p.set("batchId", batchDrill.key);
+    // Drilling into a batch returns its individual posts (scoped to the exact
+    // source + day it was collapsed from); otherwise collapse dense social
+    // batches so the calendar isn't a wall of identical posts.
+    if (batchDrill) { p.set("batchId", batchDrill.key); p.set("batchDay", batchDrill.day); }
     else p.set("rollupSocial", "true");
     return `/api/marketing-calendar?${p.toString()}`;
   }, [range, filters, batchDrill]);
@@ -414,7 +416,7 @@ export default function MarketingCalendarPage() {
   // Open per-item detail for normal items; drill into the batch's posts for a
   // collapsed social batch.
   const handleSelect = (i: CalendarItem) => {
-    if (i.isBatch && i.batchKey) setBatchDrill({ key: i.batchKey, label: i.title });
+    if (i.isBatch && i.batchKey) setBatchDrill({ key: i.batchKey, day: i.day ?? "unscheduled", label: i.title });
     else setDetail(i);
   };
 

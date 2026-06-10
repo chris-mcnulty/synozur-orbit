@@ -46,8 +46,32 @@ function post(over: Partial<RollupSocialItem> = {}): RollupSocialItem {
     assert.equal(batches[0].count, 54);
     assert.equal(batches[0].type, "social_batch");
     assert.equal(batches[0].batchKey, "job1");
+    assert.equal(batches[0].day, "2026-07-01"); // day component surfaced for drill-down
     assert.deepEqual(batches[0].platforms, { twitter: 30, linkedin: 24 });
     assert.deepEqual(batches[0].lifecycleCounts, { draft: 54 });
+  });
+
+  await test("batch surfaces assignment ids only when consistent across members", () => {
+    const mixed: RollupSocialItem[] = [];
+    // Same run+day, but campaignId differs across members; conferenceId shared.
+    for (let i = 0; i < 5; i++) mixed.push(post({ generationJobId: "job9", campaignId: "campA", conferenceId: "confZ" }));
+    mixed.push(post({ generationJobId: "job9", campaignId: "campB", conferenceId: "confZ" }));
+    const { batches } = rollupSocialItems(mixed, { threshold: 3 });
+    assert.equal(batches.length, 1);
+    assert.equal(batches[0].campaignId, null); // mixed -> null
+    assert.equal(batches[0].conferenceId, "confZ"); // consistent -> surfaced
+  });
+
+  await test("same source on different days splits, each carrying its own day", () => {
+    const items: RollupSocialItem[] = [];
+    for (let i = 0; i < 5; i++) items.push(post({ generationJobId: "jobD", date: "2026-07-01T09:00:00.000Z" }));
+    for (let i = 0; i < 4; i++) items.push(post({ generationJobId: "jobD", date: "2026-07-02T09:00:00.000Z" }));
+    const { batches } = rollupSocialItems(items, { threshold: 3 });
+    assert.equal(batches.length, 2);
+    const days = batches.map((b) => b.day).sort();
+    assert.deepEqual(days, ["2026-07-01", "2026-07-02"]);
+    // batchKey (source) is shared; day disambiguates the drill-down.
+    assert.ok(batches.every((b) => b.batchKey === "jobD"));
   });
 
   await test("small groups and standalone posts pass through untouched", () => {

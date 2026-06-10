@@ -37,6 +37,8 @@ export interface SocialBatchItem {
   /** Lifecycle counts across the batch, e.g. { draft: 40, approved: 14 }. */
   lifecycleCounts: Record<string, number>;
   title: string;
+  /** The day this batch sits on ("YYYY-MM-DD", or "unscheduled"). */
+  day: string;
   campaignId: string | null;
   solutionAreaId: string | null;
   conferenceId: string | null;
@@ -57,7 +59,9 @@ export function resolveBatchSource(item: RollupSocialItem): string | null {
   );
 }
 
-function dayKey(date: string | null): string {
+/** The day bucket for an item ("YYYY-MM-DD", or "unscheduled"). Exported so the
+ * drill-down route can match members to a batch's exact (source, day) group. */
+export function batchDayKey(date: string | null): string {
   return date ? date.slice(0, 10) : "unscheduled";
 }
 
@@ -89,11 +93,21 @@ export function rollupSocialItems(
       loose.push(item);
       continue;
     }
-    const key = `${source}|${dayKey(item.date)}`;
+    const key = `${source}|${batchDayKey(item.date)}`;
     const arr = groups.get(key);
     if (arr) arr.push(item);
     else groups.set(key, [item]);
   }
+
+  // Surface an assignment id on the batch only when it's consistent across ALL
+  // members; otherwise null, so a mixed batch never shows under the wrong label.
+  const consistentId = (
+    members: RollupSocialItem[],
+    sel: "campaignId" | "solutionAreaId" | "conferenceId",
+  ): string | null => {
+    const v = members[0]?.[sel] ?? null;
+    return members.every((m) => (m[sel] ?? null) === v) ? v : null;
+  };
 
   const batches: SocialBatchItem[] = [];
   for (const [key, members] of groups) {
@@ -109,18 +123,20 @@ export function rollupSocialItems(
       lifecycleCounts[m.lifecycle] = (lifecycleCounts[m.lifecycle] || 0) + 1;
     }
     const first = members[0];
+    const [source, day] = key.split("|");
     batches.push({
       type: "social_batch",
       id: `batch:${key}`,
-      batchKey: key.split("|")[0],
+      batchKey: source,
+      day,
       date: first.date,
       count: members.length,
       platforms,
       lifecycleCounts,
       title: `${members.length} social posts`,
-      campaignId: first.campaignId ?? null,
-      solutionAreaId: first.solutionAreaId ?? null,
-      conferenceId: first.conferenceId ?? null,
+      campaignId: consistentId(members, "campaignId"),
+      solutionAreaId: consistentId(members, "solutionAreaId"),
+      conferenceId: consistentId(members, "conferenceId"),
     });
   }
 

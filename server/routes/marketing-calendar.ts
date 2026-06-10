@@ -31,7 +31,7 @@ import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { getScheduledDayCounts } from "../services/schedule-load";
-import { rollupSocialItems, type RollupSocialItem } from "../services/calendar-rollup-core";
+import { rollupSocialItems, batchDayKey, type RollupSocialItem } from "../services/calendar-rollup-core";
 import { storeArtifact } from "../services/artifact-storage-helper";
 
 // A day with at least this many activities is considered "crowded".
@@ -116,7 +116,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly, rollupSocial, batchId } = req.query as Record<string, string>;
+      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly, rollupSocial, batchId, batchDay } = req.query as Record<string, string>;
       const fromDate = from ? new Date(from) : null;
       const toDate = to ? new Date(to) : null;
       const wantUnscheduled = includeUnscheduled === "true" || includeUnscheduled === "1";
@@ -249,6 +249,11 @@ export function registerMarketingCalendarRoutes(app: Express) {
       if (wantRollup && !batchId) {
         const { batches, loose } = rollupSocialItems(socialItems, { threshold: BUSY_THRESHOLD });
         items.push(...batches, ...loose);
+      } else if (batchId && batchDay) {
+        // Drill-down: the batchId (source) is matched in SQL above; restrict to
+        // the batch's exact day so we return the same members that were
+        // collapsed (uses the same day key as the rollup, so they agree).
+        items.push(...socialItems.filter((s) => batchDayKey(s.date) === batchDay));
       } else {
         items.push(...socialItems);
       }
