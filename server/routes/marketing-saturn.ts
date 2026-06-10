@@ -87,6 +87,7 @@ import { generateBrandedPostGraphic } from "../services/conference-promotion-ser
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
+import { storeArtifact } from "../services/artifact-storage-helper";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -2828,6 +2829,21 @@ Return ONLY a valid JSON object (no markdown fences) with:
       fallbackAccountIds: campaignAccountLinks.map(l => l.socialAccountId),
       imageBaseUrl: host ? `${proto}://${host}` : undefined,
     });
+
+    // WS6: retain the export in SharePoint (silent fallback to object storage).
+    try {
+      await storeArtifact({
+        tenantDomain: ctx.tenantDomain,
+        buffer: Buffer.from(csv, "utf8"),
+        filename: `campaign-${campaign.name.replace(/[^a-zA-Z0-9]+/g, "_")}-${csvFormat}-${new Date().toISOString().split("T")[0]}.csv`,
+        mimeType: "text/csv",
+        kind: "csv",
+        marketId: ctx.marketId,
+        createdByUserId: ctx.userId,
+      });
+    } catch (e: any) {
+      console.error("[campaign export-csv] store failed:", e?.message);
+    }
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-${csvFormat}.csv"`);

@@ -36,6 +36,7 @@ import {
   renderConferenceImage,
 } from "../services/conference-promotion-service";
 import { buildPostsCsv } from "../services/posts-csv-export";
+import { storeArtifact } from "../services/artifact-storage-helper";
 
 const FEATURE = "conferencePromotion";
 
@@ -741,6 +742,21 @@ export function registerConferencePromotionRoutes(app: Express) {
         tzOffset: clientTzOffset,
         imageBaseUrl: host ? `${proto}://${host}` : undefined,
       });
+
+      // WS6: retain the event export in SharePoint (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: Buffer.from(csv, "utf8"),
+          filename: `event-${conf.name.replace(/[^a-zA-Z0-9]+/g, "_")}-${csvFormat}-${new Date().toISOString().split("T")[0]}.csv`,
+          mimeType: "text/csv",
+          kind: "csv",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[event export-csv] store failed:", e?.message);
+      }
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="event-${conf.id}-${csvFormat}.csv"`);

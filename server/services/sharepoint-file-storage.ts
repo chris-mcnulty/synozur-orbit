@@ -31,7 +31,9 @@ export type OrbitDocumentType =
   | "grounding_document"
   | "logo"
   | "favicon"
-  | "report";
+  | "report"
+  // Finished marketing output: generated Word docs, CSV exports, post graphics.
+  | "marketing_artifact";
 
 export type OrbitDocumentScope =
   | "tenant"
@@ -86,6 +88,11 @@ const FOLDER_MAP: Record<OrbitDocumentType, Record<OrbitDocumentScope, string>> 
   logo:    { tenant: "/images/logos",    competitor: "/images/logos",    global: "/images/logos" },
   favicon: { tenant: "/images/favicons", competitor: "/images/favicons", global: "/images/favicons" },
   report:  { tenant: "/reports",         competitor: "/reports",         global: "/reports" },
+  marketing_artifact: {
+    tenant:     "/marketing",
+    competitor: "/marketing",
+    global:     "/marketing",
+  },
 };
 
 // ---------------------------------------------------------------------------
