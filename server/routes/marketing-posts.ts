@@ -555,4 +555,25 @@ export function registerMarketingPostsRoutes(app: Express) {
       res.status(500).json({ error: err.message || "Failed to load calendar" });
     }
   });
+
+  // ───── Single post detail ─────
+  // The calendar/aggregation payloads only carry a truncated preview and omit
+  // carousel slides. The click-through detail dialog fetches the full row here so
+  // it can show the complete copy, the branded graphic, and every carousel slide.
+  // Registered AFTER /calendar so that literal path doesn't match this :id route.
+  app.get("/api/generated-posts/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [post] = await db.select().from(generatedPosts).where(and(
+        eq(generatedPosts.id, req.params.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+      res.json(post);
+    } catch (err: any) {
+      console.error("[Post Detail Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to load post" });
+    }
+  });
 }

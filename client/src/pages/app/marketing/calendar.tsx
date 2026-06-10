@@ -125,6 +125,9 @@ export default function CalendarPage() {
       const params = new URLSearchParams({
         from: gridStart.toISOString(),
         to: gridEnd.toISOString(),
+        // Also pull undated drafts so freshly generated posts (which have no
+        // date yet) are reachable here instead of silently missing.
+        includeUnscheduled: "true",
       });
       const r = await fetch(`/api/generated-posts/calendar?${params.toString()}`, { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -156,6 +159,14 @@ export default function CalendarPage() {
     }));
     return m;
   }, [filteredPosts]);
+
+  // Undated drafts (e.g. freshly repurposed posts) don't land on the date grid,
+  // so surface them in their own list below the calendar where they can be
+  // opened and scheduled.
+  const unscheduledPosts = useMemo(
+    () => filteredPosts.filter(p => !p.scheduledDate && !p.publishedAt),
+    [filteredPosts],
+  );
 
   // When arriving via a deep link, open the targeted post's drawer once the
   // month's posts have loaded. If the post isn't in this range (or no longer
@@ -330,6 +341,43 @@ export default function CalendarPage() {
             </div>
           </CardContent>
         </Card>
+
+        {!isLoading && unscheduledPosts.length > 0 && (
+          <Card data-testid="card-unscheduled-drafts">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold">Unscheduled drafts</h2>
+                <span
+                  className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground"
+                  data-testid="badge-unscheduled-count"
+                >
+                  {unscheduledPosts.length}
+                </span>
+              </div>
+              <p className="mt-1 mb-3 text-xs text-muted-foreground">
+                These posts don't have a date yet, so they aren't on the calendar above. Click one to
+                add a date, or schedule them in bulk from the campaign's Content Plan.
+              </p>
+              <div className="space-y-1.5">
+                {unscheduledPosts.map(post => (
+                  <button
+                    key={post.id}
+                    type="button"
+                    onClick={() => setSelectedPost(post)}
+                    className="flex w-full items-center gap-2 rounded border p-2 text-left text-xs hover:bg-muted"
+                    data-testid={`unscheduled-post-${post.id}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[post.status] ?? "bg-gray-400"}`} />
+                    <span className={`shrink-0 rounded border px-1 text-[10px] ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"}`}>
+                      {post.platform}
+                    </span>
+                    <span className="flex-1 truncate">{post.preview || "(empty)"}</span>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isLoading && <div className="text-sm text-muted-foreground">Loading...</div>}
 

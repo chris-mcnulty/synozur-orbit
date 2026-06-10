@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { contentAssets, contentOptimizations, generatedPosts } from "@shared/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { contentAssets, contentOptimizations, generatedPosts, contentBriefs } from "@shared/schema";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import type { RequestContext } from "../context";
@@ -357,6 +357,21 @@ export function registerContentProductionRoutes(app: Express) {
         return res.status(409).json({ error: "This asset has no content to repurpose." });
       }
 
+      // Campaign/theme live on the source content brief, not on the asset. Inherit
+      // them onto the repurposed posts so they surface under the campaign filter
+      // instead of landing orphaned (campaignId=null) in the backlog.
+      const [sourceBrief] = await db
+        .select({
+          campaignId: contentBriefs.campaignId,
+          solutionAreaId: contentBriefs.solutionAreaId,
+        })
+        .from(contentBriefs)
+        .where(and(eq(contentBriefs.contentAssetId, asset.id), eq(contentBriefs.tenantDomain, ctx.tenantDomain)))
+        .orderBy(desc(contentBriefs.createdAt))
+        .limit(1);
+      const inheritedCampaignId = sourceBrief?.campaignId ?? null;
+      const inheritedSolutionAreaId = sourceBrief?.solutionAreaId ?? null;
+
       const { items, errors, usage, model } = await repurposeMultiFormat({
         asset,
         selections,
@@ -424,7 +439,8 @@ export function registerContentProductionRoutes(app: Express) {
             .insert(generatedPosts)
             .values({
               id: randomUUID(),
-              campaignId: null,
+              campaignId: inheritedCampaignId,
+              solutionAreaId: inheritedSolutionAreaId,
               tenantDomain: ctx.tenantDomain,
               platform: item.platform,
               content: item.content,

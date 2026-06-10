@@ -1438,6 +1438,20 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   busy: boolean;
 }) {
   const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
+  // Social posts only ship a 160-char preview in the aggregation payload. Fetch
+  // the full row (complete copy, branded graphic, carousel slides) on click so
+  // the dialog isn't just a snippet. Batches drill down separately, so skip them.
+  const isSocialPost = item?.type === "social" && !item?.isBatch;
+  const { data: postDetail } = useQuery<{
+    content?: string | null;
+    editedContent?: string | null;
+    overrideImageUrl?: string | null;
+    postFormat?: string | null;
+    carouselSlides?: { index: number; role: string; headline: string; imageUrl?: string | null }[] | null;
+  }>({
+    queryKey: [`/api/generated-posts/${item?.id}`],
+    enabled: !!item?.id && isSocialPost,
+  });
   if (!item) return null;
   const assignments = resolveAssignments(item, filterOpts);
   // Only blog/content and email require an explicit Approve; social posts are
@@ -1445,7 +1459,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   const canApprove = (item.type === "content" || item.type === "email") && item.lifecycle === "draft";
   return (
     <Dialog open={!!item} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="dialog-item-detail">
+      <DialogContent data-testid="dialog-item-detail" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[item.type].dot}`} /> {item.title}
@@ -1475,7 +1489,56 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           </div>
         )}
 
-        {item.preview && <p className="rounded-md bg-muted p-2 text-sm text-muted-foreground">{item.preview}</p>}
+        {(() => {
+          const fullContent = postDetail?.editedContent ?? postDetail?.content ?? null;
+          const slides = postDetail?.carouselSlides ?? null;
+          const heroImage = postDetail?.overrideImageUrl ?? item.imageUrl ?? null;
+          const bodyText = fullContent ?? item.preview ?? "";
+          if (!heroImage && !bodyText && !(slides && slides.length)) return null;
+          return (
+            <div className="space-y-3">
+              {heroImage && (
+                <img
+                  src={heroImage}
+                  alt=""
+                  className="max-h-64 w-full rounded-md border bg-muted object-contain"
+                  data-testid="img-detail-graphic"
+                />
+              )}
+              {bodyText && (
+                <p
+                  className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-sm text-muted-foreground"
+                  data-testid="text-detail-content"
+                >
+                  {bodyText}
+                </p>
+              )}
+              {slides && slides.length > 0 && (
+                <div data-testid="detail-carousel-slides">
+                  <Label className="text-xs">Carousel · {slides.length} slides</Label>
+                  <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {slides.map((s, i) => (
+                      <div key={i} className="overflow-hidden rounded border">
+                        {s.imageUrl ? (
+                          <img
+                            src={s.imageUrl}
+                            alt={s.headline || `Slide ${i + 1}`}
+                            className="aspect-square w-full object-cover"
+                            data-testid={`img-carousel-slide-${i}`}
+                          />
+                        ) : (
+                          <div className="flex aspect-square w-full items-center justify-center p-1 text-center text-[10px] text-muted-foreground">
+                            {s.headline}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div>
           <Label className="text-xs">Date</Label>
