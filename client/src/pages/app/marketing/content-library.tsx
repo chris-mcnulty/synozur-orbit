@@ -52,6 +52,7 @@ interface ContentAsset {
   tags?: { seasons?: string[]; locations?: string[]; topics?: string[] };
   status: string;
   capturedViaExtension: boolean;
+  repurposedFromAssetId?: string | null;
   createdAt: string;
 }
 
@@ -946,6 +947,18 @@ export default function ContentLibraryPage() {
           >
             <Package className="w-3 h-3" /> Product
           </Button>
+          {asset.repurposedFromAssetId && asset.content?.trim() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1 px-2"
+              disabled={downloadingDocx}
+              onClick={e => { e.stopPropagation(); downloadDocx(asset); }}
+              data-testid={`button-download-docx-${asset.id}`}
+            >
+              <Download className="w-3 h-3" /> Word
+            </Button>
+          )}
         </div>
         <div className="flex flex-wrap gap-1">
           {asset.assetType && asset.assetType !== "other" && (
@@ -1544,6 +1557,7 @@ export default function ContentLibraryPage() {
               <SelectItem value="all">All sources</SelectItem>
               <SelectItem value="manual">Manually added</SelectItem>
               <SelectItem value="captured">Captured</SelectItem>
+              <SelectItem value="repurposed">Repurposed drafts</SelectItem>
             </SelectContent>
           </Select>
           <Select value={assetTypeFilter} onValueChange={setAssetTypeFilter}>
@@ -1738,6 +1752,11 @@ export default function ContentLibraryPage() {
                         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditDialog(asset)} data-testid={`button-view-${asset.id}`}>
                           View
                         </Button>
+                        {asset.repurposedFromAssetId && asset.content?.trim() && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={downloadingDocx} onClick={() => downloadDocx(asset)} data-testid={`button-download-docx-${asset.id}`}>
+                            <Download className="w-3 h-3 mr-1" /> Word
+                          </Button>
+                        )}
                         {asset.status === "archived" ? (
                           <>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-green-500 hover:text-green-600" onClick={() => restoreMutation.mutate(asset.id)} title="Restore" data-testid={`button-restore-table-${asset.id}`}>

@@ -441,10 +441,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
     // they have no public URL — exclude anything without a url/fileUrl so the
     // library stays a clean set of usable source assets and drafts don't get
     // pulled into outbound campaigns.
-    conditions.push(or(
-      and(isNotNull(contentAssets.url), ne(contentAssets.url, "")),
-      isNotNull(contentAssets.fileUrl),
-    )!);
+    //
+    // The "repurposed" source view is the exception: it surfaces the longform /
+    // email drafts produced by the multi-format repurposer (which have no URL)
+    // so users can hand them off as branded Word documents.
+    const source = req.query.source as string | undefined;
+    if (source === "repurposed") {
+      conditions.push(isNotNull(contentAssets.repurposedFromAssetId));
+    } else {
+      conditions.push(or(
+        and(isNotNull(contentAssets.url), ne(contentAssets.url, "")),
+        isNotNull(contentAssets.fileUrl),
+      )!);
+    }
     const pagination = parsePaginationParams(req);
     if (pagination.q) {
       const pattern = toContainsPattern(pagination.q);
@@ -461,7 +470,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
         conditions.push(eq(contentAssets.categoryId, categoryId));
       }
     }
-    const source = req.query.source as string | undefined;
     if (source === "captured") {
       conditions.push(eq(contentAssets.capturedViaExtension, true));
     } else if (source === "manual") {
