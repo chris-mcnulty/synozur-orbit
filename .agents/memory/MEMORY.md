@@ -15,3 +15,4 @@
 - [drizzle-kit meta corruption](drizzle-kit-meta-corruption.md) — `db:generate` is broken (snapshot collision); runtime runner reads migrations/*.sql lexicographically, so hand-write the next NNNN_*.sql file.
 - [Marketing calendar UI labels vs routes](marketing-calendar-labels.md) — Master Calendar=/marketing-calendar, Content Briefs=/editorial-calendar, Social Posts=/calendar; labels renamed but routes/feature keys unchanged.
 - [Polaris podcast outline asset type](polaris-podcast-outline.md) — podcast_outline is a CONTENT_BRIEF_FORMAT with shared POLARIS_OUTLINE_GUIDANCE; guest override flows via opts.guest/params.guest → polarisGuestBlock; two entry paths (brief draft + repurpose-longform).
+- [Distribution planner channel resolution](distribution-planner-channel.md) — brief format (not the AI-filled channels field) decides the schedule channel via FORMAT_CHANNEL; channels is fallback only for unmapped formats.

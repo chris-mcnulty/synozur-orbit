@@ -13,25 +13,26 @@
 
 export type Channel = "linkedin" | "twitter" | "blog" | "email" | "instagram" | "facebook";
 
-/** Map a content-brief format onto a distribution channel. */
+/**
+ * Definitive format → channel mappings. A format present here publishes on a
+ * known channel, so its `format` is authoritative for scheduling. Formats NOT
+ * listed (e.g. "other", "podcast_outline") have no obvious channel and fall
+ * back to the brief's preferred channels before defaulting.
+ */
+const FORMAT_CHANNEL: Record<string, Channel> = {
+  linkedin_post: "linkedin",
+  x_post: "twitter",
+  newsletter: "email",
+  blog_post: "blog",
+  landing_page: "blog",
+  case_study: "blog",
+  whitepaper: "blog",
+  video_script: "instagram",
+};
+
+/** Map a content-brief format onto a distribution channel (defaults to linkedin). */
 export function formatToChannel(format: string): Channel {
-  switch (format) {
-    case "linkedin_post":
-      return "linkedin";
-    case "x_post":
-      return "twitter";
-    case "newsletter":
-      return "email";
-    case "blog_post":
-    case "landing_page":
-    case "case_study":
-    case "whitepaper":
-      return "blog";
-    case "video_script":
-      return "instagram";
-    default:
-      return "linkedin";
-  }
+  return FORMAT_CHANNEL[format] ?? "linkedin";
 }
 
 /** Best local posting hour (24h) per channel — sensible B2B defaults. */
@@ -123,6 +124,16 @@ const VALID_CHANNELS = new Set<Channel>([
 ]);
 
 function resolveChannel(item: PlanItemInput): Channel {
+  // A brief's `format` is the actual deliverable (a blog post, a LinkedIn post,
+  // a newsletter…), so when it maps to a known channel it decides where the
+  // item publishes. The brief's `channels` are amplification/promotion channels
+  // and must NOT override the deliverable — otherwise a blog post whose promo
+  // channels lead with LinkedIn gets mis-scheduled as a LinkedIn post and "blog"
+  // never shows up on the calendar. Formats with no definitive channel
+  // (e.g. "other", "podcast_outline") fall back to preferred channels.
+  if (item.format && item.format in FORMAT_CHANNEL) {
+    return FORMAT_CHANNEL[item.format];
+  }
   for (const c of item.preferredChannels ?? []) {
     const norm = String(c).trim().toLowerCase().replace(/\/.*$/, "");
     const mapped = norm === "x" ? "twitter" : norm;

@@ -89,12 +89,30 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].timeframe, "Q1");
   });
 
-  await test("buildSchedule honors preferredChannels over format", () => {
+  await test("buildSchedule lets a brief's format win over its promo channels", () => {
+    // A blog_post's `channels` are amplification channels (where we promote it),
+    // not where the deliverable publishes. The blog must schedule on "blog".
     const sched = buildSchedule(
-      [{ id: "x", title: "T", format: "blog_post", preferredChannels: ["X"] }],
+      [{ id: "x", title: "T", format: "blog_post", preferredChannels: ["X", "linkedin"] }],
+      { periodStart: new Date(Date.UTC(2026, 5, 1)), periodEnd: new Date(Date.UTC(2026, 5, 10)) },
+    );
+    assert.equal(sched[0].channel, "blog");
+  });
+
+  await test("buildSchedule falls back to preferredChannels for a generic format", () => {
+    const sched = buildSchedule(
+      [{ id: "x", title: "T", format: "other", preferredChannels: ["X"] }],
       { periodStart: new Date(Date.UTC(2026, 5, 1)), periodEnd: new Date(Date.UTC(2026, 5, 10)) },
     );
     assert.equal(sched[0].channel, "twitter");
+  });
+
+  await test("buildSchedule falls back to preferredChannels for an unmapped format (podcast_outline)", () => {
+    const sched = buildSchedule(
+      [{ id: "x", title: "T", format: "podcast_outline", preferredChannels: ["email"] }],
+      { periodStart: new Date(Date.UTC(2026, 5, 1)), periodEnd: new Date(Date.UTC(2026, 5, 10)) },
+    );
+    assert.equal(sched[0].channel, "email");
   });
 
   await test("buildSchedule steers a single item off an already-busy day", () => {
