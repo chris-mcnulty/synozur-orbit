@@ -214,6 +214,71 @@ function wrapText(text: string, maxChars: number, maxLines: number): string[] {
   return lines;
 }
 
+/** Wrap to a character width with no line cap (used by the responsive fitter). */
+function wrapWords(text: string, maxChars: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (line && (line + " " + word).length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? line + " " + word : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Font-size tiers (largest first) and the line count we allow at each. Bigger
+// text is more eye-catching, so we prefer the top tier and only step down when
+// the title would overflow horizontally (line count) or vertically (the `fits`
+// guard below, used by the conference layout where space is fixed).
+const TITLE_TIERS: Array<{ size: number; maxLines: number }> = [
+  { size: 72, maxLines: 3 },
+  { size: 64, maxLines: 3 },
+  { size: 58, maxLines: 4 },
+  { size: 50, maxLines: 4 },
+  { size: 44, maxLines: 5 },
+];
+
+/**
+ * Lay out a title onto the hero canvas by picking the largest font size at which
+ * the whole title wraps into a comfortable number of lines with no truncation —
+ * so the full, provocative thought stays on the card instead of being chopped
+ * mid-sentence with a "…". `fits(lineCount, lineHeight)` lets the caller reject
+ * a tier that would overflow vertically (e.g. the conference layout). Only the
+ * smallest tier truncates, and even then it breaks on word boundaries.
+ */
+function layoutTitle(
+  text: string,
+  usableWidth: number,
+  fits: (lineCount: number, lineHeight: number) => boolean = () => true,
+): { lines: string[]; fontSize: number; lineHeight: number } {
+  // Avenir bold renders at roughly this fraction of the font size per glyph;
+  // err slightly wide so lines don't overrun the canvas.
+  const AVG_CHAR = 0.54;
+  const clean = text.trim().replace(/\s+/g, " ");
+  for (const { size, maxLines } of TITLE_TIERS) {
+    const maxChars = Math.max(8, Math.floor(usableWidth / (size * AVG_CHAR)));
+    const lines = wrapWords(clean, maxChars);
+    const lineHeight = Math.round(size * 1.16);
+    if (lines.length <= maxLines && fits(lines.length, lineHeight)) {
+      return { lines, fontSize: size, lineHeight };
+    }
+  }
+  // Last resort: smallest size; truncate to the most lines that still fit
+  // vertically (down to one), breaking on a word boundary with an ellipsis so
+  // the card can never overflow the canvas even for pathological titles.
+  const size = 44;
+  const lineHeight = Math.round(size * 1.16);
+  const maxChars = Math.max(8, Math.floor(usableWidth / (size * AVG_CHAR)));
+  let maxLines = 5;
+  while (maxLines > 1 && !fits(maxLines, lineHeight)) maxLines--;
+  return { lines: wrapText(clean, maxChars, maxLines), fontSize: size, lineHeight };
+}
+
 /**
  * Compose session text (title / speaker / time) onto a 1200x675 canvas. When a
  * template image is supplied it is used as the background; otherwise a branded
@@ -452,17 +517,38 @@ export async function compositeHeroImage(opts: {
     ? `'${opts.customFont.fontFamily}', 'Avenir Next LT Pro', Arial, sans-serif`
     : "'Avenir Next LT Pro', Arial, sans-serif";
 
-  const titleLines = wrapText(opts.conferenceName, 28, 3);
+  // Responsive title: scale the font so the whole headline fits without an
+  // awkward mid-thought "…". ~80px margins each side keep centered text clear
+  // of the canvas edges.
+  const hasEventLogo = !!opts.eventLogoBytes;
+  const subtitleRows = (opts.location ? 1 : 0) + (opts.eventDates ? 1 : 0);
+  const CONFERENCE_TITLE_TOP = 380;
+  // In conference mode the title starts at a fixed Y beneath the event logo, so
+  // reject any font tier whose title + subtitle stack would run off the canvas.
+  const fitsVertically = hasEventLogo
+    ? (lineCount: number, lh: number) =>
+        CONFERENCE_TITLE_TOP + lineCount * lh + 16 + subtitleRows * 40 <= H - 16
+    : undefined;
+  const { lines: titleLines, fontSize: titleSize, lineHeight } = layoutTitle(
+    opts.conferenceName,
+    W - 160,
+    fitsVertically,
+  );
   const subtitleText = opts.location ? escapeXml(opts.location) : "";
 
-  const titleStartY = opts.eventLogoBytes ? 380 : 300;
+  // Conferences anchor the title beneath the event logo; standalone post
+  // graphics centre the (variable-height) title block vertically for balance.
+  const blockH = (titleLines.length - 1) * lineHeight;
+  const titleStartY = hasEventLogo
+    ? CONFERENCE_TITLE_TOP
+    : Math.round((H - blockH) / 2);
   const titleSvgParts = titleLines.map(
     (l, i) =>
-      `<text x="${W / 2}" y="${titleStartY + i * 72}" text-anchor="middle" font-family="${headingFamily}" font-size="64" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
+      `<text x="${W / 2}" y="${titleStartY + i * lineHeight}" text-anchor="middle" font-family="${headingFamily}" font-size="${titleSize}" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
   );
 
   // Subtitle rows: location then dates, stacked below title
-  let subtitleY = titleStartY + titleLines.length * 72 + 40;
+  let subtitleY = titleStartY + blockH + lineHeight + 16;
   const locationSvg = subtitleText
     ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
     : "";

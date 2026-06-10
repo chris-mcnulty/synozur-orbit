@@ -73,14 +73,27 @@ function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
 }
 
 /**
- * Pick a short, clean headline for a branded post graphic. Prefers a caller-
- * supplied headline; otherwise derives one from the post copy by stripping URLs
- * and hashtags, taking the first sentence, and capping the length so it fits the
- * graphic's title area.
+ * Trim to at most `max` characters without cutting mid-word. Backs up to the
+ * last clause (comma) or word boundary and appends an ellipsis only when text
+ * was actually dropped — so headlines never end on a chopped word.
  */
+function clampToBoundary(text: string, max: number): string {
+  const clean = text.trim();
+  if (clean.length <= max) return clean;
+  const slice = clean.slice(0, max);
+  const lastComma = slice.lastIndexOf(", ");
+  const lastSpace = slice.lastIndexOf(" ");
+  const breakAt = lastComma > max * 0.6 ? lastComma : lastSpace;
+  const cut = breakAt > 0 ? slice.slice(0, breakAt) : slice;
+  return cut.replace(/[\s,;:.!?-]+$/, "") + "…";
+}
+
 function derivePostHeadline(provided: unknown, post: GeneratedPost): string | null {
+  // The graphic now scales the font to fit, so we can keep a fuller, more
+  // provocative thought rather than hard-cutting at ~one line of text.
+  const MAX = 140;
   if (typeof provided === "string" && provided.trim()) {
-    return provided.trim().slice(0, 100);
+    return clampToBoundary(provided, MAX);
   }
   const raw = (post.editedContent || post.content || "").trim();
   if (!raw) return null;
@@ -91,7 +104,7 @@ function derivePostHeadline(provided: unknown, post: GeneratedPost): string | nu
     .trim();
   if (!cleaned) return null;
   const firstSentence = cleaned.split(/(?<=[.!?])\s/)[0] || cleaned;
-  return firstSentence.slice(0, 100).trim();
+  return clampToBoundary(firstSentence, MAX);
 }
 
 interface RewriteRequestBody {
