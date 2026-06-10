@@ -299,6 +299,12 @@ export default function CampaignDetailPage() {
     const active = posts.filter((p) => p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived");
     return rollupPosts(active, { threshold: 3 });
   }, [posts]);
+  // Precomputed set of collapsed-batch keys so the grid filter is O(1) per post
+  // instead of O(#posts × #batches) on every render.
+  const batchKeySet = useMemo(
+    () => new Set(postBatches.batches.map((b) => b.key)),
+    [postBatches.batches],
+  );
   const unscheduledDraftCount = useMemo(
     () => posts.filter((p) => p.status === "draft" && !p.scheduledDate).length,
     [posts],
@@ -1523,7 +1529,7 @@ export default function CampaignDetailPage() {
                   // Hide posts that belong to a collapsed batch unless we're
                   // drilling into that batch; loose posts always show.
                   const src = batchSourceOf(p);
-                  const isBatched = postBatches.batches.some((b) => b.key === src);
+                  const isBatched = src != null && batchKeySet.has(src);
                   if (batchFilter) { if (src !== batchFilter) return false; }
                   else if (isBatched) return false;
                   if (postFilter === "all") return p.status !== "deleted";

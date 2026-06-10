@@ -153,6 +153,9 @@ export function registerEditorialCalendarRoutes(app: Express) {
             and(
               inArray(personas.id, campaign.audiencePersonaIds),
               eq(personas.tenantDomain, ctx.tenantDomain),
+              // Personas are tenant/market-scoped; guard against legacy/manual
+              // cross-market ids leaking another market's personas into the prompt.
+              eq(personas.marketId, ctx.marketId),
             ),
           );
         audience = personaRows.map((p) =>

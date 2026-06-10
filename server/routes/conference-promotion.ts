@@ -130,6 +130,7 @@ export function registerConferencePromotionRoutes(app: Express) {
             eq(generatedPosts.conferenceId, c.id),
             ne(generatedPosts.status, "deleted"),
             ne(generatedPosts.status, "rejected"),
+            ne(generatedPosts.status, "archived"),
           ));
         return { id: c.id, name: c.name, status: c.status, startDate: c.startDate, endDate: c.endDate, postCount: Number(n) || 0 };
       }),
