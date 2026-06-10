@@ -326,12 +326,13 @@ function isSafeInternalImageUrl(url: string): boolean {
 }
 
 // Fetch an object-storage image and turn it into a centered ImageRun paragraph
-// scaled to fit the page width. Falls back to an italic caption (or null when
-// there's nothing to show) if the URL isn't a safe internal path or the image
-// can't be fetched or decoded.
-async function imageParagraph(token: ImageToken): Promise<Paragraph | null> {
+// scaled to fit the page width, followed by an italic caption when alt text is
+// present. Falls back to an italic caption (or empty array when there's nothing
+// to show) if the URL isn't a safe internal path or the image can't be fetched
+// or decoded.
+async function imageParagraph(token: ImageToken): Promise<Paragraph[]> {
   if (!isSafeInternalImageUrl(token.url)) {
-    return token.alt ? imageCaptionParagraph(token.alt) : null;
+    return token.alt ? [imageCaptionParagraph(token.alt)] : [];
   }
   try {
     const { loadImageBytes } = await import("./conference-promotion-service.js");
@@ -350,9 +351,9 @@ async function imageParagraph(token: ImageToken): Promise<Paragraph | null> {
       height = Math.round(height * ratio);
     }
 
-    return new Paragraph({
+    const imagePara = new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 160 },
+      spacing: { after: token.alt ? 60 : 160 },
       children: [
         new ImageRun({
           data: pngBuf,
@@ -362,9 +363,11 @@ async function imageParagraph(token: ImageToken): Promise<Paragraph | null> {
         } as any),
       ],
     });
+
+    return token.alt ? [imagePara, imageCaptionParagraph(token.alt)] : [imagePara];
   } catch (err) {
     console.error(`[docx-generator] Failed to embed image ${token.url}:`, err);
-    return token.alt ? imageCaptionParagraph(token.alt) : null;
+    return token.alt ? [imageCaptionParagraph(token.alt)] : [];
   }
 }
 
@@ -372,9 +375,9 @@ async function imageParagraph(token: ImageToken): Promise<Paragraph | null> {
 async function markdownToDocxParagraphsAsync(markdown: string): Promise<Paragraph[]> {
   const tokens = tokenizeMarkdown(markdown);
   const resolved = await Promise.all(
-    tokens.map(async (token) => (isImageToken(token) ? imageParagraph(token) : token)),
+    tokens.map(async (token) => (isImageToken(token) ? imageParagraph(token) : [token])),
   );
-  return resolved.filter((p): p is Paragraph => p !== null);
+  return resolved.flat();
 }
 
 export async function buildBrandedDocx(title: string, markdown: string): Promise<Buffer> {
