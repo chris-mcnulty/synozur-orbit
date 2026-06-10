@@ -26,3 +26,11 @@ Related UX gotchas fixed alongside:
 - Social Posts page only renders dated posts; freshly generated drafts are
   undated, so it needs includeUnscheduled=true + a separate "Unscheduled drafts"
   list to make them reachable/schedulable.
+- Users need to grab the actual assets (full copy + branded graphic + carousel
+  slides) directly from the detail views, not just view a snippet. Both detail
+  surfaces (Master Calendar DetailDialog in marketing-calendar.tsx + Social Posts
+  PostDetailDrawer in calendar.tsx) now have Copy-text and per-image Download.
+  Post images are same-origin Orbit object-storage paths, so a fetch->blob->
+  anchor-download works (with window.open fallback). The aggregation/calendar
+  payloads only carry a truncated preview, so both surfaces fetch the full row
+  via GET /api/generated-posts/:id to get complete content + carouselSlides.

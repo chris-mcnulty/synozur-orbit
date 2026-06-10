@@ -42,11 +42,40 @@ import {
   Tag,
   X,
   GripVertical,
+  Download,
+  Copy,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getTabContextHeaders } from "@/lib/tabContext";
+
+// Download an image (graphic or carousel slide) straight to the user's machine.
+// Images are served same-origin via Orbit, so we fetch the blob and save it with
+// a sensible filename. If the fetch is blocked, fall back to opening in a new tab.
+async function downloadImageFromUrl(url: string, fallbackName: string) {
+  try {
+    const res = await fetch(url, { credentials: "include" });
+    if (!res.ok) throw new Error("fetch failed");
+    const blob = await res.blob();
+    const ext = ((blob.type.split("/")[1] || "png").split("+")[0]) || "png";
+    const name = /\.[a-z0-9]+$/i.test(fallbackName) ? fallbackName : `${fallbackName}.${ext}`;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
+
+// Turn a post title into a safe filename stub.
+function safeFileStub(s: string): string {
+  return (s || "post").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60).toLowerCase() || "post";
+}
 
 type ItemType = "social" | "email" | "content";
 type Lifecycle = "draft" | "approved" | "delivered";
@@ -1438,6 +1467,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   busy: boolean;
 }) {
   const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
+  const { toast } = useToast();
   // Social posts only ship a 160-char preview in the aggregation payload. Fetch
   // the full row (complete copy, branded graphic, carousel slides) on click so
   // the dialog isn't just a snippet. Batches drill down separately, so skip them.
@@ -1495,41 +1525,104 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           const heroImage = postDetail?.overrideImageUrl ?? item.imageUrl ?? null;
           const bodyText = fullContent ?? item.preview ?? "";
           if (!heroImage && !bodyText && !(slides && slides.length)) return null;
+          const stub = safeFileStub(item.title);
+          const slidesWithImages = (slides ?? []).filter(s => s.imageUrl);
+          const copyText = async () => {
+            try {
+              await navigator.clipboard.writeText(bodyText);
+              toast({ title: "Copied", description: "Post text copied to clipboard." });
+            } catch {
+              toast({ title: "Couldn't copy", description: "Select the text and copy it manually.", variant: "destructive" });
+            }
+          };
+          const downloadAllSlides = async () => {
+            toast({ title: `Downloading ${slidesWithImages.length} slides…` });
+            for (let i = 0; i < slidesWithImages.length; i++) {
+              await downloadImageFromUrl(slidesWithImages[i].imageUrl as string, `${stub}-slide-${i + 1}`);
+            }
+          };
           return (
             <div className="space-y-3">
               {heroImage && (
-                <img
-                  src={heroImage}
-                  alt=""
-                  className="max-h-64 w-full rounded-md border bg-muted object-contain"
-                  data-testid="img-detail-graphic"
-                />
+                <div className="space-y-1">
+                  <img
+                    src={heroImage}
+                    alt=""
+                    className="max-h-64 w-full rounded-md border bg-muted object-contain"
+                    data-testid="img-detail-graphic"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => downloadImageFromUrl(heroImage, `${stub}-graphic`)}
+                    data-testid="button-download-graphic"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download image
+                  </Button>
+                </div>
               )}
               {bodyText && (
-                <p
-                  className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-sm text-muted-foreground"
-                  data-testid="text-detail-content"
-                >
-                  {bodyText}
-                </p>
+                <div className="space-y-1">
+                  <p
+                    className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-sm text-muted-foreground"
+                    data-testid="text-detail-content"
+                  >
+                    {bodyText}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={copyText}
+                    data-testid="button-copy-text"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy text
+                  </Button>
+                </div>
               )}
               {slides && slides.length > 0 && (
                 <div data-testid="detail-carousel-slides">
-                  <Label className="text-xs">Carousel · {slides.length} slides</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Carousel · {slides.length} slides</Label>
+                    {slidesWithImages.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={downloadAllSlides}
+                        data-testid="button-download-all-slides"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Download all
+                      </Button>
+                    )}
+                  </div>
                   <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
                     {slides.map((s, i) => (
-                      <div key={i} className="overflow-hidden rounded border">
-                        {s.imageUrl ? (
-                          <img
-                            src={s.imageUrl}
-                            alt={s.headline || `Slide ${i + 1}`}
-                            className="aspect-square w-full object-cover"
-                            data-testid={`img-carousel-slide-${i}`}
-                          />
-                        ) : (
-                          <div className="flex aspect-square w-full items-center justify-center p-1 text-center text-[10px] text-muted-foreground">
-                            {s.headline}
-                          </div>
+                      <div key={i} className="space-y-1">
+                        <div className="overflow-hidden rounded border">
+                          {s.imageUrl ? (
+                            <img
+                              src={s.imageUrl}
+                              alt={s.headline || `Slide ${i + 1}`}
+                              className="aspect-square w-full object-cover"
+                              data-testid={`img-carousel-slide-${i}`}
+                            />
+                          ) : (
+                            <div className="flex aspect-square w-full items-center justify-center p-1 text-center text-[10px] text-muted-foreground">
+                              {s.headline}
+                            </div>
+                          )}
+                        </div>
+                        {s.imageUrl && (
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-center gap-1 rounded border py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+                            onClick={() => downloadImageFromUrl(s.imageUrl as string, `${stub}-slide-${i + 1}`)}
+                            data-testid={`button-download-slide-${i}`}
+                          >
+                            <Download className="h-3 w-3" /> Save
+                          </button>
                         )}
                       </div>
                     ))}

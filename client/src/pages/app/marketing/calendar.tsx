@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearch } from "wouter";
 import {
   CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
-  Sparkles, Upload, Library, Loader2, Share2,
+  Sparkles, Upload, Library, Loader2, Share2, Download, Copy,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import {
@@ -29,6 +29,32 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+
+// Download an image straight to the user's machine. Images are served
+// same-origin via Orbit, so we fetch the blob and save it; if blocked, open in
+// a new tab as a fallback.
+async function downloadImageFromUrl(url: string, fallbackName: string) {
+  try {
+    const res = await fetch(url, { credentials: "include" });
+    if (!res.ok) throw new Error("fetch failed");
+    const blob = await res.blob();
+    const ext = ((blob.type.split("/")[1] || "png").split("+")[0]) || "png";
+    const name = /\.[a-z0-9]+$/i.test(fallbackName) ? fallbackName : `${fallbackName}.${ext}`;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
+
+function safeFileStub(s: string): string {
+  return (s || "post").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60).toLowerCase() || "post";
+}
 
 interface CalendarPost {
   id: string;
@@ -437,6 +463,25 @@ function PostDetailDrawer({
   const [imageUrl, setImageUrl] = useState<string | null>(post.overrideImageUrl ?? null);
   const [showPicker, setShowPicker] = useState(false);
 
+  // The calendar payload only carries a truncated preview; fetch the full row so
+  // the user can read and copy the complete post text here.
+  const { data: full } = useQuery<{ content?: string | null; editedContent?: string | null }>({
+    queryKey: [`/api/generated-posts/${post.id}`],
+    queryFn: async () => {
+      const r = await fetch(`/api/generated-posts/${post.id}`, { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+  const fullText = full?.editedContent ?? full?.content ?? post.preview ?? "";
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(fullText);
+      toast({ title: "Copied", description: "Post text copied to clipboard." });
+    } catch {
+      toast({ title: "Couldn't copy", description: "Select the text and copy it manually.", variant: "destructive" });
+    }
+  };
+
   const invalidateCalendar = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
 
@@ -519,8 +564,24 @@ function PostDetailDrawer({
             <Badge variant="outline">{post.status}</Badge>
           </div>
           <div>
-            <div className="text-xs text-muted-foreground mb-1">Preview</div>
-            <p className="text-sm whitespace-pre-wrap">{post.preview}</p>
+            <div className="text-xs text-muted-foreground mb-1">Content</div>
+            <p
+              className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-sm"
+              data-testid="text-post-content"
+            >
+              {fullText}
+            </p>
+            {fullText && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 gap-1.5"
+                onClick={copyText}
+                data-testid="button-copy-post-text"
+              >
+                <Copy className="w-3.5 h-3.5" /> Copy text
+              </Button>
+            )}
           </div>
           <div>
             <div className="text-xs text-muted-foreground mb-1">Image</div>
@@ -533,15 +594,25 @@ function PostDetailDrawer({
                   data-testid="img-post-graphic"
                   onError={e => (e.currentTarget.style.display = "none")}
                 />
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setImage.mutate({ overrideImageUrl: null, overrideBrandAssetId: null })}
-                  disabled={setImage.isPending}
-                  data-testid="button-remove-post-image"
-                >
-                  <X className="w-3.5 h-3.5 mr-1" /> Remove image
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadImageFromUrl(imageUrl!, `${safeFileStub(post.preview || post.platform)}-graphic`)}
+                    data-testid="button-download-post-image"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" /> Download
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setImage.mutate({ overrideImageUrl: null, overrideBrandAssetId: null })}
+                    disabled={setImage.isPending}
+                    data-testid="button-remove-post-image"
+                  >
+                    <X className="w-3.5 h-3.5 mr-1" /> Remove image
+                  </Button>
+                </div>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">No image yet.</p>
