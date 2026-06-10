@@ -7,8 +7,14 @@ import { getRequestContext } from "../context";
 import type { RequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { optimizeContent } from "../services/seo-aeo-service";
-import { repurposeAsset } from "../services/repurpose-service";
+import { repurposeAsset, repurposeToLongForm } from "../services/repurpose-service";
 import { rewriteLongFormContent } from "../services/copywriter-service";
+import {
+  isLongformRepurposeFormat,
+  longformFormatToAssetType,
+  type LongformRepurposeFormat,
+} from "../services/repurpose-core";
+import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 
 // Canonical market scope for shared content_assets rows: default-market data
 // may be stored with the default market id OR NULL (cross-feature convention),
@@ -74,6 +80,22 @@ export function registerContentProductionRoutes(app: Express) {
           createdBy: ctx.userId,
         })
         .returning();
+
+      // WS3: also persist the headline SEO fields onto the asset itself so they
+      // are usable inline (and the deeper AEO data stays linked via the row above).
+      if (contentAssetId) {
+        await db
+          .update(contentAssets)
+          .set({
+            seoTitle: opt.seoTitle,
+            metaDescription: opt.metaDescription,
+            seoSlug: opt.slug,
+            seoKeywords: opt.keywords.length ? opt.keywords : null,
+            seoOptimizedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(contentAssets.id, contentAssetId), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
+      }
 
       res.status(201).json({ optimization: row, usage: opt.usage, model: opt.model });
     } catch (err: any) {
@@ -163,6 +185,7 @@ export function registerContentProductionRoutes(app: Express) {
             platform: v.platform,
             content: v.content,
             hashtags: v.hashtags,
+            imagePrompt: v.imagePrompt,
             sourceAssetId: asset.id,
             variantGroup,
             status: "draft",
@@ -174,6 +197,105 @@ export function registerContentProductionRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content repurpose]", err);
       res.status(500).json({ error: err.message || "Failed to repurpose content" });
+    }
+  });
+
+  // Repurpose a content asset into a NEW long-form/derivative asset (blog,
+  // newsletter, video script, podcast outline, whitepaper, carousel). Reviving
+  // the breadth of the original repurposing engine beyond social fan-out.
+  app.post("/api/content-assets/:id/repurpose-longform", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "contentRepurposing"))) return;
+      const ctx = await getRequestContext(req);
+
+      const format = req.body?.format;
+      if (!isLongformRepurposeFormat(format)) {
+        return res.status(400).json({ error: "Provide a valid long-form format to repurpose into." });
+      }
+
+      const [asset] = await db
+        .select()
+        .from(contentAssets)
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
+      if (!asset) return res.status(404).json({ error: "Content asset not found" });
+      if (!(asset.content || asset.aiSummary || asset.description)?.trim()) {
+        return res.status(409).json({ error: "This asset has no content to repurpose." });
+      }
+
+      const fmt = format as LongformRepurposeFormat;
+      const { title, body, meta, usage, model } = await repurposeToLongForm({
+        asset,
+        format: fmt,
+        isDefaultMarket: ctx.isDefaultMarket,
+      });
+      if (!body.trim()) {
+        return res.status(502).json({ error: "The AI did not return usable content. Please try again." });
+      }
+
+      const [created] = await db
+        .insert(contentAssets)
+        .values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId || null,
+          title,
+          description: meta,
+          content: body,
+          aiSummary: meta,
+          assetType: longformFormatToAssetType(fmt),
+          productIds: asset.productIds ?? null,
+          repurposedFromAssetId: asset.id,
+          status: "active",
+          createdBy: ctx.userId,
+        })
+        .returning();
+
+      res.status(201).json({ asset: created, usage, model });
+    } catch (err: any) {
+      console.error("[content repurpose-longform]", err);
+      res.status(500).json({ error: err.message || "Failed to repurpose content" });
+    }
+  });
+
+  // Generate a brand-aligned graphic for a social post and attach it, keeping
+  // the post and its visual coupled. Uses the post's content/imagePrompt as the
+  // headline source.
+  app.post("/api/generated-posts/:id/generate-image", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "contentRepurposing"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [post] = await db
+        .select()
+        .from(generatedPosts)
+        .where(and(eq(generatedPosts.id, req.params.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)));
+      if (!post) return res.status(404).json({ error: "Post not found" });
+
+      const headlineSource =
+        (typeof req.body?.headline === "string" && req.body.headline.trim()) ||
+        post.imagePrompt ||
+        post.editedContent ||
+        post.content ||
+        "";
+      const headline = headlineSource.trim().slice(0, 200);
+      if (!headline) return res.status(422).json({ error: "No text available to build a graphic from." });
+
+      const saved = await generateBrandedPostGraphic({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        headline,
+      });
+
+      const [row] = await db
+        .update(generatedPosts)
+        .set({ overrideImageUrl: saved.fileUrl, updatedAt: new Date() })
+        .where(and(eq(generatedPosts.id, post.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
+        .returning();
+
+      res.json({ post: row, imageUrl: saved.fileUrl });
+    } catch (err: any) {
+      console.error("[generated-post generate-image]", err);
+      res.status(500).json({ error: err.message || "Failed to generate image" });
     }
   });
 }

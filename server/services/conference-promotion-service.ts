@@ -53,6 +53,7 @@ import {
   objectStorageClient,
   ObjectStorageService,
 } from "../replit_integrations/object_storage/objectStorage";
+import { archiveArtifactToSpe } from "./artifact-storage-helper";
 
 const objectStorageService = new ObjectStorageService();
 
@@ -637,6 +638,19 @@ export async function generateBrandedPostGraphic(opts: {
     eventDates: null,
   });
 
+  // WS6: keep the public object URL (needed for display/SocialPilot) but also
+  // archive a vetted copy to SharePoint when the tenant has it enabled.
+  // Fire-and-forget so generation latency is unaffected.
+  void archiveArtifactToSpe({
+    tenantDomain,
+    buffer,
+    filename: `post-graphic-${Date.now()}.png`,
+    mimeType: "image/png",
+    kind: "image",
+    marketId: marketId ?? undefined,
+    createdByUserId: "system",
+  });
+
   return saveConferenceImageBuffer(buffer, "image/png", "png");
 }
 
@@ -772,6 +786,8 @@ export async function renderConferenceImage(
     const prompt = (image.imagePrompt && image.imagePrompt.trim()) || defaultImagePrompt(conf, session);
     const buffer = await generateImageBuffer(prompt, "1024x1024");
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
+    // WS6: archive a vetted SPE copy when enabled (fire-and-forget, gated).
+    void archiveArtifactToSpe({ tenantDomain: conf.tenantDomain, buffer, filename: `event-${image.role}-${image.id}.png`, mimeType: "image/png", kind: "image", marketId: conf.marketId ?? undefined, createdByUserId: conf.createdBy ?? "system" });
   } else if (image.source === "logo_composite") {
     // Hero anchor image: background photo + brand scrim + event logo + company logo + conf name
     let backgroundBytes: Buffer | null = null;
@@ -808,6 +824,8 @@ export async function renderConferenceImage(
       eventDates,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
+    // WS6: archive a vetted SPE copy when enabled (fire-and-forget, gated).
+    void archiveArtifactToSpe({ tenantDomain: conf.tenantDomain, buffer, filename: `event-${image.role}-${image.id}.png`, mimeType: "image/png", kind: "image", marketId: conf.marketId ?? undefined, createdByUserId: conf.createdBy ?? "system" });
   } else {
     // template_composite — session graphic
     let templateBytes: Buffer | null = null;
@@ -834,6 +852,8 @@ export async function renderConferenceImage(
       eventDates,
     });
     saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
+    // WS6: archive a vetted SPE copy when enabled (fire-and-forget, gated).
+    void archiveArtifactToSpe({ tenantDomain: conf.tenantDomain, buffer, filename: `event-${image.role}-${image.id}.png`, mimeType: "image/png", kind: "image", marketId: conf.marketId ?? undefined, createdByUserId: conf.createdBy ?? "system" });
   }
 
   await db
@@ -1462,6 +1482,8 @@ async function runGeneration(
         id: randomUUID(),
         tenantDomain,
         conferenceId,
+        // Stamp the parent campaign so event posts roll up into its master view.
+        campaignId: conf.campaignId ?? null,
         ...(moment.kind === "session" ? { conferenceSessionId: moment.session.id } : {}),
         postRole: moment.kind === "anchor" ? "anchor" : "session",
         conferenceImageId: img?.id ?? null,

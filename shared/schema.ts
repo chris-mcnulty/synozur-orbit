@@ -1169,6 +1169,10 @@ export const GROUNDING_DOC_CONTEXTS = [
   "email_generation",
   "product_features",
   "product_roadmap",
+  // Authoritative strategy docs the team uploads. When present, these take
+  // precedence over the machine-generated equivalents in strategic context.
+  "messaging_framework",
+  "gtm_plan",
 ] as const;
 
 export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
@@ -1180,12 +1184,14 @@ export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
   email_generation: "Email Generation",
   product_features: "Product Features",
   product_roadmap: "Product Roadmap",
+  messaging_framework: "Messaging & Positioning Framework (authoritative)",
+  gtm_plan: "Go-To-Market Plan (authoritative)",
 };
 
 export const GROUNDING_DOC_CONTEXT_PRESETS: Record<string, string[]> = {
   all: [...GROUNDING_DOC_CONTEXTS],
   intelligence: ["competitive_analysis", "recommendations", "executive_summary", "intelligence_briefing"],
-  marketing: ["marketing_content", "email_generation"],
+  marketing: ["marketing_content", "email_generation", "messaging_framework", "gtm_plan"],
   product: ["product_features", "product_roadmap"],
 };
 
@@ -1956,6 +1962,10 @@ export const editorialCalendars = pgTable("editorial_calendars", {
   funnelTargets: jsonb("funnel_targets").$type<{ awareness: number; consideration: number; decision: number }>(),
   // The focus/custom guidance the user supplied at generation time.
   focus: text("focus"),
+  // Optional owning campaign: when a calendar is generated from a campaign, it
+  // is the campaign's content plan. Forward-ref because campaigns is declared
+  // later. NULL for standalone editorial calendars.
+  campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("active"), // active, archived
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2376,6 +2386,16 @@ export const contentAssets = pgTable("content_assets", {
   categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
   assetType: text("asset_type").notNull().default("other"),
   productIds: text("product_ids").array(),
+  // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
+  // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
+  // continues to live in content_optimizations, keyed by contentAssetId).
+  seoTitle: text("seo_title"),
+  metaDescription: text("meta_description"),
+  seoSlug: text("seo_slug"),
+  seoKeywords: text("seo_keywords").array(),
+  seoOptimizedAt: timestamp("seo_optimized_at"),
+  // WS3: when this asset was produced by repurposing another asset, the source.
+  repurposedFromAssetId: varchar("repurposed_from_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   status: text("status").notNull().default("active"),
   capturedViaExtension: boolean("captured_via_extension").notNull().default(false),
@@ -2764,7 +2784,15 @@ export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
   "marketing_guidelines",
 ] as const;
 
-// Campaigns — group assets + social accounts for coordinated content creation
+// Campaign types — the intent that anchors a campaign. Drives brief generation
+// grounding and the recommended asset mix. Kept here so frontend and backend
+// stay in sync. "event" campaigns subsume the conference-promotion flow.
+export const CAMPAIGN_TYPES = ["theme", "event", "offering"] as const;
+export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
+
+// Campaigns — the orchestrating umbrella for a coordinated push: intent
+// (theme/event/offering) + audience + timeline, under which content briefs,
+// assets, emails, and social posts are produced and rolled up.
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
@@ -2772,6 +2800,14 @@ export const campaigns = pgTable("campaigns", {
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"), // draft, active, completed, archived, deleted
+  // Intent: what kind of push this is. Anchors brief generation + asset mix.
+  campaignType: text("campaign_type").notNull().default("theme"), // CampaignType
+  // The strategic objective in the user's words (what we're promoting + why).
+  objective: text("objective"),
+  // The measurable goal (e.g. "200 webinar registrations").
+  goal: text("goal"),
+  // ICP personas this campaign targets (FK ids into personas; array, no cascade).
+  audiencePersonaIds: text("audience_persona_ids").array(),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   numberOfDays: integer("number_of_days"),
@@ -3027,6 +3063,10 @@ export const conferences = pgTable("conferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  // Optional parent campaign: an "event" campaign can own a conference, so its
+  // promotion posts roll up into the campaign's master view. Forward-ref FK
+  // because campaigns is declared later. NULL for standalone conferences.
+  campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   location: text("location"),

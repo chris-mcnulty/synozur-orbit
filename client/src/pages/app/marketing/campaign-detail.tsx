@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { rollupPosts, batchSourceOf } from "@shared/social-rollup";
 import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -72,6 +73,10 @@ interface Campaign {
   name: string;
   description?: string;
   status: string;
+  campaignType?: string;
+  objective?: string;
+  goal?: string;
+  audiencePersonaIds?: string[];
   startDate?: string;
   endDate?: string;
   numberOfDays?: number;
@@ -82,6 +87,42 @@ interface Campaign {
   assets: CampaignAsset[];
   socialAccounts: CampaignSocialAccount[];
 }
+
+interface ContentBrief {
+  id: string;
+  title: string;
+  format: string;
+  funnelStage: string;
+  status: string;
+  demandSignal?: string | null;
+  differentiationAngle?: string | null;
+  targetReader?: string | null;
+  cta?: string | null;
+  estimatedHours?: number | null;
+}
+
+interface ContentPlanResponse {
+  calendar: { id: string; name: string } | null;
+  briefs: ContentBrief[];
+}
+
+const BRIEF_FORMAT_LABELS: Record<string, string> = {
+  blog_post: "Blog post",
+  landing_page: "Landing page",
+  linkedin_post: "LinkedIn post",
+  x_post: "X / Twitter post",
+  newsletter: "Newsletter",
+  video_script: "Video script",
+  case_study: "Case study",
+  whitepaper: "Whitepaper",
+  other: "Other",
+};
+
+const FUNNEL_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
+  awareness: "secondary",
+  consideration: "default",
+  decision: "outline",
+};
 
 interface MarketProduct {
   id: string;
@@ -124,6 +165,8 @@ interface GeneratedPost {
   hashtags: string[];
   status: string;
   variantGroup?: string;
+  generationJobId?: string | null;
+  conferenceId?: string | null;
   overrideImageUrl?: string;
   overrideBrandAssetId?: string;
   sourceUrl?: string;
@@ -156,6 +199,9 @@ export default function CampaignDetailPage() {
   const [addingAssets, setAddingAssets] = useState(false);
   const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
   const [postFilter, setPostFilter] = useState<string>("active");
+  // WS4: when drilling into one collapsed social batch (its generation run,
+  // repurpose group, or event); null shows the batch overview.
+  const [batchFilter, setBatchFilter] = useState<string | null>(null);
   const [editCampaignOpen, setEditCampaignOpen] = useState(false);
   const [editCampaignName, setEditCampaignName] = useState("");
   const [editCampaignDescription, setEditCampaignDescription] = useState("");
@@ -245,6 +291,91 @@ export default function CampaignDetailPage() {
       const r = await fetch(`/api/campaigns/${id}/generated-posts`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+  });
+
+  // WS4: collapse dense social batches so the campaign view isn't a wall of
+  // identical posts. Operates on non-discarded posts.
+  const postBatches = useMemo(() => {
+    const active = posts.filter((p) => p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived");
+    return rollupPosts(active, { threshold: 3 });
+  }, [posts]);
+  // Precomputed set of collapsed-batch keys so the grid filter is O(1) per post
+  // instead of O(#posts × #batches) on every render.
+  const batchKeySet = useMemo(
+    () => new Set(postBatches.batches.map((b) => b.key)),
+    [postBatches.batches],
+  );
+  const unscheduledDraftCount = useMemo(
+    () => posts.filter((p) => p.status === "draft" && !p.scheduledDate).length,
+    [posts],
+  );
+  const archivedCount = useMemo(() => posts.filter((p) => p.status === "archived").length, [posts]);
+  const activeBatch = batchFilter ? postBatches.batches.find((b) => b.key === batchFilter) ?? null : null;
+
+  const { data: contentPlan } = useQuery<ContentPlanResponse>({
+    queryKey: [`/api/campaigns/${id}/content-plan`],
+    queryFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/content-plan`, { credentials: "include" });
+      return r.ok ? r.json() : { calendar: null, briefs: [] };
+    },
+  });
+  const briefs = contentPlan?.briefs ?? [];
+
+  const { data: linkedEvents = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string; postCount: number }[]>({
+    queryKey: [`/api/campaigns/${id}/events`],
+    queryFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+
+  const generateBriefsMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/generate-briefs`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        let msg = "Failed to generate content briefs";
+        try { msg = JSON.parse(text).error || msg; } catch { msg = text || msg; }
+        throw new Error(msg);
+      }
+      return r.json();
+    },
+    onSuccess: (data: { briefs?: ContentBrief[] }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/content-plan`] });
+      toast({ title: "Content plan generated", description: `${data.briefs?.length ?? 0} briefs added to this campaign.` });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const archiveUnscheduledMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/archive-unscheduled`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to archive");
+      return r.json();
+    },
+    onSuccess: (d: { archived: number }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `Archived ${d.archived} unscheduled post(s)`, description: "They're hidden from planning and won't export. Purge to delete permanently." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const purgeArchivedMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/purge-archived`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to purge");
+      return r.json();
+    },
+    onSuccess: (d: { purged: number }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `Purged ${d.purged} post(s)` });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const { data: jobStatus } = useQuery<{ status: string }>({
@@ -896,8 +1027,32 @@ export default function CampaignDetailPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-campaign-name">{campaign.name}</h1>
-            {campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold" data-testid="text-campaign-name">{campaign.name}</h1>
+              {campaign.campaignType && (
+                <Badge variant="secondary" className="capitalize" data-testid="badge-campaign-type">{campaign.campaignType}</Badge>
+              )}
+            </div>
+            {campaign.objective && <p className="text-muted-foreground text-sm mt-1" data-testid="text-campaign-objective">{campaign.objective}</p>}
+            {!campaign.objective && campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
+            {(campaign.goal || (campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0)) && (
+              <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
+                {campaign.goal && (
+                  <span className="inline-flex items-center gap-1" data-testid="text-campaign-goal">
+                    <Target className="w-3 h-3" />{campaign.goal}
+                  </span>
+                )}
+                {campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <AtSign className="w-3 h-3" />
+                    {campaign.audiencePersonaIds
+                      .map(pid => availablePersonas.find(p => p.id === pid)?.name)
+                      .filter(Boolean)
+                      .join(", ") || `${campaign.audiencePersonaIds.length} persona(s)`}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-1 mt-2" data-testid="campaign-detail-products">
               {campaign.productIds && campaign.productIds.length > 0 && campaign.productIds.map(pid => {
                 const product = marketProducts.find(p => p.id === pid);
@@ -1001,13 +1156,107 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="posts">
+        <Tabs defaultValue="plan">
           <TabsList>
+            <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
             <TabsTrigger value="links" className="gap-1.5" data-testid="tab-links"><Link2 className="w-3.5 h-3.5" />Links</TabsTrigger>
           </TabsList>
+
+          {/* Content Plan — briefs that support this campaign */}
+          <TabsContent value="plan" className="space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold">Content plan</h3>
+                <p className="text-sm text-muted-foreground max-w-xl">
+                  Demand-scored briefs that support this campaign's objective, grounded in your messaging framework, competitive gaps, and the selected audience.
+                </p>
+              </div>
+              <Button
+                onClick={() => generateBriefsMutation.mutate()}
+                disabled={generateBriefsMutation.isPending}
+                className="gap-2"
+                data-testid="button-generate-briefs"
+              >
+                {generateBriefsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {briefs.length ? "Generate more briefs" : "Generate content briefs"}
+              </Button>
+            </div>
+
+            {briefs.length === 0 ? (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  No briefs yet. Generate a content plan to turn this campaign's intent into the right set of assets to produce.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {briefs.map((b) => (
+                  <Card key={b.id} data-testid={`brief-${b.id}`}>
+                    <CardContent className="py-3">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{b.title}</span>
+                            <Badge variant="outline" className="text-xs">{BRIEF_FORMAT_LABELS[b.format] ?? b.format}</Badge>
+                            <Badge variant={FUNNEL_BADGE_VARIANT[b.funnelStage] ?? "secondary"} className="text-xs capitalize">{b.funnelStage}</Badge>
+                            <Badge variant="secondary" className="text-xs capitalize">{b.status}</Badge>
+                          </div>
+                          {b.differentiationAngle && (
+                            <p className="text-xs text-muted-foreground mt-1">{b.differentiationAngle}</p>
+                          )}
+                          {(b.targetReader || b.demandSignal) && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {b.targetReader ? <span><span className="font-medium">For:</span> {b.targetReader}. </span> : null}
+                              {b.demandSignal ? <span><span className="font-medium">Signal:</span> {b.demandSignal}</span> : null}
+                            </p>
+                          )}
+                        </div>
+                        {contentPlan?.calendar && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
+                            data-testid={`button-open-brief-${b.id}`}
+                          >
+                            Open in calendar <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {linkedEvents.length > 0 && (
+              <div className="space-y-2 pt-2" data-testid="campaign-events">
+                <h3 className="text-sm font-semibold flex items-center gap-1.5"><Calendar className="w-4 h-4" />Events</h3>
+                {linkedEvents.map((ev) => (
+                  <Card key={ev.id} data-testid={`event-${ev.id}`}>
+                    <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{ev.name}</span>
+                          <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
+                          <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
+                        </div>
+                        {ev.startDate && (
+                          <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
+                        )}
+                      </div>
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate(`/app/marketing/conferences/${ev.id}`)} data-testid={`button-open-event-${ev.id}`}>
+                        Open event <ExternalLink className="w-3 h-3" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
             <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />
@@ -1126,8 +1375,37 @@ export default function CampaignDetailPage() {
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
+                    {archivedCount > 0 && <SelectItem value="archived">Archived ({archivedCount})</SelectItem>}
                   </SelectContent>
                 </Select>
+                {unscheduledDraftCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={archiveUnscheduledMutation.isPending}
+                    onClick={() => archiveUnscheduledMutation.mutate()}
+                    title="Move unscheduled draft posts to the archive so they stop cluttering planning"
+                    data-testid="button-archive-unscheduled"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    Archive {unscheduledDraftCount} unscheduled
+                  </Button>
+                )}
+                {archivedCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-destructive"
+                    disabled={purgeArchivedMutation.isPending}
+                    onClick={() => { if (confirm(`Permanently delete ${archivedCount} archived post(s)? This cannot be undone.`)) purgeArchivedMutation.mutate(); }}
+                    title="Permanently delete archived/rejected posts"
+                    data-testid="button-purge-archived"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Purge archived
+                  </Button>
+                )}
                 {posts.some(p => p.status !== "approved" && p.status !== "deleted") && (
                   <Button
                     variant="outline"
@@ -1194,10 +1472,68 @@ export default function CampaignDetailPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 grid-cols-1">
+              <div className="space-y-4">
+                {/* WS4: collapse dense batches so we don't show a wall of identical posts */}
+                {!batchFilter && postBatches.batches.length > 0 && (
+                  <div className="space-y-2" data-testid="batch-overview">
+                    <p className="text-xs text-muted-foreground">
+                      {postBatches.batches.length} social {postBatches.batches.length === 1 ? "batch" : "batches"} —
+                      open one to review and act on its posts.
+                    </p>
+                    {postBatches.batches.map((b) => (
+                      <Card key={b.key} data-testid={`batch-${b.key}`}>
+                        <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Share2 className="w-4 h-4 text-muted-foreground" />
+                              <span className="font-medium text-sm">{b.count} social posts</span>
+                              {b.posts[0]?.conferenceId && <Badge variant="outline" className="text-[10px]">Event</Badge>}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {Object.entries(b.platforms).sort((a, c) => c[1] - a[1]).map(([pl, n]) => (
+                                <Badge key={pl} variant="secondary" className="text-[10px] capitalize">{pl} {n}</Badge>
+                              ))}
+                              {Object.entries(b.statusCounts).map(([st, n]) => (
+                                <span key={st} className="text-[10px] text-muted-foreground capitalize">· {n} {st}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setBatchFilter(b.key)}
+                            data-testid={`button-open-batch-${b.key}`}
+                          >
+                            Review {b.count} posts
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {batchFilter && (
+                  <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-900 dark:bg-blue-950" data-testid="banner-batch-drill">
+                    <Share2 className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+                    <span className="text-blue-800 dark:text-blue-200">
+                      Reviewing one batch — {activeBatch?.count ?? 0} posts
+                    </span>
+                    <Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => setBatchFilter(null)} data-testid="button-exit-batch">
+                      <X className="w-3 h-3 mr-1" /> Back to batches
+                    </Button>
+                  </div>
+                )}
+
+                <div className="grid gap-4 grid-cols-1">
                 {posts.filter(p => {
+                  // Hide posts that belong to a collapsed batch unless we're
+                  // drilling into that batch; loose posts always show.
+                  const src = batchSourceOf(p);
+                  const isBatched = src != null && batchKeySet.has(src);
+                  if (batchFilter) { if (src !== batchFilter) return false; }
+                  else if (isBatched) return false;
                   if (postFilter === "all") return p.status !== "deleted";
-                  if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected";
+                  if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                   return p.status === postFilter;
                 }).map(post => {
                   const postImage = getPostImage(post);
@@ -1406,6 +1742,7 @@ export default function CampaignDetailPage() {
                     </Card>
                   );
                 })}
+                </div>
               </div>
             )}
           </TabsContent>

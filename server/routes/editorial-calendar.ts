@@ -1,13 +1,19 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas } from "@shared/schema";
+import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas } from "@shared/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { generateContentBriefs } from "../services/editorial-calendar-service";
 import { draftFromBrief } from "../services/copywriter-service";
-import { DEFAULT_FUNNEL_TARGETS, briefFormatToAssetType } from "../services/editorial-calendar-core";
+import {
+  DEFAULT_FUNNEL_TARGETS,
+  briefFormatToAssetType,
+  recommendedBriefCount,
+  type CampaignBriefContext,
+} from "../services/editorial-calendar-core";
+import type { CampaignType } from "@shared/schema";
 
 const FORMAT_LABELS: Record<string, string> = {
   blog_post: "Blog post",
@@ -113,6 +119,199 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[editorial-calendars generate]", err);
       res.status(500).json({ error: err.message || "Failed to generate editorial calendar" });
+    }
+  });
+
+  // Generate a campaign's content plan: a campaign-scoped editorial calendar of
+  // briefs grounded in the campaign's intent (type/objective/audience) and its
+  // recommended asset mix. Each brief is stamped with campaignId so it rolls up
+  // into the campaign's master view. Re-running appends to the campaign's plan.
+  app.post("/api/campaigns/:id/generate-briefs", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(
+          and(
+            eq(campaigns.id, req.params.id),
+            eq(campaigns.tenantDomain, ctx.tenantDomain),
+            eq(campaigns.marketId, ctx.marketId),
+          ),
+        );
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      // Resolve the campaign's audience personas into short summaries.
+      let audience: string[] = [];
+      if (Array.isArray(campaign.audiencePersonaIds) && campaign.audiencePersonaIds.length) {
+        const personaRows = await db
+          .select({ name: personas.name, role: personas.role, industry: personas.industry })
+          .from(personas)
+          .where(
+            and(
+              inArray(personas.id, campaign.audiencePersonaIds),
+              eq(personas.tenantDomain, ctx.tenantDomain),
+              // Personas are tenant/market-scoped; guard against legacy/manual
+              // cross-market ids leaking another market's personas into the prompt.
+              eq(personas.marketId, ctx.marketId),
+            ),
+          );
+        audience = personaRows.map((p) =>
+          [p.name, p.role, p.industry].filter(Boolean).join(" — "),
+        );
+      }
+
+      // Duration: explicit numberOfDays, else span between start/end dates.
+      let durationDays: number | null = campaign.numberOfDays ?? null;
+      if (durationDays == null && campaign.startDate && campaign.endDate) {
+        const ms = new Date(campaign.endDate).getTime() - new Date(campaign.startDate).getTime();
+        if (ms > 0) durationDays = Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
+      }
+
+      const campaignType = (campaign.campaignType as CampaignType) ?? "theme";
+      const campaignCtx: CampaignBriefContext = {
+        type: campaignType,
+        name: campaign.name,
+        objective: campaign.objective ?? null,
+        goal: campaign.goal ?? null,
+        audience,
+        durationDays,
+        channels: [],
+      };
+
+      const bodyCount = req.body?.count != null ? Number(req.body.count) : undefined;
+      const count = bodyCount && bodyCount > 0 ? bodyCount : recommendedBriefCount(campaignType);
+
+      const { briefs, warnings, funnel } = await generateContentBriefs({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        isDefaultMarket: ctx.isDefaultMarket,
+        count,
+        focus: typeof req.body?.focus === "string" ? req.body.focus : undefined,
+        campaign: campaignCtx,
+      });
+
+      if (briefs.length === 0) {
+        return res
+          .status(502)
+          .json({ error: "The AI did not return any usable briefs. Please try again." });
+      }
+
+      const created = await db.transaction(async (tx) => {
+        // Find-or-create this campaign's content-plan calendar.
+        let [calendar] = await tx
+          .select()
+          .from(editorialCalendars)
+          .where(
+            and(
+              eq(editorialCalendars.campaignId, campaign.id),
+              eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            ),
+          )
+          .limit(1);
+
+        if (!calendar) {
+          [calendar] = await tx
+            .insert(editorialCalendars)
+            .values({
+              id: randomUUID(),
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              name: `${campaign.name} — Content Plan`,
+              description: campaign.objective || null,
+              campaignId: campaign.id,
+              periodStart: campaign.startDate ?? null,
+              periodEnd: campaign.endDate ?? null,
+              funnelTargets: DEFAULT_FUNNEL_TARGETS,
+              focus: campaign.objective || null,
+              status: "active",
+              createdBy: ctx.userId,
+            })
+            .returning();
+        }
+
+        // Continue sortOrder after any existing briefs in this calendar.
+        const existing = await tx
+          .select({ sortOrder: contentBriefs.sortOrder })
+          .from(contentBriefs)
+          .where(eq(contentBriefs.calendarId, calendar.id))
+          .orderBy(desc(contentBriefs.sortOrder))
+          .limit(1);
+        const baseSort = existing.length ? existing[0].sortOrder + 1 : 0;
+
+        const briefRows = await tx
+          .insert(contentBriefs)
+          .values(
+            briefs.map((b, i) => ({
+              id: randomUUID(),
+              calendarId: calendar.id,
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              title: b.title,
+              format: b.format,
+              targetKeyword: b.targetKeyword,
+              demandSignal: b.demandSignal,
+              funnelStage: b.funnelStage,
+              differentiationAngle: b.differentiationAngle,
+              targetReader: b.targetReader,
+              cta: b.cta,
+              channels: b.channels.length ? b.channels : null,
+              estimatedHours: b.estimatedHours,
+              status: "suggested",
+              aiGenerated: true,
+              campaignId: campaign.id,
+              sortOrder: baseSort + i,
+            })),
+          )
+          .returning();
+
+        return { calendar, briefs: briefRows };
+      });
+
+      res.status(201).json({ ...created, warnings, funnel });
+    } catch (err: any) {
+      console.error("[campaigns generate-briefs]", err);
+      res.status(500).json({ error: err.message || "Failed to generate campaign briefs" });
+    }
+  });
+
+  // Fetch a campaign's content-plan calendar + its briefs (empty until briefs
+  // are generated). Powers the campaign master view's content section.
+  app.get("/api/campaigns/:id/content-plan", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [calendar] = await db
+        .select()
+        .from(editorialCalendars)
+        .where(
+          and(
+            eq(editorialCalendars.campaignId, req.params.id),
+            eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+          ),
+        )
+        .limit(1);
+
+      if (!calendar) return res.json({ calendar: null, briefs: [] });
+
+      const briefs = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.calendarId, calendar.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+          ),
+        )
+        .orderBy(asc(contentBriefs.sortOrder));
+
+      res.json({ calendar, briefs });
+    } catch (err: any) {
+      console.error("[campaigns content-plan]", err);
+      res.status(500).json({ error: err.message || "Failed to load content plan" });
     }
   });
 

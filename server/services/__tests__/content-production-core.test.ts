@@ -104,9 +104,9 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(clampForPlatform(long, "linkedin"), long);
   });
 
-  await test("parseVariants normalizes hashtags, platforms, and clamps", () => {
+  await test("parseVariants normalizes hashtags, platforms, clamps, and reads imagePrompt", () => {
     const arr = JSON.stringify([
-      { platform: "x", content: "Hello world", hashtags: ["#Growth", "demand gen"], angle: "stat" },
+      { platform: "x", content: "Hello world", hashtags: ["#Growth", "demand gen"], angle: "stat", imagePrompt: "A bold chart on dark bg" },
       { platform: "linkedin", content: "  ", hashtags: [], angle: "" }, // empty content -> dropped
       { platform: "LinkedIn", content: "A longer post body.", hashtags: "#a #b" },
     ]);
@@ -115,8 +115,10 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(variants[0].platform, "twitter");
     assert.deepEqual(variants[0].hashtags, ["Growth", "demandgen"]);
     assert.equal(variants[0].angle, "stat");
+    assert.equal(variants[0].imagePrompt, "A bold chart on dark bg");
     assert.deepEqual(variants[1].hashtags, ["a", "b"]);
     assert.equal(variants[1].angle, null);
+    assert.equal(variants[1].imagePrompt, null); // absent -> null
   });
 
   if (failures > 0) {

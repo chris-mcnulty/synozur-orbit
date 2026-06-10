@@ -13,6 +13,7 @@ import {
   FUNNEL_STAGES,
   type ContentBriefFormat,
   type FunnelStage,
+  type CampaignType,
 } from "@shared/schema";
 
 export interface DraftBrief {
@@ -39,6 +40,102 @@ export const DEFAULT_FUNNEL_TARGETS: FunnelTargets = {
   consideration: 35,
   decision: 25,
 };
+
+// ── Campaign-grounded brief generation ─────────────────────────────────────
+
+/**
+ * Context describing the owning campaign, used to ground brief generation so
+ * the calendar serves a specific push (theme / event / offering) rather than a
+ * generic editorial cadence.
+ */
+export interface CampaignBriefContext {
+  type: CampaignType;
+  name: string;
+  objective: string | null;
+  goal: string | null;
+  /** One-line summaries of the target ICP personas. */
+  audience: string[];
+  /** Active campaign span in days, if known. */
+  durationDays: number | null;
+  /** Channels in play (e.g. linkedin, email, blog). */
+  channels: string[];
+}
+
+export interface AssetMixItem {
+  format: ContentBriefFormat;
+  count: number;
+}
+
+/**
+ * The recommended shape of a campaign's content by type. This is what makes a
+ * campaign produce "the right number of assets" instead of a flat list — e.g.
+ * a webinar (event) leads with a couple of emails + a blog + a social burst.
+ * Counts are starting recommendations; the user can tune the calendar after.
+ */
+export const RECOMMENDED_ASSET_MIX: Record<CampaignType, AssetMixItem[]> = {
+  theme: [
+    { format: "blog_post", count: 2 },
+    { format: "linkedin_post", count: 4 },
+    { format: "x_post", count: 3 },
+    { format: "newsletter", count: 1 },
+  ],
+  event: [
+    { format: "newsletter", count: 2 },
+    { format: "blog_post", count: 1 },
+    { format: "linkedin_post", count: 5 },
+    { format: "x_post", count: 4 },
+  ],
+  offering: [
+    { format: "landing_page", count: 1 },
+    { format: "blog_post", count: 2 },
+    { format: "case_study", count: 1 },
+    { format: "linkedin_post", count: 4 },
+    { format: "x_post", count: 2 },
+  ],
+};
+
+/** Total brief count implied by a campaign type's recommended mix. */
+export function recommendedBriefCount(type: CampaignType): number {
+  return RECOMMENDED_ASSET_MIX[type].reduce((sum, m) => sum + m.count, 0);
+}
+
+const CAMPAIGN_TYPE_INTENT: Record<CampaignType, string> = {
+  theme: "an ongoing thematic awareness push around a point of view",
+  event: "promotion for a specific event (e.g. a webinar or conference) with a registration/attendance goal and a hard date",
+  offering: "a launch or spotlight for a specific product/service/offering, oriented toward conversion",
+};
+
+/**
+ * Build the campaign-grounding block injected into the brief-generation prompt.
+ * Pure string assembly so it stays testable.
+ */
+export function formatCampaignContextForPrompt(ctx: CampaignBriefContext): string {
+  const lines: string[] = [
+    "## Campaign this calendar must serve",
+    `- Campaign: ${ctx.name}`,
+    `- Type: ${ctx.type} — ${CAMPAIGN_TYPE_INTENT[ctx.type]}`,
+  ];
+  if (ctx.objective) lines.push(`- Objective: ${ctx.objective}`);
+  if (ctx.goal) lines.push(`- Measurable goal: ${ctx.goal}`);
+  if (ctx.durationDays) lines.push(`- Runs over ~${ctx.durationDays} day(s); pace the briefs across that window.`);
+  if (ctx.channels.length) lines.push(`- Channels in play: ${ctx.channels.join(", ")}`);
+  if (ctx.audience.length) {
+    lines.push("- Target audience (ICP personas):");
+    for (const a of ctx.audience) lines.push(`  - ${a}`);
+  }
+
+  const mix = RECOMMENDED_ASSET_MIX[ctx.type]
+    .map((m) => `${m.count}× ${m.format}`)
+    .join(", ");
+  lines.push(
+    "",
+    "## Recommended asset mix for this campaign type",
+    `Aim for roughly this shape (tune to the objective): ${mix}.`,
+    "Every brief must directly support THIS campaign's objective — no generic filler.",
+  );
+
+  return lines.join("\n");
+}
 
 export function coerceFormat(value: unknown): ContentBriefFormat {
   const v = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");

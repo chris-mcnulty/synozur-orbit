@@ -20,8 +20,10 @@ import {
   normalizeBrief,
   assessCalendarWarnings,
   computeFunnelBreakdown,
+  formatCampaignContextForPrompt,
   DEFAULT_FUNNEL_TARGETS,
   type DraftBrief,
+  type CampaignBriefContext,
 } from "./editorial-calendar-core";
 
 const SYSTEM_PROMPT =
@@ -35,6 +37,8 @@ export interface GenerateBriefsParams {
   isDefaultMarket?: boolean;
   count?: number;
   focus?: string;
+  /** When generating for a campaign, grounds briefs in that campaign's intent. */
+  campaign?: CampaignBriefContext;
 }
 
 export interface GenerateBriefsResult {
@@ -99,6 +103,12 @@ export async function generateContentBriefs(
     ? `## Focus / custom guidance\n${focus.trim()}`
     : "";
 
+  // Campaign grounding: when a campaign owns this calendar, every brief must
+  // serve that campaign's intent + recommended asset mix.
+  const campaignBlock = params.campaign
+    ? formatCampaignContextForPrompt(params.campaign)
+    : "";
+
   // Closed loop: recent open marketing recommendations (e.g. from the
   // performance report) steer what the next calendar emphasizes.
   const recMarketCond = ctx.isDefaultMarket
@@ -124,7 +134,10 @@ export async function generateContentBriefs(
     : "";
 
   const prompt = [
-    `Produce an editorial calendar of ${count} content briefs as JSON.`,
+    params.campaign
+      ? `Produce a campaign content plan of ${count} content briefs as JSON. Every brief must support the campaign described below.`
+      : `Produce an editorial calendar of ${count} content briefs as JSON.`,
+    campaignBlock,
     strategicBlock,
     keywordBlock,
     insightsBlock,
@@ -163,7 +176,9 @@ Respond with a JSON object: { "briefs": [ ... ] }. Each brief object has:
 
   return {
     briefs,
-    warnings: assessCalendarWarnings(briefs),
+    // Floor scales with the requested count so a smaller campaign plan (~10
+    // briefs) doesn't trip the standalone-calendar "aim for 15" warning.
+    warnings: assessCalendarWarnings(briefs, { minBriefs: Math.max(5, Math.floor(count * 0.8)) }),
     funnel: computeFunnelBreakdown(briefs),
   };
 }

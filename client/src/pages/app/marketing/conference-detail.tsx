@@ -188,6 +188,7 @@ interface Conference {
   postsPerDay: number;
   anchorPostCount: number;
   variantsPerPost: number;
+  campaignId?: string | null;
   status: string;
   sessions: Session[];
   images: ConfImage[];
@@ -364,6 +365,19 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(() => buildEventForm(conf));
 
+  // Campaigns this event can roll up under (its promotion posts then appear in
+  // the campaign's master view).
+  const { data: campaignOptions = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/campaigns", "for-event-link"],
+    queryFn: async () => {
+      const r = await fetch("/api/campaigns?pageSize=100", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : data?.items ?? [];
+    },
+    enabled: open,
+  });
+
   // Re-seed the form whenever the dialog is opened so it reflects the latest data.
   useEffect(() => {
     if (open) setForm(buildEventForm(conf));
@@ -389,6 +403,7 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
         variantsPerPost: form.variantsPerPost,
         includeSaturday: form.includeSaturday,
         includeSunday: form.includeSunday,
+        campaignId: form.campaignId || null,
       };
       const r = await fetch(`/api/conferences/${conf.id}`, {
         method: "PATCH",
@@ -503,6 +518,24 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
             <Label>Theme / brief (guides AI copy & graphics)</Label>
             <Textarea rows={3} value={form.thematicBrief} onChange={(e) => setForm((f) => ({ ...f, thematicBrief: e.target.value }))} />
           </div>
+          <div className="grid gap-2">
+            <Label>Parent campaign (optional)</Label>
+            <Select
+              value={form.campaignId || "none"}
+              onValueChange={(v) => setForm((f) => ({ ...f, campaignId: v === "none" ? "" : v }))}
+            >
+              <SelectTrigger data-testid="select-event-campaign">
+                <SelectValue placeholder="Not linked to a campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not linked to a campaign</SelectItem>
+                {campaignOptions.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Link this event to a campaign so its posts roll up in the campaign view.</p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -534,6 +567,7 @@ function buildEventForm(conf: Conference) {
     variantsPerPost: conf.variantsPerPost ?? 3,
     includeSaturday: !!conf.includeSaturday,
     includeSunday: !!conf.includeSunday,
+    campaignId: conf.campaignId ?? "",
   };
 }
 

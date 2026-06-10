@@ -31,6 +31,8 @@ import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { getScheduledDayCounts } from "../services/schedule-load";
+import { rollupSocialItems, batchDayKey, type RollupSocialItem } from "../services/calendar-rollup-core";
+import { storeArtifact } from "../services/artifact-storage-helper";
 
 // A day with at least this many activities is considered "crowded".
 const BUSY_THRESHOLD = 3;
@@ -114,10 +116,12 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly } = req.query as Record<string, string>;
+      const { from, to, campaignId, solutionAreaId, conferenceId, includeUnscheduled, unscheduledOnly, rollupSocial, batchId, batchDay } = req.query as Record<string, string>;
       const fromDate = from ? new Date(from) : null;
       const toDate = to ? new Date(to) : null;
       const wantUnscheduled = includeUnscheduled === "true" || includeUnscheduled === "1";
+      // WS4: collapse dense social batches into one item per (batch, day).
+      const wantRollup = rollupSocial === "true" || rollupSocial === "1";
       // Backlog mode: return ONLY items that have no scheduled date, ignoring
       // the date window entirely. Powers the dedicated backlog panel.
       const onlyUnscheduled = unscheduledOnly === "true" || unscheduledOnly === "1";
@@ -137,10 +141,22 @@ export function registerMarketingCalendarRoutes(app: Express) {
       };
 
       // ── Social posts (scoped by tenant only — generated_posts has no market) ──
-      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted")];
+      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted"), ne(generatedPosts.status, "archived")];
       if (campaignId) socialConds.push(eq(generatedPosts.campaignId, campaignId));
       if (solutionAreaId) socialConds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
       if (conferenceId) socialConds.push(eq(generatedPosts.conferenceId, conferenceId));
+      // WS4 drill-down: restrict to the posts of a single batch (its generation
+      // run, repurpose group, event, or campaign).
+      if (batchId) {
+        socialConds.push(
+          or(
+            eq(generatedPosts.generationJobId, batchId),
+            eq(generatedPosts.variantGroup, batchId),
+            eq(generatedPosts.conferenceId, batchId),
+            eq(generatedPosts.campaignId, batchId),
+          )!,
+        );
+      }
       const socialRows = await db
         .select({
           id: generatedPosts.id,
@@ -153,6 +169,8 @@ export function registerMarketingCalendarRoutes(app: Express) {
           campaignId: generatedPosts.campaignId,
           solutionAreaId: generatedPosts.solutionAreaId,
           conferenceId: generatedPosts.conferenceId,
+          generationJobId: generatedPosts.generationJobId,
+          variantGroup: generatedPosts.variantGroup,
           overrideImageUrl: generatedPosts.overrideImageUrl,
           accountName: socialAccounts.accountName,
         })
@@ -205,10 +223,11 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       const items: any[] = [];
 
+      const socialItems: RollupSocialItem[] = [];
       for (const p of socialRows) {
         const date = p.scheduledDate ?? p.publishedAt ?? null;
         if (!includeByDate(date)) continue;
-        items.push({
+        socialItems.push({
           id: p.id,
           type: "social",
           title: p.accountName ? `${p.platform} · ${p.accountName}` : `${p.platform} post`,
@@ -220,8 +239,23 @@ export function registerMarketingCalendarRoutes(app: Express) {
           campaignId: p.campaignId,
           solutionAreaId: p.solutionAreaId,
           conferenceId: p.conferenceId,
+          generationJobId: p.generationJobId,
+          variantGroup: p.variantGroup,
           imageUrl: p.overrideImageUrl ?? null,
         });
+      }
+
+      // Roll up dense social batches unless we're drilling into one batch.
+      if (wantRollup && !batchId) {
+        const { batches, loose } = rollupSocialItems(socialItems, { threshold: BUSY_THRESHOLD });
+        items.push(...batches, ...loose);
+      } else if (batchId && batchDay) {
+        // Drill-down: the batchId (source) is matched in SQL above; restrict to
+        // the batch's exact day so we return the same members that were
+        // collapsed (uses the same day key as the rollup, so they agree).
+        items.push(...socialItems.filter((s) => batchDayKey(s.date) === batchDay));
+      } else {
+        items.push(...socialItems);
       }
 
       for (const e of emailRows) {
@@ -337,6 +371,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
             eq(generatedPosts.tenantDomain, ctx.tenantDomain),
             ne(generatedPosts.status, "rejected"),
             ne(generatedPosts.status, "deleted"),
+            ne(generatedPosts.status, "archived"),
           )),
         db
           .selectDistinct({ format: contentBriefs.format })
@@ -642,6 +677,21 @@ export function registerMarketingCalendarRoutes(app: Express) {
         .where(and(eq(contentBriefs.id, brief.id), eq(contentBriefs.tenantDomain, ctx.tenantDomain)));
       const safeName = title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_draft";
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      // WS6: retain the finished doc in SharePoint (silent fallback to object
+      // storage). Best-effort — never block the download.
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[marketing-calendar export-docx] store failed:", e?.message);
+      }
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(docBuffer);
@@ -665,6 +715,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         isNotNull(generatedPosts.scheduledDate),
         ne(generatedPosts.status, "rejected"),
         ne(generatedPosts.status, "deleted"),
+        ne(generatedPosts.status, "archived"),
       ];
       if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
       if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));
@@ -695,6 +746,21 @@ export function registerMarketingCalendarRoutes(app: Express) {
       if (toFlip.length) {
         await db.update(generatedPosts).set({ status: "exported", updatedAt: new Date() })
           .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, toFlip)));
+      }
+
+      // WS6: retain the export in SharePoint (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: Buffer.from(csv, "utf8"),
+          filename: `marketing-calendar-${csvFormat}-${new Date().toISOString().split("T")[0]}.csv`,
+          mimeType: "text/csv",
+          kind: "csv",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[marketing-calendar export-csv] store failed:", e?.message);
       }
 
       res.setHeader("Content-Type", "text/csv");
@@ -783,6 +849,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
           const r = await db.update(contentBriefs).set(setFor("content"))
             .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
           affected += r.length;
+        }
+      } else if (action === "archive") {
+        // Archive = keep the row but remove it from planning/calendar/export.
+        // Social posts only (the high-volume clutter source). Content/email use
+        // their own statuses; skip them here.
+        if (byType.social.length) {
+          const r = await db.update(generatedPosts).set({ status: "archived", updatedAt: new Date() })
+            .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, byType.social))).returning({ id: generatedPosts.id });
+          affected += r.length;
+        }
+        if (byType.content.length || byType.email.length) {
+          skipped.push("Archive applies to social posts; use Discard for content/email.");
         }
       } else if (action === "discard") {
         // Social → soft-delete via status; content → "removed" status; email has
