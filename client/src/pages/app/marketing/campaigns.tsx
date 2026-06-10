@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import { CampaignGridSkeleton } from "@/components/ui/skeletons";
-import { Link, useSearch } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -144,6 +144,7 @@ function calculateEndDate(startDate: string, numberOfDays: number, includeSat: b
 export default function CampaignsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("preselect");
@@ -404,11 +405,11 @@ export default function CampaignsPage() {
       }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: { id: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       setAddOpen(false);
       resetForm();
-      toast({ title: "Campaign created" });
+      setLocation(`/app/marketing/campaigns/${data.id}`);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });

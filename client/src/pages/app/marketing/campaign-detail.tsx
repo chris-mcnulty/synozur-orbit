@@ -1311,8 +1311,19 @@ export default function CampaignDetailPage() {
 
             {briefs.length === 0 ? (
               <Card>
-                <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                  No briefs yet. Generate a content plan to turn this campaign's intent into the right set of assets to produce.
+                <CardContent className="py-10 flex flex-col items-center gap-3 text-center">
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    No briefs yet. Click below to generate 10–15 demand-scored content briefs grounded in this campaign's objective, audience, and competitive gaps.
+                  </p>
+                  <Button
+                    onClick={() => generateBriefsMutation.mutate()}
+                    disabled={generateBriefsMutation.isPending}
+                    className="gap-2"
+                    data-testid="button-generate-briefs-empty"
+                  >
+                    {generateBriefsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {generateBriefsMutation.isPending ? "Generating briefs…" : "Generate content briefs"}
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
