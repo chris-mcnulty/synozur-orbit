@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="980" viewBox="0 0 1560 980" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="1560" height="980" fill="#f7f4fb"/>
+
+  <!-- ============ header bar ============ -->
+  <rect x="0" y="0" width="1560" height="64" fill="#ffffff"/>
+  <line x1="0" y1="64" x2="1560" y2="64" stroke="#e4ddf0"/>
+  <circle cx="36" cy="32" r="10" fill="#7e0ef5"/>
+  <text x="56" y="38" font-size="17" font-weight="700" fill="#221735">Orbit</text>
+  <rect x="140" y="16" width="104" height="32" rx="16" fill="#ffffff"/>
+  <text x="192" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Research</text>
+  <rect x="252" y="16" width="104" height="32" rx="16" fill="#7e0ef5"/>
+  <text x="304" y="37" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
+  <rect x="364" y="16" width="80" height="32" rx="16" fill="#ffffff"/>
+  <text x="404" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Sales</text>
+  <rect x="452" y="16" width="150" height="32" rx="16" fill="#ffffff"/>
+  <text x="527" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Admin &amp; Settings</text>
+  <rect x="1290" y="17" width="150" height="30" rx="8" fill="#f7f4fb" stroke="#e4ddf0"/>
+  <text x="1306" y="37" font-size="12" fill="#756a8a">⌘K  Search…</text>
+  <circle cx="1510" cy="32" r="15" fill="#e4ddf0"/>
+  <text x="1510" y="37" font-size="11" fill="#5b4a78" text-anchor="middle">CM</text>
+
+  <!-- ============ short area sidebar ============ -->
+  <rect x="0" y="64" width="232" height="916" fill="#f3eefb"/>
+  <text x="24" y="106" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1.5">MARKETING</text>
+  <rect x="12" y="122" width="208" height="38" rx="9" fill="#7e0ef5"/>
+  <text x="28" y="146" font-size="13" font-weight="600" fill="#ffffff">⌂  Hub</text>
+  <g font-size="13" fill="#3d3354">
+    <text x="28" y="194">▤  Strategy</text>
+    <text x="28" y="240">◎  Campaigns</text>
+    <text x="28" y="286">≣  Content Pipeline</text>
+    <text x="28" y="332">▦  Calendar</text>
+    <text x="28" y="378">▣  Libraries</text>
+    <text x="28" y="424">↗  Performance</text>
+  </g>
+  <text x="24" y="940" font-size="10" fill="#8a7fa3">7 items — was 21</text>
+
+  <!-- ============ main: title row ============ -->
+  <text x="268" y="124" font-size="26" font-weight="700" fill="#221735">Marketing</text>
+  <text x="268" y="150" font-size="14" fill="#756a8a">Tuesday, June 10 — here's where your content stands.</text>
+  <rect x="1004" y="100" width="150" height="36" rx="9" fill="#7e0ef5"/>
+  <text x="1079" y="123" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">+ New campaign</text>
+  <rect x="1166" y="100" width="116" height="36" rx="9" fill="#ffffff" stroke="#d8cfe9"/>
+  <text x="1224" y="123" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">+ New post</text>
+  <rect x="1294" y="100" width="116" height="36" rx="9" fill="#ffffff" stroke="#d8cfe9"/>
+  <text x="1352" y="123" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">+ New brief</text>
+  <rect x="1422" y="100" width="102" height="36" rx="9" fill="#ffffff" stroke="#d8cfe9"/>
+  <text x="1473" y="123" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">+ Email</text>
+
+  <!-- ============ KPI tiles ============ -->
+  <g>
+    <rect x="268" y="172" width="296" height="112" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <text x="292" y="206" font-size="12" font-weight="600" fill="#756a8a">IN PIPELINE</text>
+    <text x="292" y="248" font-size="34" font-weight="700" fill="#221735">32</text>
+    <text x="292" y="270" font-size="12" fill="#15803d">▲ 5 vs last week</text>
+
+    <rect x="588" y="172" width="296" height="112" rx="12" fill="#fffbeb" stroke="#fcd34d"/>
+    <text x="612" y="206" font-size="12" font-weight="600" fill="#92400e">AWAITING APPROVAL</text>
+    <text x="612" y="248" font-size="34" font-weight="700" fill="#92400e">12</text>
+    <text x="612" y="270" font-size="12" fill="#b45309">oldest waiting 4 days</text>
+
+    <rect x="908" y="172" width="296" height="112" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <text x="932" y="206" font-size="12" font-weight="600" fill="#756a8a">SCHEDULED · NEXT 7 DAYS</text>
+    <text x="932" y="248" font-size="34" font-weight="700" fill="#221735">9</text>
+    <text x="932" y="270" font-size="12" fill="#756a8a">3 LinkedIn · 4 X · 2 email</text>
+
+    <rect x="1228" y="172" width="296" height="112" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <text x="1252" y="206" font-size="12" font-weight="600" fill="#756a8a">PUBLISHED THIS MONTH</text>
+    <text x="1252" y="248" font-size="34" font-weight="700" fill="#221735">24</text>
+    <text x="1252" y="270" font-size="12" fill="#15803d">engagement ▲ 12%</text>
+  </g>
+
+  <!-- ============ needs your attention ============ -->
+  <rect x="268" y="312" width="740" height="316" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="292" y="348" font-size="16" font-weight="700" fill="#221735">Needs your attention</text>
+
+  <g font-size="13">
+    <line x1="292" y1="366" x2="984" y2="366" stroke="#eee8f6"/>
+    <circle cx="304" cy="396" r="5" fill="#f59e0b"/>
+    <text x="322" y="401" fill="#221735" font-weight="600">12 posts awaiting approval</text>
+    <text x="322" y="419" fill="#756a8a" font-size="11">Q3 Product Launch · Brand Awareness</text>
+    <rect x="858" y="382" width="126" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="921" y="402" fill="#5b0bb0" font-weight="600" text-anchor="middle">Review board →</text>
+
+    <line x1="292" y1="436" x2="984" y2="436" stroke="#eee8f6"/>
+    <circle cx="304" cy="466" r="5" fill="#f59e0b"/>
+    <text x="322" y="471" fill="#221735" font-weight="600">3 content briefs ready for review</text>
+    <text x="322" y="489" fill="#756a8a" font-size="11">2 blog posts · 1 whitepaper</text>
+    <rect x="858" y="452" width="126" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="921" y="472" fill="#5b0bb0" font-weight="600" text-anchor="middle">Open briefs →</text>
+
+    <line x1="292" y1="506" x2="984" y2="506" stroke="#eee8f6"/>
+    <circle cx="304" cy="536" r="5" fill="#14b8a6"/>
+    <text x="322" y="541" fill="#221735" font-weight="600">1 newsletter approved but not scheduled</text>
+    <text x="322" y="559" fill="#756a8a" font-size="11">"June product digest" — approved yesterday</text>
+    <rect x="858" y="522" width="126" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="921" y="542" fill="#5b0bb0" font-weight="600" text-anchor="middle">Schedule →</text>
+
+    <line x1="292" y1="576" x2="984" y2="576" stroke="#eee8f6"/>
+    <circle cx="304" cy="604" r="5" fill="#ef4444"/>
+    <text x="322" y="609" fill="#b91c1c" font-weight="600">2 posts failed to publish</text>
+    <rect x="858" y="590" width="126" height="30" rx="8" fill="#fee2e2"/>
+    <text x="921" y="610" fill="#b91c1c" font-weight="600" text-anchor="middle">Retry →</text>
+  </g>
+
+  <!-- ============ pipeline at a glance ============ -->
+  <rect x="1032" y="312" width="492" height="316" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="1056" y="348" font-size="16" font-weight="700" fill="#221735">Pipeline at a glance</text>
+  <text x="1408" y="348" font-size="12" fill="#5b0bb0" font-weight="600">Open board →</text>
+  <g font-size="12" fill="#3d3354">
+    <text x="1056" y="392">Draft</text>
+    <rect x="1160" y="380" width="64" height="16" rx="4" fill="#9ca3af"/>
+    <text x="1232" y="393" fill="#756a8a">8</text>
+
+    <text x="1056" y="426">In Review</text>
+    <rect x="1160" y="414" width="24" height="16" rx="4" fill="#f59e0b"/>
+    <text x="1192" y="427" fill="#756a8a">3</text>
+
+    <text x="1056" y="460">Approved</text>
+    <rect x="1160" y="448" width="32" height="16" rx="4" fill="#3b82f6"/>
+    <text x="1200" y="461" fill="#756a8a">4</text>
+
+    <text x="1056" y="494">Generated</text>
+    <rect x="1160" y="482" width="40" height="16" rx="4" fill="#8b5cf6"/>
+    <text x="1208" y="495" fill="#756a8a">5</text>
+
+    <text x="1056" y="528">Scheduled</text>
+    <rect x="1160" y="516" width="72" height="16" rx="4" fill="#14b8a6"/>
+    <text x="1240" y="529" fill="#756a8a">9</text>
+
+    <text x="1056" y="562">Published</text>
+    <rect x="1160" y="550" width="192" height="16" rx="4" fill="#22c55e"/>
+    <text x="1360" y="563" fill="#756a8a">24</text>
+  </g>
+  <text x="1056" y="604" font-size="11" fill="#756a8a" font-style="italic">Counts unify social posts, briefs and newsletters</text>
+
+  <!-- ============ upcoming 7 days ============ -->
+  <rect x="268" y="656" width="1256" height="280" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="292" y="692" font-size="16" font-weight="700" fill="#221735">Upcoming 7 days</text>
+  <text x="1396" y="692" font-size="12" fill="#5b0bb0" font-weight="600">Full calendar →</text>
+
+  <g font-size="12">
+    <!-- 7 day columns: width 168, start 292 -->
+    <g fill="#756a8a" font-weight="600">
+      <text x="368" y="724" text-anchor="middle">WED 10</text>
+      <text x="540" y="724" text-anchor="middle">THU 11</text>
+      <text x="712" y="724" text-anchor="middle">FRI 12</text>
+      <text x="884" y="724" text-anchor="middle">SAT 13</text>
+      <text x="1056" y="724" text-anchor="middle">SUN 14</text>
+      <text x="1228" y="724" text-anchor="middle">MON 15</text>
+      <text x="1400" y="724" text-anchor="middle">TUE 16</text>
+    </g>
+    <g stroke="#eee8f6"><line x1="292" y1="736" x2="1500" y2="736"/></g>
+
+    <!-- wed -->
+    <rect x="296" y="748" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="310" cy="765" r="4" fill="#14b8a6"/><text x="320" y="769" fill="#0c4a6e">LinkedIn · 9:00</text>
+    <rect x="296" y="790" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="310" cy="807" r="4" fill="#14b8a6"/><text x="320" y="811" fill="#0c4a6e">X · 12:30</text>
+    <!-- thu -->
+    <rect x="468" y="748" width="144" height="34" rx="7" fill="#fef3c7"/><circle cx="482" cy="765" r="4" fill="#f59e0b"/><text x="492" y="769" fill="#713f12">Email digest · 8:00</text>
+    <!-- fri -->
+    <rect x="640" y="748" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="654" cy="765" r="4" fill="#14b8a6"/><text x="664" y="769" fill="#0c4a6e">LinkedIn · 10:00</text>
+    <rect x="640" y="790" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="654" cy="807" r="4" fill="#14b8a6"/><text x="664" y="811" fill="#0c4a6e">Instagram · 17:00</text>
+    <!-- mon -->
+    <rect x="1156" y="748" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="1170" cy="765" r="4" fill="#14b8a6"/><text x="1180" y="769" fill="#0c4a6e">X · 9:30</text>
+    <rect x="1156" y="790" width="144" height="34" rx="7" fill="#f3e8ff"/><circle cx="1170" cy="807" r="4" fill="#8b5cf6"/><text x="1180" y="811" fill="#581c87">Blog publish</text>
+    <!-- tue -->
+    <rect x="1328" y="748" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="1342" cy="765" r="4" fill="#14b8a6"/><text x="1352" y="769" fill="#0c4a6e">LinkedIn · 9:00</text>
+    <rect x="1328" y="790" width="144" height="34" rx="7" fill="#e0f2fe"/><circle cx="1342" cy="807" r="4" fill="#14b8a6"/><text x="1352" y="811" fill="#0c4a6e">X · 14:00</text>
+
+    <text x="884" y="800" fill="#c4bbd6" text-anchor="middle" font-style="italic">quiet weekend</text>
+    <text x="1056" y="800" fill="#c4bbd6" text-anchor="middle" font-style="italic">—</text>
+  </g>
+  <text x="292" y="912" font-size="11" fill="#756a8a" font-style="italic">Each area (Research, Marketing, Sales, Admin) gets a hub like this: KPIs · attention queue · quick actions · what's next.</text>
+
+  <text x="268" y="966" font-size="12" fill="#756a8a">Mockup 2 of 4 — Marketing Hub Home · see docs/ux-restructuring-plan.md §2</text>
+</svg>

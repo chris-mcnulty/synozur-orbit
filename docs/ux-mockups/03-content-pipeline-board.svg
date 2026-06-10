@@ -1,0 +1,248 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="940" viewBox="0 0 1560 940" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="dragShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#5b0bb0" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1560" height="940" fill="#f7f4fb"/>
+
+  <!-- header bar -->
+  <rect x="0" y="0" width="1560" height="56" fill="#ffffff"/>
+  <line x1="0" y1="56" x2="1560" y2="56" stroke="#e4ddf0"/>
+  <circle cx="32" cy="28" r="9" fill="#7e0ef5"/>
+  <text x="50" y="33" font-size="15" font-weight="700" fill="#221735">Orbit</text>
+  <text x="140" y="33" font-size="13" font-weight="600" fill="#756a8a">Research</text>
+  <rect x="222" y="13" width="96" height="30" rx="15" fill="#7e0ef5"/>
+  <text x="270" y="33" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
+  <text x="338" y="33" font-size="13" font-weight="600" fill="#756a8a">Sales</text>
+  <text x="392" y="33" font-size="13" font-weight="600" fill="#756a8a">Admin &amp; Settings</text>
+  <circle cx="1516" cy="28" r="13" fill="#e4ddf0"/>
+  <text x="1516" y="32" font-size="10" fill="#5b4a78" text-anchor="middle">CM</text>
+
+  <!-- rail -->
+  <rect x="0" y="56" width="200" height="884" fill="#f3eefb"/>
+  <g font-size="13" fill="#3d3354">
+    <text x="22" y="100">⌂  Hub</text>
+    <text x="22" y="142">▤  Strategy</text>
+    <text x="22" y="184">◎  Campaigns</text>
+    <rect x="10" y="202" width="180" height="36" rx="9" fill="#7e0ef5"/>
+    <text x="22" y="226" fill="#ffffff" font-weight="600">≣  Content Pipeline</text>
+    <text x="22" y="270">▦  Calendar</text>
+    <text x="22" y="312">▣  Libraries</text>
+    <text x="22" y="354">↗  Performance</text>
+  </g>
+
+  <!-- title + filters -->
+  <text x="232" y="96" font-size="12" fill="#756a8a">Marketing  /  Content Pipeline</text>
+  <text x="232" y="128" font-size="24" font-weight="700" fill="#221735">Content Pipeline</text>
+
+  <g font-size="12">
+    <rect x="232" y="150" width="226" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
+    <text x="248" y="171" fill="#3d3354">Campaign:  <tspan font-weight="600">Q3 Product Launch</tspan>  ▾</text>
+    <rect x="470" y="150" width="170" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
+    <text x="486" y="171" fill="#3d3354">Type:  <tspan font-weight="600">Posts + Briefs + Email</tspan>  ▾</text>
+    <rect x="652" y="150" width="120" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
+    <text x="668" y="171" fill="#3d3354">Platform:  <tspan font-weight="600">All</tspan>  ▾</text>
+  </g>
+  <!-- view toggle -->
+  <rect x="1244" y="148" width="280" height="36" rx="9" fill="#ffffff" stroke="#d8cfe9"/>
+  <rect x="1248" y="152" width="88" height="28" rx="7" fill="#7e0ef5"/>
+  <text x="1292" y="171" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Board</text>
+  <text x="1384" y="171" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">List</text>
+  <text x="1474" y="171" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Calendar</text>
+
+  <!-- ================= columns ================= -->
+  <!-- DRAFT -->
+  <rect x="232" y="204" width="232" height="676" rx="12" fill="#efeaf7"/>
+  <circle cx="254" cy="234" r="5" fill="#9ca3af"/>
+  <text x="266" y="239" font-size="13" font-weight="700" fill="#3d3354">Draft</text>
+  <rect x="306" y="224" width="30" height="20" rx="10" fill="#ffffff"/><text x="321" y="238" font-size="11" fill="#756a8a" text-anchor="middle">8</text>
+  <g>
+    <rect x="244" y="256" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="244" y="256" width="4" height="104" rx="2" fill="#9ca3af"/>
+    <text x="260" y="278" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Q3 Launch</text>
+    <text x="260" y="298" font-size="11" fill="#3d3354">Announcing Orbit 3.0 — the</text>
+    <text x="260" y="313" font-size="11" fill="#3d3354">fastest way to track your…</text>
+    <text x="260" y="344" font-size="10" fill="#756a8a">no date</text>
+    <circle cx="430" cy="340" r="9" fill="#e4ddf0"/><text x="430" y="344" font-size="8" fill="#5b4a78" text-anchor="middle">CM</text>
+  </g>
+  <g>
+    <rect x="244" y="372" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="244" y="372" width="4" height="104" rx="2" fill="#9ca3af"/>
+    <text x="260" y="394" font-size="10" font-weight="600" fill="#831843">✦ X · Q3 Launch</text>
+    <rect x="260" y="404" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="260" y="418" width="128" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="260" y="460" font-size="10" fill="#756a8a">no date</text>
+  </g>
+  <g>
+    <rect x="244" y="488" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="244" y="488" width="4" height="104" rx="2" fill="#9ca3af"/>
+    <text x="260" y="510" font-size="10" font-weight="600" fill="#581c87">✎ Brief · blog post</text>
+    <rect x="260" y="520" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="260" y="534" width="148" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="260" y="576" font-size="10" fill="#756a8a">due Jun 20</text>
+  </g>
+  <g>
+    <rect x="244" y="604" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="244" y="604" width="4" height="104" rx="2" fill="#9ca3af"/>
+    <text x="260" y="626" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Evergreen</text>
+    <rect x="260" y="636" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="260" y="650" width="100" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="260" y="692" font-size="10" fill="#756a8a">no date</text>
+  </g>
+  <text x="348" y="744" font-size="11" fill="#756a8a" text-anchor="middle">+ 4 more</text>
+
+  <!-- IN REVIEW -->
+  <rect x="480" y="204" width="232" height="676" rx="12" fill="#efeaf7"/>
+  <circle cx="502" cy="234" r="5" fill="#f59e0b"/>
+  <text x="514" y="239" font-size="13" font-weight="700" fill="#3d3354">In Review</text>
+  <rect x="586" y="224" width="30" height="20" rx="10" fill="#ffffff"/><text x="601" y="238" font-size="11" fill="#756a8a" text-anchor="middle">3</text>
+  <g>
+    <rect x="492" y="256" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="492" y="256" width="4" height="104" rx="2" fill="#f59e0b"/>
+    <text x="508" y="278" font-size="10" font-weight="600" fill="#581c87">✎ Brief · whitepaper</text>
+    <text x="508" y="298" font-size="11" fill="#3d3354">The 2026 competitive intel</text>
+    <text x="508" y="313" font-size="11" fill="#3d3354">benchmark report</text>
+    <text x="508" y="344" font-size="10" fill="#b45309">waiting 4 days</text>
+    <circle cx="678" cy="340" r="9" fill="#e4ddf0"/><text x="678" y="344" font-size="8" fill="#5b4a78" text-anchor="middle">JT</text>
+  </g>
+  <g>
+    <rect x="492" y="372" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="492" y="372" width="4" height="104" rx="2" fill="#f59e0b"/>
+    <text x="508" y="394" font-size="10" font-weight="600" fill="#581c87">✎ Brief · blog post</text>
+    <rect x="508" y="404" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="508" y="418" width="120" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="508" y="460" font-size="10" fill="#756a8a">due Jun 18</text>
+  </g>
+  <g>
+    <rect x="492" y="488" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="492" y="488" width="4" height="104" rx="2" fill="#f59e0b"/>
+    <text x="508" y="510" font-size="10" font-weight="600" fill="#581c87">✎ Brief · case study</text>
+    <rect x="508" y="520" width="160" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="508" y="534" width="140" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="508" y="576" font-size="10" fill="#756a8a">due Jun 25</text>
+  </g>
+
+  <!-- APPROVED -->
+  <rect x="728" y="204" width="232" height="676" rx="12" fill="#efeaf7"/>
+  <circle cx="750" cy="234" r="5" fill="#3b82f6"/>
+  <text x="762" y="239" font-size="13" font-weight="700" fill="#3d3354">Approved</text>
+  <rect x="836" y="224" width="30" height="20" rx="10" fill="#ffffff"/><text x="851" y="238" font-size="11" fill="#756a8a" text-anchor="middle">4</text>
+  <g>
+    <rect x="740" y="256" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="740" y="256" width="4" height="104" rx="2" fill="#3b82f6"/>
+    <text x="756" y="278" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Q3 Launch</text>
+    <text x="756" y="298" font-size="11" fill="#3d3354">Customer story: how Acme cut</text>
+    <text x="756" y="313" font-size="11" fill="#3d3354">research time by 60%…</text>
+    <text x="756" y="344" font-size="10" fill="#756a8a">ready to schedule</text>
+  </g>
+  <!-- ghost slot where dragged card came from -->
+  <rect x="740" y="372" width="208" height="104" rx="10" fill="#e3dcf0" opacity="0.6"/>
+  <g>
+    <rect x="740" y="488" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="740" y="488" width="4" height="104" rx="2" fill="#3b82f6"/>
+    <text x="756" y="510" font-size="10" font-weight="600" fill="#713f12">✉ Email · June digest</text>
+    <rect x="756" y="520" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="756" y="534" width="110" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="756" y="576" font-size="10" fill="#756a8a">approved Jun 9</text>
+  </g>
+  <g>
+    <rect x="740" y="604" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="740" y="604" width="4" height="104" rx="2" fill="#3b82f6"/>
+    <text x="756" y="626" font-size="10" font-weight="600" fill="#831843">✦ X · Q3 Launch</text>
+    <rect x="756" y="636" width="156" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="756" y="650" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="756" y="692" font-size="10" fill="#756a8a">ready to schedule</text>
+  </g>
+
+  <!-- GENERATED -->
+  <rect x="976" y="204" width="232" height="676" rx="12" fill="#efeaf7"/>
+  <circle cx="998" cy="234" r="5" fill="#8b5cf6"/>
+  <text x="1010" y="239" font-size="13" font-weight="700" fill="#3d3354">Generated</text>
+  <rect x="1094" y="224" width="30" height="20" rx="10" fill="#ffffff"/><text x="1109" y="238" font-size="11" fill="#756a8a" text-anchor="middle">5</text>
+  <g>
+    <rect x="988" y="256" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="988" y="256" width="4" height="104" rx="2" fill="#8b5cf6"/>
+    <rect x="1004" y="268" width="52" height="40" rx="6" fill="#d9cfee"/>
+    <path d="M 1010 302 L 1022 286 L 1032 296 L 1042 282 L 1052 302 Z" fill="#9b87c9"/>
+    <text x="1066" y="282" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn</text>
+    <rect x="1066" y="290" width="116" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1066" y="302" width="90" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="1004" y="344" font-size="10" fill="#756a8a">image + copy generated ✓</text>
+  </g>
+  <g>
+    <rect x="988" y="372" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="988" y="372" width="4" height="104" rx="2" fill="#8b5cf6"/>
+    <rect x="1004" y="384" width="52" height="40" rx="6" fill="#d9cfee"/>
+    <path d="M 1010 418 L 1022 402 L 1032 412 L 1042 398 L 1052 418 Z" fill="#9b87c9"/>
+    <text x="1066" y="398" font-size="10" font-weight="600" fill="#831843">✦ X</text>
+    <rect x="1066" y="406" width="116" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1066" y="418" width="100" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="1004" y="460" font-size="10" fill="#756a8a">image + copy generated ✓</text>
+  </g>
+  <g>
+    <rect x="988" y="488" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="988" y="488" width="4" height="104" rx="2" fill="#8b5cf6"/>
+    <text x="1004" y="510" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Evergreen</text>
+    <rect x="1004" y="520" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1004" y="534" width="132" height="8" rx="4" fill="#e8e2f2"/>
+    <text x="1004" y="576" font-size="10" fill="#756a8a">copy generated ✓</text>
+  </g>
+  <text x="1092" y="640" font-size="11" fill="#756a8a" text-anchor="middle">+ 2 more</text>
+
+  <!-- SCHEDULED -->
+  <rect x="1224" y="204" width="232" height="676" rx="12" fill="#efeaf7"/>
+  <circle cx="1246" cy="234" r="5" fill="#14b8a6"/>
+  <text x="1258" y="239" font-size="13" font-weight="700" fill="#3d3354">Scheduled</text>
+  <rect x="1342" y="224" width="30" height="20" rx="10" fill="#ffffff"/><text x="1357" y="238" font-size="11" fill="#756a8a" text-anchor="middle">9</text>
+  <g>
+    <rect x="1236" y="256" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="1236" y="256" width="4" height="104" rx="2" fill="#14b8a6"/>
+    <text x="1252" y="278" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Q3 Launch</text>
+    <rect x="1252" y="288" width="172" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1252" y="302" width="130" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1252" y="328" width="92" height="20" rx="10" fill="#ccfbf1"/>
+    <text x="1298" y="342" font-size="10" font-weight="600" fill="#0f766e" text-anchor="middle">Wed 9:00</text>
+  </g>
+  <!-- drop target -->
+  <rect x="1236" y="372" width="208" height="104" rx="10" fill="#f0e7fd" stroke="#7e0ef5" stroke-width="2" stroke-dasharray="7 6"/>
+  <text x="1340" y="420" font-size="11" font-weight="600" fill="#5b0bb0" text-anchor="middle">Drop to schedule…</text>
+  <text x="1340" y="438" font-size="10" fill="#8a7fa3" text-anchor="middle">date picker opens on drop</text>
+  <g>
+    <rect x="1236" y="488" width="208" height="104" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="1236" y="488" width="4" height="104" rx="2" fill="#14b8a6"/>
+    <text x="1252" y="510" font-size="10" font-weight="600" fill="#713f12">✉ Email · June digest</text>
+    <rect x="1252" y="520" width="160" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1252" y="534" width="120" height="8" rx="4" fill="#e8e2f2"/>
+    <rect x="1252" y="560" width="92" height="20" rx="10" fill="#ccfbf1"/>
+    <text x="1298" y="574" font-size="10" font-weight="600" fill="#0f766e" text-anchor="middle">Thu 8:00</text>
+  </g>
+  <g>
+    <rect x="1236" y="604" width="208" height="104" rx="10" fill="#fff5f5" stroke="#fca5a5"/>
+    <rect x="1236" y="604" width="4" height="104" rx="2" fill="#ef4444"/>
+    <text x="1252" y="626" font-size="10" font-weight="600" fill="#b91c1c">⚠ Publish failed · X</text>
+    <rect x="1252" y="636" width="156" height="8" rx="4" fill="#fbd5d5"/>
+    <rect x="1252" y="676" width="64" height="22" rx="8" fill="#fee2e2"/>
+    <text x="1284" y="691" font-size="10" font-weight="600" fill="#b91c1c" text-anchor="middle">Retry</text>
+  </g>
+  <text x="1340" y="744" font-size="11" fill="#756a8a" text-anchor="middle">+ 5 more</text>
+
+  <!-- PUBLISHED collapsed -->
+  <rect x="1472" y="204" width="72" height="676" rx="12" fill="#e8f7ec"/>
+  <circle cx="1508" cy="234" r="5" fill="#22c55e"/>
+  <text x="1508" y="262" font-size="12" font-weight="700" fill="#15803d" text-anchor="middle">24</text>
+  <text x="1502" y="300" font-size="12" font-weight="700" fill="#15803d" transform="rotate(90 1502 300)">Published  ›  click to expand</text>
+
+  <!-- ===== dragged card (floating) ===== -->
+  <g transform="rotate(4 1130 470)" filter="url(#dragShadow)">
+    <rect x="1026" y="418" width="208" height="104" rx="10" fill="#ffffff" stroke="#7e0ef5" stroke-width="2"/>
+    <rect x="1026" y="418" width="4" height="104" rx="2" fill="#3b82f6"/>
+    <text x="1042" y="440" font-size="10" font-weight="600" fill="#0c4a6e">in LinkedIn · Q3 Launch</text>
+    <text x="1042" y="460" font-size="11" fill="#3d3354">Webinar June 24: live demo of</text>
+    <text x="1042" y="475" font-size="11" fill="#3d3354">the new positioning map…</text>
+    <text x="1042" y="506" font-size="10" font-weight="600" fill="#5b0bb0">Approved → Scheduled</text>
+  </g>
+  <path d="M 1170 540 C 1210 580, 1260 560, 1300 480" stroke="#7e0ef5" stroke-width="2.5" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
+
+  <text x="232" y="918" font-size="12" fill="#756a8a">Drag between columns to change status · click a card to open the full editor drawer · illegal moves (Published → Draft) snap back with a toast.   One board unifies posts (in ✦), briefs (✎) and email (✉).</text>
+</svg>

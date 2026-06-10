@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="980" viewBox="0 0 1560 980" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="1560" height="980" fill="#f7f4fb"/>
+  <text x="40" y="56" font-size="28" font-weight="700" fill="#221735">Orbit — proposed information architecture</text>
+  <text x="40" y="86" font-size="15" fill="#756a8a">From one 6-group, ~44-item accordion to four areas, each with a hub home and a short contextual menu</text>
+
+  <!-- ===================== BEFORE PANEL ===================== -->
+  <rect x="40" y="120" width="420" height="800" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="64" y="156" font-size="13" font-weight="700" fill="#b91c1c" letter-spacing="1">BEFORE</text>
+  <text x="64" y="178" font-size="13" fill="#756a8a">Today's sidebar: 6 groups · ~44 items · 3 levels deep</text>
+  <line x1="64" y1="194" x2="436" y2="194" stroke="#eee8f6"/>
+
+  <!-- column A -->
+  <g font-size="11" fill="#3d3354">
+    <text x="64" y="226" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">WORKSPACE</text>
+    <text x="76" y="249">Overview</text>
+    <text x="76" y="272">Company Profile</text>
+    <text x="76" y="295">Competitors</text>
+    <text x="76" y="318">Products</text>
+    <text x="76" y="341">Documents</text>
+    <text x="64" y="376" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">INTELLIGENCE</text>
+    <text x="76" y="399">Analysis</text>
+    <text x="76" y="422">Action Items</text>
+    <text x="76" y="445">Positioning Map</text>
+    <text x="76" y="468">Intelligence Feed</text>
+    <text x="76" y="491">Data Sources</text>
+    <text x="76" y="514">Activity</text>
+    <text x="76" y="537">Intelligence Health</text>
+    <text x="76" y="560">Visualizations</text>
+    <text x="64" y="595" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">DELIVERABLES</text>
+    <text x="76" y="618">Reports</text>
+    <text x="76" y="641">Relationship Plans</text>
+    <text x="76" y="664">Assessments</text>
+    <text x="64" y="699" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">ADMIN</text>
+    <text x="76" y="722">User Management</text>
+    <text x="76" y="745">Usage &amp; Traffic</text>
+    <text x="76" y="768">Company Roster</text>
+    <text x="76" y="791">Document Storage</text>
+    <text x="76" y="814">Admin Dashboard</text>
+    <text x="76" y="837">AI Settings</text>
+  </g>
+
+  <!-- column B (marketing) -->
+  <g font-size="11" fill="#3d3354">
+    <text x="262" y="226" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">MARKETING — PLAN</text>
+    <text x="274" y="249">Marketing Home</text>
+    <text x="274" y="272">Messaging Framework</text>
+    <text x="274" y="295">GTM Plan</text>
+    <text x="274" y="318">Personas</text>
+    <text x="274" y="341">Battle Cards</text>
+    <text x="274" y="364">Marketing Planner</text>
+    <text x="262" y="399" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">— CALENDARS</text>
+    <text x="274" y="422">Master Calendar</text>
+    <text x="274" y="445">Social Posts</text>
+    <text x="274" y="468">Content Briefs</text>
+    <text x="262" y="503" font-size="10" font-weight="700" fill="#8a7fa3" letter-spacing="1">— EXECUTE</text>
+    <text x="274" y="526">Composer</text>
+    <text x="274" y="549">Campaigns</text>
+    <text x="274" y="572">Planning Hub</text>
+    <text x="274" y="595">Event Promotion</text>
+    <text x="274" y="618">Email Newsletters</text>
+    <text x="274" y="641">Digital/Web Assets</text>
+    <text x="274" y="664">Visual/Brand Assets</text>
+    <text x="274" y="687">Solution Areas</text>
+    <text x="274" y="710" fill="#b91c1c">Social Accounts</text>
+    <text x="274" y="733" fill="#b91c1c">Platform Credentials</text>
+    <text x="274" y="756" fill="#b91c1c">Browser Extension</text>
+    <text x="274" y="779">Performance</text>
+    <text x="262" y="830" font-size="10" fill="#b91c1c" font-style="italic">red = setup tasks hiding in a</text>
+    <text x="262" y="845" font-size="10" fill="#b91c1c" font-style="italic">daily-work menu → move to Settings</text>
+  </g>
+
+  <!-- arrow -->
+  <path d="M 466 520 L 492 520" stroke="#7e0ef5" stroke-width="3"/>
+  <path d="M 488 512 L 500 520 L 488 528 Z" fill="#7e0ef5"/>
+
+  <!-- ===================== AFTER ===================== -->
+  <text x="510" y="156" font-size="13" font-weight="700" fill="#15803d" letter-spacing="1">AFTER</text>
+  <!-- header bar mock -->
+  <rect x="510" y="170" width="1010" height="56" rx="10" fill="#ffffff" stroke="#e4ddf0"/>
+  <circle cx="544" cy="198" r="9" fill="#7e0ef5"/>
+  <text x="562" y="203" font-size="15" font-weight="700" fill="#221735">Orbit</text>
+  <rect x="640" y="183" width="104" height="30" rx="15" fill="#f0e7fd"/>
+  <text x="692" y="203" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">Research</text>
+  <rect x="752" y="183" width="104" height="30" rx="15" fill="#7e0ef5"/>
+  <text x="804" y="203" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
+  <rect x="864" y="183" width="80" height="30" rx="15" fill="#f0e7fd"/>
+  <text x="904" y="203" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">Sales</text>
+  <rect x="952" y="183" width="150" height="30" rx="15" fill="#f0e7fd"/>
+  <text x="1027" y="203" font-size="13" font-weight="600" fill="#5b0bb0" text-anchor="middle">Admin &amp; Settings</text>
+  <rect x="1330" y="184" width="120" height="28" rx="8" fill="#f7f4fb" stroke="#e4ddf0"/>
+  <text x="1344" y="203" font-size="12" fill="#756a8a">⌘K  Search…</text>
+  <circle cx="1486" cy="198" r="14" fill="#e4ddf0"/>
+  <text x="1486" y="203" font-size="11" fill="#5b4a78" text-anchor="middle">CM</text>
+  <text x="510" y="252" font-size="13" fill="#756a8a">Area switcher moves to the header — the left sidebar shows only the current area's 5–7 items</text>
+
+  <!-- four area cards -->
+  <!-- Research -->
+  <rect x="510" y="276" width="492" height="310" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <rect x="510" y="276" width="492" height="6" rx="3" fill="#0ea5e9"/>
+  <text x="534" y="316" font-size="17" font-weight="700" fill="#221735">🔭  Research</text>
+  <text x="534" y="338" font-size="12" fill="#756a8a">Understand the market — analysts &amp; strategists</text>
+  <g font-size="13" fill="#3d3354">
+    <text x="534" y="370" font-weight="600" fill="#5b0bb0">⌂  Hub Home — staleness, signals, next analysis</text>
+    <text x="534" y="397">•  Competitors &amp; Company Profile</text>
+    <text x="534" y="424">•  Products</text>
+    <text x="534" y="451">•  Analysis &amp; Action Items</text>
+    <text x="534" y="478">•  Signals &amp; Activity  <tspan fill="#756a8a" font-size="11">(Activity + Intel Feed + SEO, tabbed)</tspan></text>
+    <text x="534" y="505">•  Positioning &amp; Visualizations</text>
+    <text x="534" y="532">•  Data Health  <tspan fill="#756a8a" font-size="11">(Data Sources + Refresh Center)</tspan></text>
+  </g>
+
+  <!-- Marketing -->
+  <rect x="1028" y="276" width="492" height="310" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <rect x="1028" y="276" width="492" height="6" rx="3" fill="#7e0ef5"/>
+  <text x="1052" y="316" font-size="17" font-weight="700" fill="#221735">📣  Marketing</text>
+  <text x="1052" y="338" font-size="12" fill="#756a8a">Plan and ship content — 21 menu items become 7</text>
+  <g font-size="13" fill="#3d3354">
+    <text x="1052" y="370" font-weight="600" fill="#5b0bb0">⌂  Hub Home — pipeline, approvals, next 7 days</text>
+    <text x="1052" y="397">•  Strategy  <tspan fill="#756a8a" font-size="11">(Messaging · GTM · Personas · Solution Areas)</tspan></text>
+    <text x="1052" y="424">•  Campaigns  <tspan fill="#756a8a" font-size="11">(Planning Hub folds into detail)</tspan></text>
+    <text x="1052" y="451" font-weight="600">•  Content Pipeline — NEW board view  ★</text>
+    <text x="1052" y="478">•  Calendar  <tspan fill="#756a8a" font-size="11">(master view; social/briefs are filters)</tspan></text>
+    <text x="1052" y="505">•  Libraries  <tspan fill="#756a8a" font-size="11">(Content + Brand, tabbed)</tspan></text>
+    <text x="1052" y="532">•  Performance</text>
+  </g>
+
+  <!-- Sales -->
+  <rect x="510" y="610" width="492" height="310" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <rect x="510" y="610" width="492" height="6" rx="3" fill="#f59e0b"/>
+  <text x="534" y="650" font-size="17" font-weight="700" fill="#221735">🤝  Sales</text>
+  <text x="534" y="672" font-size="12" fill="#756a8a">Win the deal — deliverables &amp; enablement</text>
+  <g font-size="13" fill="#3d3354">
+    <text x="534" y="704" font-weight="600" fill="#5b0bb0">⌂  Hub Home — recent reports, battlecard freshness</text>
+    <text x="534" y="731">•  Battle Cards</text>
+    <text x="534" y="758">•  Reports</text>
+    <text x="534" y="785">•  Relationship Plans</text>
+    <text x="534" y="812">•  Assessments</text>
+  </g>
+
+  <!-- Admin -->
+  <rect x="1028" y="610" width="492" height="310" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <rect x="1028" y="610" width="492" height="6" rx="3" fill="#64748b"/>
+  <text x="1052" y="650" font-size="17" font-weight="700" fill="#221735">⚙️  Admin &amp; Settings</text>
+  <text x="1052" y="672" font-size="12" fill="#756a8a">Setup once, then get out of the way</text>
+  <g font-size="13" fill="#3d3354">
+    <text x="1052" y="704">•  Users · Usage &amp; Traffic · Company Roster</text>
+    <text x="1052" y="731">•  Document Storage</text>
+    <text x="1052" y="758" font-weight="600">•  Connections  ← moved from Marketing</text>
+    <text x="1052" y="780" font-size="11" fill="#756a8a">    Social Accounts · Platform Credentials · Integrations · Extension</text>
+    <text x="1052" y="807">•  Admin Dashboard · AI Settings · OAuth  <tspan fill="#756a8a" font-size="11">(global admin)</tspan></text>
+    <text x="1052" y="840" font-size="11" fill="#756a8a" font-style="italic">All current URLs keep working via redirects;</text>
+    <text x="1052" y="856" font-size="11" fill="#756a8a" font-style="italic">⌘K command palette still reaches everything.</text>
+  </g>
+
+  <text x="40" y="956" font-size="12" fill="#756a8a">Mockup 1 of 4 · see docs/ux-restructuring-plan.md §2</text>
+</svg>
