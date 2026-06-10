@@ -166,6 +166,12 @@ const BRIEF_FORMAT_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+const CAMPAIGN_TYPE_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: "theme", label: "Theme", hint: "Ongoing awareness push around a point of view" },
+  { value: "event", label: "Event", hint: "Promote a webinar, conference, or dated event" },
+  { value: "offering", label: "Offering", hint: "Launch or spotlight a product / service" },
+];
+
 const FUNNEL_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   awareness: "secondary",
   consideration: "default",
@@ -253,6 +259,9 @@ export default function CampaignDetailPage() {
   const [editCampaignOpen, setEditCampaignOpen] = useState(false);
   const [editCampaignName, setEditCampaignName] = useState("");
   const [editCampaignDescription, setEditCampaignDescription] = useState("");
+  const [editCampaignType, setEditCampaignType] = useState("theme");
+  const [editCampaignObjective, setEditCampaignObjective] = useState("");
+  const [editCampaignGoal, setEditCampaignGoal] = useState("");
   const [editCampaignStartDate, setEditCampaignStartDate] = useState("");
   const [editCampaignEndDate, setEditCampaignEndDate] = useState("");
   const [editCampaignDays, setEditCampaignDays] = useState<number | "">("");
@@ -623,7 +632,7 @@ export default function CampaignDetailPage() {
   });
 
   const editCampaignMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; alwaysHashtags?: string[] }) => {
+    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; alwaysHashtags?: string[] }) => {
       const r = await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -661,6 +670,9 @@ export default function CampaignDetailPage() {
     if (!campaign) return;
     setEditCampaignName(campaign.name);
     setEditCampaignDescription(campaign.description || "");
+    setEditCampaignType(campaign.campaignType || "theme");
+    setEditCampaignObjective(campaign.objective || "");
+    setEditCampaignGoal(campaign.goal || "");
     setEditCampaignStartDate(campaign.startDate ? new Date(campaign.startDate).toISOString().split("T")[0] : "");
     setEditCampaignEndDate(campaign.endDate ? new Date(campaign.endDate).toISOString().split("T")[0] : "");
     setEditCampaignDays(campaign.numberOfDays || "");
@@ -678,6 +690,9 @@ export default function CampaignDetailPage() {
     editCampaignMutation.mutate({
       name: editCampaignName,
       description: editCampaignDescription || undefined,
+      campaignType: editCampaignType,
+      objective: editCampaignObjective.trim() || null,
+      goal: editCampaignGoal.trim() || null,
       startDate: editCampaignStartDate || null,
       endDate: editCampaignEndDate || null,
       numberOfDays: editCampaignDays ? Number(editCampaignDays) : null,
@@ -2394,6 +2409,48 @@ export default function CampaignDetailPage() {
                 onChange={e => setEditCampaignDescription(e.target.value)}
                 rows={2}
                 data-testid="input-edit-campaign-description"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Campaign Type</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {CAMPAIGN_TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEditCampaignType(opt.value)}
+                    className={`text-left rounded-md border p-2.5 transition-colors ${
+                      editCampaignType === opt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : "border-input hover:bg-muted/50"
+                    }`}
+                    data-testid={`button-edit-campaign-type-${opt.value}`}
+                  >
+                    <span className="block text-sm font-medium">{opt.label}</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-objective">Objective</Label>
+              <Textarea
+                id="edit-campaign-objective"
+                value={editCampaignObjective}
+                onChange={e => setEditCampaignObjective(e.target.value)}
+                placeholder="What are we promoting, and why? e.g. Drive registrations for the June security webinar."
+                rows={3}
+                data-testid="input-edit-campaign-objective"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-goal">Goal</Label>
+              <Input
+                id="edit-campaign-goal"
+                value={editCampaignGoal}
+                onChange={e => setEditCampaignGoal(e.target.value)}
+                placeholder="Measurable target, e.g. 200 webinar registrations"
+                data-testid="input-edit-campaign-goal"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
