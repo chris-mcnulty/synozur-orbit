@@ -571,7 +571,7 @@ export default function MarketingCalendarPage() {
       clearSelection();
       setBulkDate("");
       setAssignValue("none");
-      const labels: Record<string, string> = { schedule: "Scheduled", approve: "Approved", assign: "Assignment updated", discard: "Discarded" };
+      const labels: Record<string, string> = { schedule: "Scheduled", approve: "Approved", assign: "Assignment updated", discard: "Discarded", archive: "Archived" };
       toast({
         title: `${labels[vars.action] ?? "Done"} ${data.affected} item${data.affected === 1 ? "" : "s"}`,
         description: data.skipped?.length ? data.skipped.join(" ") : undefined,
@@ -1663,6 +1663,7 @@ function BacklogPanel({
             <Button variant="outline" size="sm" className="h-8" onClick={doAssign} disabled={bulkBusy} data-testid="button-bulk-assign"><Tag className="mr-1 h-3.5 w-3.5" /> Assign</Button>
           </div>
           <Separator orientation="vertical" className="h-6" />
+          <Button variant="outline" size="sm" className="h-8" onClick={() => runBulk("archive")} disabled={bulkBusy} data-testid="button-bulk-archive"><Inbox className="mr-1 h-3.5 w-3.5" /> Archive</Button>
           <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => runBulk("discard")} disabled={bulkBusy} data-testid="button-bulk-discard"><Trash2 className="mr-1 h-3.5 w-3.5" /> Discard</Button>
           {bulkBusy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>

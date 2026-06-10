@@ -20,8 +20,8 @@ import { tickMarketingPublishWorker } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
-import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, type SeoMetric } from "@shared/schema";
-import { eq, and, desc, isNull, lt, sql } from "drizzle-orm";
+import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, type SeoMetric } from "@shared/schema";
+import { eq, and, desc, isNull, lt, sql, inArray } from "drizzle-orm";
 import type { SeoMover } from "./webhook-formatters";
 
 // Cache for market status to avoid repeated DB queries
@@ -2241,6 +2241,49 @@ export async function runCollaborationCleanupJob(): Promise<{
   return { commentsDeleted, threadsDeleted };
 }
 
+// WS5: keep the social-post backlog tidy. Archive draft posts that were
+// generated at scale but never scheduled within ARCHIVE_AFTER_DAYS, then
+// permanently purge archived/rejected/deleted posts older than PURGE_AFTER_DAYS.
+// Archived posts are already excluded from planning/calendar/export.
+const STALE_DRAFT_ARCHIVE_AFTER_DAYS = 30;
+const STALE_DRAFT_PURGE_AFTER_DAYS = 90;
+
+export async function runStaleDraftCleanupJob(): Promise<{ archived: number; purged: number }> {
+  const now = Date.now();
+  const archiveCutoff = new Date(now - STALE_DRAFT_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000);
+  const purgeCutoff = new Date(now - STALE_DRAFT_PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000);
+  let archived = 0;
+  let purged = 0;
+  try {
+    const archivedRows = await db
+      .update(generatedPosts)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(and(
+        eq(generatedPosts.status, "draft"),
+        isNull(generatedPosts.scheduledDate),
+        lt(generatedPosts.createdAt, archiveCutoff),
+      ))
+      .returning({ id: generatedPosts.id });
+    archived = archivedRows.length;
+
+    const purgedRows = await db
+      .delete(generatedPosts)
+      .where(and(
+        inArray(generatedPosts.status, ["archived", "rejected", "deleted"]),
+        lt(generatedPosts.updatedAt, purgeCutoff),
+      ))
+      .returning({ id: generatedPosts.id });
+    purged = purgedRows.length;
+
+    if (archived > 0 || purged > 0) {
+      console.log(`[Draft Cleanup] Archived ${archived} stale draft(s), purged ${purged} old post(s)`);
+    }
+  } catch (err) {
+    console.error("[Draft Cleanup] Sweep failed:", (err as Error).message);
+  }
+  return { archived, purged };
+}
+
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
 
@@ -2319,6 +2362,13 @@ export function startScheduledJobs(): void {
       .then(({ cleanupExpiredBuckets }) => cleanupExpiredBuckets())
       .catch((err) => console.error("[rate-limiter] cleanup error:", err?.message || err));
   }, 6 * 60 * 60 * 1000);
+
+  // WS5: stale social-draft cleanup (archive unscheduled, purge old) — daily.
+  setInterval(() => {
+    runStaleDraftCleanupJob().catch((err) =>
+      console.error("[Draft Cleanup] error:", err?.message || err),
+    );
+  }, 24 * 60 * 60 * 1000);
 
   // Task #102: Sentiment & tone backfill — drains rows where analyzedAt IS
   // NULL in small batches so the analyzer does not spike LLM spend. Runs

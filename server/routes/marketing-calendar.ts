@@ -140,7 +140,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       };
 
       // ── Social posts (scoped by tenant only — generated_posts has no market) ──
-      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted")];
+      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted"), ne(generatedPosts.status, "archived")];
       if (campaignId) socialConds.push(eq(generatedPosts.campaignId, campaignId));
       if (solutionAreaId) socialConds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
       if (conferenceId) socialConds.push(eq(generatedPosts.conferenceId, conferenceId));
@@ -365,6 +365,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
             eq(generatedPosts.tenantDomain, ctx.tenantDomain),
             ne(generatedPosts.status, "rejected"),
             ne(generatedPosts.status, "deleted"),
+            ne(generatedPosts.status, "archived"),
           )),
         db
           .selectDistinct({ format: contentBriefs.format })
@@ -693,6 +694,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         isNotNull(generatedPosts.scheduledDate),
         ne(generatedPosts.status, "rejected"),
         ne(generatedPosts.status, "deleted"),
+        ne(generatedPosts.status, "archived"),
       ];
       if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
       if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));
@@ -811,6 +813,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
           const r = await db.update(contentBriefs).set(setFor("content"))
             .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
           affected += r.length;
+        }
+      } else if (action === "archive") {
+        // Archive = keep the row but remove it from planning/calendar/export.
+        // Social posts only (the high-volume clutter source). Content/email use
+        // their own statuses; skip them here.
+        if (byType.social.length) {
+          const r = await db.update(generatedPosts).set({ status: "archived", updatedAt: new Date() })
+            .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, byType.social))).returning({ id: generatedPosts.id });
+          affected += r.length;
+        }
+        if (byType.content.length || byType.email.length) {
+          skipped.push("Archive applies to social posts; use Discard for content/email.");
         }
       } else if (action === "discard") {
         // Social → soft-delete via status; content → "removed" status; email has

@@ -2185,6 +2185,52 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // WS5: archive the campaign's unscheduled draft posts — the excess that the
+  // scale generator produced but that never got a slot. Archived posts drop out
+  // of planning/calendar/export but are retained until purged.
+  app.post("/api/campaigns/:id/archive-unscheduled", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const rows = await db.update(generatedPosts)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          eq(generatedPosts.status, "draft"),
+          isNull(generatedPosts.scheduledDate),
+        ))
+        .returning({ id: generatedPosts.id });
+      res.json({ archived: rows.length });
+    } catch (err: any) {
+      console.error("[Campaign Archive Unscheduled Error]", err.message);
+      res.status(500).json({ error: "Failed to archive unscheduled posts" });
+    }
+  });
+
+  // WS5: permanently delete this campaign's archived/rejected/deleted posts.
+  app.post("/api/campaigns/:id/purge-archived", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const rows = await db.delete(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          inArray(generatedPosts.status, ["archived", "rejected", "deleted"]),
+        ))
+        .returning({ id: generatedPosts.id });
+      res.json({ purged: rows.length });
+    } catch (err: any) {
+      console.error("[Campaign Purge Error]", err.message);
+      res.status(500).json({ error: "Failed to purge posts" });
+    }
+  });
+
   app.put("/api/campaigns/:campaignId/generated-posts/bulk-status", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {

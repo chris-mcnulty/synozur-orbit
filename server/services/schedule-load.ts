@@ -59,6 +59,7 @@ export async function getScheduledDayCounts(p: ScheduleLoadParams): Promise<Map<
       eq(generatedPosts.tenantDomain, p.tenantDomain),
       ne(generatedPosts.status, "rejected"),
       ne(generatedPosts.status, "deleted"),
+      ne(generatedPosts.status, "archived"),
     ));
   for (const r of socialRows) bump(r.scheduledDate ?? r.publishedAt);
 

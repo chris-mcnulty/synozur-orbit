@@ -296,9 +296,14 @@ export default function CampaignDetailPage() {
   // WS4: collapse dense social batches so the campaign view isn't a wall of
   // identical posts. Operates on non-discarded posts.
   const postBatches = useMemo(() => {
-    const active = posts.filter((p) => p.status !== "deleted" && p.status !== "rejected");
+    const active = posts.filter((p) => p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived");
     return rollupPosts(active, { threshold: 3 });
   }, [posts]);
+  const unscheduledDraftCount = useMemo(
+    () => posts.filter((p) => p.status === "draft" && !p.scheduledDate).length,
+    [posts],
+  );
+  const archivedCount = useMemo(() => posts.filter((p) => p.status === "archived").length, [posts]);
   const activeBatch = batchFilter ? postBatches.batches.find((b) => b.key === batchFilter) ?? null : null;
 
   const { data: contentPlan } = useQuery<ContentPlanResponse>({
@@ -339,6 +344,32 @@ export default function CampaignDetailPage() {
       toast({ title: "Content plan generated", description: `${data.briefs?.length ?? 0} briefs added to this campaign.` });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const archiveUnscheduledMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/archive-unscheduled`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to archive");
+      return r.json();
+    },
+    onSuccess: (d: { archived: number }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `Archived ${d.archived} unscheduled post(s)`, description: "They're hidden from planning and won't export. Purge to delete permanently." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const purgeArchivedMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/purge-archived`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to purge");
+      return r.json();
+    },
+    onSuccess: (d: { purged: number }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `Purged ${d.purged} post(s)` });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const { data: jobStatus } = useQuery<{ status: string }>({
@@ -1338,8 +1369,37 @@ export default function CampaignDetailPage() {
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
+                    {archivedCount > 0 && <SelectItem value="archived">Archived ({archivedCount})</SelectItem>}
                   </SelectContent>
                 </Select>
+                {unscheduledDraftCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={archiveUnscheduledMutation.isPending}
+                    onClick={() => archiveUnscheduledMutation.mutate()}
+                    title="Move unscheduled draft posts to the archive so they stop cluttering planning"
+                    data-testid="button-archive-unscheduled"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    Archive {unscheduledDraftCount} unscheduled
+                  </Button>
+                )}
+                {archivedCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-destructive"
+                    disabled={purgeArchivedMutation.isPending}
+                    onClick={() => { if (confirm(`Permanently delete ${archivedCount} archived post(s)? This cannot be undone.`)) purgeArchivedMutation.mutate(); }}
+                    title="Permanently delete archived/rejected posts"
+                    data-testid="button-purge-archived"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Purge archived
+                  </Button>
+                )}
                 {posts.some(p => p.status !== "approved" && p.status !== "deleted") && (
                   <Button
                     variant="outline"
@@ -1467,7 +1527,7 @@ export default function CampaignDetailPage() {
                   if (batchFilter) { if (src !== batchFilter) return false; }
                   else if (isBatched) return false;
                   if (postFilter === "all") return p.status !== "deleted";
-                  if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected";
+                  if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                   return p.status === postFilter;
                 }).map(post => {
                   const postImage = getPostImage(post);
