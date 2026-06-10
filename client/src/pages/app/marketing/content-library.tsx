@@ -1809,6 +1809,7 @@ export default function ContentLibraryPage() {
               .then((r) => (r.ok ? r.json() : null))
               .then((a: ContentAsset | null) => { if (a) openEditDialog(a); });
           }}
+          onViewPosts={() => navigate("/app/marketing/calendar")}
           onGenerated={() => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] })}
         />
 

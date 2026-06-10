@@ -208,6 +208,16 @@ export function RepurposeDialog({
               </DialogDescription>
             </DialogHeader>
 
+            <div
+              className="rounded-md border border-primary/30 bg-primary/5 p-2.5 text-xs text-muted-foreground"
+              data-testid="repurpose-destination-note"
+            >
+              <span className="font-medium text-foreground">Posts pipeline</span> outputs (LinkedIn / Twitter posts and
+              carousels) become schedulable, publishable drafts in your <span className="font-medium">Social Posts</span>{" "}
+              calendar. <span className="font-medium text-foreground">Content Library</span> outputs (documents and
+              snippets) stay in the library for editing and export.
+            </div>
+
             <div className="grid gap-2 sm:grid-cols-2">
               {FORMAT_DEFS.map((def) => {
                 const selected = counts[def.key] != null;

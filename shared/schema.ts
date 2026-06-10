@@ -1948,6 +1948,15 @@ export const CONTENT_BRIEF_FORMATS = [
 ] as const;
 export type ContentBriefFormat = (typeof CONTENT_BRIEF_FORMATS)[number];
 
+// Brief formats that target social channels. Drafting one of these the normal
+// way still produces a document-style draft in the Content Library — it only
+// becomes a real, schedulable social post via Repurpose. The UI uses this to
+// signpost that path.
+export const SOCIAL_BRIEF_FORMATS = ["linkedin_post", "x_post"] as const;
+export function isSocialBriefFormat(format: string | null | undefined): boolean {
+  return !!format && (SOCIAL_BRIEF_FORMATS as readonly string[]).includes(format);
+}
+
 export const FUNNEL_STAGES = ["awareness", "consideration", "decision"] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 

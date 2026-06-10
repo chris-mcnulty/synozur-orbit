@@ -53,6 +53,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
+import { isSocialBriefFormat } from "@shared/schema";
 
 interface ContentBrief {
   id: string;
@@ -922,6 +923,18 @@ export default function EditorialCalendarPage() {
                           )}
                         </div>
                         <p className="font-medium">{b.title}</p>
+                        {isSocialBriefFormat(b.format) && (
+                          <p
+                            className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                            data-testid={`social-signpost-${b.id}`}
+                          >
+                            <Share2 className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>
+                              Targets social. Drafting saves a document to the Content Library — use{" "}
+                              <span className="font-medium">Repurpose</span> to turn it into a schedulable Social Post.
+                            </span>
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <Select
@@ -1293,6 +1306,38 @@ export default function EditorialCalendarPage() {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>AI-generated draft. Review and edit before publishing. Click Save to keep your changes.</span>
             </div>
+            {isSocialBriefFormat(draft?.format) && draftAssetId && repurposeAllowed && (
+              <div
+                className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-foreground sm:flex-row sm:items-center sm:justify-between"
+                data-testid="draft-social-repurpose-prompt"
+              >
+                <div className="flex items-start gap-2">
+                  <Share2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>
+                    This draft lives in the Content Library as a document. To turn it into a schedulable, publishable
+                    Social Post, use <span className="font-medium">Repurpose</span>.
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    const target = { id: draftAssetId, title: draft?.title ?? draftBriefTitle ?? undefined };
+                    setDraft(null);
+                    setDraftAssetId(null);
+                    setDraftBriefTitle(null);
+                    setDraftImageUrl(null);
+                    setDraftDirty(false);
+                    setRewriteInstr("");
+                    setRepurposeTarget(target);
+                  }}
+                  data-testid="button-draft-repurpose"
+                >
+                  <Share2 className="mr-1 h-4 w-4" />
+                  Repurpose
+                </Button>
+              </div>
+            )}
             {draftAssetId && (
               <div className="space-y-2 rounded-md border p-3">
                 <Label htmlFor="rewrite-instr" className="text-sm font-medium">
@@ -1450,6 +1495,7 @@ export default function EditorialCalendarPage() {
           open={!!repurposeTarget}
           onOpenChange={(o) => !o && setRepurposeTarget(null)}
           onOpenLibraryAsset={(id) => navigate(`/app/marketing/content-library?asset=${id}`)}
+          onViewPosts={() => navigate("/app/marketing/calendar")}
         />
 
         {/* Repurpose results (social-only legacy path) */}
