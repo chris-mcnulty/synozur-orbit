@@ -138,7 +138,7 @@ export async function saveConferenceImageBuffer(
 }
 
 /** Read the bytes of a brand template, whether stored in object storage or at an external URL. */
-async function loadImageBytes(fileUrl: string): Promise<Buffer> {
+export async function loadImageBytes(fileUrl: string): Promise<Buffer> {
   if (fileUrl.startsWith("/objects/")) {
     const file = await objectStorageService.getObjectEntityFile(fileUrl);
     const [buf] = await file.download();

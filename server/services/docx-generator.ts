@@ -206,16 +206,39 @@ function hrParagraph(): Paragraph {
   });
 }
 
-export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
+// A standalone image line in the Markdown body (e.g. a carousel slide graphic).
+interface ImageToken {
+  kind: "image";
+  alt: string;
+  url: string;
+}
+
+type DocToken = Paragraph | ImageToken;
+
+function isImageToken(token: DocToken): token is ImageToken {
+  return (token as ImageToken).kind === "image";
+}
+
+function imageCaptionParagraph(caption: string): Paragraph {
+  return new Paragraph({
+    spacing: { after: 120 },
+    children: [new TextRun({ text: caption, font: BODY_FONT, size: BODY_SIZE, italics: true, color: MUTED_COLOR })],
+  });
+}
+
+// Parse the Markdown into an ordered list of tokens. Standalone image lines are
+// kept as ImageTokens so callers can decide whether to embed the real image
+// (async) or fall back to a caption (sync).
+function tokenizeMarkdown(markdown: string): DocToken[] {
   const lines = markdown.split("\n");
-  const paragraphs: Paragraph[] = [];
+  const tokens: DocToken[] = [];
   let pendingLines: string[] = [];
 
   function flushPending() {
     if (pendingLines.length === 0) return;
     const combined = pendingLines.join(" ").trim();
     pendingLines = [];
-    if (combined) paragraphs.push(bodyParagraph(combined));
+    if (combined) tokens.push(bodyParagraph(combined));
   }
 
   for (let i = 0; i < lines.length; i++) {
@@ -229,43 +252,33 @@ export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
 
     if (/^---+$/.test(trimmed)) {
       flushPending();
-      paragraphs.push(hrParagraph());
+      tokens.push(hrParagraph());
       continue;
     }
 
-    // Standalone image line: ![alt](url). We can't embed the remote image
-    // synchronously, so render the alt text as an italic caption instead of
-    // dumping the raw Markdown into the document.
+    // Standalone image line: ![alt](url).
     const imageMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (imageMatch) {
       flushPending();
-      const caption = imageMatch[1].trim();
-      if (caption) {
-        paragraphs.push(
-          new Paragraph({
-            spacing: { after: 120 },
-            children: [new TextRun({ text: caption, font: BODY_FONT, size: BODY_SIZE, italics: true, color: MUTED_COLOR })],
-          }),
-        );
-      }
+      tokens.push({ kind: "image", alt: imageMatch[1].trim(), url: imageMatch[2].trim() });
       continue;
     }
 
     if (trimmed.startsWith("### ")) {
       flushPending();
-      paragraphs.push(headingParagraph(trimmed.slice(4).trim(), 3));
+      tokens.push(headingParagraph(trimmed.slice(4).trim(), 3));
       continue;
     }
 
     if (trimmed.startsWith("## ")) {
       flushPending();
-      paragraphs.push(headingParagraph(trimmed.slice(3).trim(), 2));
+      tokens.push(headingParagraph(trimmed.slice(3).trim(), 2));
       continue;
     }
 
     if (trimmed.startsWith("# ")) {
       flushPending();
-      paragraphs.push(headingParagraph(trimmed.slice(2).trim(), 1));
+      tokens.push(headingParagraph(trimmed.slice(2).trim(), 1));
       continue;
     }
 
@@ -273,7 +286,7 @@ export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
     if (bulletMatch) {
       flushPending();
       const depth = Math.max(0, Math.floor((line.length - line.trimStart().length) / 2));
-      paragraphs.push(bulletParagraph(bulletMatch[2], depth));
+      tokens.push(bulletParagraph(bulletMatch[2], depth));
       continue;
     }
 
@@ -281,11 +294,91 @@ export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
   }
 
   flushPending();
+  return tokens;
+}
+
+export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
+  // Synchronous path: remote image bytes can't be fetched, so render the alt
+  // text as an italic caption instead of dumping raw Markdown into the document.
+  const paragraphs: Paragraph[] = [];
+  for (const token of tokenizeMarkdown(markdown)) {
+    if (isImageToken(token)) {
+      // Drop captions for images that had no alt text (nothing useful to show).
+      if (token.alt) paragraphs.push(imageCaptionParagraph(token.alt));
+    } else {
+      paragraphs.push(token);
+    }
+  }
   return paragraphs;
 }
 
+// Usable page width in pixels (8.5" page − 1.15" margins each side, at 96 DPI).
+const MAX_IMAGE_WIDTH_PX = Math.round((8.5 - 1.15 * 2) * 96);
+
+// Only embed images that live in our own object storage, addressed by a RELATIVE
+// internal path (`/objects/...` private or `/public-objects/...` public). These
+// resolve straight from object storage — never via an outbound HTTP fetch — so
+// arbitrary/external markdown image URLs can't be used to make the server issue
+// requests to internal or attacker-controlled hosts (SSRF). Anything else
+// (absolute URLs, raw GCS links, other schemes) falls back to a caption.
+function isSafeInternalImageUrl(url: string): boolean {
+  return url.startsWith("/objects/") || url.startsWith("/public-objects/");
+}
+
+// Fetch an object-storage image and turn it into a centered ImageRun paragraph
+// scaled to fit the page width. Falls back to an italic caption (or null when
+// there's nothing to show) if the URL isn't a safe internal path or the image
+// can't be fetched or decoded.
+async function imageParagraph(token: ImageToken): Promise<Paragraph | null> {
+  if (!isSafeInternalImageUrl(token.url)) {
+    return token.alt ? imageCaptionParagraph(token.alt) : null;
+  }
+  try {
+    const { loadImageBytes } = await import("./conference-promotion-service.js");
+    const sharp = (await import("sharp")).default;
+    const raw = await loadImageBytes(token.url);
+    const meta = await sharp(raw).metadata();
+    if (!meta.width || !meta.height) throw new Error("missing image dimensions");
+    // Normalize to PNG so formats like WebP embed reliably in Word.
+    const pngBuf = await sharp(raw).png().toBuffer();
+
+    let width = meta.width;
+    let height = meta.height;
+    if (width > MAX_IMAGE_WIDTH_PX) {
+      const ratio = MAX_IMAGE_WIDTH_PX / width;
+      width = MAX_IMAGE_WIDTH_PX;
+      height = Math.round(height * ratio);
+    }
+
+    return new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 160 },
+      children: [
+        new ImageRun({
+          data: pngBuf,
+          transformation: { width, height },
+          type: "png",
+          altText: token.alt ? { title: token.alt, description: token.alt, name: token.alt } : undefined,
+        } as any),
+      ],
+    });
+  } catch (err) {
+    console.error(`[docx-generator] Failed to embed image ${token.url}:`, err);
+    return token.alt ? imageCaptionParagraph(token.alt) : null;
+  }
+}
+
+// Async path: embeds the actual image bytes for standalone image lines.
+async function markdownToDocxParagraphsAsync(markdown: string): Promise<Paragraph[]> {
+  const tokens = tokenizeMarkdown(markdown);
+  const resolved = await Promise.all(
+    tokens.map(async (token) => (isImageToken(token) ? imageParagraph(token) : token)),
+  );
+  return resolved.filter((p): p is Paragraph => p !== null);
+}
+
 export async function buildBrandedDocx(title: string, markdown: string): Promise<Buffer> {
-  const contentParagraphs = markdownToDocxParagraphs(markdown);
+  const contentParagraphs = await markdownToDocxParagraphsAsync(markdown);
 
   const doc = new Document({
     creator: "Synozur Orbit",
