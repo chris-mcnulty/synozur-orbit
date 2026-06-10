@@ -749,20 +749,31 @@ export default function CampaignsPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <Button
-                    className="w-full"
-                    disabled={!isStepValid}
-                    onClick={() => advanceStep(1)}
-                    data-testid="button-next-to-assets"
-                  >
-                    Next: Select Assets <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      disabled={!isStepValid || createCampaignMutation.isPending}
+                      onClick={() => createCampaignMutation.mutate()}
+                      data-testid="button-create-now"
+                    >
+                      Create now
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      disabled={!isStepValid}
+                      onClick={() => advanceStep(1)}
+                      data-testid="button-next-to-assets"
+                    >
+                      Configure assets &amp; accounts <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               )}
 
               {step === 1 && (
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">Select content assets to include in this campaign.</p>
+                  <p className="text-sm text-muted-foreground">Attach existing content assets as source material. Skip if this campaign is creating new content from scratch.</p>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
