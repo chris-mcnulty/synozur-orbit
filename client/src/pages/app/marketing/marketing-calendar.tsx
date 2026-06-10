@@ -1110,6 +1110,11 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
               ? `Drag any selected draft onto a day to schedule all ${selectedCount}.`
               : "Drag a draft onto a day to schedule it. Drop a scheduled item here to unschedule it. Tick boxes to move several at once."}
           </p>
+          {selectedCount > 0 && (
+            <p className="px-3 pt-1 text-[11px] text-muted-foreground" data-testid="backlog-rail-discard-hint">
+              To discard or archive in bulk, open the Backlog tab.
+            </p>
+          )}
           <div className="max-h-[560px] space-y-1 overflow-y-auto p-2" data-testid="backlog-rail-list">
             {items.map((it) => {
               const k = itemKey(it);
