@@ -21,6 +21,13 @@ unquoted and `searchNews` sorted by `publishedAt`, so loose full-body keyword ma
 returned the freshest off-topic stories. Relevance sort + phrase + title/description
 matching keeps it on-topic.
 
+**Topic pairing for broad names:** `scanNewsForSubjects` takes an optional `topic` (the
+ideation `message`). For subjects that `isAmbiguousName()` flags (single short word or a
+known common word like "box"/"orbit"), it appends `(kw1 OR kw2 …)` of up to 4 topic
+keywords (stopwords/short words stripped) so the broad name must co-occur with the
+campaign topic in title/description. Multi-word/specific subjects are untouched; the
+standalone `/api/news/scan` route passes no topic, so it's a no-op there.
+
 **How to apply:** The competitor-monitoring path (`fetchCompetitorNews`) deliberately keeps
 the recency default (`publishedAt`, no `in`) — `searchNews` opts are optional and only the
 ideation scan passes them. Don't flip the competitor path to relevance. Accept that strict

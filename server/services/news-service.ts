@@ -138,16 +138,50 @@ export interface SubjectNews {
   headlines: { title: string; source: string; url: string; snippet: string }[];
 }
 
+// Stopwords stripped from a campaign's topic before it's used to constrain a
+// broad company-name scan. Includes generic campaign/ideation filler so only
+// meaningful topic words survive.
+const TOPIC_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "for", "with", "without", "about",
+  "around", "into", "from", "that", "this", "these", "those", "our", "your",
+  "their", "its", "want", "need", "make", "help", "looking", "campaign",
+  "campaigns", "idea", "ideas", "topic", "news", "story", "stories", "company",
+  "companies", "please", "would", "like", "new", "get", "run", "using", "use",
+  "how", "what", "why", "who", "when", "are", "they", "them", "more",
+]);
+
+// Pull a few salient keywords out of a campaign's topic/message so a broad
+// company-name scan can be narrowed to that topic. Short words and stopwords
+// are dropped, and the list is capped to keep the GNews query tight.
+function topicKeywords(topic?: string): string[] {
+  if (!topic) return [];
+  return Array.from(
+    new Set(
+      topic
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 4 && !TOPIC_STOPWORDS.has(w)),
+    ),
+  ).slice(0, 4);
+}
+
 /**
  * Scan news for arbitrary subjects/companies/keywords supplied at call time
  * (not limited to tracked competitors), using the production GNews API. Used by
  * campaign ideation. Best-effort: a missing key or a failed request yields an
  * empty headline list for that subject rather than throwing.
+ *
+ * When `topic` (the campaign's topic/message) is provided, broad/ambiguous
+ * single-word subjects are paired with the topic's keywords so GNews only
+ * returns stories that mention both — keeping generic company names from
+ * pulling in unrelated headlines.
  */
 export async function scanNewsForSubjects(
   subjects: string[],
   perSubject: number = 5,
   withinDays: number = 45,
+  topic?: string,
 ): Promise<SubjectNews[]> {
   const cleaned = Array.from(
     new Set(subjects.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean)),
@@ -161,13 +195,22 @@ export async function scanNewsForSubjects(
   fromDate.setDate(fromDate.getDate() - Math.max(1, withinDays));
   const fromDateStr = fromDate.toISOString().split("T")[0] + "T00:00:00Z";
 
+  const kws = topicKeywords(topic);
+
   const out: SubjectNews[] = [];
   for (const subject of cleaned) {
     // Quote multi-word subjects so GNews matches the whole phrase (e.g.
     // "AI costs") rather than any article mentioning "AI" OR "costs". Combined
     // with relevance sorting and title/description matching, this keeps the
     // scan on-topic instead of returning the day's newest loosely-matched news.
-    const q = subject.includes(" ") ? `"${subject.replace(/"/g, "")}"` : subject;
+    let q = subject.includes(" ") ? `"${subject.replace(/"/g, "")}"` : subject;
+    // A broad/ambiguous single-word company name (e.g. "Box", "Orbit") matches
+    // lots of unrelated news. When we know the campaign's topic, require one of
+    // its keywords alongside the name so only on-topic stories come back — the
+    // same qualifier trick the competitor scan uses for ambiguous names.
+    if (kws.length && isAmbiguousName(subject)) {
+      q = `${q} (${kws.join(" OR ")})`;
+    }
     const { articles } = await searchNews(q, perSubject, fromDateStr, {
       sortBy: "relevance",
       inFields: "title,description",

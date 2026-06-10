@@ -102,7 +102,7 @@ export async function ideateCampaigns(params: IdeateParams): Promise<IdeateResul
 
   const [{ block: intelBlock, asOf }, news] = await Promise.all([
     loadIntelIndicators(params.tenantDomain, params.marketId),
-    scanNewsForSubjects(params.subjects ?? []),
+    scanNewsForSubjects(params.subjects ?? [], undefined, undefined, params.message),
   ]);
 
   const prompt = buildIdeationPrompt({
