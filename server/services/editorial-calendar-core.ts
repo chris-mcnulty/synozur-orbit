@@ -265,9 +265,9 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
   landing_page:
     "Write landing-page copy in Markdown: a benefit-led hero headline + subhead, 3-4 value-proposition blocks (subhead + 1-2 sentences each), a short social-proof/objection-handling section, and a single strong CTA block. Keep it scannable and conversion-focused.",
   linkedin_post:
-    "Write a single LinkedIn post (150-300 words): a scroll-stopping first line, short punchy paragraphs with line breaks, one concrete insight, and a soft CTA. End with 3-5 relevant hashtags on their own line.",
+    "Write a single LinkedIn post (800-1200 characters): a scroll-stopping first line that earns the second, short punchy paragraphs with line breaks, one concrete insight, and a hard CTA or punchline closer (no soft landings). No hashtags.",
   x_post:
-    "Write a single post under 280 characters: one sharp idea, no fluff, at most 1-2 hashtags.",
+    "Write a single post under 280 characters: one sharp idea, no fluff. No hashtags.",
   newsletter:
     "Write an email newsletter in Markdown: a subject line as the title, a personal-feeling intro, 1-3 short value sections, and a clear CTA. Conversational but on-brand.",
   video_script:
