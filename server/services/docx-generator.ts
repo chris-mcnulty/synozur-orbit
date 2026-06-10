@@ -233,6 +233,24 @@ export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
       continue;
     }
 
+    // Standalone image line: ![alt](url). We can't embed the remote image
+    // synchronously, so render the alt text as an italic caption instead of
+    // dumping the raw Markdown into the document.
+    const imageMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imageMatch) {
+      flushPending();
+      const caption = imageMatch[1].trim();
+      if (caption) {
+        paragraphs.push(
+          new Paragraph({
+            spacing: { after: 120 },
+            children: [new TextRun({ text: caption, font: BODY_FONT, size: BODY_SIZE, italics: true, color: MUTED_COLOR })],
+          }),
+        );
+      }
+      continue;
+    }
+
     if (trimmed.startsWith("### ")) {
       flushPending();
       paragraphs.push(headingParagraph(trimmed.slice(4).trim(), 3));

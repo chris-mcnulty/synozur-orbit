@@ -11,6 +11,9 @@ import {
   coercePlatform,
   clampForPlatform,
   parseVariants,
+  extractCarouselSlides,
+  isLongformRepurposeFormat,
+  longformFormatToAssetType,
 } from "../repurpose-core";
 
 let failures = 0;
@@ -119,6 +122,60 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.deepEqual(variants[1].hashtags, ["a", "b"]);
     assert.equal(variants[1].angle, null);
     assert.equal(variants[1].imagePrompt, null); // absent -> null
+  });
+
+  await test("video_shot_list is a valid long-form format mapped to a video asset", () => {
+    assert.equal(isLongformRepurposeFormat("video_shot_list"), true);
+    assert.equal(longformFormatToAssetType("video_shot_list"), "video");
+    assert.equal(isLongformRepurposeFormat("not_a_format"), false);
+  });
+
+  await test("extractCarouselSlides parses ### Slide headings with body lines", () => {
+    const body = [
+      "### Slide 1: Hook the reader",
+      "A punchy opener that grabs attention.",
+      "",
+      "### Slide 2: The problem",
+      "Most teams struggle with this.",
+      "Second supporting line.",
+      "",
+      "### Slide 3: The fix",
+      "Here is how to solve it.",
+    ].join("\n");
+    const slides = extractCarouselSlides(body);
+    assert.equal(slides.length, 3);
+    assert.deepEqual(slides.map((s) => s.index), [1, 2, 3]);
+    assert.equal(slides[0].headline, "Hook the reader");
+    assert.equal(slides[0].body, "A punchy opener that grabs attention.");
+    assert.equal(slides[1].headline, "The problem");
+    assert.equal(slides[1].body, "Most teams struggle with this. Second supporting line.");
+    assert.equal(slides[2].headline, "The fix");
+  });
+
+  await test("extractCarouselSlides handles headings without the Slide N prefix", () => {
+    const body = ["## Big idea", "Supporting detail.", "", "## Next idea", "More detail."].join("\n");
+    const slides = extractCarouselSlides(body);
+    assert.equal(slides.length, 2);
+    assert.equal(slides[0].headline, "Big idea");
+    assert.equal(slides[0].index, 1);
+    assert.equal(slides[1].headline, "Next idea");
+  });
+
+  await test("extractCarouselSlides falls back to blank-line blocks with no headings", () => {
+    const body = ["First slide headline", "first body", "", "Second slide headline", "second body"].join("\n");
+    const slides = extractCarouselSlides(body);
+    assert.equal(slides.length, 2);
+    assert.equal(slides[0].headline, "First slide headline");
+    assert.equal(slides[0].body, "first body");
+    assert.equal(slides[1].headline, "Second slide headline");
+  });
+
+  await test("extractCarouselSlides strips markdown emphasis and returns [] for empty", () => {
+    assert.deepEqual(extractCarouselSlides(""), []);
+    assert.deepEqual(extractCarouselSlides("   \n  "), []);
+    const slides = extractCarouselSlides("### Slide 1\n**Bold headline**\n_subtitle_");
+    assert.equal(slides.length, 1);
+    assert.equal(slides[0].headline, "Bold headline");
   });
 
   if (failures > 0) {

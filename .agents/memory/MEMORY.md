@@ -7,3 +7,4 @@
 - [Campaign & Theme Planning Hub](planning-hub.md) — per-campaign/theme aggregation of posts/emails/briefs via existing assoc columns; manual content reuses "Marketing Calendar (manual)" so it shows in calendar too.
 - [Editorial brief → draft flow](editorial-brief-draft-flow.md) — campaign/theme live on the brief; category lives on the draft (content asset) so it's only assignable after drafting.
 - [Multi-format repurposer](multiformat-repurposer.md) — one asset → batch of formats; LinkedIn posts/carousels go to posts pipeline, snippets to Content Library; branded images degrade gracefully; legacy social path kept.
+- [Content repurposer image outputs](repurpose-image-outputs.md) — social repurpose auto-renders 1 graphic/variant; carousel renders 1 image/slide via extractCarouselSlides; no new schema (reuse overrideImageUrl, leadImageUrl + markdown body).

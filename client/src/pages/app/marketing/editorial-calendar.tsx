@@ -92,6 +92,13 @@ interface RepurposeVariantResult {
   platform: string;
   content: string;
   hashtags: string[];
+  overrideImageUrl?: string | null;
+}
+
+interface CarouselSlideImage {
+  index: number;
+  headline: string;
+  fileUrl: string;
 }
 
 interface MarketingPlan {
@@ -201,6 +208,7 @@ export default function EditorialCalendarPage() {
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
+  const [carouselSlides, setCarouselSlides] = useState<{ title: string; slides: CarouselSlideImage[] } | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [distOpen, setDistOpen] = useState(false);
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -498,9 +506,10 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
       return res.json();
     },
-    onSuccess: (data: { posts: RepurposeVariantResult[]; count: number }) => {
+    onSuccess: (data: { posts: RepurposeVariantResult[]; count: number; imagesGenerated?: number }) => {
       setRepurpose(data.posts);
-      toast.success(`Created ${data.count} social drafts in the posts pipeline`);
+      const imgNote = data.imagesGenerated ? ` with ${data.imagesGenerated} matched graphic${data.imagesGenerated === 1 ? "" : "s"}` : "";
+      toast.success(`Created ${data.count} social drafts${imgNote} in the posts pipeline`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -516,8 +525,13 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
       return res.json();
     },
-    onSuccess: (data: { asset: { id: string; title: string } }) => {
-      toast.success(`Created "${data.asset.title}" in the Content Library`);
+    onSuccess: (data: { asset: { id: string; title: string }; slideImages?: CarouselSlideImage[] }) => {
+      if (data.slideImages?.length) {
+        setCarouselSlides({ title: data.asset.title, slides: data.slideImages });
+        toast.success(`Created "${data.asset.title}" with ${data.slideImages.length} branded slides`);
+      } else {
+        toast.success(`Created "${data.asset.title}" in the Content Library`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -526,6 +540,7 @@ export default function EditorialCalendarPage() {
     { value: "blog_post", label: "Blog post" },
     { value: "newsletter", label: "Email newsletter" },
     { value: "video_script", label: "Video script" },
+    { value: "video_shot_list", label: "Video shot list" },
     { value: "podcast_outline", label: "Podcast outline" },
     { value: "whitepaper", label: "Whitepaper" },
     { value: "carousel", label: "Social carousel" },
@@ -1352,6 +1367,14 @@ export default function EditorialCalendarPage() {
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
+                  {v.overrideImageUrl && (
+                    <img
+                      src={v.overrideImageUrl}
+                      alt={`Branded graphic for ${v.platform} post`}
+                      className="mb-2 w-full rounded-md border"
+                      data-testid={`img-variant-${i}`}
+                    />
+                  )}
                   <p className="whitespace-pre-wrap text-sm">{v.content}</p>
                   {v.hashtags?.length > 0 && (
                     <p className="mt-2 text-xs text-muted-foreground">{v.hashtags.map((h) => `#${h}`).join(" ")}</p>
@@ -1361,6 +1384,36 @@ export default function EditorialCalendarPage() {
             </div>
             <DialogFooter>
               <Button onClick={() => setRepurpose(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Carousel slide images */}
+        <Dialog open={!!carouselSlides} onOpenChange={(o) => !o && setCarouselSlides(null)}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Branded carousel slides</DialogTitle>
+              <DialogDescription>
+                One branded image per slide for "{carouselSlides?.title}". Saved with the new asset in the Content Library.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {(carouselSlides?.slides ?? []).map((s) => (
+                <div key={s.index} className="rounded-md border p-2" data-testid={`card-slide-${s.index}`}>
+                  <img
+                    src={s.fileUrl}
+                    alt={`Slide ${s.index}: ${s.headline}`}
+                    className="w-full rounded"
+                    data-testid={`img-slide-${s.index}`}
+                  />
+                  <p className="mt-2 text-xs font-medium">
+                    Slide {s.index}: {s.headline}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setCarouselSlides(null)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

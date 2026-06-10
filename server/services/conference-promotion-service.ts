@@ -630,7 +630,6 @@ export async function resolveBrandKit(
   if (!primaryColor) primaryColor = tenantRow?.primaryColor ?? null;
 
   const customFont = await resolveCompositorFont(tenantDomain, marketId);
-
   return { companyLogoBytes, primaryColor, customFont };
 }
 
@@ -824,6 +823,63 @@ export async function generateBrandedCarouselSet(opts: {
     results.push(await saveConferenceImageBuffer(buffer, "image/png", "png"));
   }
   return results;
+}
+
+/**
+ * Render a batch of branded carousel slides — one image per slide — in the
+ * tenant's brand style (purple/magenta gradient, headline, logo). Brand inputs
+ * are resolved once for the whole deck. Returns each slide's index, public file
+ * URL, and the headline used, in slide order. Slides whose render fails are
+ * omitted (the caller degrades gracefully).
+ */
+export async function generateBrandedCarouselSlides(opts: {
+  tenantDomain: string;
+  marketId?: string | null;
+  slides: { index: number; headline: string; body?: string | null }[];
+}): Promise<{ index: number; headline: string; fileUrl: string; fileSize: number }[]> {
+  const { tenantDomain, marketId, slides } = opts;
+  if (slides.length === 0) return [];
+
+  const { companyLogoBytes, primaryColor, customFont } = await resolveBrandKit(
+    tenantDomain,
+    marketId,
+  );
+
+  const renderOne = async (slide: { index: number; headline: string; body?: string | null }) => {
+    const buffer = await compositeHeroImage({
+      backgroundBytes: null,
+      eventLogoBytes: null,
+      companyLogoBytes,
+      conferenceName: slide.headline,
+      location: slide.body?.trim() || null,
+      primaryColor,
+      customFont,
+      websiteUrl: null,
+      eventDates: null,
+    });
+
+    void archiveArtifactToSpe({
+      tenantDomain,
+      buffer,
+      filename: `carousel-slide-${slide.index}-${Date.now()}.png`,
+      mimeType: "image/png",
+      kind: "image",
+      marketId: marketId ?? undefined,
+      createdByUserId: "system",
+    });
+
+    const saved = await saveConferenceImageBuffer(buffer, "image/png", "png");
+    return { index: slide.index, headline: slide.headline, fileUrl: saved.fileUrl, fileSize: saved.fileSize };
+  };
+
+  const settled = await Promise.allSettled(slides.map(renderOne));
+  const out: { index: number; headline: string; fileUrl: string; fileSize: number }[] = [];
+  for (const r of settled) {
+    if (r.status === "fulfilled") out.push(r.value);
+    else console.error("[carousel slide render]", r.reason);
+  }
+  out.sort((a, b) => a.index - b.index);
+  return out;
 }
 
 function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null): string {

@@ -15,12 +15,14 @@ import {
   longformFormatToAssetType,
   isRepurposeBatchFormat,
   REPURPOSE_FORMAT_DEFS,
+  extractCarouselSlides,
   type LongformRepurposeFormat,
 } from "../services/repurpose-core";
 import type { CarouselSlide } from "@shared/schema";
 import {
   generateBrandedPostGraphic,
   generateBrandedCarouselSet,
+  generateBrandedCarouselSlides,
 } from "../services/conference-promotion-service";
 
 // Canonical market scope for shared content_assets rows: default-market data
@@ -200,7 +202,37 @@ export function registerContentProductionRoutes(app: Express) {
         )
         .returning();
 
-      res.status(201).json({ variantGroup, posts, count: posts.length, usage, model });
+      // Auto-generate a matched branded graphic for each variant so every post
+      // ships with a visual. Best-effort: a failed render leaves that post
+      // image-less rather than failing the whole repurpose.
+      const withImages = await Promise.allSettled(
+        posts.map(async (post) => {
+          const headline = (post.imagePrompt || post.content || "").trim().slice(0, 200);
+          if (!headline) return post;
+          const saved = await generateBrandedPostGraphic({
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            headline,
+          });
+          const [row] = await db
+            .update(generatedPosts)
+            .set({ overrideImageUrl: saved.fileUrl, updatedAt: new Date() })
+            .where(and(eq(generatedPosts.id, post.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
+            .returning();
+          return row ?? post;
+        }),
+      );
+      const finalPosts = withImages.map((r, i) => (r.status === "fulfilled" ? r.value : posts[i]));
+      const imagesGenerated = finalPosts.filter((p) => p.overrideImageUrl).length;
+
+      res.status(201).json({
+        variantGroup,
+        posts: finalPosts,
+        count: finalPosts.length,
+        imagesGenerated,
+        usage,
+        model,
+      });
     } catch (err: any) {
       console.error("[content repurpose]", err);
       res.status(500).json({ error: err.message || "Failed to repurpose content" });
@@ -239,6 +271,34 @@ export function registerContentProductionRoutes(app: Express) {
         return res.status(502).json({ error: "The AI did not return usable content. Please try again." });
       }
 
+      // For carousels, render one branded image per slide and surface them.
+      // Best-effort: if rendering fails we still save the text body. The slide
+      // images are embedded into the body markdown and the first becomes the
+      // asset's lead image, so they persist without any new schema.
+      let finalBody = body;
+      let leadImageUrl: string | null = null;
+      let slideImages: { index: number; headline: string; fileUrl: string }[] = [];
+      if (fmt === "carousel") {
+        try {
+          const slides = extractCarouselSlides(body);
+          const rendered = await generateBrandedCarouselSlides({
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            slides,
+          });
+          if (rendered.length > 0) {
+            leadImageUrl = rendered[0].fileUrl;
+            slideImages = rendered.map((s) => ({ index: s.index, headline: s.headline, fileUrl: s.fileUrl }));
+            const imageMarkdown = rendered
+              .map((s) => `![Slide ${s.index}: ${s.headline}](${s.fileUrl})`)
+              .join("\n\n");
+            finalBody = `${body.trim()}\n\n---\n\n## Slide images\n\n${imageMarkdown}\n`;
+          }
+        } catch (imgErr) {
+          console.error("[content repurpose-longform carousel images]", imgErr);
+        }
+      }
+
       const [created] = await db
         .insert(contentAssets)
         .values({
@@ -247,9 +307,10 @@ export function registerContentProductionRoutes(app: Express) {
           marketId: ctx.marketId || null,
           title,
           description: meta,
-          content: body,
+          content: finalBody,
           aiSummary: meta,
           assetType: longformFormatToAssetType(fmt),
+          leadImageUrl,
           productIds: asset.productIds ?? null,
           repurposedFromAssetId: asset.id,
           status: "active",
@@ -257,7 +318,7 @@ export function registerContentProductionRoutes(app: Express) {
         })
         .returning();
 
-      res.status(201).json({ asset: created, usage, model });
+      res.status(201).json({ asset: created, slideImages, usage, model });
     } catch (err: any) {
       console.error("[content repurpose-longform]", err);
       res.status(500).json({ error: err.message || "Failed to repurpose content" });

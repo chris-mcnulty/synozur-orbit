@@ -154,6 +154,7 @@ export const LONGFORM_REPURPOSE_FORMATS = [
   "blog_post",
   "newsletter",
   "video_script",
+  "video_shot_list",
   "podcast_outline",
   "whitepaper",
   "carousel",
@@ -173,6 +174,8 @@ export const LONGFORM_REPURPOSE_GUIDANCE: Record<LongformRepurposeFormat, string
     "Rework the source into an email newsletter in Markdown: a subject line as the title, a personal intro, 1-3 short value sections drawn from the source, and a clear CTA.",
   video_script:
     "Turn the source into a short-form video script: a 0-3s hook, beat-by-beat spoken lines with brief [VISUAL] cues, ending on the CTA. 45-90 seconds of spoken content.",
+  video_shot_list:
+    "Turn the source into a video shot list — a production-ready, shot-by-shot plan (not a spoken script). Render in Markdown as a numbered list of 6-12 shots. For each shot include: the shot type/framing (e.g. wide, medium, close-up, screen recording, B-roll), what's on screen, any on-screen text/lower-third, and the matching voiceover or audio cue. Open on a hook shot and end on the CTA shot.",
   podcast_outline:
     "Turn the source into a two-host podcast outline in Markdown: episode title, a one-line premise, 4-7 talking-point segments (with a sentence of guidance each), 2-3 pull-quote moments, and an outro CTA.",
   whitepaper:
@@ -189,6 +192,7 @@ export function longformFormatToAssetType(format: LongformRepurposeFormat): stri
     case "whitepaper":
       return "whitepaper";
     case "video_script":
+    case "video_shot_list":
       return "video";
     default:
       // newsletter, podcast_outline, carousel
@@ -418,4 +422,79 @@ export function parseAssetItems(text: string, def: RepurposeFormatDef): Generate
     });
   }
   return out;
+}
+
+export interface ParsedCarouselSlide {
+  // 1-based slide number as it appears in the deck.
+  index: number;
+  // The punchy headline rendered large on the slide.
+  headline: string;
+  // Supporting line(s) rendered smaller beneath the headline (may be empty).
+  body: string;
+}
+
+/**
+ * Parse a generated carousel body (the Markdown shape from
+ * LONGFORM_REPURPOSE_GUIDANCE.carousel) into discrete slides. Each slide is a
+ * "### Slide N" heading followed by a headline line and 1-2 supporting lines.
+ *
+ * Tolerant of variations: a missing "Slide N" prefix, "##"/"###" levels, or a
+ * "Headline:" / "Slide 1:" inline form. Falls back to splitting on blank-line
+ * blocks when no headings are present so we still render something usable.
+ */
+export function extractCarouselSlides(body: string): ParsedCarouselSlide[] {
+  const text = String(body ?? "").replace(/\r\n/g, "\n").trim();
+  if (!text) return [];
+
+  const headingRe = /^#{2,3}\s*(?:slide\s*\d+\s*[:.\-]?\s*)?(.*)$/i;
+  const lines = text.split("\n");
+  const hasHeadings = lines.some((l) => /^#{2,3}\s/.test(l.trim()));
+
+  const stripMd = (s: string) =>
+    s
+      .replace(/^[#>\-*\d.\s]+/, "")
+      .replace(/\*\*|__|`/g, "")
+      .trim();
+
+  let slides: ParsedCarouselSlide[] = [];
+
+  if (hasHeadings) {
+    type Block = { headingRest: string; lines: string[] };
+    const blocks: Block[] = [];
+    let current: Block | null = null;
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (/^#{2,3}\s/.test(line)) {
+        const rest = (line.match(headingRe)?.[1] ?? "").trim();
+        current = { headingRest: rest, lines: [] };
+        blocks.push(current);
+      } else if (current) {
+        if (line) current.lines.push(line);
+      } else if (line) {
+        // Content before the first heading — start an implicit block.
+        current = { headingRest: "", lines: [line] };
+        blocks.push(current);
+      }
+    }
+
+    for (const b of blocks) {
+      const contentLines = b.lines.map(stripMd).filter(Boolean);
+      let headline = stripMd(b.headingRest);
+      if (!headline) headline = contentLines.shift() ?? "";
+      if (!headline) continue;
+      slides.push({ index: 0, headline, body: contentLines.join(" ").trim() });
+    }
+  } else {
+    // No headings → split into blank-line blocks, first line = headline.
+    const chunks = text.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean);
+    slides = chunks
+      .map((chunk) => {
+        const parts = chunk.split("\n").map(stripMd).filter(Boolean);
+        return { index: 0, headline: parts.shift() ?? "", body: parts.join(" ").trim() };
+      })
+      .filter((s) => s.headline);
+  }
+
+  return slides.map((s, i) => ({ ...s, index: i + 1 }));
 }
