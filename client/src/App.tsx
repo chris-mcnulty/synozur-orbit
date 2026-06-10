@@ -165,7 +165,7 @@ function Router() {
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
       <Route path="/app/marketing/editorial-calendar" component={EditorialCalendarPage} />
-      <Route path="/app/marketing/marketing-calendar">{() => <PageFeatureGate featureKey="editorialCalendar" label="Marketing Calendar" description="One calendar for all your social posts, emails, and content. Upgrade to unlock this feature."><MarketingCalendarPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/marketing-calendar">{() => <PageFeatureGate featureKey="editorialCalendar" label="Master Calendar" description="One calendar for all your social posts, emails, and content. Upgrade to unlock this feature."><MarketingCalendarPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/performance" component={MarketingPerformancePage} />
       <Route path="/app/marketing/content-library">{() => <PageFeatureGate featureKey="contentLibrary" label="Digital/Web Assets" description="Manage URLs, articles, and web-based content assets. Upgrade to unlock this feature."><ContentLibraryPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Visual/Brand Assets" description="Manage approved images, logos, and visual brand identity. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>

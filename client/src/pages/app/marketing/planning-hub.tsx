@@ -322,10 +322,10 @@ export default function PlanningHubPage() {
                                 )}
                                 <p className="text-[11px] text-muted-foreground mt-1.5">
                                   {item.type === "content"
-                                    ? <Link href="/app/marketing/editorial-calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Editorial Calendar →</Link>
+                                    ? <Link href="/app/marketing/editorial-calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Content Briefs →</Link>
                                     : scope === "campaign"
                                       ? <Link href={`/app/marketing/campaigns/${id}`} className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Campaign →</Link>
-                                      : <Link href="/app/marketing/calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Calendar →</Link>
+                                      : <Link href="/app/marketing/calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Social Posts →</Link>
                                   }
                                 </p>
                               </div>
@@ -534,7 +534,7 @@ function CreateActionDialog({ open, onOpenChange, scope, id, onDone }: {
             <p className="text-xs text-muted-foreground mt-1.5">
               {type === "social" && "Creates a placeholder post. To generate AI-written social variants, open the campaign and click Generate Posts."}
               {type === "email" && "Creates an email placeholder. Write and send it from the campaign's email tools."}
-              {type === "content" && "Creates a content placeholder linked to this plan. Open Editorial Calendar to write a brief and generate a draft."}
+              {type === "content" && "Creates a content placeholder linked to this plan. Open Content Briefs to write a brief and generate a draft."}
             </p>
           </div>
           <div>

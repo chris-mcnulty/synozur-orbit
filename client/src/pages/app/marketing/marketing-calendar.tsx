@@ -679,9 +679,9 @@ export default function MarketingCalendarPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold" data-testid="text-page-title">
-              <CalendarDays className="h-6 w-6" /> Marketing Calendar
+              <CalendarRange className="h-6 w-6" /> Master Calendar
             </h1>
-            <p className="text-sm text-muted-foreground">All your social posts, emails, and content in one place. Nothing here generates with AI — add and plan by hand.</p>
+            <p className="text-sm text-muted-foreground">The cross-channel overview of every scheduled social post, email, and content piece. Nothing here generates with AI — add and plan by hand.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => exportCsvMut.mutate()} disabled={exportCsvMut.isPending} data-testid="button-export-csv">
@@ -1524,7 +1524,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             )}
             {item.type === "social" && (
               <Link href="/app/marketing/calendar">
-                <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Open in Social Calendar</Button>
+                <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Open in Social Posts</Button>
               </Link>
             )}
           </div>

@@ -97,8 +97,12 @@ interface NavItem {
   comingSoon?: boolean;
   // Renders as a subordinate/nested item beneath the preceding primary entry
   // (extra indentation + a left guide). Used to signal that a calendar feeds
-  // into the master Marketing Calendar above it.
+  // into the Master Calendar above it.
   indent?: boolean;
+  // Short one-line explanation surfaced as a hover tooltip so each item's
+  // purpose is clear without opening it — used to disambiguate the calendars
+  // and planning surfaces that otherwise read alike.
+  description?: string;
 }
 
 interface NavSubGroup {
@@ -583,18 +587,19 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           items: [
             // Master, cross-channel overview (social + email + content) listed
             // first. The two focused execution calendars below feed into it and
-            // render indented to signal that subordinate relationship.
-            { label: "Marketing Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true },
-            { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, indent: true },
-            { label: "Editorial Calendar", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, indent: true },
+            // render indented to signal that subordinate relationship. Distinct
+            // names + icons + descriptions keep the three from reading alike.
+            { label: "Master Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
+            { label: "Social Posts", icon: Share2, href: "/app/marketing/calendar", enterprise: true, indent: true, description: "Social-only view to schedule, reschedule, and add graphics to posts." },
+            { label: "Content Briefs", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, indent: true, description: "Plan and draft long-form content briefs grounded in your strategy." },
           ],
         },
         {
           label: "Execute",
           items: [
             { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true },
-            { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true },
-            { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true },
+            { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true, description: "Coordinate multi-channel campaigns and generate their content." },
+            { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, description: "Plan every piece of marketing for a campaign or theme in one view." },
             { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true },
             { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
             { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
@@ -705,6 +710,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    title={item.description}
                     data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",

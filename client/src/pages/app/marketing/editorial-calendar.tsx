@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/popover";
 import {
   CalendarDays,
+  ClipboardList,
   Loader2,
   Sparkles,
   PenLine,
@@ -727,18 +728,18 @@ export default function EditorialCalendarPage() {
   return (
     <AppLayout>
       <FeatureGate
-        feature="Editorial Calendar"
+        feature="Content Briefs"
         requiredPlan="Enterprise"
         isAllowed={allowed}
-        description="Generate demand-scored content briefs grounded in your messaging framework, competitive gaps, personas, and SEO demand. Upgrade to unlock the Editorial Calendar."
+        description="Generate demand-scored content briefs grounded in your messaging framework, competitive gaps, personas, and SEO demand. Upgrade to unlock Content Briefs."
       >
         <div className="space-y-6 p-1">
           {/* Header */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="flex items-center gap-2 text-2xl font-semibold">
-                <CalendarDays className="h-6 w-6 text-primary" />
-                Editorial Calendar
+                <ClipboardList className="h-6 w-6 text-primary" />
+                Content Briefs
               </h1>
               <p className="text-sm text-muted-foreground">
                 Demand-scored content briefs grounded in your messaging framework, gaps, personas, and SEO demand.
@@ -761,14 +762,14 @@ export default function EditorialCalendarPage() {
                 </p>
               </div>
               <div>
-                <p className="font-medium">📋 Editorial Calendar (here)</p>
+                <p className="font-medium">📋 Content Briefs (here)</p>
                 <p className="text-muted-foreground">
                   Plan and write the content itself. Briefs become drafts saved to the Content Library; use
                   "Repurpose" to spin a draft into social posts, carousels, and more.
                 </p>
               </div>
               <div>
-                <p className="font-medium">🗓️ Marketing Calendar</p>
+                <p className="font-medium">🗓️ Master Calendar</p>
                 <p className="text-muted-foreground">
                   The master day-by-day view for all scheduled content — social posts, emails, and content briefs
                   across every campaign.

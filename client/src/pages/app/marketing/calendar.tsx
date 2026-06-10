@@ -157,12 +157,12 @@ export default function CalendarPage() {
               <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
                 <Lock className="w-10 h-10 text-primary" />
               </div>
-              <CardTitle>Social Calendar</CardTitle>
+              <CardTitle>Social Posts</CardTitle>
               <CardDescription>Available on the Enterprise plan. View and schedule social posts across your connected accounts.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild className="w-full">
-                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Social Calendar">Contact Sales</a>
+                <a href="mailto:contactus@synozur.com?subject=Enterprise Plan Inquiry - Social Posts">Contact Sales</a>
               </Button>
             </CardContent>
           </Card>
@@ -181,15 +181,15 @@ export default function CalendarPage() {
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
               data-testid="link-back-to-marketing-calendar"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> Back to Marketing Calendar
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to Master Calendar
             </Link>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Share2 className="w-6 h-6" /> Social Calendar
+              <Share2 className="w-6 h-6" /> Social Posts
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
               Social-only execution view — schedule, reschedule, retry, and add branded graphics for social posts. Part of the{" "}
               <Link href="/app/marketing/marketing-calendar" className="text-primary underline" data-testid="link-master-calendar">
-                Marketing Calendar
+                Master Calendar
               </Link>{" "}
               overview.
             </p>

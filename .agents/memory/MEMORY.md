@@ -12,3 +12,4 @@
 - [Copywriter voice enforcement](copywriter-voice-rules.md) — Synozur voice rules live in copywriter-service VOICE_NON_NEGOTIABLES; FORMAT_GUIDANCE must never re-add hashtags/soft CTA.
 - [Marketing AI feature inventory](marketing-ai-inventory.md) — distribution-planner & performance-analyst already exist as product features; grep service+route+page before declaring a marketing capability missing.
 - [drizzle-kit meta corruption](drizzle-kit-meta-corruption.md) — `db:generate` is broken (snapshot collision); runtime runner reads migrations/*.sql lexicographically, so hand-write the next NNNN_*.sql file.
+- [Marketing calendar UI labels vs routes](marketing-calendar-labels.md) — Master Calendar=/marketing-calendar, Content Briefs=/editorial-calendar, Social Posts=/calendar; labels renamed but routes/feature keys unchanged.
