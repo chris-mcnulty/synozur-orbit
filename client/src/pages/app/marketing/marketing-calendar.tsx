@@ -925,22 +925,35 @@ export default function MarketingCalendarPage() {
             {dayDetail && (byDay.get(dayDetail) || []).length === 0 && (
               <p className="text-sm text-muted-foreground" data-testid="text-day-detail-empty">Nothing scheduled this day.</p>
             )}
-            {dayDetail && (byDay.get(dayDetail) || []).map((it) => (
-              <button
-                key={`${it.type}-${it.id}`}
-                onClick={() => handleSelectFromDay(it)}
-                className="flex w-full items-center gap-1.5 rounded border p-2 text-left text-xs hover:bg-muted"
-                data-testid={`item-day-detail-${it.type}-${it.id}`}
-                title={it.isBatch ? `${it.title} — click to drill in` : it.title}
-              >
-                {it.isBatch
-                  ? <Inbox className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-300" />
-                  : <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />}
-                <ChannelFormatTag item={it} />
-                <span className="flex-1 truncate">{it.title}</span>
-                <AssignmentDots item={it} filterOpts={filterOpts} />
-              </button>
-            ))}
+            {dayDetail && (byDay.get(dayDetail) || []).map((it) => {
+              // Lead with the actual content so near-identical rows (e.g. many
+              // "instagram · Synozur" posts) are distinguishable at a glance.
+              // Social posts carry their text in `preview`; email/content already
+              // use a meaningful subject/title, so fall back to that.
+              const primary = it.preview?.trim() ? it.preview.trim() : it.title;
+              const secondary = primary !== it.title ? it.title : null;
+              return (
+                <button
+                  key={`${it.type}-${it.id}`}
+                  onClick={() => handleSelectFromDay(it)}
+                  className="flex w-full items-center gap-1.5 rounded border p-2 text-left text-xs hover:bg-muted"
+                  data-testid={`item-day-detail-${it.type}-${it.id}`}
+                  title={it.isBatch ? `${it.title} — click to drill in` : primary}
+                >
+                  {it.isBatch
+                    ? <Inbox className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-300" />
+                    : <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />}
+                  <ChannelFormatTag item={it} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{primary}</span>
+                    {secondary && (
+                      <span className="truncate text-[10px] text-muted-foreground">{secondary}</span>
+                    )}
+                  </span>
+                  <AssignmentDots item={it} filterOpts={filterOpts} />
+                </button>
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>
