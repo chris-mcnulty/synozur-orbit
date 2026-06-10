@@ -46,6 +46,7 @@ import { registerMarketingContextRoutes } from "./routes/marketing-context";
 import { registerEditorialCalendarRoutes } from "./routes/editorial-calendar";
 import { registerMarketingCalendarRoutes } from "./routes/marketing-calendar";
 import { registerContentProductionRoutes } from "./routes/content-production";
+import { registerCampaignIdeationRoutes } from "./routes/campaign-ideation";
 import { registerDistributionPlannerRoutes } from "./routes/distribution-planner";
 import { registerMarketingPerformanceRoutes } from "./routes/marketing-performance";
 import { registerPlanningHubRoutes } from "./routes/planning-hub";
@@ -131,6 +132,7 @@ export async function registerRoutes(
   registerEditorialCalendarRoutes(app);
   registerMarketingCalendarRoutes(app);
   registerContentProductionRoutes(app);
+  registerCampaignIdeationRoutes(app);
   registerDistributionPlannerRoutes(app);
   registerMarketingPerformanceRoutes(app);
   registerPlanningHubRoutes(app);

@@ -28,10 +28,39 @@ export interface StrategicContext {
 }
 
 /**
+ * Loads an uploaded, team-authored grounding document tagged with the given
+ * context (e.g. "messaging_framework", "gtm_plan"), scoped to the active
+ * market. When present, this is treated as authoritative and takes precedence
+ * over the machine-generated equivalent. Returns "" when none exists.
+ */
+async function loadUploadedAuthoritativeDoc(
+  ctx: ContextFilter,
+  contextTag: string,
+): Promise<string> {
+  const docs = await storage.getGroundingDocumentsByTenant(ctx.tenantDomain);
+  const match = docs.find((d) => {
+    const contexts = (d.contexts as string[] | null) ?? [];
+    if (!contexts.includes(contextTag)) return false;
+    if (!d.extractedText?.trim()) return false;
+    // Market scope: default market also matches tenant-wide (null) docs.
+    return ctx.isDefaultMarket
+      ? !d.marketId || d.marketId === ctx.marketId
+      : d.marketId === ctx.marketId;
+  });
+  if (!match?.extractedText) return "";
+  return `(Source: uploaded by the team — treat as authoritative.)\n${match.extractedText.trim().substring(0, 2500)}`;
+}
+
+/**
  * Loads the messaging framework for a tenant context.
+ * Precedence: an uploaded, team-tagged framework wins over the generated one.
  * Checks baseline company profile first (most common), falls back to project-level.
  */
 async function loadMessagingFramework(ctx: ContextFilter): Promise<string> {
+  // Uploaded MPF takes precedence over the machine-generated one.
+  const uploaded = await loadUploadedAuthoritativeDoc(ctx, "messaging_framework");
+  if (uploaded) return uploaded;
+
   const companyProfile = await storage.getCompanyProfileByContext(ctx);
   if (!companyProfile) return "";
 
@@ -124,8 +153,13 @@ async function loadCompetitiveIntelligence(ctx: ContextFilter): Promise<string> 
 
 /**
  * Loads the GTM plan summary for a tenant context.
+ * Precedence: an uploaded, team-tagged GTM plan wins over the generated one.
  */
 async function loadGtmPlanSummary(ctx: ContextFilter): Promise<string> {
+  // Uploaded GTM plan takes precedence over the machine-generated one.
+  const uploaded = await loadUploadedAuthoritativeDoc(ctx, "gtm_plan");
+  if (uploaded) return uploaded;
+
   const companyProfile = await storage.getCompanyProfileByContext(ctx);
   if (!companyProfile) return "";
 

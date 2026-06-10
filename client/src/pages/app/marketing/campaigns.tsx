@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
@@ -62,6 +62,15 @@ const CAMPAIGN_TYPE_OPTIONS: { value: string; label: string; hint: string }[] = 
   { value: "event", label: "Event", hint: "Promote a webinar, conference, or dated event" },
   { value: "offering", label: "Offering", hint: "Launch or spotlight a product / service" },
 ];
+
+interface CampaignIdea {
+  title: string;
+  campaignType: string;
+  objective: string;
+  suggestedAudience: string[];
+  rationale: string;
+  signals: string[];
+}
 
 interface MarketProduct {
   id: string;
@@ -167,6 +176,13 @@ export default function CampaignsPage() {
     includeSunday: false,
   });
 
+  // Campaign ideation (step 0 assist): scan news + intelligence + grounding to
+  // suggest candidate campaigns the user can adopt or bypass.
+  const [ideaMessage, setIdeaMessage] = useState(prefillContext);
+  const [ideaSubjects, setIdeaSubjects] = useState("");
+  const [ideas, setIdeas] = useState<CampaignIdea[] | null>(null);
+  const [ideaAsOf, setIdeaAsOf] = useState<string | null>(null);
+
   const stepFieldErrors = useMemo(() => {
     const result = stepSchemas[step].safeParse(form as any);
     if (result.success) return {} as Record<string, string>;
@@ -204,6 +220,10 @@ export default function CampaignsPage() {
     setAssetSearch("");
     setAssetCategoryFilter("all");
     setAssetDateRange("all");
+    setIdeaMessage(prefillContext);
+    setIdeaSubjects("");
+    setIdeas(null);
+    setIdeaAsOf(null);
   };
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
@@ -391,6 +411,47 @@ export default function CampaignsPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const ideateMutation = useMutation({
+    mutationFn: async () => {
+      const subjects = ideaSubjects.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+      const r = await fetch("/api/campaigns/ideate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ message: ideaMessage, subjects }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to suggest ideas");
+      return r.json();
+    },
+    onSuccess: (data: { ideas: CampaignIdea[]; intelAsOf: string | null }) => {
+      setIdeas(data.ideas ?? []);
+      setIdeaAsOf(data.intelAsOf ?? null);
+      if (!data.ideas?.length) {
+        toast({ title: "No ideas returned", description: "Add a message or subjects to scan, then try again." });
+      }
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  // Adopt an idea into the form (the user can still edit everything below).
+  const applyIdea = (idea: CampaignIdea) => {
+    const matched = personas
+      .filter(p => idea.suggestedAudience.some(a => {
+        const al = a.toLowerCase(), nl = p.name.toLowerCase();
+        return al.includes(nl) || nl.includes(al);
+      }))
+      .map(p => p.id);
+    setForm(f => ({
+      ...f,
+      campaignType: ["theme", "event", "offering"].includes(idea.campaignType) ? idea.campaignType : f.campaignType,
+      name: idea.title || f.name,
+      objective: idea.objective || f.objective,
+      selectedPersonaIds: matched.length ? matched : f.selectedPersonaIds,
+    }));
+    setIdeas(null);
+    toast({ title: "Idea applied", description: "Review and adjust the details below." });
+  };
+
   const duplicateMutation = useMutation({
     mutationFn: async (campaignId: string) => {
       const r = await fetch(`/api/campaigns/${campaignId}/duplicate`, {
@@ -502,6 +563,73 @@ export default function CampaignsPage() {
 
               {step === 0 && (
                 <div className="space-y-4">
+                  {/* Ideation assist: combine grounding + latest intelligence + a news scan into candidate campaigns */}
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-primary" /> Need a starting point?
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        We'll combine your ICP, messaging &amp; positioning, GTM plan, and the latest intelligence report with a quick news scan to suggest campaigns. Optional — skip it and fill in the details yourself.
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs">What's your message? (optional)</Label>
+                      <Textarea
+                        value={ideaMessage}
+                        onChange={e => setIdeaMessage(e.target.value)}
+                        placeholder="e.g. Position us as the trusted choice for zero-trust security this quarter"
+                        rows={2}
+                        data-testid="input-idea-message"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Subjects or companies to scan for news (optional)</Label>
+                      <Input
+                        value={ideaSubjects}
+                        onChange={e => setIdeaSubjects(e.target.value)}
+                        placeholder="comma-separated, e.g. zero trust, Acme Corp, NIST CSF 2.0"
+                        data-testid="input-idea-subjects"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => ideateMutation.mutate()}
+                      disabled={ideateMutation.isPending}
+                      data-testid="button-suggest-ideas"
+                    >
+                      {ideateMutation.isPending ? "Thinking…" : "Suggest campaign ideas"}
+                    </Button>
+
+                    {ideas && ideas.length > 0 && (
+                      <div className="space-y-2 pt-1" data-testid="idea-list">
+                        {ideaAsOf && (
+                          <p className="text-[11px] text-muted-foreground">Using intelligence as of {ideaAsOf.slice(0, 10)}.</p>
+                        )}
+                        {ideas.map((idea, i) => (
+                          <div key={i} className="rounded-md border bg-background p-2.5" data-testid={`idea-${i}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium">{idea.title}</span>
+                                  <Badge variant="secondary" className="text-[10px] capitalize">{idea.campaignType}</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">{idea.objective}</p>
+                                {idea.rationale && <p className="text-[11px] text-muted-foreground mt-1 italic">{idea.rationale}</p>}
+                                {idea.suggestedAudience.length > 0 && (
+                                  <p className="text-[11px] text-muted-foreground mt-1">Audience: {idea.suggestedAudience.join(", ")}</p>
+                                )}
+                              </div>
+                              <Button size="sm" variant="outline" className="shrink-0" onClick={() => applyIdea(idea)} data-testid={`button-use-idea-${i}`}>
+                                Use this
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <Label>Campaign Name *</Label>
                     <Input

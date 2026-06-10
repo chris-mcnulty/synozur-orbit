@@ -1169,6 +1169,10 @@ export const GROUNDING_DOC_CONTEXTS = [
   "email_generation",
   "product_features",
   "product_roadmap",
+  // Authoritative strategy docs the team uploads. When present, these take
+  // precedence over the machine-generated equivalents in strategic context.
+  "messaging_framework",
+  "gtm_plan",
 ] as const;
 
 export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
@@ -1180,12 +1184,14 @@ export const GROUNDING_DOC_CONTEXT_LABELS: Record<string, string> = {
   email_generation: "Email Generation",
   product_features: "Product Features",
   product_roadmap: "Product Roadmap",
+  messaging_framework: "Messaging & Positioning Framework (authoritative)",
+  gtm_plan: "Go-To-Market Plan (authoritative)",
 };
 
 export const GROUNDING_DOC_CONTEXT_PRESETS: Record<string, string[]> = {
   all: [...GROUNDING_DOC_CONTEXTS],
   intelligence: ["competitive_analysis", "recommendations", "executive_summary", "intelligence_briefing"],
-  marketing: ["marketing_content", "email_generation"],
+  marketing: ["marketing_content", "email_generation", "messaging_framework", "gtm_plan"],
   product: ["product_features", "product_roadmap"],
 };
 
