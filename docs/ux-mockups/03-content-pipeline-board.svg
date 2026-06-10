@@ -12,10 +12,12 @@
   <circle cx="32" cy="28" r="9" fill="#7e0ef5"/>
   <text x="50" y="33" font-size="15" font-weight="700" fill="#221735">Orbit</text>
   <text x="140" y="33" font-size="13" font-weight="600" fill="#756a8a">Research</text>
-  <rect x="222" y="13" width="96" height="30" rx="15" fill="#7e0ef5"/>
-  <text x="270" y="33" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
-  <text x="338" y="33" font-size="13" font-weight="600" fill="#756a8a">Sales</text>
-  <text x="392" y="33" font-size="13" font-weight="600" fill="#756a8a">Admin &amp; Settings</text>
+  <text x="216" y="33" font-size="13" font-weight="600" fill="#756a8a">Product</text>
+  <rect x="284" y="13" width="96" height="30" rx="15" fill="#7e0ef5"/>
+  <text x="332" y="33" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
+  <text x="394" y="33" font-size="13" font-weight="600" fill="#756a8a">Sales</text>
+  <circle cx="1478" cy="28" r="12" fill="#f1f0f3"/>
+  <text x="1478" y="33" font-size="12" fill="#5b4a78" text-anchor="middle">⚙</text>
   <circle cx="1516" cy="28" r="13" fill="#e4ddf0"/>
   <text x="1516" y="32" font-size="10" fill="#5b4a78" text-anchor="middle">CM</text>
 
@@ -40,7 +42,7 @@
     <rect x="232" y="150" width="226" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
     <text x="248" y="171" fill="#3d3354">Campaign:  <tspan font-weight="600">Q3 Product Launch</tspan>  ▾</text>
     <rect x="470" y="150" width="170" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
-    <text x="486" y="171" fill="#3d3354">Type:  <tspan font-weight="600">Posts + Briefs + Email</tspan>  ▾</text>
+    <text x="486" y="171" fill="#3d3354">Source:  <tspan font-weight="600">All pipelines</tspan>  ▾</text>
     <rect x="652" y="150" width="120" height="32" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
     <text x="668" y="171" fill="#3d3354">Platform:  <tspan font-weight="600">All</tspan>  ▾</text>
   </g>
@@ -244,5 +246,5 @@
   </g>
   <path d="M 1170 540 C 1210 580, 1260 560, 1300 480" stroke="#7e0ef5" stroke-width="2.5" fill="none" stroke-dasharray="2 7" stroke-linecap="round"/>
 
-  <text x="232" y="918" font-size="12" fill="#756a8a">Drag between columns to change status · click a card to open the full editor drawer · illegal moves (Published → Draft) snap back with a toast.   One board unifies posts (in ✦), briefs (✎) and email (✉).</text>
+  <text x="232" y="918" font-size="12" fill="#756a8a">Drag between columns to change status · click a card opens the full editor drawer · illegal moves snap back with a toast.   ONE board replaces today's four pipelines: social posts (in ✦), event/conference posts, email (✉), briefs (✎) — plus product collateral as it flows to marketing.</text>
 </svg>

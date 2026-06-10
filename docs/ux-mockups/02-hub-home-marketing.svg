@@ -6,16 +6,18 @@
   <line x1="0" y1="64" x2="1560" y2="64" stroke="#e4ddf0"/>
   <circle cx="36" cy="32" r="10" fill="#7e0ef5"/>
   <text x="56" y="38" font-size="17" font-weight="700" fill="#221735">Orbit</text>
-  <rect x="140" y="16" width="104" height="32" rx="16" fill="#ffffff"/>
-  <text x="192" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Research</text>
-  <rect x="252" y="16" width="104" height="32" rx="16" fill="#7e0ef5"/>
-  <text x="304" y="37" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
-  <rect x="364" y="16" width="80" height="32" rx="16" fill="#ffffff"/>
-  <text x="404" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Sales</text>
-  <rect x="452" y="16" width="150" height="32" rx="16" fill="#ffffff"/>
-  <text x="527" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Admin &amp; Settings</text>
+  <rect x="140" y="16" width="96" height="32" rx="16" fill="#ffffff"/>
+  <text x="188" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Research</text>
+  <rect x="244" y="16" width="88" height="32" rx="16" fill="#ffffff"/>
+  <text x="288" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Product</text>
+  <rect x="340" y="16" width="100" height="32" rx="16" fill="#7e0ef5"/>
+  <text x="390" y="37" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Marketing</text>
+  <rect x="448" y="16" width="72" height="32" rx="16" fill="#ffffff"/>
+  <text x="484" y="37" font-size="13" font-weight="600" fill="#756a8a" text-anchor="middle">Sales</text>
   <rect x="1290" y="17" width="150" height="30" rx="8" fill="#f7f4fb" stroke="#e4ddf0"/>
   <text x="1306" y="37" font-size="12" fill="#756a8a">⌘K  Search…</text>
+  <circle cx="1466" cy="32" r="13" fill="#f1f0f3"/>
+  <text x="1466" y="37" font-size="13" fill="#5b4a78" text-anchor="middle">⚙</text>
   <circle cx="1510" cy="32" r="15" fill="#e4ddf0"/>
   <text x="1510" y="37" font-size="11" fill="#5b4a78" text-anchor="middle">CM</text>
 

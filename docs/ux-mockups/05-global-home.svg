@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="980" viewBox="0 0 1560 980" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="1560" height="980" fill="#f7f4fb"/>
+
+  <!-- header -->
+  <rect x="0" y="0" width="1560" height="64" fill="#ffffff"/>
+  <line x1="0" y1="64" x2="1560" y2="64" stroke="#e4ddf0"/>
+  <circle cx="36" cy="32" r="10" fill="#7e0ef5"/>
+  <circle cx="36" cy="32" r="15" fill="none" stroke="#7e0ef5" stroke-width="2"/>
+  <text x="60" y="38" font-size="17" font-weight="700" fill="#221735">Orbit</text>
+  <g font-size="13" font-weight="600" fill="#756a8a">
+    <text x="150" y="37">Research</text>
+    <text x="238" y="37">Product</text>
+    <text x="318" y="37">Marketing</text>
+    <text x="410" y="37">Sales</text>
+  </g>
+  <rect x="1290" y="17" width="140" height="30" rx="8" fill="#f7f4fb" stroke="#e4ddf0"/>
+  <text x="1306" y="37" font-size="12" fill="#756a8a">⌘K  Search…</text>
+  <circle cx="1462" cy="32" r="13" fill="#f1f0f3"/>
+  <text x="1462" y="37" font-size="13" fill="#5b4a78" text-anchor="middle">⚙</text>
+  <circle cx="1502" cy="32" r="14" fill="#e4ddf0"/>
+  <text x="1502" y="37" font-size="11" fill="#5b4a78" text-anchor="middle">CM</text>
+
+  <!-- greeting -->
+  <text x="40" y="120" font-size="26" font-weight="700" fill="#221735">Good morning, Chris</text>
+  <text x="40" y="148" font-size="14" fill="#756a8a">Contoso Software · baseline company — intelligence fresh as of 7:40 AM</text>
+
+  <!-- ===== Row 1: exec summary + score + signals ===== -->
+  <rect x="40" y="172" width="880" height="304" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="64" y="208" font-size="16" font-weight="700" fill="#221735">Executive summary</text>
+  <text x="744" y="208" font-size="12" fill="#5b0bb0" font-weight="600">Updated Jun 9 · Open full →</text>
+
+  <g font-size="12">
+    <text x="64" y="244" font-weight="700" fill="#5b0bb0" font-size="11" letter-spacing="0.5">COMPANY SNAPSHOT</text>
+    <text x="64" y="264" fill="#3d3354">Mid-market leader in workflow automation; ARR</text>
+    <text x="64" y="280" fill="#3d3354">growth re-accelerating after Q1 platform launch.</text>
+    <rect x="64" y="292" width="330" height="7" rx="3" fill="#e8e2f2"/>
+
+    <text x="490" y="244" font-weight="700" fill="#5b0bb0" font-size="11" letter-spacing="0.5">MARKET POSITION</text>
+    <text x="490" y="264" fill="#3d3354">#3 of 8 tracked competitors by composite score;</text>
+    <text x="490" y="280" fill="#3d3354">strongest on innovation, lagging on presence.</text>
+    <rect x="490" y="292" width="300" height="7" rx="3" fill="#e8e2f2"/>
+
+    <text x="64" y="338" font-weight="700" fill="#5b0bb0" font-size="11" letter-spacing="0.5">COMPETITIVE LANDSCAPE</text>
+    <text x="64" y="358" fill="#3d3354">Acme rising fast (▲ social + hiring signals);</text>
+    <text x="64" y="374" fill="#3d3354">Globex retreating from SMB segment.</text>
+    <rect x="64" y="386" width="310" height="7" rx="3" fill="#e8e2f2"/>
+
+    <text x="490" y="338" font-weight="700" fill="#5b0bb0" font-size="11" letter-spacing="0.5">OPPORTUNITIES</text>
+    <text x="490" y="358" fill="#3d3354">Win displaced Globex SMB accounts; press the</text>
+    <text x="490" y="374" fill="#3d3354">AI-features gap vs. Acme in Q3 messaging.</text>
+    <rect x="490" y="386" width="280" height="7" rx="3" fill="#e8e2f2"/>
+  </g>
+  <line x1="64" y1="420" x2="896" y2="420" stroke="#eee8f6"/>
+  <text x="64" y="448" font-size="11" fill="#756a8a" font-style="italic">Pulled from the existing baseline executive summary — Home shows the digest; the full page lives in Research.</text>
+
+  <!-- orbit score -->
+  <rect x="944" y="172" width="270" height="304" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="968" y="208" font-size="12" font-weight="600" fill="#756a8a">ORBIT SCORE</text>
+  <text x="968" y="276" font-size="52" font-weight="700" fill="#7e0ef5">72</text>
+  <text x="1064" y="276" font-size="13" fill="#15803d">▲ 3 this month</text>
+  <path d="M 968 340 L 1004 332 L 1040 338 L 1076 322 L 1112 326 L 1148 310 L 1184 300" stroke="#7e0ef5" stroke-width="2.5" fill="none"/>
+  <path d="M 968 340 L 1004 332 L 1040 338 L 1076 322 L 1112 326 L 1148 310 L 1184 300 L 1184 356 L 968 356 Z" fill="#7e0ef5" opacity="0.08"/>
+  <line x1="968" y1="392" x2="1190" y2="392" stroke="#eee8f6"/>
+  <text x="968" y="420" font-size="12" fill="#3d3354">Intelligence freshness</text>
+  <rect x="968" y="432" width="222" height="10" rx="5" fill="#efeaf7"/>
+  <rect x="968" y="432" width="204" height="10" rx="5" fill="#22c55e"/>
+  <text x="968" y="462" font-size="11" fill="#756a8a">92% · 2 sources stale → refresh</text>
+
+  <!-- live signals -->
+  <rect x="1238" y="172" width="282" height="304" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="1262" y="208" font-size="12" font-weight="600" fill="#756a8a">LIVE SIGNALS</text>
+  <circle cx="1270" cy="236" r="5" fill="#ef4444"/>
+  <text x="1284" y="241" font-size="12" font-weight="600" fill="#221735">Acme raises $40M Series C</text>
+  <text x="1284" y="257" font-size="11" fill="#756a8a">TechCrunch · 2h ago · high impact</text>
+  <circle cx="1270" cy="288" r="5" fill="#f59e0b"/>
+  <text x="1284" y="293" font-size="12" font-weight="600" fill="#221735">Globex sunsets SMB tier</text>
+  <text x="1284" y="309" font-size="11" fill="#756a8a">Press release · 6h ago</text>
+  <circle cx="1270" cy="340" r="5" fill="#3b82f6"/>
+  <text x="1284" y="345" font-size="12" font-weight="600" fill="#221735">Initech ships AI assistant beta</text>
+  <text x="1284" y="361" font-size="11" fill="#756a8a">Product blog · yesterday</text>
+  <text x="1262" y="448" font-size="12" fill="#5b0bb0" font-weight="600">All activity →</text>
+
+  <!-- ===== Row 2: area glance cards ===== -->
+  <g>
+    <rect x="40" y="500" width="352" height="176" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="40" y="500" width="352" height="5" rx="2.5" fill="#0ea5e9"/>
+    <text x="64" y="538" font-size="14" font-weight="700" fill="#221735">🔭  Research</text>
+    <text x="64" y="572" font-size="15" fill="#3d3354"><tspan font-weight="700" fill="#0c4a6e">3</tspan> high-impact signals today</text>
+    <text x="64" y="594" font-size="11" fill="#756a8a">analysis last run 2 days ago</text>
+    <rect x="64" y="616" width="140" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="134" y="636" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">Review signals →</text>
+  </g>
+  <g>
+    <rect x="416" y="500" width="352" height="176" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="416" y="500" width="352" height="5" rx="2.5" fill="#f97316"/>
+    <text x="440" y="538" font-size="14" font-weight="700" fill="#221735">📦  Product</text>
+    <text x="440" y="572" font-size="15" fill="#3d3354"><tspan font-weight="700" fill="#9a3412">2</tspan> battlecards stale</text>
+    <text x="440" y="594" font-size="11" fill="#756a8a">one-sheet missing for Orbit API</text>
+    <rect x="440" y="616" width="156" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="518" y="636" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">Refresh collateral →</text>
+  </g>
+  <g>
+    <rect x="792" y="500" width="352" height="176" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="792" y="500" width="352" height="5" rx="2.5" fill="#7e0ef5"/>
+    <text x="816" y="538" font-size="14" font-weight="700" fill="#221735">📣  Marketing</text>
+    <text x="816" y="572" font-size="15" fill="#3d3354"><tspan font-weight="700" fill="#5b0bb0">12</tspan> posts awaiting approval</text>
+    <text x="816" y="594" font-size="11" fill="#756a8a">9 scheduled over the next 7 days</text>
+    <rect x="816" y="616" width="140" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="886" y="636" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">Open pipeline →</text>
+  </g>
+  <g>
+    <rect x="1168" y="500" width="352" height="176" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+    <rect x="1168" y="500" width="352" height="5" rx="2.5" fill="#f59e0b"/>
+    <text x="1192" y="538" font-size="14" font-weight="700" fill="#221735">🤝  Sales</text>
+    <text x="1192" y="572" font-size="15" fill="#3d3354">Q2 competitive report <tspan font-weight="700" fill="#92400e">ready</tspan></text>
+    <text x="1192" y="594" font-size="11" fill="#756a8a">2 relationship plans due this month</text>
+    <rect x="1192" y="616" width="124" height="30" rx="8" fill="#f0e7fd"/>
+    <text x="1254" y="636" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">View report →</text>
+  </g>
+
+  <!-- ===== Row 3: positioning + trend ===== -->
+  <rect x="40" y="700" width="740" height="224" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="64" y="734" font-size="14" font-weight="700" fill="#221735">Market positioning</text>
+  <line x1="90" y1="892" x2="740" y2="892" stroke="#e4ddf0"/>
+  <line x1="90" y1="752" x2="90" y2="892" stroke="#e4ddf0"/>
+  <text x="700" y="910" font-size="10" fill="#756a8a" text-anchor="end">market presence →</text>
+  <text x="78" y="760" font-size="10" fill="#756a8a" text-anchor="end" transform="rotate(-90 78 760)"></text>
+  <text x="64" y="770" font-size="10" fill="#756a8a" transform="rotate(-90 64 770)" text-anchor="end">innovation →</text>
+  <circle cx="420" cy="788" r="9" fill="#7e0ef5"/>
+  <text x="420" y="772" font-size="11" font-weight="700" fill="#5b0bb0" text-anchor="middle">You</text>
+  <circle cx="560" cy="800" r="7" fill="#9ca3af"/><text x="560" y="784" font-size="10" fill="#756a8a" text-anchor="middle">Acme</text>
+  <circle cx="610" cy="856" r="7" fill="#9ca3af"/><text x="610" y="840" font-size="10" fill="#756a8a" text-anchor="middle">Globex</text>
+  <circle cx="300" cy="836" r="7" fill="#9ca3af"/><text x="300" y="820" font-size="10" fill="#756a8a" text-anchor="middle">Initech</text>
+  <circle cx="200" cy="868" r="7" fill="#9ca3af"/><text x="200" y="852" font-size="10" fill="#756a8a" text-anchor="middle">Umbra</text>
+  <circle cx="480" cy="848" r="7" fill="#9ca3af"/><text x="480" y="832" font-size="10" fill="#756a8a" text-anchor="middle">Vandelay</text>
+
+  <rect x="804" y="700" width="716" height="224" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  <text x="828" y="734" font-size="14" font-weight="700" fill="#221735">Orbit Score trend</text>
+  <path d="M 840 880 L 920 872 L 1000 876 L 1080 858 L 1160 862 L 1240 840 L 1320 832 L 1400 816 L 1480 800"
+        stroke="#7e0ef5" stroke-width="2.5" fill="none"/>
+  <path d="M 840 880 L 920 872 L 1000 876 L 1080 858 L 1160 862 L 1240 840 L 1320 832 L 1400 816 L 1480 800 L 1480 900 L 840 900 Z"
+        fill="#7e0ef5" opacity="0.08"/>
+  <line x1="840" y1="900" x2="1480" y2="900" stroke="#e4ddf0"/>
+  <text x="840" y="916" font-size="10" fill="#756a8a">Oct</text>
+  <text x="1480" y="916" font-size="10" fill="#756a8a" text-anchor="end">Jun</text>
+
+  <text x="40" y="960" font-size="12" fill="#756a8a">Mockup 5 of 5 — Global Home (Orbit logo lands here) · pure at-a-glance, no workspace chrome · reworked from today's dashboard.tsx · see plan §2</text>
+</svg>
