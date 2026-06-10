@@ -707,6 +707,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
       const { from, to, campaignId, solutionAreaId, conferenceId } = req.query as Record<string, string>;
+      const includeExported = req.query.includeExported === "true";
       const fromDate = from ? new Date(from) : null;
       const toDate = to ? new Date(to) : null;
 
@@ -717,6 +718,11 @@ export function registerMarketingCalendarRoutes(app: Express) {
         ne(generatedPosts.status, "deleted"),
         ne(generatedPosts.status, "archived"),
       ];
+      // Skip already-delivered posts by default so they don't get re-exported.
+      if (!includeExported) {
+        conds.push(ne(generatedPosts.status, "exported"));
+        conds.push(ne(generatedPosts.status, "published"));
+      }
       if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
       if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));
       if (campaignId) conds.push(eq(generatedPosts.campaignId, campaignId));
@@ -740,13 +746,10 @@ export function registerMarketingCalendarRoutes(app: Express) {
         imageBaseUrl: host ? `${proto}://${host}` : undefined,
       });
 
-      // Bulk-mark Exported (= delivered) for the period. Only flip non-final
-      // statuses so we don't downgrade already-published posts.
-      const toFlip = posts.filter((p) => !["exported", "published"].includes(p.status)).map((p) => p.id);
-      if (toFlip.length) {
-        await db.update(generatedPosts).set({ status: "exported", updatedAt: new Date() })
-          .where(and(eq(generatedPosts.tenantDomain, ctx.tenantDomain), inArray(generatedPosts.id, toFlip)));
-      }
+      // NOTE: downloading no longer marks posts as delivered. Scheduling tools
+      // (e.g. SocialPilot) often reject a CSV (bad dates, missing graphics), and
+      // auto-marking would silently bury those rejected posts. Delivery is now
+      // confirmed explicitly from each campaign's export flow.
 
       // WS6: retain the export in SharePoint (silent fallback to object storage).
       try {

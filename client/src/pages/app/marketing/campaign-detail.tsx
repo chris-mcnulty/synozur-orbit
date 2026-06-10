@@ -370,6 +370,11 @@ export default function CampaignDetailPage() {
     [posts],
   );
   const archivedCount = useMemo(() => posts.filter((p) => p.status === "archived").length, [posts]);
+  const schedulablePlatforms = useMemo(() => {
+    const set = new Set<string>();
+    posts.forEach((p) => { if (p.status !== "deleted" && p.status !== "rejected") set.add(p.platform); });
+    return Array.from(set).sort();
+  }, [posts]);
   const activeBatch = batchFilter ? postBatches.batches.find((b) => b.key === batchFilter) ?? null : null;
 
   const { data: contentPlan } = useQuery<ContentPlanResponse>({
@@ -725,6 +730,8 @@ export default function CampaignDetailPage() {
   const [postsPerDay, setPostsPerDay] = useState("1");
   const [daysBetweenPosts, setDaysBetweenPosts] = useState("1");
   const [minutesBetweenPosts, setMinutesBetweenPosts] = useState("180");
+  const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
+  const [scheduleArchiveLeftover, setScheduleArchiveLeftover] = useState(false);
 
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [createPostContent, setCreatePostContent] = useState("");
@@ -758,10 +765,13 @@ export default function CampaignDetailPage() {
   });
 
   const schedulePostsMutation = useMutation({
-    mutationFn: async ({ time, perDay, daysBetween, spacingMinutes }: { time: string; perDay: number; daysBetween: number; spacingMinutes: number }) => {
+    mutationFn: async ({ time, perDay, daysBetween, spacingMinutes, platforms, archiveLeftover }: { time: string; perDay: number; daysBetween: number; spacingMinutes: number; platforms: string[]; archiveLeftover: boolean }) => {
       if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
-      const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
-      if (activePosts.length === 0) throw new Error("No active posts to schedule");
+      const platformSet = new Set(platforms);
+      // Only the chosen platforms get distributed; everything else is left as-is
+      // (and optionally archived afterward as "leftovers").
+      const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected" && platformSet.has(p.platform));
+      if (activePosts.length === 0) throw new Error("No active posts to schedule for the selected platforms");
 
       const [hours, minutes] = time.split(":").map(Number);
       const timeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
@@ -906,7 +916,18 @@ export default function CampaignDetailPage() {
         return r.json();
       }));
 
-      return { overflowCount };
+      // Optionally sweep up everything still without a date (overflow + posts on
+      // platforms we didn't schedule) in the same flow.
+      let archivedCount = 0;
+      if (archiveLeftover) {
+        const ar = await fetch(`/api/campaigns/${id}/archive-unscheduled`, { method: "POST", credentials: "include" });
+        if (ar.ok) {
+          const aj = await ar.json().catch(() => ({ archived: 0 }));
+          archivedCount = aj.archived ?? 0;
+        }
+      }
+
+      return { overflowCount, archivedCount };
     },
     onSuccess: (result) => {
       setShowScheduleDialog(false);
@@ -918,7 +939,7 @@ export default function CampaignDetailPage() {
           variant: "destructive",
         });
       } else {
-        toast({ title: "Posts scheduled across campaign timeline" });
+        toast({ title: "Posts scheduled across campaign timeline", description: result?.archivedCount ? `${result.archivedCount} leftover post${result.archivedCount === 1 ? "" : "s"} archived.` : undefined });
       }
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -1009,38 +1030,44 @@ export default function CampaignDetailPage() {
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [showExportWarning, setShowExportWarning] = useState(false);
   const [includeUndated, setIncludeUndated] = useState(false);
+  const [includeExported, setIncludeExported] = useState(false);
   const [exportPreview, setExportPreview] = useState<{ totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number } | null>(null);
+  // After a download, we confirm the scheduling tool accepted the file before
+  // marking anything delivered. These hold the ids that were in the last CSV.
+  const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
+  const [lastExportedIds, setLastExportedIds] = useState<string[]>([]);
 
   const handleExportClick = async () => {
+    setIncludeUndated(false);
+    setIncludeExported(false);
     try {
       const r = await fetch(`/api/campaigns/${id}/export-preview`, { credentials: "include" });
       if (!r.ok) throw new Error("Preview failed");
       const preview = await r.json();
       setExportPreview(preview);
-      if (preview.undatedPosts > 0 || preview.collisions > 0) {
-        setIncludeUndated(false);
-        setShowExportWarning(true);
-      } else {
-        doExport(false);
-      }
     } catch {
-      doExport(false);
+      setExportPreview(null);
     }
+    // Always show the review step so the user gets format/scope choices and a
+    // clear picture of what's about to leave the building.
+    setShowExportWarning(true);
   };
 
   const doExport = (withUndated: boolean) => {
-    exportCsvMutation.mutate({ includeUndated: withUndated });
+    exportCsvMutation.mutate({ includeUndated: withUndated, includeExported });
   };
 
   const exportCsvMutation = useMutation({
-    mutationFn: async ({ includeUndated: inclUndated }: { includeUndated: boolean }) => {
+    mutationFn: async ({ includeUndated: inclUndated, includeExported: inclExported }: { includeUndated: boolean; includeExported: boolean }) => {
       const tzOffset = new Date().getTimezoneOffset();
       const excludeParam = inclUndated ? "false" : "true";
-      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}&excludeUndated=${excludeParam}`, {
+      const r = await fetch(`/api/campaigns/${id}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}&excludeUndated=${excludeParam}&includeExported=${inclExported}`, {
         method: "POST",
         credentials: "include",
       });
       if (!r.ok) throw new Error("Export failed");
+      const idsHeader = r.headers.get("X-Exported-Post-Ids") || "";
+      const exportedIds = idsHeader ? idsHeader.split(",").filter(Boolean) : [];
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1048,8 +1075,36 @@ export default function CampaignDetailPage() {
       a.download = `campaign-posts-${csvFormat}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      return { exportedIds };
+    },
+    onSuccess: ({ exportedIds }) => {
+      if (exportedIds.length > 0) {
+        setLastExportedIds(exportedIds);
+        setShowDeliverConfirm(true);
+      } else {
+        toast({ title: "Exported", description: "No new posts were included in the file." });
+      }
     },
     onError: (err: Error) => toast({ title: "Export failed", description: err.message, variant: "destructive" }),
+  });
+
+  const markDeliveredMutation = useMutation({
+    mutationFn: async (postIds: string[]) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/mark-delivered`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds }),
+      });
+      if (!r.ok) throw new Error("Failed to mark delivered");
+      return r.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: (d) => {
+      setShowDeliverConfirm(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `Marked ${d.updated} post${d.updated === 1 ? "" : "s"} as delivered`, description: "They won't appear in future exports unless you choose to include delivered posts." });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't mark delivered", description: err.message, variant: "destructive" }),
   });
 
 
@@ -1704,7 +1759,7 @@ export default function CampaignDetailPage() {
                     variant={needsScheduling ? "default" : "outline"}
                     size="sm"
                     className={`gap-1.5 ${needsScheduling ? "animate-pulse" : ""}`}
-                    onClick={() => setShowScheduleDialog(true)}
+                    onClick={() => { setSchedulePlatforms(schedulablePlatforms); setScheduleArchiveLeftover(false); setShowScheduleDialog(true); }}
                     disabled={schedulePostsMutation.isPending}
                     title={needsScheduling ? `${unscheduledCount} post${unscheduledCount !== 1 ? "s" : ""} not yet scheduled — schedule before exporting` : "Configure and distribute posts across the campaign date range"}
                     data-testid="button-schedule-posts"
@@ -1847,8 +1902,17 @@ export default function CampaignDetailPage() {
 
             {posts.length === 0 && !isGenerating ? (
               <Card>
-                <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-posts">
-                  {jobStatus?.status === "failed" ? "Generation failed. Click Generate Posts to try again." : "No posts yet. Click Generate Posts for AI-powered content, or Create Post to write your own."}
+                <CardContent className="py-10 text-center text-muted-foreground space-y-2" data-testid="text-no-posts">
+                  <p>
+                    {jobStatus?.status === "failed"
+                      ? "Generation failed. Click Generate Posts to try again."
+                      : "No posts yet. Click Generate Posts for AI-powered content, or Create Post to write your own."}
+                  </p>
+                  <p className="text-xs">
+                    This <span className="font-medium">Content Plan</span> is where you draft, generate, and schedule a
+                    campaign's posts. Once scheduled, they appear on the{" "}
+                    <a href="/app/marketing/calendar" onClick={(e) => { e.preventDefault(); navigate("/app/marketing/calendar"); }} className="text-primary underline" data-testid="link-social-posts-calendar">Social Posts calendar</a>.
+                  </p>
                 </CardContent>
               </Card>
             ) : (
@@ -2708,9 +2772,46 @@ export default function CampaignDetailPage() {
                 </SelectContent>
               </Select>
             </div>
+            {schedulablePlatforms.length > 0 && (
+              <div className="space-y-2">
+                <Label>Platforms to schedule</Label>
+                <div className="flex flex-wrap gap-3">
+                  {schedulablePlatforms.map((pl) => (
+                    <label key={pl} className="flex items-center gap-2 text-sm cursor-pointer capitalize" data-testid={`checkbox-schedule-platform-${pl}`}>
+                      <Checkbox
+                        checked={schedulePlatforms.includes(pl)}
+                        onCheckedChange={(c) =>
+                          setSchedulePlatforms((prev) => (c ? [...prev, pl] : prev.filter((x) => x !== pl)))
+                        }
+                      />
+                      {pl}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Only the checked platforms get dated. Posts on the others are left untouched.</p>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Weekends:{" "}
+              {campaign?.includeSaturday && campaign?.includeSunday
+                ? "Saturdays and Sundays included"
+                : !campaign?.includeSaturday && !campaign?.includeSunday
+                ? "skipped (weekdays only)"
+                : campaign?.includeSaturday
+                ? "Sundays skipped"
+                : "Saturdays skipped"}
+              . Change this in Edit Campaign.
+            </p>
+            <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="checkbox-archive-leftover">
+              <Checkbox
+                checked={scheduleArchiveLeftover}
+                onCheckedChange={(c) => setScheduleArchiveLeftover(!!c)}
+              />
+              Archive any leftover posts that still have no date
+            </label>
             <div className="text-sm text-muted-foreground" data-testid="text-schedule-preview">
               {(() => {
-                const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected").length;
+                const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected" && schedulePlatforms.includes(p.platform)).length;
                 const interval = parseInt(daysBetweenPosts);
                 const perDay = parseInt(postsPerDay);
                 if (!campaign?.startDate || !campaign?.numberOfDays) {
@@ -2751,8 +2852,8 @@ export default function CampaignDetailPage() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowScheduleDialog(false)} data-testid="button-cancel-schedule">Cancel</Button>
             <Button
-              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts), spacingMinutes: parseInt(minutesBetweenPosts) || 180 })}
-              disabled={schedulePostsMutation.isPending}
+              onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts), spacingMinutes: parseInt(minutesBetweenPosts) || 180, platforms: schedulePlatforms, archiveLeftover: scheduleArchiveLeftover })}
+              disabled={schedulePostsMutation.isPending || schedulePlatforms.length === 0}
               data-testid="button-confirm-schedule"
             >
               {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
@@ -3164,6 +3265,21 @@ export default function CampaignDetailPage() {
                     No posts with valid dates to export. Use the Schedule Posts button first, or check the box above to include undated posts.
                   </p>
                 )}
+                <div className="rounded-md border p-3 bg-muted/50">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeExported}
+                      onChange={(e) => setIncludeExported(e.target.checked)}
+                      className="rounded"
+                      data-testid="checkbox-include-exported"
+                    />
+                    Re-export posts already marked delivered
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    By default, exports skip posts you've already confirmed as delivered, so you never re-send the same ones.
+                  </p>
+                </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -3175,6 +3291,27 @@ export default function CampaignDetailPage() {
               data-testid="button-export-confirm"
             >
               Export {includeUndated ? `All ${exportPreview?.totalPosts ?? 0}` : `${exportPreview?.datedPosts ?? 0} Scheduled`} Posts
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeliverConfirm} onOpenChange={setShowDeliverConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-deliver-confirm-title">Did your scheduling tool accept the file?</AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-deliver-confirm-description">
+              The CSV with {lastExportedIds.length} post{lastExportedIds.length === 1 ? "" : "s"} downloaded. Import it into SocialPilot (or your tool) and confirm it was accepted before marking these as delivered. If the import was rejected, choose "Not yet" and they'll stay ready to export again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-deliver-not-yet">Not yet — keep them exportable</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => markDeliveredMutation.mutate(lastExportedIds)}
+              disabled={markDeliveredMutation.isPending}
+              data-testid="button-deliver-confirm"
+            >
+              {markDeliveredMutation.isPending ? "Marking…" : `Yes — mark ${lastExportedIds.length} delivered`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

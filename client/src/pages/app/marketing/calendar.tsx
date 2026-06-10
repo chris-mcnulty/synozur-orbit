@@ -68,8 +68,14 @@ export default function CalendarPage() {
   const searchString = useSearch();
   const deepLink = useMemo(() => {
     const p = new URLSearchParams(searchString);
-    return { postId: p.get("post"), date: p.get("date") };
+    return { postId: p.get("post"), date: p.get("date"), campaignId: p.get("campaignId") };
   }, [searchString]);
+
+  // Filter by campaign. Seeded from the deep-link campaignId when present.
+  const [campaignFilter, setCampaignFilter] = useState<string>(() => {
+    const p = new URLSearchParams(searchString);
+    return p.get("campaignId") || "all";
+  });
 
   const [cursorMonth, setCursorMonth] = useState<Date>(() => {
     const p = new URLSearchParams(searchString);
@@ -96,6 +102,17 @@ export default function CalendarPage() {
   // the backend — match it client-side so the UI doesn't render only to 403.
   const isAllowed = tenantInfo?.features?.socialPosts === true;
 
+  // Campaign names for the filter dropdown.
+  const { data: filterOpts } = useQuery<{ campaigns?: { id: string; name: string }[] }>({
+    queryKey: ["/api/marketing-calendar/filters"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing-calendar/filters", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+    enabled: isAllowed,
+  });
+  const campaignOptions = filterOpts?.campaigns ?? [];
+
   const monthStart = startOfMonth(cursorMonth);
   const monthEnd = endOfMonth(cursorMonth);
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -115,10 +132,15 @@ export default function CalendarPage() {
     enabled: isAllowed,
   });
 
+  const filteredPosts = useMemo(
+    () => (campaignFilter === "all" ? posts : posts.filter(p => p.campaignId === campaignFilter)),
+    [posts, campaignFilter],
+  );
+
   // Bucket posts by ISO day key for fast cell lookups.
   const postsByDay = useMemo(() => {
     const m = new Map<string, CalendarPost[]>();
-    posts.forEach(p => {
+    filteredPosts.forEach(p => {
       const ts = p.scheduledDate ?? p.publishedAt;
       if (!ts) return;
       const key = format(parseISO(ts), "yyyy-MM-dd");
@@ -133,7 +155,7 @@ export default function CalendarPage() {
       return ta.localeCompare(tb);
     }));
     return m;
-  }, [posts]);
+  }, [filteredPosts]);
 
   // When arriving via a deep link, open the targeted post's drawer once the
   // month's posts have loaded. If the post isn't in this range (or no longer
@@ -228,6 +250,19 @@ export default function CalendarPage() {
             </p>
           </div>
           <div className="flex items-center gap-1">
+            {campaignOptions.length > 0 && (
+              <select
+                value={campaignFilter}
+                onChange={(e) => setCampaignFilter(e.target.value)}
+                className="mr-2 h-9 rounded-md border bg-background px-2 text-sm"
+                data-testid="select-campaign-filter"
+              >
+                <option value="all">All campaigns</option>
+                {campaignOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            )}
             <Button variant="outline" size="icon" onClick={() => setCursorMonth(addMonths(cursorMonth, -1))} data-testid="calendar-prev-month">
               <ChevronLeft className="w-4 h-4" />
             </Button>
@@ -300,8 +335,25 @@ export default function CalendarPage() {
 
         {!isLoading && posts.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No scheduled or published posts in this range. Compose one in the{" "}
+            No scheduled or published posts yet. This calendar only shows posts that already have a
+            date — generate and schedule them inside a campaign's{" "}
+            <span className="font-medium">Content Plan</span>, or compose one in the{" "}
             <Link href="/app/marketing/composer" className="text-primary underline">Composer</Link>.
+          </p>
+        )}
+
+        {!isLoading && posts.length > 0 && filteredPosts.length === 0 && (
+          <p className="text-sm text-muted-foreground" data-testid="text-empty-campaign-filter">
+            No scheduled or published posts for this campaign.{" "}
+            <button
+              type="button"
+              className="text-primary underline"
+              onClick={() => setCampaignFilter("all")}
+              data-testid="button-clear-campaign-filter"
+            >
+              Show all campaigns
+            </button>
+            .
           </p>
         )}
 

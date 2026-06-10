@@ -2474,6 +2474,35 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Mark a specific set of posts as delivered (= exported). Called after the
+  // user confirms the scheduling tool accepted the downloaded CSV, so a
+  // rejected export never silently buries posts.
+  app.post("/api/campaigns/:campaignId/generated-posts/mark-delivered", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { postIds } = req.body;
+      if (!Array.isArray(postIds) || postIds.length === 0) {
+        return res.status(400).json({ error: "postIds must be a non-empty array" });
+      }
+      const rows = await db.update(generatedPosts)
+        .set({ status: "exported", updatedAt: new Date() })
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          inArray(generatedPosts.id, postIds as string[]),
+          notInArray(generatedPosts.status, ["deleted", "rejected", "published"]),
+        ))
+        .returning();
+      res.json({ updated: rows.length });
+    } catch (err: any) {
+      console.error("[Mark Delivered Error]", err.message);
+      res.status(500).json({ error: "Failed to mark posts as delivered" });
+    }
+  });
+
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {
@@ -2939,10 +2968,12 @@ Return ONLY a valid JSON object (no markdown fences) with:
         .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
+      // Already-delivered posts (exported/published) are excluded from the
+      // preview so the counts match what a default export will actually contain.
       const allPosts = await db.select().from(generatedPosts)
         .where(and(
           eq(generatedPosts.campaignId, campaign.id),
-          notInArray(generatedPosts.status, ["deleted", "rejected"]),
+          notInArray(generatedPosts.status, ["deleted", "rejected", "exported", "published"]),
         ));
 
       const now = new Date();
@@ -3007,11 +3038,17 @@ Return ONLY a valid JSON object (no markdown fences) with:
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
     const excludeUndated = req.query.excludeUndated !== "false";
+    // By default, skip posts already marked delivered (exported/published) so the
+    // same posts aren't re-exported every time. Caller can opt back in.
+    const includeExported = req.query.includeExported === "true";
+    const excludedStatuses = includeExported
+      ? ["deleted", "rejected"]
+      : ["deleted", "rejected", "exported", "published"];
 
     const allPosts = await db.select().from(generatedPosts)
       .where(and(
         eq(generatedPosts.campaignId, campaign.id),
-        notInArray(generatedPosts.status, ["deleted", "rejected"]),
+        notInArray(generatedPosts.status, excludedStatuses),
       ));
 
     const now_filter = new Date();
@@ -3051,6 +3088,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
       console.error("[campaign export-csv] store failed:", e?.message);
     }
 
+    // Downloading does NOT mark posts as delivered — the client confirms the
+    // CSV was accepted by the scheduling tool first, then calls mark-delivered.
+    // We hand back the ids that went into this CSV so the client knows which.
+    res.setHeader("Access-Control-Expose-Headers", "X-Exported-Post-Ids");
+    res.setHeader("X-Exported-Post-Ids", posts.map(p => p.id).join(","));
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="campaign-${campaign.id}-${csvFormat}.csv"`);
     res.send(csv);

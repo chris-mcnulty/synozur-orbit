@@ -1415,10 +1415,14 @@ function editorHref(it: CalendarItem): string {
 // right month and opens that post's drawer. Batches (no single post id) and
 // unscheduled items fall back to the general view.
 function socialCalendarHref(it: CalendarItem): string {
-  if (it.isBatch) return "/app/marketing/calendar";
-  const params = new URLSearchParams({ post: it.id });
+  const params = new URLSearchParams();
+  // A batch is many posts — we can't focus one, but we can still land the user
+  // on the right month (and campaign, if known) instead of a bare calendar.
+  if (!it.isBatch) params.set("post", it.id);
   if (it.date) params.set("date", it.date);
-  return `/app/marketing/calendar?${params.toString()}`;
+  if (it.campaignId) params.set("campaignId", it.campaignId);
+  const qs = params.toString();
+  return qs ? `/app/marketing/calendar?${qs}` : "/app/marketing/calendar";
 }
 
 function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onExportDocx, onHandoffEmail, onReschedule, onAssign, busy }: {
