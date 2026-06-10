@@ -245,9 +245,9 @@ This is an AI-generated GTM plan draft saved in Orbit. Use it to align target-se
 ${gtmPlanText}`
     : "";
 
-  const prompt = `You are a senior partnerships and competitive strategy advisor. Produce a comprehensive, decision-ready 12-month Relationship Plan in markdown describing how ${baseline?.companyName || "our company"} should engage with ${targetName}.
+  const prompt = `You are a senior partnerships and competitive strategy advisor. Produce a tight, decision-ready 12-month Relationship Plan in markdown describing how ${baseline?.companyName || "our company"} should engage with ${targetName}.
 
-The plan must be opinionated, specific, and quarter-by-quarter. It should advise on multiple coexisting postures: when to engage, when to cooperate, when to sell to them, when to compete, how to speak to them, and when to steer clear. Use the data below; never invent factual claims you cannot ground. The plan must be written from ${baseline?.companyName || "our company"}'s point of view, anchored to its official voice.
+The plan must be opinionated, specific, and skimmable. It should advise on multiple coexisting postures: when to engage, when to cooperate, when to sell to them, when to compete, how to speak to them, and when to steer clear — but as short labeled sub-points, not long essays. Use the data below; never invent factual claims you cannot ground. The plan must be written from ${baseline?.companyName || "our company"}'s point of view, anchored to its official voice.
 
 SOURCE-OF-TRUTH PRECEDENCE for our own positioning (apply in order, top wins):
 1. Official baseline grounding documents (uploaded MPF, brand docs, voice guides, etc.).
@@ -277,56 +277,50 @@ ${activityBlock}
 - ${focusLine}
 - Custom guidance from user: ${customGuidance || "None"}${b2cGuidance}
 
-Produce the plan in markdown with EXACTLY the following structure and section headings:
+WRITING STYLE — this report must be short and skimmable:
+- Lead with bullets, not paragraphs. Keep any paragraph to 2-3 sentences max.
+- Be concise and executive. Cut filler, hedging, and generic platitudes.
+- Every bullet must carry a specific, grounded point — no restating the obvious.
+- Do NOT pad to fill space. A shorter, sharper report is the goal.
+
+Produce the plan in markdown with EXACTLY the following structure and section headings (five sections only):
 
 # 12-Month Relationship Plan: ${targetName}
 
 ## Executive Summary
-3-5 sentences summarizing the recommended posture, why it fits, and the single most important action this quarter.
+3-4 sentences: the recommended posture, why it fits, and the single most important action this quarter.
 
-## Relationship Posture Assessment
-Recommend the dominant posture (Cooperate / Compete / Sell To / Steer Clear / Observe) with a one-paragraph rationale. Then briefly describe the secondary postures that may apply in parallel and the conditions under which the dominant posture should change.
+## Posture & Strategic Read
+- **Dominant posture**: name it (Cooperate / Compete / Sell To / Steer Clear / Observe) in one line with a one-sentence rationale.
+- **Secondary postures**: the parallel postures that apply and the conditions that would flip the dominant one (1-3 bullets).
+- **Strategic read on ${targetName}**: what they want, where they're headed, what they fear, and their tells — 3-5 bullets, each tied to evidence (battlecard, signals, public posture).
 
-## Strategic Read on ${targetName}
-What they want, where they are headed, what they are afraid of, and what their tells are. Tie each point back to evidence (battlecard, signals, public posture).
+## Engagement Playbook
+Cover each play as a short labeled sub-point (2-4 bullets each, not full sections). Be honest about what is plausible vs. fantasy.
+- **Engage**: top engagement plays for the year — events, communities, analysts, joint customers — with who initiates and cadence.
+- **Cooperate**: realistic cooperation surfaces (integrations, co-marketing, channel/referral) and preconditions before reaching out.
+- **Sell to them**: entry points (personas/departments), the wedge, key discovery questions, proof points, and procurement gotchas.
+- **Compete with them**: win themes, positioning contrasts, traps to set/avoid, pricing posture, deals to walk away from.
+- **Speak to them**: tone, vocabulary to embrace/avoid, direct vs. indirect references, plus 2-3 concrete sample lines.
+- **Steer clear**: specific situations, deal types, or partnerships to disengage from, and the risk if we don't.
 
-## How to Engage
-Concrete engagement plays for the next 12 months: events, conferences, communities, analyst conversations, joint customers, mutual investors. Include who initiates and the cadence.
+## 12-Month Roadmap
+For each quarter, keep it to one line + a few actions — do not be exhaustive:
+- **Q1 — [theme]**: 2-3 concrete actions with owners; the key decision gate and the metric that proves it's working.
+- **Q2 — [theme]**: same, condensed.
+- **Q3 — [theme]**: same, condensed.
+- **Q4 — [theme]**: same, condensed.
 
-## How to Cooperate
-Realistic cooperation surfaces — integrations, co-marketing, shared standards, channel partnerships, referral arrangements, ecosystem plays. Be honest about what is plausible and what is fantasy. Include preconditions before reaching out.
+## Watch List & Risks
+- **Signals to watch**: bulleted triggers (announcements, hires, pricing changes, M&A, exec moves) with the response when each fires.
+- **Risks & open questions**: what we don't know, what could go wrong, and the intel to gather in the first 30 days.
 
-## How to Sell To Them
-Treat them as a potential buyer. Identify entry points (departments / personas), the wedge product or service, the discovery questions, the proof points that resonate, and the procurement gotchas to anticipate.
-
-## How to Compete With Them
-Win themes, positioning contrasts, traps to set, traps to avoid, pricing posture, and which deals to walk away from. Reference our advantages and their weaknesses where supported by the battlecard.
-
-## How to Speak To Them
-Voice and channel guidance: tone, vocabulary to embrace and avoid, direct vs. indirect references in marketing, public statements, social engagement, and how to handle press / analyst conversations that mention them. Include 3-5 concrete sample lines (e.g., for a sales rep, a marketer, an executive).
-
-## When to Steer Clear
-Specific situations, deal types, accounts, geographies, or partnerships where the right move is to disengage. Articulate the reputational, legal, or strategic risks.
-
-## 12-Month Roadmap (Quarter by Quarter)
-For each of Q1, Q2, Q3, Q4 list:
-- Theme for the quarter (single line)
-- 3-5 concrete actions with owners (e.g., "Sales", "Product Marketing", "CEO", "Partnerships")
-- Decision gates / triggers that would change the plan
-- Metrics that will tell us if it is working
-
-## Watch List & Trigger Signals
-Bulleted signals (announcements, hires, pricing changes, M&A rumors, executive moves) that should cause us to revisit this plan, and the response we would take when each fires.
-
-## Risks & Open Questions
-What we don't know, what could go wrong, and what additional intelligence we should gather in the first 30 days.
-
-Make every section grounded, specific, and useful. Avoid generic platitudes. Where data is missing, say so explicitly and recommend how to fill the gap rather than fabricating detail.`;
+Make every bullet grounded, specific, and useful. Avoid generic platitudes. Where data is missing, say so explicitly and recommend how to fill the gap rather than fabricating detail.`;
 
   // Route through the central AI provider so per-feature model assignments
   // (admin AI configuration page) and the global default config are honored.
   const result = await completeForFeature(AI_FEATURES.RELATIONSHIP_REPORT, prompt, {
-    maxTokens: 8192,
+    maxTokens: 4096,
     tenantDomain: ctx.tenantDomain,
   });
 
