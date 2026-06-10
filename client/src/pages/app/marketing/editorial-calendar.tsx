@@ -45,6 +45,7 @@ import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
 
 interface ContentBrief {
   id: string;
@@ -199,6 +200,7 @@ export default function EditorialCalendarPage() {
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
+  const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [distOpen, setDistOpen] = useState(false);
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -899,37 +901,12 @@ export default function EditorialCalendarPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={repurposeAsset.isPending}
-                            onClick={() => repurposeAsset.mutate(b.contentAssetId!)}
+                            onClick={() => setRepurposeTarget({ id: b.contentAssetId!, title: b.title })}
                             data-testid={`repurpose-${b.id}`}
                           >
-                            {repurposeAsset.isPending && repurposeAsset.variables === b.contentAssetId ? (
-                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Share2 className="mr-1 h-4 w-4" />
-                            )}
+                            <Share2 className="mr-1 h-4 w-4" />
                             Repurpose
                           </Button>
-                        )}
-                        {b.contentAssetId && repurposeAllowed && (
-                          <Select
-                            disabled={repurposeLongForm.isPending}
-                            value=""
-                            onValueChange={(format) => repurposeLongForm.mutate({ assetId: b.contentAssetId!, format })}
-                          >
-                            <SelectTrigger className="h-9 w-[150px]" data-testid={`repurpose-longform-${b.id}`}>
-                              {repurposeLongForm.isPending && repurposeLongForm.variables?.assetId === b.contentAssetId ? (
-                                <span className="flex items-center"><Loader2 className="mr-1 h-4 w-4 animate-spin" />Creating…</span>
-                              ) : (
-                                <span className="flex items-center"><FileText className="mr-1 h-4 w-4" />Repurpose to…</span>
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {LONGFORM_FORMATS.map((f) => (
-                                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                         )}
                         {b.contentAssetId && optimizeAllowed && (
                           <Button
@@ -1339,7 +1316,16 @@ export default function EditorialCalendarPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Repurpose results */}
+        {/* Multi-format repurposer */}
+        <RepurposeDialog
+          assetId={repurposeTarget?.id ?? null}
+          assetTitle={repurposeTarget?.title}
+          open={!!repurposeTarget}
+          onOpenChange={(o) => !o && setRepurposeTarget(null)}
+          onOpenLibraryAsset={(id) => navigate(`/app/marketing/content-library?asset=${id}`)}
+        />
+
+        {/* Repurpose results (social-only legacy path) */}
         <Dialog open={!!repurpose} onOpenChange={(o) => !o && setRepurpose(null)}>
           <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
             <DialogHeader>

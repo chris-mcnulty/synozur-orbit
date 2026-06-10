@@ -2368,6 +2368,29 @@ export const CONTENT_ASSET_TYPES = [
 ] as const;
 export type ContentAssetType = (typeof CONTENT_ASSET_TYPES)[number];
 
+// Multi-format repurposing: Cowork-style metadata carried by each generated
+// asset (post, carousel, or library snippet) so the user can see at a glance
+// what it is, what it argues, and when to post it.
+export interface RepurposeMeta {
+  platform?: string | null; // e.g. "LinkedIn", "Blog", "Email", "Video"
+  format?: string | null; // human label, e.g. "LinkedIn carousel"
+  coreIdea?: string | null; // the one argument the asset makes
+  cta?: string | null; // the call to action
+  bestPostingWindow?: string | null; // when to publish, e.g. "Tue-Thu, 8-10am"
+}
+
+// A single slide of a repurposed LinkedIn carousel. A set is always 5 slides:
+// a cover, three body slides, and a close. imageUrl is filled in once the
+// branded graphic for the slide has been composited.
+export interface CarouselSlide {
+  index: number; // 1-based position in the set
+  role: "cover" | "body" | "close";
+  kicker?: string | null; // small label above the headline
+  headline: string;
+  supportingLines: string[];
+  imageUrl?: string | null; // branded graphic for this slide
+}
+
 // Content Assets — marketing content items (copy, articles, slides, etc.)
 export const contentAssets = pgTable("content_assets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2396,6 +2419,9 @@ export const contentAssets = pgTable("content_assets", {
   seoOptimizedAt: timestamp("seo_optimized_at"),
   // WS3: when this asset was produced by repurposing another asset, the source.
   repurposedFromAssetId: varchar("repurposed_from_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
+  // Multi-format repurposer: Cowork-style metadata (platform/format/core idea/
+  // CTA/best posting window) for snippets produced by the batch repurposer.
+  repurposeMeta: jsonb("repurpose_meta").$type<RepurposeMeta>(),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   status: text("status").notNull().default("active"),
   capturedViaExtension: boolean("captured_via_extension").notNull().default(false),
@@ -2924,6 +2950,12 @@ export const generatedPosts = pgTable("generated_posts", {
   overrideImageUrl: text("override_image_url"),
   overrideBrandAssetId: varchar("override_brand_asset_id").references(() => brandAssets.id, { onDelete: "set null" }),
   variantGroup: text("variant_group"),
+  // Multi-format repurposer: a single LinkedIn post vs. a 5-slide carousel.
+  // postFormat distinguishes the two; carouselSlides holds the slide set (cover,
+  // 3 body, close) with each slide's branded graphic URL once composited.
+  postFormat: text("post_format"), // single | carousel
+  carouselSlides: jsonb("carousel_slides").$type<CarouselSlide[]>(),
+  repurposeMeta: jsonb("repurpose_meta").$type<RepurposeMeta>(),
   // Conference social promotion linkage (nullable: most posts aren't conference posts).
   // conferenceSessionId gives the 1:1 session→post relationship; conferenceImageId is
   // the matched graphic. postRole distinguishes anchor (overall presence) vs session posts.

@@ -7,14 +7,21 @@ import { getRequestContext } from "../context";
 import type { RequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { optimizeContent } from "../services/seo-aeo-service";
-import { repurposeAsset, repurposeToLongForm } from "../services/repurpose-service";
+import { repurposeAsset, repurposeToLongForm, repurposeMultiFormat } from "../services/repurpose-service";
+import type { RepurposeSelection } from "../services/repurpose-service";
 import { rewriteLongFormContent } from "../services/copywriter-service";
 import {
   isLongformRepurposeFormat,
   longformFormatToAssetType,
+  isRepurposeBatchFormat,
+  REPURPOSE_FORMAT_DEFS,
   type LongformRepurposeFormat,
 } from "../services/repurpose-core";
-import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
+import type { CarouselSlide } from "@shared/schema";
+import {
+  generateBrandedPostGraphic,
+  generateBrandedCarouselSet,
+} from "../services/conference-promotion-service";
 
 // Canonical market scope for shared content_assets rows: default-market data
 // may be stored with the default market id OR NULL (cross-feature convention),
@@ -253,6 +260,172 @@ export function registerContentProductionRoutes(app: Express) {
       res.status(201).json({ asset: created, usage, model });
     } catch (err: any) {
       console.error("[content repurpose-longform]", err);
+      res.status(500).json({ error: err.message || "Failed to repurpose content" });
+    }
+  });
+
+  // Multi-format repurposer: from one source asset, generate every selected
+  // output type in a single batch. Posts/carousels land in the generated_posts
+  // pipeline as drafts; snippets land in the Content Library as draft assets.
+  // Branded images are auto-generated and degrade gracefully on failure.
+  app.post("/api/content-assets/:id/repurpose-batch", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "contentRepurposing"))) return;
+      const ctx = await getRequestContext(req);
+
+      const rawSelections = Array.isArray(req.body?.selections) ? req.body.selections : [];
+      const selections: RepurposeSelection[] = [];
+      for (const s of rawSelections) {
+        if (!isRepurposeBatchFormat(s?.format)) continue;
+        const count = Number(s?.count);
+        if (!Number.isFinite(count) || count < 1) continue;
+        selections.push({ format: s.format, count: Math.floor(count) });
+      }
+      if (selections.length === 0) {
+        return res.status(400).json({ error: "Select at least one content type to generate." });
+      }
+
+      const [asset] = await db
+        .select()
+        .from(contentAssets)
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
+      if (!asset) return res.status(404).json({ error: "Content asset not found" });
+      if (!(asset.content || asset.aiSummary || asset.description)?.trim()) {
+        return res.status(409).json({ error: "This asset has no content to repurpose." });
+      }
+
+      const { items, errors, usage, model } = await repurposeMultiFormat({
+        asset,
+        selections,
+        isDefaultMarket: ctx.isDefaultMarket,
+      });
+
+      if (items.length === 0) {
+        return res.status(502).json({
+          error: "The AI did not return any usable content. Please try again.",
+          errors,
+        });
+      }
+
+      const variantGroup = randomUUID();
+      const createdPosts: any[] = [];
+      const createdAssets: any[] = [];
+      const imageWarnings: { format: string; message: string }[] = [];
+
+      for (const item of items) {
+        if (item.kind === "post") {
+          const isCarousel = item.postFormat === "carousel";
+
+          // Build the branded image(s) first, degrading gracefully on failure so
+          // the draft is always created even if compositing fails.
+          let overrideImageUrl: string | null = null;
+          let carouselSlides: CarouselSlide[] | null = item.slides ?? null;
+
+          if (isCarousel && item.slides && item.slides.length > 0) {
+            try {
+              const rendered = await generateBrandedCarouselSet({
+                tenantDomain: ctx.tenantDomain,
+                marketId: ctx.marketId || null,
+                slides: item.slides.map((s) => ({
+                  index: s.index,
+                  total: item.slides!.length,
+                  role: s.role,
+                  kicker: s.kicker,
+                  headline: s.headline,
+                  supportingLines: s.supportingLines,
+                })),
+              });
+              carouselSlides = item.slides.map((s, i) => ({
+                ...s,
+                imageUrl: rendered[i]?.fileUrl ?? s.imageUrl ?? null,
+              }));
+              overrideImageUrl = rendered[0]?.fileUrl ?? null;
+            } catch (imgErr: any) {
+              imageWarnings.push({ format: item.format, message: imgErr?.message || "carousel image generation failed" });
+            }
+          } else {
+            try {
+              const headline = (item.meta.coreIdea || item.content || asset.title).slice(0, 200);
+              const saved = await generateBrandedPostGraphic({
+                tenantDomain: ctx.tenantDomain,
+                marketId: ctx.marketId || null,
+                headline,
+              });
+              overrideImageUrl = saved.fileUrl;
+            } catch (imgErr: any) {
+              imageWarnings.push({ format: item.format, message: imgErr?.message || "image generation failed" });
+            }
+          }
+
+          const [row] = await db
+            .insert(generatedPosts)
+            .values({
+              id: randomUUID(),
+              campaignId: null,
+              tenantDomain: ctx.tenantDomain,
+              platform: item.platform,
+              content: item.content,
+              imagePrompt: item.imagePrompt,
+              overrideImageUrl,
+              postFormat: item.postFormat,
+              carouselSlides,
+              repurposeMeta: item.meta,
+              sourceAssetId: asset.id,
+              variantGroup,
+              status: "draft",
+            })
+            .returning();
+          createdPosts.push(row);
+        } else {
+          const [row] = await db
+            .insert(contentAssets)
+            .values({
+              id: randomUUID(),
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              title: item.title,
+              description: item.meta.coreIdea ?? null,
+              content: item.body,
+              aiSummary: item.meta.coreIdea ?? null,
+              assetType: item.assetType,
+              productIds: asset.productIds ?? null,
+              repurposedFromAssetId: asset.id,
+              repurposeMeta: item.meta,
+              status: "draft",
+              createdBy: ctx.userId,
+            })
+            .returning();
+          createdAssets.push(row);
+        }
+      }
+
+      // Group results by format label for the results view.
+      const groups = Object.values(REPURPOSE_FORMAT_DEFS).map((def) => {
+        const posts = createdPosts.filter((p) => p.repurposeMeta?.format === def.label);
+        const assets = createdAssets.filter((a) => a.repurposeMeta?.format === def.label);
+        return {
+          format: def.key,
+          label: def.label,
+          destination: def.destination,
+          posts,
+          assets,
+          count: posts.length + assets.length,
+        };
+      }).filter((g) => g.count > 0);
+
+      res.status(201).json({
+        variantGroup,
+        groups,
+        posts: createdPosts,
+        assets: createdAssets,
+        totalCount: createdPosts.length + createdAssets.length,
+        errors,
+        imageWarnings,
+        usage,
+        model,
+      });
+    } catch (err: any) {
+      console.error("[content repurpose-batch]", err);
       res.status(500).json({ error: err.message || "Failed to repurpose content" });
     }
   });

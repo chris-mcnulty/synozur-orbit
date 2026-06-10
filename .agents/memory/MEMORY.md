@@ -6,3 +6,4 @@
 - [LinkedIn global app + posting gate](linkedin-global-app.md) — LinkedIn uses one Synozur-owned OAuth app (env vars, not per-tenant); direct posting gated by LINKEDIN_DIRECT_PUBLISH_ENABLED until LinkedIn approves.
 - [Campaign & Theme Planning Hub](planning-hub.md) — per-campaign/theme aggregation of posts/emails/briefs via existing assoc columns; manual content reuses "Marketing Calendar (manual)" so it shows in calendar too.
 - [Editorial brief → draft flow](editorial-brief-draft-flow.md) — campaign/theme live on the brief; category lives on the draft (content asset) so it's only assignable after drafting.
+- [Multi-format repurposer](multiformat-repurposer.md) — one asset → batch of formats; LinkedIn posts/carousels go to posts pipeline, snippets to Content Library; branded images degrade gracefully; legacy social path kept.

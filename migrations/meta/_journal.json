@@ -134,6 +134,13 @@
       "when": 1781025459023,
       "tag": "0018_bent_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781065514770,
+      "tag": "0019_ordinary_white_queen",
+      "breakpoints": true
     }
   ]
 }

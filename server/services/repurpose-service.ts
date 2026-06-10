@@ -14,9 +14,17 @@ import {
   coercePlatform,
   SUPPORTED_PLATFORMS,
   LONGFORM_REPURPOSE_GUIDANCE,
+  REPURPOSE_FORMAT_DEFS,
+  SYNOZUR_VOICE_RULES,
+  parsePostItems,
+  parseCarouselItems,
+  parseAssetItems,
   type RepurposeVariant,
   type RepurposePlatform,
   type LongformRepurposeFormat,
+  type RepurposeBatchFormat,
+  type RepurposeFormatDef,
+  type GeneratedRepurposeItem,
 } from "./repurpose-core";
 import { parseDraftResponse } from "./editorial-calendar-core";
 
@@ -154,4 +162,144 @@ Respond with exactly these three sections and nothing else:
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
     model: result.model,
   };
+}
+
+// ─── Multi-format batch repurposer ────────────────────────────────────────────
+
+const MULTIFORMAT_SYSTEM_PROMPT =
+  "You are Synozur's content strategist. You repurpose one source asset into a specific output format, " +
+  "re-angling for that format's reader rather than copying. You always write in Synozur's voice and never " +
+  "fabricate statistics, customer names, or quotes. Respond with valid JSON only, no prose around it.";
+
+export interface RepurposeSelection {
+  format: RepurposeBatchFormat;
+  count: number;
+}
+
+export interface MultiFormatRepurposeParams {
+  asset: ContentAsset;
+  selections: RepurposeSelection[];
+  isDefaultMarket?: boolean;
+}
+
+export interface FormatGenerationError {
+  format: RepurposeBatchFormat;
+  message: string;
+}
+
+export interface MultiFormatRepurposeResult {
+  items: GeneratedRepurposeItem[];
+  errors: FormatGenerationError[];
+  usage: { inputTokens: number; outputTokens: number };
+  model: string;
+}
+
+/** Cowork-style metadata each item must carry, expressed as a JSON field spec. */
+const META_FIELDS = `"coreIdea": string (one sentence, the single idea this piece makes), "cta": string (the call to action), "bestPostingWindow": string (when to publish, e.g. "Tuesday morning")`;
+
+function buildFormatPrompt(
+  def: RepurposeFormatDef,
+  count: number,
+  strategicBlock: string,
+  sourceTitle: string,
+  sourceBody: string,
+): string {
+  let shape: string;
+  if (def.postFormat === "carousel") {
+    shape = `[{ "caption": string (short LinkedIn caption to accompany the carousel), "slides": [{ "role": "cover" | "body" | "close", "kicker": string (a short label, only on the cover), "headline": string, "supportingLines": string[] (0-2 short lines) }] (exactly 5 slides), ${META_FIELDS} }]`;
+  } else if (def.destination === "posts") {
+    shape = `[{ "content": string (the full post text), "imagePrompt": string (a concise visual concept for the paired graphic), ${META_FIELDS} }]`;
+  } else {
+    shape = `[{ "title": string, "body": string (the full piece in Markdown), ${META_FIELDS} }]`;
+  }
+
+  return [
+    `Repurpose the source asset below into ${count} "${def.label}" item(s). Each item must take a DISTINCT angle. No near-duplicates.`,
+    strategicBlock,
+    `## Source asset\nTitle: ${sourceTitle}\n\n${sourceBody}`,
+    `## Format guidance\n${def.guidance}`,
+    `## Voice rules\n- ${SYNOZUR_VOICE_RULES}`,
+    `## Output JSON shape (array of exactly ${count})\n${shape}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * Generate every selected output format from one source asset in a single batch.
+ * Each format is its own grounded AI call, run in parallel; one format failing
+ * never sinks the rest. Returns normalized items ready for persistence plus the
+ * list of any per-format failures.
+ */
+export async function repurposeMultiFormat(
+  params: MultiFormatRepurposeParams,
+): Promise<MultiFormatRepurposeResult> {
+  const { asset } = params;
+
+  const selections = params.selections
+    .map((s) => {
+      const def = REPURPOSE_FORMAT_DEFS[s.format];
+      if (!def) return null;
+      const count = Math.min(Math.max(Math.floor(s.count) || 1, 1), def.maxCount);
+      return { def, count };
+    })
+    .filter((s): s is { def: RepurposeFormatDef; count: number } => s !== null);
+
+  if (selections.length === 0) {
+    return { items: [], errors: [], usage: { inputTokens: 0, outputTokens: 0 }, model: "" };
+  }
+
+  const strategicCtx = await loadStrategicContext(
+    asset.tenantDomain,
+    asset.marketId || undefined,
+    params.isDefaultMarket,
+  );
+  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+  const sourceBody = (asset.content || asset.aiSummary || asset.description || "").slice(0, 10000);
+
+  const settled = await Promise.allSettled(
+    selections.map(async ({ def, count }) => {
+      const prompt = buildFormatPrompt(def, count, strategicBlock, asset.title, sourceBody);
+      const result = await completeForFeature("marketing_tasks", prompt, {
+        tenantDomain: asset.tenantDomain,
+        systemPrompt: MULTIFORMAT_SYSTEM_PROMPT,
+        maxTokens: 8192,
+      });
+      let items: GeneratedRepurposeItem[];
+      if (def.postFormat === "carousel") {
+        items = parseCarouselItems(result.text, def);
+      } else if (def.destination === "posts") {
+        items = parsePostItems(result.text, def);
+      } else {
+        items = parseAssetItems(result.text, def);
+      }
+      if (items.length === 0) {
+        throw new Error(`No usable ${def.label} items returned`);
+      }
+      return { def, items, usage: result.usage, model: result.model };
+    }),
+  );
+
+  const items: GeneratedRepurposeItem[] = [];
+  const errors: FormatGenerationError[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let model = "";
+
+  settled.forEach((res, i) => {
+    const def = selections[i].def;
+    if (res.status === "fulfilled") {
+      items.push(...res.value.items);
+      inputTokens += res.value.usage.inputTokens;
+      outputTokens += res.value.usage.outputTokens;
+      model = res.value.model || model;
+    } else {
+      errors.push({
+        format: def.key,
+        message: res.reason instanceof Error ? res.reason.message : String(res.reason),
+      });
+    }
+  });
+
+  return { items, errors, usage: { inputTokens, outputTokens }, model };
 }

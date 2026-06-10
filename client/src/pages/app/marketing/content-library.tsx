@@ -33,6 +33,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
+import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
 
 interface ContentAsset {
   id: string;
@@ -117,6 +118,7 @@ export default function ContentLibraryPage() {
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [detailAsset, setDetailAsset] = useState<ContentAsset | null>(null);
+  const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "", description: "", url: "", content: "", leadImageUrl: "",
@@ -915,6 +917,17 @@ export default function ContentLibraryPage() {
           >
             <Megaphone className="w-3 h-3" /> Campaign
           </Button>
+          {tenantInfo?.features?.contentRepurposing !== false && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1 px-2"
+              onClick={e => { e.stopPropagation(); setRepurposeTarget({ id: asset.id, title: asset.title }); }}
+              data-testid={`button-repurpose-${asset.id}`}
+            >
+              <Sparkles className="w-3 h-3" /> Repurpose
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1765,6 +1778,20 @@ export default function ContentLibraryPage() {
             testIdPrefix="content-pagination"
           />
         )}
+
+        {/* Multi-format repurposer */}
+        <RepurposeDialog
+          assetId={repurposeTarget?.id ?? null}
+          assetTitle={repurposeTarget?.title}
+          open={!!repurposeTarget}
+          onOpenChange={(o) => !o && setRepurposeTarget(null)}
+          onOpenLibraryAsset={(id) => {
+            fetch(`/api/content-assets/${id}`, { credentials: "include" })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((a: ContentAsset | null) => { if (a) openEditDialog(a); });
+          }}
+          onGenerated={() => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] })}
+        />
 
         {/* Edit Asset Dialog */}
         <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) { setDetailAsset(null); setShowBrandImagePicker(false); } }}>

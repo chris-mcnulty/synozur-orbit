@@ -573,14 +573,20 @@ export async function compositeHeroImage(opts: {
  * but driven by arbitrary post copy instead of a conference. Returns the public
  * Orbit path so external schedulers can fetch the image by URL.
  */
-export async function generateBrandedPostGraphic(opts: {
-  tenantDomain: string;
-  marketId?: string | null;
-  headline: string;
-  subtitle?: string | null;
-}): Promise<{ fileUrl: string; fileSize: number }> {
-  const { tenantDomain, marketId, headline } = opts;
-
+/**
+ * Resolve the tenant's brand kit for compositing: the best company logo bytes
+ * (white variant preferred on dark backgrounds), the primary brand color
+ * (market override → tenant default → brand purple), and the custom heading font.
+ * Shared by the post graphic and the carousel slide compositors.
+ */
+export async function resolveBrandKit(
+  tenantDomain: string,
+  marketId?: string | null,
+): Promise<{
+  companyLogoBytes: Buffer | null;
+  primaryColor: string | null;
+  customFont: { fontFaces: string; fontFamily: string } | null;
+}> {
   const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, tenantDomain));
 
   // Company logo: market-scoped brand asset → tenant-wide brand asset → tenant.logoUrl.
@@ -616,7 +622,6 @@ export async function generateBrandedPostGraphic(opts: {
     try { companyLogoBytes = await loadImageBytes(tenantRow.logoUrl); } catch { /* skip */ }
   }
 
-  // Brand color: market override → tenant default → brand purple.
   let primaryColor: string | null = null;
   if (marketId) {
     const [marketRow] = await db.select().from(markets).where(eq(markets.id, marketId));
@@ -625,6 +630,19 @@ export async function generateBrandedPostGraphic(opts: {
   if (!primaryColor) primaryColor = tenantRow?.primaryColor ?? null;
 
   const customFont = await resolveCompositorFont(tenantDomain, marketId);
+
+  return { companyLogoBytes, primaryColor, customFont };
+}
+
+export async function generateBrandedPostGraphic(opts: {
+  tenantDomain: string;
+  marketId?: string | null;
+  headline: string;
+  subtitle?: string | null;
+}): Promise<{ fileUrl: string; fileSize: number }> {
+  const { tenantDomain, marketId, headline } = opts;
+
+  const { companyLogoBytes, primaryColor, customFont } = await resolveBrandKit(tenantDomain, marketId);
 
   const buffer = await compositeHeroImage({
     backgroundBytes: null,
@@ -652,6 +670,160 @@ export async function generateBrandedPostGraphic(opts: {
   });
 
   return saveConferenceImageBuffer(buffer, "image/png", "png");
+}
+
+// ─── Branded carousel slides (multi-format repurposer) ────────────────────────
+
+interface CarouselSlideInput {
+  index: number; // 1-based
+  total: number;
+  role: "cover" | "body" | "close";
+  kicker?: string | null;
+  headline: string;
+  supportingLines?: string[];
+}
+
+/** Parse a hex color into rgb, falling back to brand purple #810FFB. */
+function hexToRgb(hex: string | null | undefined): { r: number; g: number; b: number } {
+  const h = (hex || "#810FFB").replace("#", "");
+  return {
+    r: parseInt(h.slice(0, 2), 16) || 129,
+    g: parseInt(h.slice(2, 4), 16) || 15,
+    b: parseInt(h.slice(4, 6), 16) || 251,
+  };
+}
+
+/**
+ * Compose one 1080x1080 branded carousel slide: a purple→magenta diagonal
+ * gradient, an optional kicker label, a magenta accent bar, a large headline,
+ * supporting lines, the company logo bottom-left, and an "n/5" index bottom-right.
+ */
+export async function compositeCarouselSlide(opts: {
+  slide: CarouselSlideInput;
+  companyLogoBytes?: Buffer | null;
+  primaryColor?: string | null;
+  customFont?: { fontFaces: string; fontFamily: string } | null;
+}): Promise<Buffer> {
+  const S = 1080;
+  const PAD = 96;
+  const { slide } = opts;
+
+  const primary = opts.primaryColor || "#810FFB";
+  const { r, g, b } = hexToRgb(primary);
+  // Magenta accent derived from the brand purple — push red/green up, settle blue.
+  const magenta = `rgb(${Math.min(255, Math.round(r * 1.05 + 80))},${Math.round(g * 0.4 + 18)},${Math.round(b * 0.55 + 40)})`;
+  const darkened = `rgb(${Math.round(r * 0.32)},${Math.round(g * 0.32)},${Math.round(b * 0.42)})`;
+
+  const avenirFaces = avenirFontFaces();
+  const customFontCss = opts.customFont?.fontFaces ?? "";
+  const allFontFaces = customFontCss ? `${customFontCss} ${avenirFaces}` : avenirFaces;
+  const headingFamily = opts.customFont?.fontFamily
+    ? `'${opts.customFont.fontFamily}', 'Avenir Next LT Pro', Arial, sans-serif`
+    : "'Avenir Next LT Pro', Arial, sans-serif";
+
+  const kicker = slide.kicker?.trim();
+  const headlineLines = wrapText(slide.headline, 22, 4);
+  const supporting = (slide.supportingLines ?? [])
+    .filter((l) => l && l.trim())
+    .slice(0, 3)
+    .flatMap((l) => wrapText(l, 40, 2));
+
+  // Vertical layout: kicker → accent bar → headline → supporting lines.
+  let y = 300;
+  const kickerSvg = kicker
+    ? `<text x="${PAD}" y="${(y -= 70)}" font-family="${headingFamily}" font-size="34" font-weight="500" fill="rgba(255,255,255,0.78)" letter-spacing="2">${escapeXml(kicker)}</text>`
+    : "";
+  if (kicker) y += 70;
+
+  const barY = y - 28;
+  const accentBar = `<rect x="${PAD}" y="${barY}" width="140" height="10" rx="5" fill="${magenta}"/>`;
+  y = barY + 70;
+
+  const headlineSvg = headlineLines
+    .map((l, i) => {
+      const ly = y + i * 86;
+      return `<text x="${PAD}" y="${ly}" font-family="${headingFamily}" font-size="76" font-weight="700" fill="#ffffff">${escapeXml(l)}</text>`;
+    })
+    .join("\n      ");
+  let supportY = y + headlineLines.length * 86 + 24;
+  const supportingSvg = supporting
+    .map((l, i) => {
+      const ly = supportY + i * 52;
+      return `<text x="${PAD}" y="${ly}" font-family="${headingFamily}" font-size="38" font-weight="400" fill="rgba(255,255,255,0.88)">${escapeXml(l)}</text>`;
+    })
+    .join("\n      ");
+
+  const indexSvg = `<text x="${S - PAD}" y="${S - 70}" text-anchor="end" font-family="${headingFamily}" font-size="34" font-weight="500" fill="rgba(255,255,255,0.70)">${slide.index}/${slide.total}</text>`;
+
+  const svg = Buffer.from(
+    `<svg width="${S}" height="${S}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>${allFontFaces}</style>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${primary}"/>
+          <stop offset="55%" stop-color="${magenta}"/>
+          <stop offset="100%" stop-color="${darkened}"/>
+        </linearGradient>
+        <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(15,23,42,0.05)"/>
+          <stop offset="100%" stop-color="rgba(15,23,42,0.45)"/>
+        </linearGradient>
+      </defs>
+      <rect width="${S}" height="${S}" fill="url(#bg)"/>
+      <rect width="${S}" height="${S}" fill="url(#scrim)"/>
+      ${kickerSvg}
+      ${accentBar}
+      ${headlineSvg}
+      ${supportingSvg}
+      ${indexSvg}
+    </svg>`,
+  );
+
+  const layers: sharp.OverlayOptions[] = [];
+  if (opts.companyLogoBytes) {
+    const MAX_CO_W = 240;
+    const MAX_CO_H = 68;
+    const coResized = await sharp(opts.companyLogoBytes)
+      .resize(MAX_CO_W, MAX_CO_H, { fit: "inside", withoutEnlargement: true, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(coResized).metadata();
+    const coH = meta.height || MAX_CO_H;
+    layers.push({ input: coResized, top: S - coH - 64, left: PAD });
+  }
+
+  return sharp(svg).composite(layers).png().toBuffer();
+}
+
+/**
+ * Render and persist a full set of branded carousel slides (one image per slide).
+ * Returns the public Orbit URLs in slide order. Each slide is rendered
+ * independently; a single slide failing is surfaced to the caller via a throw so
+ * the route can degrade gracefully for the whole carousel.
+ */
+export async function generateBrandedCarouselSet(opts: {
+  tenantDomain: string;
+  marketId?: string | null;
+  slides: CarouselSlideInput[];
+}): Promise<{ fileUrl: string; fileSize: number }[]> {
+  const { tenantDomain, marketId } = opts;
+  const { companyLogoBytes, primaryColor, customFont } = await resolveBrandKit(tenantDomain, marketId);
+
+  const results: { fileUrl: string; fileSize: number }[] = [];
+  for (const slide of opts.slides) {
+    const buffer = await compositeCarouselSlide({ slide, companyLogoBytes, primaryColor, customFont });
+    void archiveArtifactToSpe({
+      tenantDomain,
+      buffer,
+      filename: `carousel-slide-${slide.index}-${Date.now()}.png`,
+      mimeType: "image/png",
+      kind: "image",
+      marketId: marketId ?? undefined,
+      createdByUserId: "system",
+    });
+    results.push(await saveConferenceImageBuffer(buffer, "image/png", "png"));
+  }
+  return results;
 }
 
 function defaultImagePrompt(conf: Conference, session?: ConferenceSession | null): string {
