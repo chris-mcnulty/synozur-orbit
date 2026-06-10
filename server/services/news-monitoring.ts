@@ -134,48 +134,6 @@ Respond with ONLY a JSON array like: [{"sentiment": "positive", "relevance": 85}
   return mentions.map(() => ({ sentiment: "neutral" as const, relevance: 50 }));
 }
 
-export interface SubjectNews {
-  subject: string;
-  headlines: { title: string; source: string; url: string; snippet: string }[];
-}
-
-/**
- * Scan news for arbitrary subjects/companies/keywords supplied at call time
- * (not limited to tracked competitors). Best-effort: network failures yield an
- * empty headline list for that subject rather than throwing.
- */
-export async function scanNewsForSubjects(
-  subjects: string[],
-  perSubject = 5,
-): Promise<SubjectNews[]> {
-  const cleaned = Array.from(
-    new Set(subjects.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean)),
-  ).slice(0, 8);
-
-  const out: SubjectNews[] = [];
-  for (const subject of cleaned) {
-    let results: SearchResult[] = [];
-    try {
-      results = await searchNews(subject);
-    } catch {
-      results = [];
-    }
-    out.push({
-      subject,
-      headlines: results.slice(0, perSubject).map((r) => {
-        let source = "";
-        try {
-          source = new URL(r.link).hostname.replace(/^www\./, "");
-        } catch {
-          /* leave blank */
-        }
-        return { title: r.title, source, url: r.link, snippet: r.snippet };
-      }),
-    });
-  }
-  return out;
-}
-
 export async function monitorCompetitorNews(
   competitorId: string,
   competitorName: string,

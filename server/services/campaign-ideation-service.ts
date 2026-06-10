@@ -9,7 +9,7 @@
 
 import { storage } from "../storage";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
-import { scanNewsForSubjects, type SubjectNews } from "./news-monitoring";
+import { scanNewsForSubjects, type SubjectNews } from "./news-service";
 import { completeForFeature } from "./ai-provider";
 import {
   buildIdeationPrompt,

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { ideateCampaigns } from "../services/campaign-ideation-service";
-import { scanNewsForSubjects } from "../services/news-monitoring";
+import { scanNewsForSubjects } from "../services/news-service";
 
 export function registerCampaignIdeationRoutes(app: Express) {
   // Scan news for arbitrary subjects/companies (not limited to tracked

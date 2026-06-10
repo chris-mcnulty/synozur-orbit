@@ -126,6 +126,53 @@ async function searchNews(
   }
 }
 
+export interface SubjectNews {
+  subject: string;
+  headlines: { title: string; source: string; url: string; snippet: string }[];
+}
+
+/**
+ * Scan news for arbitrary subjects/companies/keywords supplied at call time
+ * (not limited to tracked competitors), using the production GNews API. Used by
+ * campaign ideation. Best-effort: a missing key or a failed request yields an
+ * empty headline list for that subject rather than throwing.
+ */
+export async function scanNewsForSubjects(
+  subjects: string[],
+  perSubject: number = 5,
+): Promise<SubjectNews[]> {
+  const cleaned = Array.from(
+    new Set(subjects.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean)),
+  ).slice(0, 8);
+
+  const out: SubjectNews[] = [];
+  for (const subject of cleaned) {
+    const { articles } = await searchNews(subject, perSubject);
+    out.push({
+      subject,
+      headlines: (articles || []).slice(0, perSubject).map((a: any) => {
+        let source = a?.source?.name || "";
+        if (!source && a?.url) {
+          try {
+            source = new URL(a.url).hostname.replace(/^www\./, "");
+          } catch {
+            /* leave blank */
+          }
+        }
+        return {
+          title: a?.title || "",
+          source,
+          url: a?.url || "",
+          snippet: a?.description || "",
+        };
+      }),
+    });
+    // Respect the GNews rate limit between subjects.
+    if (cleaned.length > 1) await delay(REQUEST_DELAY_MS);
+  }
+  return out;
+}
+
 export async function fetchCompetitorNews(
   competitors: Competitor[],
   baseline: CompanyProfile | undefined,
