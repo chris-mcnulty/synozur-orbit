@@ -820,14 +820,17 @@ export default function AdminPage() {
     },
   });
 
+  type CrawlSiteInfo = { id: string; name: string; url: string; consecutiveCrawlFailures: number; crawlFlaggedAt: string; tenantDomain: string; lastError: string | null };
   const { data: flaggedCrawls } = useQuery<{
-    competitors: Array<{ id: string; name: string; url: string; consecutiveCrawlFailures: number; crawlFlaggedAt: string; tenantDomain: string }>;
-    products: Array<{ id: string; name: string; url: string; consecutiveCrawlFailures: number; crawlFlaggedAt: string; tenantDomain: string }>;
+    competitors: CrawlSiteInfo[];
+    products: CrawlSiteInfo[];
+    pausedCompetitors: CrawlSiteInfo[];
+    pausedProducts: CrawlSiteInfo[];
   }>({
     queryKey: ["/api/admin/flagged-crawls"],
     queryFn: async () => {
       const response = await fetch("/api/admin/flagged-crawls", { credentials: "include" });
-      if (!response.ok) return { competitors: [], products: [] };
+      if (!response.ok) return { competitors: [], products: [], pausedCompetitors: [], pausedProducts: [] };
       return response.json();
     },
   });
@@ -853,6 +856,20 @@ export default function AdminPage() {
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to dismiss");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/flagged-crawls"] });
+    },
+  });
+
+  const resumeCrawlMutation = useMutation({
+    mutationFn: async ({ type, id }: { type: "competitor" | "product"; id: string }) => {
+      const response = await fetch(`/api/admin/flagged-crawls/${type}/${id}/resume`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to resume");
       return response.json();
     },
     onSuccess: () => {
@@ -1650,7 +1667,7 @@ export default function AdminPage() {
               Flagged Crawl Sites
             </CardTitle>
             <CardDescription>
-              Sites that have repeatedly failed to return crawl results. Consider excluding them from automated crawling.
+              Sites that have repeatedly failed crawl attempts. After 6 consecutive failures they are auto-paused and skipped by all scheduled crawls — or pause them manually below.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1667,6 +1684,7 @@ export default function AdminPage() {
                     <TableHead>URL</TableHead>
                     <TableHead>Failures</TableHead>
                     <TableHead>Flagged</TableHead>
+                    <TableHead>Last Error</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1687,6 +1705,9 @@ export default function AdminPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(c.crawlFlaggedAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs max-w-[180px] truncate" title={c.lastError || undefined}>
+                        {c.lastError ?? "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
@@ -1731,6 +1752,9 @@ export default function AdminPage() {
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(p.crawlFlaggedAt).toLocaleDateString()}
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-xs max-w-[180px] truncate" title={p.lastError || undefined}>
+                        {p.lastError ?? "—"}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button
@@ -1757,6 +1781,73 @@ export default function AdminPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {((flaggedCrawls?.pausedCompetitors?.length ?? 0) + (flaggedCrawls?.pausedProducts?.length ?? 0) > 0) && (
+              <div className="border-t mt-4 pt-4 space-y-2">
+                <h4 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground">
+                  <Ban className="h-4 w-4" /> Paused Crawls ({(flaggedCrawls?.pausedCompetitors?.length ?? 0) + (flaggedCrawls?.pausedProducts?.length ?? 0)})
+                </h4>
+                <p className="text-xs text-muted-foreground mb-2">These sites are excluded from all scheduled crawls. Resume monitoring once the site is back online.</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>URL</TableHead>
+                      <TableHead>Failures</TableHead>
+                      <TableHead>Paused</TableHead>
+                      <TableHead>Last Error</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {flaggedCrawls?.pausedCompetitors?.map((c) => (
+                      <TableRow key={`pc-${c.id}`} data-testid={`paused-competitor-${c.id}`}>
+                        <TableCell><Badge variant="outline" className="text-xs">Competitor</Badge></TableCell>
+                        <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                          <a href={c.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary">
+                            {c.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        </TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs">{c.consecutiveCrawlFailures}</Badge></TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{new Date(c.crawlFlaggedAt).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs max-w-[180px] truncate" title={c.lastError || undefined}>
+                          {c.lastError ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => resumeCrawlMutation.mutate({ type: "competitor", id: c.id })} disabled={resumeCrawlMutation.isPending} data-testid={`resume-competitor-${c.id}`}>
+                            <Play className="h-3 w-3 mr-1" /> Resume
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {flaggedCrawls?.pausedProducts?.map((p) => (
+                      <TableRow key={`pp-${p.id}`} data-testid={`paused-product-${p.id}`}>
+                        <TableCell><Badge variant="secondary" className="text-xs">Product</Badge></TableCell>
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                          {p.url ? (
+                            <a href={p.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary">
+                              {p.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                          ) : "-"}
+                        </TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs">{p.consecutiveCrawlFailures}</Badge></TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{new Date(p.crawlFlaggedAt).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs max-w-[180px] truncate" title={p.lastError || undefined}>
+                          {p.lastError ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => resumeCrawlMutation.mutate({ type: "product", id: p.id })} disabled={resumeCrawlMutation.isPending} data-testid={`resume-product-${p.id}`}>
+                            <Play className="h-3 w-3 mr-1" /> Resume
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

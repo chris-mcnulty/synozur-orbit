@@ -196,6 +196,10 @@ export async function monitorCompetitorWebsite(
     
     if (crawlResult.pages.length === 0) {
       await storage.incrementCompetitorCrawlFailures(competitor.id);
+      // Stamp lastWebsiteMonitor even on failure so the sweep freshness gate
+      // (now - lastWebsiteMonitor < intervalMs) engages and prevents re-queueing
+      // on every sweep — mirrors the pricing monitor's explicit non-success stamping.
+      await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
         competitorId: competitor.id,
         competitorName: competitor.name,
@@ -323,6 +327,7 @@ export async function monitorCompetitorWebsite(
     console.error(`Error monitoring website for ${competitor.name}:`, error);
     if (!signal?.aborted) {
       await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+      await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
     }
     return {
       competitorId: competitor.id,
@@ -567,6 +572,7 @@ export async function monitorProductWebsite(
 
     if (crawlResult.pages.length === 0) {
       await storage.incrementProductCrawlFailures(product.id);
+      await storage.updateProduct(product.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
         productId: product.id,
         productName: product.name,
@@ -653,6 +659,7 @@ export async function monitorProductWebsite(
     console.error(`Error monitoring website for product ${product.name}:`, error);
     if (!signal?.aborted) {
       await storage.incrementProductCrawlFailures(product.id).catch(() => {});
+      await storage.updateProduct(product.id, { lastWebsiteMonitor: now }).catch(() => {});
     }
     return {
       productId: product.id,

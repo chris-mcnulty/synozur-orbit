@@ -898,6 +898,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async incrementCompetitorCrawlFailures(id: string, threshold: number = parseInt(process.env.CRAWL_FAILURE_THRESHOLD || "3", 10)): Promise<Competitor> {
+    const autoPauseThreshold = parseInt(process.env.CRAWL_AUTO_PAUSE_THRESHOLD || "6", 10);
     const [existing] = await db.select().from(competitors).where(eq(competitors.id, id));
     if (!existing) throw new Error("Competitor not found");
     const newCount = (existing.consecutiveCrawlFailures || 0) + 1;
@@ -905,6 +906,11 @@ export class DatabaseStorage implements IStorage {
     const isNewlyFlagged = newCount >= threshold && !existing.crawlFlaggedAt;
     if (isNewlyFlagged) {
       updateData.crawlFlaggedAt = new Date();
+    }
+    const isAutoPause = newCount >= autoPauseThreshold && !existing.excludeFromCrawl;
+    if (isAutoPause) {
+      updateData.excludeFromCrawl = true;
+      console.log(`[CrawlHealth] Auto-pausing competitor ${existing.name} after ${newCount} consecutive crawl failures`);
     }
     const [updated] = await db.update(competitors).set(updateData).where(eq(competitors.id, id)).returning();
     if (isNewlyFlagged) {
@@ -1928,6 +1934,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async incrementProductCrawlFailures(id: string, threshold: number = parseInt(process.env.CRAWL_FAILURE_THRESHOLD || "3", 10)): Promise<Product> {
+    const autoPauseThreshold = parseInt(process.env.CRAWL_AUTO_PAUSE_THRESHOLD || "6", 10);
     const [existing] = await db.select().from(products).where(eq(products.id, id));
     if (!existing) throw new Error("Product not found");
     const newCount = (existing.consecutiveCrawlFailures || 0) + 1;
@@ -1935,6 +1942,11 @@ export class DatabaseStorage implements IStorage {
     const isNewlyFlagged = newCount >= threshold && !existing.crawlFlaggedAt;
     if (isNewlyFlagged) {
       updateData.crawlFlaggedAt = new Date();
+    }
+    const isAutoPause = newCount >= autoPauseThreshold && !existing.excludeFromCrawl;
+    if (isAutoPause) {
+      updateData.excludeFromCrawl = true;
+      console.log(`[CrawlHealth] Auto-pausing product ${existing.name} after ${newCount} consecutive crawl failures`);
     }
     const [updated] = await db.update(products).set(updateData).where(eq(products.id, id)).returning();
     if (isNewlyFlagged) {
@@ -1964,6 +1976,49 @@ export class DatabaseStorage implements IStorage {
         eq(products.excludeFromCrawl, false)
       )
     ).orderBy(desc(products.crawlFlaggedAt));
+  }
+
+  async getPausedCompetitors(): Promise<Competitor[]> {
+    return await db.select().from(competitors).where(
+      and(
+        isNotNull(competitors.crawlFlaggedAt),
+        eq(competitors.excludeFromCrawl, true)
+      )
+    ).orderBy(desc(competitors.crawlFlaggedAt));
+  }
+
+  async getPausedProducts(): Promise<Product[]> {
+    return await db.select().from(products).where(
+      and(
+        isNotNull(products.crawlFlaggedAt),
+        eq(products.excludeFromCrawl, true)
+      )
+    ).orderBy(desc(products.crawlFlaggedAt));
+  }
+
+  async getLatestFailedJobRunsForTargets(targetIds: string[]): Promise<Map<string, string>> {
+    if (!targetIds.length) return new Map();
+    const rows = await db.select({
+      targetId: scheduledJobRuns.targetId,
+      errorMessage: scheduledJobRuns.errorMessage,
+      startedAt: scheduledJobRuns.startedAt,
+    })
+      .from(scheduledJobRuns)
+      .where(
+        and(
+          inArray(scheduledJobRuns.targetId, targetIds),
+          eq(scheduledJobRuns.status, "failed")
+        )
+      )
+      .orderBy(desc(scheduledJobRuns.startedAt));
+
+    const result = new Map<string, string>();
+    for (const row of rows) {
+      if (row.targetId && !result.has(row.targetId) && row.errorMessage) {
+        result.set(row.targetId, row.errorMessage);
+      }
+    }
+    return result;
   }
 
   // Project-Product methods

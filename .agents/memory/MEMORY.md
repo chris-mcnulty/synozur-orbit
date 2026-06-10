@@ -17,3 +17,4 @@
 - [Hero/social-card title fitting](hero-title-fitting.md) — compositeHeroImage scales title font via TITLE_TIERS/layoutTitle; conference path needs a fitsVertically guard (incl. fallback) or long titles clip the canvas.
 - [Polaris podcast outline asset type](polaris-podcast-outline.md) — podcast_outline is a CONTENT_BRIEF_FORMAT with shared POLARIS_OUTLINE_GUIDANCE; guest override flows via opts.guest/params.guest → polarisGuestBlock; two entry paths (brief draft + repurpose-longform).
 - [Distribution planner channel resolution](distribution-planner-channel.md) — brief format (not the AI-filled channels field) decides the schedule channel via FORMAT_CHANNEL; channels is fallback only for unmapped formats.
+- [Campaign social-posts cleanup — DONE](campaign-socialpost-cleanup-done.md) — T001–T005 plan fully shipped; never re-investigate or re-implement this batch.

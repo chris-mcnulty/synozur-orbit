@@ -621,37 +621,46 @@ export function registerConsultantPlansRoutes(app: Express) {
 
       const userDomain = user.email.split("@")[1]?.toLowerCase();
 
-      const [flaggedCompetitors, flaggedProducts] = await Promise.all([
+      const [flaggedCompetitors, flaggedProducts, pausedCompetitors, pausedProducts] = await Promise.all([
         storage.getFlaggedCompetitors(),
         storage.getFlaggedProducts(),
+        storage.getPausedCompetitors(),
+        storage.getPausedProducts(),
       ]);
 
       const isGlobalAdmin = user.role === "Global Admin";
+
+      const allIds = [...flaggedCompetitors, ...flaggedProducts, ...pausedCompetitors, ...pausedProducts].map(i => i.id);
+      const lastErrors = await storage.getLatestFailedJobRunsForTargets(allIds);
+
+      const mapCompetitor = (c: any) => ({
+        id: c.id,
+        name: c.name,
+        url: c.url,
+        consecutiveCrawlFailures: c.consecutiveCrawlFailures,
+        crawlFlaggedAt: c.crawlFlaggedAt,
+        excludeFromCrawl: c.excludeFromCrawl,
+        tenantDomain: c.tenantDomain,
+        marketId: c.marketId,
+        lastError: lastErrors.get(c.id) || null,
+      });
+      const mapProduct = (p: any) => ({
+        id: p.id,
+        name: p.name,
+        url: p.url,
+        consecutiveCrawlFailures: p.consecutiveCrawlFailures,
+        crawlFlaggedAt: p.crawlFlaggedAt,
+        excludeFromCrawl: p.excludeFromCrawl,
+        tenantDomain: p.tenantDomain,
+        marketId: p.marketId,
+        lastError: lastErrors.get(p.id) || null,
+      });
+
       res.json({
-        competitors: flaggedCompetitors
-          .filter(c => isGlobalAdmin || c.tenantDomain === userDomain)
-          .map(c => ({
-            id: c.id,
-            name: c.name,
-            url: c.url,
-            consecutiveCrawlFailures: c.consecutiveCrawlFailures,
-            crawlFlaggedAt: c.crawlFlaggedAt,
-            excludeFromCrawl: c.excludeFromCrawl,
-            tenantDomain: c.tenantDomain,
-            marketId: c.marketId,
-          })),
-        products: flaggedProducts
-          .filter(p => isGlobalAdmin || p.tenantDomain === userDomain)
-          .map(p => ({
-            id: p.id,
-            name: p.name,
-            url: p.url,
-            consecutiveCrawlFailures: p.consecutiveCrawlFailures,
-            crawlFlaggedAt: p.crawlFlaggedAt,
-            excludeFromCrawl: p.excludeFromCrawl,
-            tenantDomain: p.tenantDomain,
-            marketId: p.marketId,
-          })),
+        competitors: flaggedCompetitors.filter(c => isGlobalAdmin || c.tenantDomain === userDomain).map(mapCompetitor),
+        products: flaggedProducts.filter(p => isGlobalAdmin || p.tenantDomain === userDomain).map(mapProduct),
+        pausedCompetitors: pausedCompetitors.filter(c => isGlobalAdmin || c.tenantDomain === userDomain).map(mapCompetitor),
+        pausedProducts: pausedProducts.filter(p => isGlobalAdmin || p.tenantDomain === userDomain).map(mapProduct),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -709,6 +718,36 @@ export function registerConsultantPlansRoutes(app: Express) {
         if (!product) return res.status(404).json({ error: "Product not found" });
         if (!isGlobalAdmin && product.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
         const updated = await storage.updateProduct(id, { crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
+        res.json(updated);
+      } else {
+        res.status(400).json({ error: "Invalid type. Must be 'competitor' or 'product'" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/flagged-crawls/:type/:id/resume", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!hasContentAccess(user.role)) return res.status(403).json({ error: "Access denied - Admin only" });
+
+      const { type, id } = req.params;
+      const isGlobalAdmin = user.role === "Global Admin";
+      const userDomain = user.email.split("@")[1]?.toLowerCase();
+      if (type === "competitor") {
+        const competitor = await storage.getCompetitor(id);
+        if (!competitor) return res.status(404).json({ error: "Competitor not found" });
+        if (!isGlobalAdmin && competitor.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateCompetitor(id, { excludeFromCrawl: false, crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
+        res.json(updated);
+      } else if (type === "product") {
+        const product = await storage.getProduct(id);
+        if (!product) return res.status(404).json({ error: "Product not found" });
+        if (!isGlobalAdmin && product.tenantDomain !== userDomain) return res.status(403).json({ error: "Access denied" });
+        const updated = await storage.updateProduct(id, { excludeFromCrawl: false, crawlFlaggedAt: null, consecutiveCrawlFailures: 0 });
         res.json(updated);
       } else {
         res.status(400).json({ error: "Invalid type. Must be 'competitor' or 'product'" });
