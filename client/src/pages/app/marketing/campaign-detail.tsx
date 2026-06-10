@@ -119,6 +119,7 @@ interface ContentBrief {
   differentiationAngle?: string | null;
   targetReader?: string | null;
   cta?: string | null;
+  channels?: string[] | null;
   estimatedHours?: number | null;
 }
 
@@ -1347,6 +1348,25 @@ export default function CampaignDetailPage() {
                               {b.targetReader ? <span><span className="font-medium">For:</span> {b.targetReader}. </span> : null}
                               {b.demandSignal ? <span><span className="font-medium">Signal:</span> {b.demandSignal}</span> : null}
                             </p>
+                          )}
+                          {b.cta && (
+                            <p className="text-xs text-muted-foreground mt-1" data-testid={`text-brief-cta-${b.id}`}>
+                              <span className="font-medium">CTA:</span> {b.cta}
+                            </p>
+                          )}
+                          {((b.channels && b.channels.length > 0) || b.estimatedHours != null) && (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                              {b.channels?.map((ch) => (
+                                <Badge key={ch} variant="outline" className="text-xs capitalize" data-testid={`badge-brief-channel-${b.id}-${ch}`}>
+                                  {ch}
+                                </Badge>
+                              ))}
+                              {b.estimatedHours != null && (
+                                <span className="text-xs text-muted-foreground" data-testid={`text-brief-hours-${b.id}`}>
+                                  ~{b.estimatedHours}h
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                         {contentPlan?.calendar && (

@@ -8,3 +8,5 @@
 - [Editorial brief → draft flow](editorial-brief-draft-flow.md) — campaign/theme live on the brief; category lives on the draft (content asset) so it's only assignable after drafting.
 - [Multi-format repurposer](multiformat-repurposer.md) — one asset → batch of formats; LinkedIn posts/carousels go to posts pipeline, snippets to Content Library; branded images degrade gracefully; legacy social path kept.
 - [Content repurposer image outputs](repurpose-image-outputs.md) — social repurpose auto-renders 1 graphic/variant; carousel renders 1 image/slide via extractCarouselSlides; no new schema (reuse overrideImageUrl, leadImageUrl + markdown body); per-image regen must keep body markdown + leadImageUrl in sync.
+- [Copywriter voice enforcement](copywriter-voice-rules.md) — Synozur voice rules live in copywriter-service VOICE_NON_NEGOTIABLES; FORMAT_GUIDANCE must never re-add hashtags/soft CTA.
+- [Marketing AI feature inventory](marketing-ai-inventory.md) — distribution-planner & performance-analyst already exist as product features; grep service+route+page before declaring a marketing capability missing.
